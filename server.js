@@ -15,7 +15,7 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // 🔑 ADD YOUR API KEY HERE (WITH QUOTES)
 const openai = new OpenAI({
-  apiKey: "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",
+  apiKey: process.env.OPENAI_API_KEY
 });
 
 // STEP 1: Answer call
