@@ -25,11 +25,15 @@ app.post("/voice", (req, res) => {
   console.log("Incoming caller:", caller);
 
   let contacts = [];
-  try {
-    contacts = JSON.parse(fs.readFileSync("contacts.json", "utf8"));
-  } catch (e) {
-    contacts = [];
-  }
+
+try {
+  const file = fs.readFileSync(__dirname + "/contacts.json", "utf8");
+  contacts = JSON.parse(file);
+} catch (e) {
+  console.log("ERROR LOADING CONTACTS:", e);
+  contacts = [];
+}  
+    
 
 const callerNorm = normalize(caller);
 
