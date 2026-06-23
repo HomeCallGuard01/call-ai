@@ -103,89 +103,27 @@ dial.number("+447715562700");
 });
 
 // STEP 2: Process speech
-app.post("/process", async (req, res) => {
+app.post("/process", (req, res) => {
+  console.log("PROCESS HIT");
+
+  const speech = req.body.SpeechResult || "nothing heard";
+  console.log("Caller said:", speech);
+
   const twiml = new VoiceResponse();
 
-  const speech = req.body.SpeechResult || "";
-  console.log("Caller said:", speech);
-const lowerSpeech = speech.toLowerCase();
-
-if (
-  lowerSpeech.includes("sky") ||
-  lowerSpeech.includes("bt") ||
-  lowerSpeech.includes("amazon") ||
-  lowerSpeech.includes("bank") ||
-  lowerSpeech.includes("account") ||
-  lowerSpeech.includes("internet") ||
-  lowerSpeech.includes("broadband")
-) {
-  console.log("Blocked by keyword");
-
-  twiml.say({
-    voice: "Polly.Amy",
-    language: "en-GB"
-  }, "This call cannot be completed. Goodbye.");
+  twiml.say(
+    {
+      voice: "Polly.Amy",
+      language: "en-GB"
+    },
+    "Thank you. Goodbye."
+  );
 
   twiml.hangup();
 
   return res.type("text/xml").send(twiml.toString());
-}
-  const aiResponse = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-messages: [
-  {
-    role: "system",
-    content: `You are an advanced scam detection system.
-    
-Classify the call as YES (scam) or NO (safe).
-  
-Mark as YES if the caller:
-- Mentions bank, account, card, payment, refund
-- Mentions security, verification, OTP, passcode
-- Mentions broadband, Sky, BT, internet provider issues
-- Mentions Amazon, delivery problems, fake orders
-- Mentions HMRC, tax, fines, legal threats
-- Mentions crypto, bitcoin, investment opportunities
-- Uses urgency (e.g. urgent, act now, immediately)
-- Asks for personal or financial information
-  
-Also flag:
-- Pressure tactics
-- Scripted or robotic language
-- Suspicious tone or intent
-  
-Otherwise return NO.
-  
-Respond ONLY with YES or NO.`,
-  },
-  { 
-    role: "user",
-    content: speech,
-  },
-],
 });
 
-  const result = aiResponse.choices[0].message.content.trim();
-  console.log("AI decision:", result);
-
-  if (result === "YES") {
-  twiml.say({
-    voice: "Polly.Amy",
-    language: "en-GB"
-  }, "This call cannot be completed. Goodbye.");
-  
-  twiml.hangup();
-
-} else {
-
-  const dial = twiml.dial();
-  dial.number("+447715562700");
-
-}
-
-  res.type("text/xml");
-  res.send(twiml.toString());
-});
 
 // START SERVER
 
