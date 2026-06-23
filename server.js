@@ -19,6 +19,10 @@ const openai = new OpenAI({
 });
 
 // STEP 1: Answer call
+app.get("/voice", (req, res) => {
+  res.send("Voice endpoint is working");
+});
+
 app.post("/voice", (req, res) => {
 
   const caller = req.body.From;
