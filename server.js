@@ -82,6 +82,7 @@ dial.number("+447715562700");
   const gather = twiml.gather({
     input: "speech",
     action: "/process",
+    method: "POST",
     speechTimeout: "auto",
   });
 
