@@ -19,10 +19,26 @@ const openai = new OpenAI({
 });
 
 // STEP 1: Answer call
-app.post("/voice", (req, res) => {  
+app.post("/voice", (req, res) => {
 
   const caller = req.body.From;
   console.log("Incoming caller:", caller);
+
+  // ✅ DEFINE FIRST
+  const normalize = (num) => {
+    if (!num) return "";
+
+    num = num.replace(/\D/g, "");
+
+    if (num.startsWith("44")) {
+      num = "0" + num.slice(2);
+    }
+
+    return num;
+  };
+
+  // ✅ THEN USE IT
+  const callerNorm = normalize(caller);
 
   let contacts = [];
 
@@ -34,8 +50,6 @@ try {
   contacts = [];
 }  
     
-
-const callerNorm = normalize(caller);
 
 const isKnown = contacts.some(c => {
   const contactNorm = normalize(c.number);
