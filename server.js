@@ -111,26 +111,7 @@ if (isScam) {
 
 
 // STEP 2: Process speech
-app.post("/process", (req, res) => {
-  console.log("PROCESS HIT");
 
-  const speech = req.body.SpeechResult || "nothing heard";
-  console.log("Caller said:", speech);
-
-  const twiml = new VoiceResponse();
-
-  twiml.say(
-    {
-      voice: "Polly.Amy",
-      language: "en-GB"
-    },
-    "Thank you. Goodbye."
-  );
-
-  twiml.hangup();
-
-  return res.type("text/xml").send(twiml.toString());
-});
 
 
 // START SERVER
