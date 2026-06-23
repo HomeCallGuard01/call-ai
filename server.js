@@ -19,8 +19,22 @@ const openai = new OpenAI({
 });
 
 // STEP 1: Answer call
-app.get("/voice", (req, res) => {
-  res.send("Voice endpoint is working");
+app.post("/voice", (req, res) => {
+  const twiml = new VoiceResponse();
+
+  const gather = twiml.gather({
+    input: "speech",
+    action: "/process",
+    method: "POST",
+    speechTimeout: "auto",
+  });
+
+  gather.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "This call is protected by Home Call Guard. Please briefly state your reason for calling."
+  );
+
+  return res.type("text/xml").send(twiml.toString());
 });
 
 app.post("/process", (req, res) => {
