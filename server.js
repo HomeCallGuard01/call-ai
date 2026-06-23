@@ -47,33 +47,62 @@ app.post("/process", (req, res) => {
   const twiml = new VoiceResponse();
 
   // 🚫 BLOCK SCAM KEYWORDS
-  if (
-    lower.includes("bank") ||
-    lower.includes("account") ||
-    lower.includes("bitcoin") ||
-    lower.includes("amazon") ||
-    lower.includes("refund") ||
-    lower.includes("internet") ||
-    lower.includes("broadband") ||
-    lower.includes("bt") ||
-    lower.includes("sky") ||
-    lower.includes("urgent") ||
-    lower.includes("payment")
-  ) {
-    console.log("🚫 BLOCKED");
+const isKeywordScam =
+  lower.includes("bank") ||
+  lower.includes("account") ||
+  lower.includes("bitcoin") ||
+  lower.includes("amazon") ||
+  lower.includes("refund") ||
+  lower.includes("internet") ||
+  lower.includes("broadband") ||
+  lower.includes("bt") ||
+  lower.includes("sky") ||
+  lower.includes("urgent") ||
+  lower.includes("payment");
 
-    twiml.say(
-      { voice: "Polly.Amy", language: "en-GB" },
-      "This call cannot be completed. Goodbye."
-    );
-    twiml.hangup();
+let isScam = isKeywordScam;
 
-  } else {
-    console.log("✅ SAFE - connecting");
+// 🧠 AI layer (only if not obvious)
+if (!isKeywordScam && speech.length > 5) {
+  try {
+    const aiResponse = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Classify this call as SCAM or SAFE. Only respond SCAM or SAFE.",
+        },
+        {
+          role: "user",
+          content: speech,
+        },
+      ],
+    });
 
-    const dial = twiml.dial();
-    dial.number("+447715562700"); // your number
+    const result = aiResponse.choices[0].message.content.trim();
+    console.log("AI decision:", result);
+
+    if (result === "SCAM") {
+      isScam = true;
+    }
+  } catch (err) {
+    console.log("AI failed, fallback to keywords");
   }
+}
+
+// 🚫 BLOCK
+if (isScam) {
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "This call cannot be completed. Goodbye."
+  );
+  twiml.hangup();
+} else {
+  // ✅ CONNECT
+  const dial = twiml.dial();
+  dial.number("+447715562700");
+}
 
   return res.type("text/xml").send(twiml.toString());
 });
