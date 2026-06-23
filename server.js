@@ -59,6 +59,10 @@ const isKnown = contacts.some(c => {
     callerNorm.endsWith(contactNorm.slice(-9))
   );
 });
+console.log("Caller:", caller);
+console.log("CallerNorm:", callerNorm);
+console.log("Contacts:", contacts);
+console.log("IsKnown:", isKnown);
 
   const twiml = new VoiceResponse();
 
