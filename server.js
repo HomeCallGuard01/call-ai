@@ -23,46 +23,46 @@ app.get("/voice", (req, res) => {
   res.send("Voice endpoint is working");
 });
 
-app.post("/voice", (req, res) => {
+app.post("/process", (req, res) => {
+  console.log("PROCESS HIT");
 
-  const caller = req.body.From;
-  console.log("Incoming caller:", caller);
+  const speech = req.body.SpeechResult || "";
+  console.log("Caller said:", speech);
 
-  // ✅ DEFINE FIRST
-  const normalize = (num) => {
-    if (!num) return "";
+  const lower = speech.toLowerCase();
+  const twiml = new VoiceResponse();
 
-    num = num.replace(/\D/g, "");
+  // 🚨 BASIC SCAM KEYWORDS
+  if (
+    lower.includes("bank") ||
+    lower.includes("account") ||
+    lower.includes("bitcoin") ||
+    lower.includes("amazon") ||
+    lower.includes("refund") ||
+    lower.includes("internet") ||
+    lower.includes("broadband") ||
+    lower.includes("bt") ||
+    lower.includes("sky") ||
+    lower.includes("urgent") ||
+    lower.includes("payment")
+  ) {
+    console.log("🚨 BLOCKED");
 
-    if (num.startsWith("44")) {
-      num = "0" + num.slice(2);
-    }
+    twiml.say(
+      { voice: "Polly.Amy", language: "en-GB" },
+      "This call cannot be completed. Goodbye."
+    );
+    twiml.hangup();
+  } else {
+    console.log("✅ SAFE → connecting");
 
-    return num;
-  };
+    const dial = twiml.dial();
+    dial.number("+447715562700"); // <-- your number
+  }
 
-  // ✅ THEN USE IT
-  const callerNorm = normalize(caller);
-
-  let contacts = [];
-
-try {
-  const file = fs.readFileSync(__dirname + "/contacts.json", "utf8");
-  contacts = JSON.parse(file);
-} catch (e) {
-  console.log("ERROR LOADING CONTACTS:", e);
-  contacts = [];
-}  
-    
-
-const isKnown = contacts.some(c => {
-  const contactNorm = normalize(c.number);
-
-  return (
-    callerNorm === contactNorm ||
-    callerNorm.endsWith(contactNorm.slice(-9))
-  );
+  return res.type("text/xml").send(twiml.toString());
 });
+
 console.log("Caller:", caller);
 console.log("CallerNorm:", callerNorm);
 console.log("Contacts:", contacts);
