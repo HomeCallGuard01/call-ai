@@ -46,7 +46,7 @@ app.post("/process", (req, res) => {
   const lower = speech.toLowerCase();
   const twiml = new VoiceResponse();
 
-  // 🚨 BASIC SCAM KEYWORDS
+  // 🚫 BLOCK SCAM KEYWORDS
   if (
     lower.includes("bank") ||
     lower.includes("account") ||
@@ -60,61 +60,26 @@ app.post("/process", (req, res) => {
     lower.includes("urgent") ||
     lower.includes("payment")
   ) {
-    console.log("🚨 BLOCKED");
+    console.log("🚫 BLOCKED");
 
     twiml.say(
       { voice: "Polly.Amy", language: "en-GB" },
       "This call cannot be completed. Goodbye."
     );
     twiml.hangup();
+
   } else {
-    console.log("✅ SAFE → connecting");
+    console.log("✅ SAFE - connecting");
 
     const dial = twiml.dial();
-    dial.number("+447715562700"); // <-- your number
+    dial.number("+447715562700"); // your number
   }
 
   return res.type("text/xml").send(twiml.toString());
 });
 
-console.log("Caller:", caller);
-console.log("CallerNorm:", callerNorm);
-console.log("Contacts:", contacts);
-console.log("IsKnown:", isKnown);
 
-  const twiml = new VoiceResponse();
 
-  // ✅ KNOWN CALLER → BYPASS AI
-  if (isKnown) {
-    console.log("Known caller:", caller);
-    const dial = twiml.dial({
-  callerId: req.body.To
-});
-
-dial.number("+447715562700");
-
-    return res.type("text/xml").send(twiml.toString());
-  }
-
-  // ❗ UNKNOWN CALLER → GO TO AI
-  const gather = twiml.gather({
-    input: "speech",
-    action: "/process",
-    method: "POST",
-    speechTimeout: "auto",
-  });
-
-  gather.say(
-    {
-      voice: "Polly.Amy",
-      language: "en-GB"
-    },
-    "This call is protected by Home Call Guard. Please briefly state your reason for calling."
-  );
-
-  res.type("text/xml");
-  res.send(twiml.toString());
-});
 
 // STEP 2: Process speech
 app.post("/process", (req, res) => {
