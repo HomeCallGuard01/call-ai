@@ -31,12 +31,16 @@ app.post("/voice", (req, res) => {
     contacts = [];
   }
 
-  const normalize = num =>
-  num.replace(/\D/g, "").replace(/^44/, "0");
+const callerNorm = normalize(caller);
 
-const isKnown = contacts.some(c =>
-  normalize(c.number) === normalize(caller)
-);
+const isKnown = contacts.some(c => {
+  const contactNorm = normalize(c.number);
+
+  return (
+    callerNorm === contactNorm ||
+    callerNorm.endsWith(contactNorm.slice(-9))
+  );
+});
 
   const twiml = new VoiceResponse();
 
