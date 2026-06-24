@@ -31,6 +31,9 @@ try {
 
 const caller = req.body.From;
 
+console.log("Incoming caller raw:", caller);
+console.log("Normalised:", caller.replace(/\D/g, "").slice(-10));
+
 // normalise number (important)
 const callerNorm = caller.replace(/\D/g, "").slice(-10);
 
