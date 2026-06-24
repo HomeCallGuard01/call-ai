@@ -22,6 +22,31 @@ const openai = new OpenAI({
 app.post("/voice", (req, res) => {
   const twiml = new VoiceResponse();
 
+let contacts = [];
+try {
+  contacts = JSON.parse(fs.readFileSync("contacts.json", "utf8"));
+} catch (e) {
+  console.log("No contacts file yet");
+}
+
+const caller = req.body.From;
+
+// normalise number (important)
+const callerNorm = caller.replace(/\D/g, "").slice(-10);
+
+const isKnown = contacts.some(c =>
+  c.number && c.number.replace(/\D/g, "").slice(-10) === callerNorm
+);
+
+if (isKnown) {
+  console.log("Known contact → bypass AI");
+
+  const dial = twiml.dial();
+  dial.number("+447715562700");
+
+  return res.type("text/xml").send(twiml.toString());
+}
+
   const gather = twiml.gather({
     input: "speech",
     action: "/process",
