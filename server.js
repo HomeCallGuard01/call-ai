@@ -37,7 +37,7 @@ app.post("/voice", (req, res) => {
   return res.type("text/xml").send(twiml.toString());
 });
 
-app.post("/process", (req, res) => {
+app.post("/process", async (req, res) => {
   console.log("PROCESS HIT");
 
   const speech = req.body.SpeechResult || "";
@@ -107,10 +107,6 @@ if (isScam) {
   return res.type("text/xml").send(twiml.toString());
 });
 
-
-
-
-// STEP 2: Process speech
 
 
 
