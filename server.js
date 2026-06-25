@@ -149,11 +149,14 @@ app.post("/upload-contacts", upload.single("file"), (req, res) => {
 
   const lines = data.split("\n");
 
-  const contacts = lines.map(line => {
+  const contacts = lines
+  .map(line => line.trim())
+  .filter(line => line.length > 0)
+  .map(line => {
     const parts = line.split(",");
     return {
       name: parts[0],
-      number: parts[1]
+      number: parts[1].replace(/\D/g, "").slice(-10)
     };
   });
 
