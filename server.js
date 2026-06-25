@@ -142,23 +142,27 @@ if (isScam) {
 
 
 app.post("/upload-contacts", upload.single("file"), (req, res) => {
-  const fs = require("fs");
-
   const filePath = req.file.path;
   const data = fs.readFileSync(filePath, "utf8");
 
   const lines = data.split("\n");
 
-  const contacts = lines
-  .map(line => line.trim())
-  .filter(line => line.length > 0)
-  .map(line => {
+  const contacts = lines.map(line => {
     const parts = line.split(",");
+
+    let number = (parts[1] || "").replace(/\D/g, ""); // remove spaces, +, etc
+    number = number.slice(-10); // keep last 10 digits
+
     return {
-      name: parts[0],
-      number: parts[1].replace(/\D/g, "").slice(-10)
+      name: parts[0]?.trim(),
+      number: number
     };
-  });
+  }).filter(c => c.number.length === 10); // remove bad rows
+
+  fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
+
+  res.send("Contacts uploaded successfully!");
+});
 
   fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
 
