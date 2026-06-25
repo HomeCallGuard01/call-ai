@@ -2,98 +2,135 @@
 <html>
 <head>
   <title>Home Call Guard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, Arial;
-      background: linear-gradient(135deg, #eef2ff, #f8fafc);
       margin: 0;
-      padding: 0;
+      font-family: Arial;
+      background: #0f172a;
+      color: white;
     }
 
     .container {
       display: flex;
-      justify-content: center;
-      align-items: center;
       height: 100vh;
     }
 
-    .card {
-      background: white;
+    .sidebar {
+      width: 220px;
+      background: #020617;
+      padding: 20px;
+      border-right: 1px solid #1e293b;
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: bold;
+      color: #22c55e;
+      margin-bottom: 30px;
+    }
+
+    .nav-item {
+      margin: 10px 0;
+      color: #94a3b8;
+    }
+
+    .nav-item.active {
+      color: white;
+    }
+
+    .main {
+      flex: 1;
       padding: 40px;
-      border-radius: 12px;
-      width: 400px;
-      text-align: center;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
     }
 
-    h1 {
-      margin-bottom: 5px;
-      font-size: 26px;
-    }
-
-    p {
-      color: #666;
-      margin-top: 0;
-      margin-bottom: 25px;
-    }
-
-    input[type="file"] {
-      margin: 15px 0;
+    .card {
+      background: #020617;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #1e293b;
+      margin-bottom: 20px;
     }
 
     button {
-      background: #2563eb;
-      color: white;
+      background: #22c55e;
       border: none;
-      padding: 12px 20px;
+      padding: 10px 20px;
+      color: black;
+      font-weight: bold;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 14px;
+    }
+
+    input {
+      margin-bottom: 10px;
+    }
+
+    table {
       width: 100%;
+      border-collapse: collapse;
     }
 
-    button:hover {
-      background: #1d4ed8;
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #1e293b;
+      text-align: left;
     }
 
-    .footer {
+    .tag {
+      background: #dc2626;
+      padding: 4px 8px;
+      border-radius: 5px;
       font-size: 12px;
-      color: #888;
-      margin-top: 20px;
     }
 
-    .success {
-      color: green;
-      margin-top: 15px;
-      font-weight: bold;
-    }
   </style>
 </head>
 
 <body>
 
 <div class="container">
-  <div class="card">
 
-    <h1>📞 Home Call Guard</h1>
-    <p>AI protection against spam & scam calls</p>
+  <div class="sidebar">
+    <div class="logo">📞 CallGuard AI</div>
 
-    <h3>Upload Your Contacts</h3>
+    <div class="nav-item active">Dashboard</div>
+    <div class="nav-item">Call Logs</div>
+    <div class="nav-item">Contacts</div>
+  </div>
 
-    <form action="/upload-contacts" method="POST" enctype="multipart/form-data">
-      <input type="file" name="file" required>
-      <br>
-      <button type="submit">Upload Contacts</button>
-    </form>
+  <div class="main">
 
-    <div class="footer">
-      Format: Name,Number<br>
-      Example: Andrew,07733413030
+    <h1>Dashboard</h1>
+
+    <div class="card">
+      <h3>Upload Contacts</h3>
+      <form action="/upload-contacts" method="post" enctype="multipart/form-data">
+        <input type="file" name="file"><br>
+        <button type="submit">Upload CSV</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Recent Calls</h3>
+
+      <table>
+        <tr>
+          <th>Number</th>
+          <th>Status</th>
+          <th>AI Result</th>
+        </tr>
+
+        <tr>
+          <td>+447700900123</td>
+          <td><span class="tag">Unknown</span></td>
+          <td>Likely scam (energy)</td>
+        </tr>
+
+      </table>
     </div>
 
   </div>
+
 </div>
 
 </body>
