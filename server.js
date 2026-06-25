@@ -10,7 +10,7 @@ const upload = multer({ dest: "uploads/" });
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
-app.use(express.static(__dirname));
+app.use(express.static("public"));
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
