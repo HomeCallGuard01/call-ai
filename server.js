@@ -142,26 +142,35 @@ if (isScam) {
 
 
 app.post("/upload-contacts", upload.single("file"), (req, res) => {
-  const filePath = req.file.path;
-  const data = fs.readFileSync(filePath, "utf8");
+  try {
+    if (!req.file) {
+      return res.status(400).send("No file uploaded");
+    }
 
-  const lines = data.split("\n");
+    const filePath = req.file.path;
+    const data = fs.readFileSync(filePath, "utf8");
 
-  const contacts = lines.map(line => {
-    const parts = line.split(",");
+    const lines = data.split("\n");
 
-    let number = (parts[1] || "").replace(/\D/g, ""); // remove spaces, +, etc
-    number = number.slice(-10); // keep last 10 digits
+    const contacts = lines.map(line => {
+      const parts = line.split(",");
 
-    return {
-      name: parts[0]?.trim(),
-      number: number
-    };
-  }).filter(c => c.number.length === 10); // remove bad rows
+      let number = (parts[1] || "").replace(/\D/g, "");
+      number = number.slice(-10);
 
-  fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
+      return {
+        name: parts[0]?.trim(),
+        number: number
+      };
+    }).filter(c => c.number.length === 10);
 
-  res.send("Contacts uploaded successfully!");
+    fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
+
+    res.send("Contacts uploaded successfully!");
+  } catch (err) {
+    console.error("UPLOAD ERROR:", err);
+    res.status(500).send("Upload failed");
+  }
 });
 
   fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
