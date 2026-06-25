@@ -69,11 +69,21 @@ if (isKnown) {
 app.post("/process", async (req, res) => {
   console.log("PROCESS HIT");
 
-  const speech = req.body.SpeechResult || "";
-  console.log("Caller said:", speech);
+// ✅ ALWAYS create twiml FIRST
+const twiml = new VoiceResponse();
 
-  const lower = speech.toLowerCase();
-  const twiml = new VoiceResponse();
+// Get speech
+const speech = req.body.SpeechResult || "";
+console.log("Caller said:", speech);
+
+// ✅ Handle empty speech safely
+if (!speech || speech.length < 2) {
+  twiml.say("Sorry, I didn't catch that. Please try again.");
+  return res.type("text/xml").send(twiml.toString());
+}
+
+// Continue normal logic
+const lower = speech.toLowerCase();
 
   // 🚫 BLOCK SCAM KEYWORDS
 const isKeywordScam =
@@ -109,16 +119,31 @@ if (!isKeywordScam && speech.length > 5) {
       ],
     });
 
-    const result = aiResponse.choices[0].message.content.trim();
-    console.log("AI decision:", result);
+try {
+  let result = "SAFE";
 
-    if (result === "SCAM") {
-      isScam = true;
-    }
-  } catch (err) {
-    console.log("AI failed, fallback to keywords");
+  if (
+    typeof aiResponse !== "undefined" &&
+    aiResponse &&
+    aiResponse.choices &&
+    aiResponse.choices[0] &&
+    aiResponse.choices[0].message &&
+    aiResponse.choices[0].message.content
+  ) {
+    result = aiResponse.choices[0].message.content.trim();
   }
-}
+
+  console.log("AI decision:", result);
+
+  if (result === "SCAM") {
+    isScam = true;
+  }
+
+} catch (err) {
+  console.log("AI failed, fallback to keywords");
+}  
+
+
 callLogs.push({
   number: req.body.From,
   status: isKnown ? "Known" : "Unknown",
