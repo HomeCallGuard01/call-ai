@@ -1,3 +1,4 @@
+let callLogs = [];
 const express = require("express");
 const bodyParser = require("body-parser");
 const twilio = require("twilio");
@@ -118,6 +119,13 @@ if (!isKeywordScam && speech.length > 5) {
     console.log("AI failed, fallback to keywords");
   }
 }
+callLogs.push({
+  number: req.body.From,
+  status: isKnown ? "Known" : "Unknown",
+  result: isScam ? "SCAM" : "SAFE",
+  time: new Date().toISOString()
+});
+
 
 // 🚫 BLOCK
 if (isScam) {
