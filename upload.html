@@ -2,24 +2,60 @@
 <html>
 <head>
   <title>Home Call Guard</title>
+  <style>
+    body {
+      font-family: Arial;
+      background: #f5f7fb;
+      text-align: center;
+      padding: 50px;
+    }
+    .card {
+      background: white;
+      padding: 40px;
+      border-radius: 10px;
+      width: 400px;
+      margin: auto;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    p {
+      color: #666;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+  </style>
 </head>
 
-<body style="font-family: Arial; text-align: center; padding: 40px;">
+<body>
 
+<div class="card">
   <h1>📞 Home Call Guard</h1>
+  <p>Protect your phone from spam calls</p>
 
-  <h3>Upload Contacts (CSV)</h3>
+  <h3>Upload Contacts</h3>
 
   <form action="/upload-contacts" method="POST" enctype="multipart/form-data">
-    <input type="file" name="file" required />
-    <br><br>
+    <input type="file" name="file" required><br><br>
     <button type="submit">Upload Contacts</button>
   </form>
 
-  <p style="margin-top: 30px;">
+  <p style="font-size: 12px; margin-top: 20px;">
     Format: Name,Number<br>
     Example: Andrew,07733413030
   </p>
+</div>
 
 </body>
 </html>
