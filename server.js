@@ -102,6 +102,9 @@ const isKeywordScam =
 let isScam = isKeywordScam;
 
 // 🧠 AI layer (only if not obvious)
+
+let result = "SAFE";
+
 if (!isKeywordScam && speech.length > 5) {
   try {
     const aiResponse = await openai.chat.completions.create({
@@ -109,8 +112,7 @@ if (!isKeywordScam && speech.length > 5) {
       messages: [
         {
           role: "system",
-          content:
-            "Classify this call as SCAM or SAFE. Only respond SCAM or SAFE.",
+          content: "Classify this call as SCAM or SAFE. Only respond SCAM or SAFE.",
         },
         {
           role: "user",
@@ -119,30 +121,26 @@ if (!isKeywordScam && speech.length > 5) {
       ],
     });
 
-try {
-  let result = "SAFE";
+    if (
+      aiResponse &&
+      aiResponse.choices &&
+      aiResponse.choices[0] &&
+      aiResponse.choices[0].message &&
+      aiResponse.choices[0].message.content
+    ) {
+      result = aiResponse.choices[0].message.content.trim();
+    }
 
-  if (
-    typeof aiResponse !== "undefined" &&
-    aiResponse &&
-    aiResponse.choices &&
-    aiResponse.choices[0] &&
-    aiResponse.choices[0].message &&
-    aiResponse.choices[0].message.content
-  ) {
-    result = aiResponse.choices[0].message.content.trim();
+    console.log("AI decision:", result);
+
+    if (result === "SCAM") {
+      isScam = true;
+    }
+
+  } catch (err) {
+    console.log("AI failed:", err.message);
   }
-
-  console.log("AI decision:", result);
-
-  if (result === "SCAM") {
-    isScam = true;
-  }
-
-} catch (err) {
-  console.log("AI failed, fallback to keywords");
-}  
-
+}
 
 callLogs.push({
   number: req.body.From,
