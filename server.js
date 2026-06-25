@@ -149,7 +149,7 @@ app.post("/upload-contacts", upload.single("file"), (req, res) => {
     const filePath = req.file.path;
     const data = fs.readFileSync(filePath, "utf8");
 
-    const lines = data.split("\n");
+    const lines = data.split(/\r?\n/);
 
     const contacts = lines
       .map(line => line.trim())
@@ -176,11 +176,6 @@ app.post("/upload-contacts", upload.single("file"), (req, res) => {
   }
 });
 
-
-  fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
-
-  res.send("Contacts uploaded successfully!");
-});
 
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/upload.html");
