@@ -140,7 +140,6 @@ if (isScam) {
 
 // START SERVER
 
-
 app.post("/upload-contacts", upload.single("file"), (req, res) => {
   try {
     if (!req.file) {
@@ -152,17 +151,21 @@ app.post("/upload-contacts", upload.single("file"), (req, res) => {
 
     const lines = data.split("\n");
 
-    const contacts = lines.map(line => {
-      const parts = line.split(",");
+    const contacts = lines
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => {
+        const parts = line.split(",");
 
-      let number = (parts[1] || "").replace(/\D/g, "");
-      number = number.slice(-10);
+        let number = (parts[1] || "").replace(/\D/g, "");
+        number = number.slice(-10);
 
-      return {
-        name: parts[0]?.trim(),
-        number: number
-      };
-    }).filter(c => c.number.length === 10);
+        return {
+          name: parts[0]?.trim(),
+          number: number
+        };
+      })
+      .filter(c => c.number.length === 10);
 
     fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
 
@@ -172,6 +175,7 @@ app.post("/upload-contacts", upload.single("file"), (req, res) => {
     res.status(500).send("Upload failed");
   }
 });
+
 
   fs.writeFileSync("contacts.json", JSON.stringify(contacts, null, 2));
 
