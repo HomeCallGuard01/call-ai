@@ -76,6 +76,19 @@ const twiml = new VoiceResponse();
 const speech = req.body.SpeechResult || "";
 console.log("Caller said:", speech);
 
+const from = req.body.From;
+
+// Load contacts safely
+let contacts = [];
+try {
+  contacts = JSON.parse(fs.readFileSync("contacts.json", "utf8"));
+} catch (e) {
+  console.log("No contacts file yet");
+}
+
+// Check if caller is known
+const isKnown = contacts.some(c => c.number === from);
+
 // ✅ Handle empty speech safely
 if (!speech || speech.length < 2) {
   twiml.say("Sorry, I didn't catch that. Please try again.");
