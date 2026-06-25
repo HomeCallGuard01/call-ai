@@ -2,59 +2,98 @@
 <html>
 <head>
   <title>Home Call Guard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <style>
     body {
-      font-family: Arial;
-      background: #f5f7fb;
-      text-align: center;
-      padding: 50px;
+      font-family: -apple-system, BlinkMacSystemFont, Arial;
+      background: linear-gradient(135deg, #eef2ff, #f8fafc);
+      margin: 0;
+      padding: 0;
     }
+
+    .container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
     .card {
       background: white;
       padding: 40px;
-      border-radius: 10px;
+      border-radius: 12px;
       width: 400px;
-      margin: auto;
-      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
     }
+
     h1 {
-      margin-bottom: 10px;
+      margin-bottom: 5px;
+      font-size: 26px;
     }
+
     p {
       color: #666;
+      margin-top: 0;
+      margin-bottom: 25px;
     }
+
+    input[type="file"] {
+      margin: 15px 0;
+    }
+
     button {
-      background: #007bff;
+      background: #2563eb;
       color: white;
       border: none;
       padding: 12px 20px;
-      border-radius: 5px;
+      border-radius: 6px;
       cursor: pointer;
-      margin-top: 15px;
+      font-size: 14px;
+      width: 100%;
     }
+
     button:hover {
-      background: #0056b3;
+      background: #1d4ed8;
+    }
+
+    .footer {
+      font-size: 12px;
+      color: #888;
+      margin-top: 20px;
+    }
+
+    .success {
+      color: green;
+      margin-top: 15px;
+      font-weight: bold;
     }
   </style>
 </head>
 
 <body>
 
-<div class="card">
-  <h1>📞 Home Call Guard</h1>
-  <p>Protect your phone from spam calls</p>
+<div class="container">
+  <div class="card">
 
-  <h3>Upload Contacts</h3>
+    <h1>📞 Home Call Guard</h1>
+    <p>AI protection against spam & scam calls</p>
 
-  <form action="/upload-contacts" method="POST" enctype="multipart/form-data">
-    <input type="file" name="file" required><br><br>
-    <button type="submit">Upload Contacts</button>
-  </form>
+    <h3>Upload Your Contacts</h3>
 
-  <p style="font-size: 12px; margin-top: 20px;">
-    Format: Name,Number<br>
-    Example: Andrew,07733413030
-  </p>
+    <form action="/upload-contacts" method="POST" enctype="multipart/form-data">
+      <input type="file" name="file" required>
+      <br>
+      <button type="submit">Upload Contacts</button>
+    </form>
+
+    <div class="footer">
+      Format: Name,Number<br>
+      Example: Andrew,07733413030
+    </div>
+
+  </div>
 </div>
 
 </body>
