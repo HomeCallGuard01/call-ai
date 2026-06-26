@@ -162,6 +162,9 @@ callLogs.push({
   time: new Date().toISOString()
 });
 
+app.get("/logs", (req, res) => {
+  res.json(callLogs);
+});
 
 // 🚫 BLOCK
 if (isScam) {
