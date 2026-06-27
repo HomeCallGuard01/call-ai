@@ -173,8 +173,26 @@ if (isScam) {
     "This call cannot be completed. Goodbye."
   );
   twiml.hangup();
+
 } else {
-  // ✅ CONNECT
+  // ⚠️ If risky keywords detected, play stronger warning
+  if (isKeywordScam) {
+    twiml.say(
+      { voice: "Polly.Amy", language: "en-GB" },
+      "Warning. This call may involve financial requests. Do not transfer money or share bank details unless you are certain who you are speaking to."
+    );
+  } else {
+    // normal protection message
+    twiml.say(
+      { voice: "Polly.Amy", language: "en-GB" },
+      "This call is being connected via Home Call Guard. Please be cautious when sharing personal information."
+    );
+  }
+
+  // short pause so message is heard
+  twiml.pause({ length: 1 });
+
+  // ✅ CONNECT CALL
   const dial = twiml.dial();
   dial.number("+447715562700");
 }
