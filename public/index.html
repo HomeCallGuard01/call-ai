@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Home Call Guard
-</title>
+  <title>Home Call Guard</title>
   <style>
     body {
       font-family: Arial;
@@ -15,65 +14,52 @@
       color: #00ff99;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
+    .box {
+      background: #111a2e;
+      padding: 20px;
       margin-top: 20px;
+      border-radius: 10px;
     }
 
-    th, td {
-      border: 1px solid #333;
-      padding: 10px;
-    }
-
-    th {
-      background: #111827;
+    button {
+      background: #00ff99;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
     }
   </style>
 </head>
-
 <body>
 
 <h1>📞 Home Call Guard</h1>
 
-<h2>Recent Calls</h2>
+<div class="box">
+  <h2>Protect your family from scam calls</h2>
+  <p>No apps. No confusion. Works automatically.</p>
+</div>
 
-<table>
-  <thead>
-    <tr>
-      <th>Number</th>
-      <th>Status</th>
-      <th>Result</th>
-    </tr>
-  </thead>
-  <tbody>
-  </tbody>
-</table>
+<div class="box">
+  <h3>Why people use it</h3>
+  <ul>
+    <li>✔ Feel confident answering the phone again</li>
+    <li>✔ Protect elderly parents and relatives</li>
+    <li>✔ Reduce risk of financial scams</li>
+  </ul>
+</div>
 
-<script>
-async function loadCalls() {
-  const res = await fetch('/logs');
-  const data = await res.json();
+<div class="box">
+  <h3>How it works</h3>
+  <p>Unknown callers are warned and monitored.</p>
+  <p>Known contacts go straight through.</p>
+</div>
 
-  const table = document.querySelector("tbody");
-  table.innerHTML = "";
-
-  data.reverse().forEach(call => {
-    const row = document.createElement("tr");
-
-    row.innerHTML = `
-      <td>${call.number}</td>
-      <td>${call.status}</td>
-      <td>${call.result}</td>
-    `;
-
-    table.appendChild(row);
-  });
-}
-
-loadCalls();
-setInterval(loadCalls, 5000);
-</script>
+<div class="box">
+  <h2>£5/month (early access)</h2>
+  <p>Limited spaces available.</p>
+  <button onclick="alert('Message me to get set up')">Get Started</button>
+</div>
 
 </body>
 </html>
