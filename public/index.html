@@ -1,36 +1,62 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <title>Home Call Guard</title>
+
   <style>
     body {
       font-family: Arial;
       background: #0b1220;
       color: white;
       padding: 20px;
+      text-align: center;
     }
 
     h1 {
       color: #00ff99;
+      font-size: 36px;
     }
 
     .box {
       background: #111a2e;
       padding: 20px;
-      margin-top: 20px;
+      margin: 20px auto;
       border-radius: 10px;
+      max-width: 600px;
+    }
+
+    ul {
+      text-align: left;
+      display: inline-block;
+    }
+
+    .buttons {
+      margin-top: 30px;
     }
 
     button {
-      background: #00ff99;
-      border: none;
-      padding: 10px 20px;
+      padding: 15px 25px;
       font-size: 16px;
-      border-radius: 5px;
+      border-radius: 8px;
       cursor: pointer;
+      margin: 10px;
+    }
+
+    .primary {
+      background-color: #00ff99;
+      color: black;
+      border: none;
+    }
+
+    .secondary {
+      background-color: transparent;
+      color: #00ff99;
+      border: 2px solid #00ff99;
     }
   </style>
 </head>
+
 <body>
 
 <h1>📞 Home Call Guard</h1>
@@ -51,15 +77,36 @@
 
 <div class="box">
   <h3>How it works</h3>
-  <p>Unknown callers are warned and monitored.</p>
-  <p>Known contacts go straight through.</p>
+  <p>Unknown callers are screened and monitored.</p>
+  <p>Known contacts go straight through with no interruption.</p>
 </div>
 
 <div class="box">
   <h2>£5/month (early access)</h2>
-  <p>Limited spaces available.</p>
-  <button onclick="alert('Message me to get set up')">Get Started</button>
+  <p>Takes 2 minutes to set up.</p>
 </div>
+
+<div class="buttons">
+
+  <!-- WHATSAPP BUTTON -->
+  <a href="https://wa.me/447733413030" target="_blank">
+    <button class="primary">
+      Get Protected Today (We Set It Up For You)
+    </button>
+  </a>
+
+  <!-- DASHBOARD BUTTON -->
+  <a href="/dashboard">
+    <button class="secondary">
+      Upload Contacts (CSV)
+    </button>
+  </a>
+
+</div>
+
+<p style="margin-top: 30px; font-size: 14px; color: #aaa;">
+  Limited early access available
+</p>
 
 </body>
 </html>
