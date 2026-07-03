@@ -12,6 +12,10 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.static("public"));
 
+app.get("/", (req, res) => {
+  res.send("Home Call Guard is live 👍");
+});
+
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // 🔑 ADD YOUR API KEY HERE (WITH QUOTES)
