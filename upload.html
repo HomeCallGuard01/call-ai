@@ -1,145 +1,506 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Home Call Guard</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial;
-      background: #0f172a;
-      color: white;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Call Guard</title>
+<style>
+  * {
+    box-sizing: border-box;
+  }
 
-    .container {
-      display: flex;
-      height: 100vh;
-    }
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: white;
+    font-size: 16px;
+  }
 
-    .sidebar {
-      width: 220px;
-      background: #020617;
-      padding: 20px;
-      border-right: 1px solid #1e293b;
-    }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 40px;
+    background: #020617;
+    border-bottom: 1px solid #1e293b;
+  }
 
-    .logo {
-      font-size: 20px;
-      font-weight: bold;
-      color: #22c55e;
-      margin-bottom: 30px;
-    }
+  .topbar-logo {
+    height: 44px;
+  }
 
-    .nav-item {
-      margin: 10px 0;
-      color: #94a3b8;
-    }
+  .topbar-title {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
 
-    .nav-item.active {
-      color: white;
+  .topbar-title .accent {
+    color: #00ff99;
+  }
+
+  .topbar-subtitle {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+
+  .main {
+    padding: 40px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .error-banner {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    padding: 14px 18px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    font-size: 15px;
+  }
+
+  .card {
+    background: #020617;
+    padding: 24px;
+    border-radius: 10px;
+    border: 1px solid #1e293b;
+    margin-bottom: 20px;
+  }
+
+  .status-card {
+    text-align: center;
+    padding: 40px 24px;
+  }
+
+  .shield-icon {
+    animation: shieldPulse 2.8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shield-icon {
+      animation: none;
+    }
+  }
+
+  @keyframes shieldPulse {
+    0%, 100% {
+      transform: scale(1);
+      filter: drop-shadow(0 0 0px rgba(34, 197, 94, 0.55));
+    }
+    50% {
+      transform: scale(1.04);
+      filter: drop-shadow(0 0 20px rgba(34, 197, 94, 0.55));
+    }
+  }
+
+  .shield-fill {
+    fill: #16341f;
+    stroke: #22c55e;
+  }
+
+  .shield-check {
+    fill: none;
+    stroke: #22c55e;
+  }
+
+  .status-card[data-state="loading"] .shield-icon {
+    animation: none;
+  }
+
+  .status-card[data-state="loading"] .shield-fill {
+    fill: #1e293b;
+    stroke: #475569;
+  }
+
+  .status-card[data-state="loading"] .shield-check {
+    stroke: #64748b;
+  }
+
+  .status-card[data-state="loading"] .status-title {
+    color: #94a3b8;
+  }
+
+  .status-card[data-state="unknown"] .shield-icon {
+    animation: none;
+  }
+
+  .status-card[data-state="unknown"] .shield-fill {
+    fill: #1e293b;
+    stroke: #f59e0b;
+  }
+
+  .status-card[data-state="unknown"] .shield-check {
+    stroke: #f59e0b;
+  }
+
+  .status-card[data-state="unknown"] .status-title {
+    color: #f59e0b;
+  }
+
+  .status-title {
+    font-size: 34px;
+    font-weight: 700;
+    color: #22c55e;
+    margin: 20px 0 8px;
+  }
+
+  .status-sub {
+    font-size: 16px;
+    color: #cbd5e1;
+    max-width: 440px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+
+  .stat-number {
+    font-size: 30px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .stat-label {
+    margin-top: 6px;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+
+  h2 {
+    margin-top: 0;
+    font-size: 20px;
+  }
+
+  .empty-state {
+    color: #94a3b8;
+    font-size: 15px;
+    padding: 10px 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    padding: 10px;
+    border-bottom: 1px solid #1e293b;
+    text-align: left;
+    font-size: 14px;
+  }
+
+  th {
+    color: #94a3b8;
+    font-weight: 600;
+  }
+
+  .tag {
+    padding: 4px 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .tag-scam {
+    background: #dc2626;
+    color: white;
+  }
+
+  .tag-safe {
+    background: #14532d;
+    color: #bbf7d0;
+  }
+
+  button {
+    background: #22c55e;
+    border: none;
+    padding: 10px 20px;
+    color: black;
+    font-weight: bold;
+    font-size: 15px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  input {
+    margin-bottom: 10px;
+    color: white;
+    font-size: 15px;
+  }
+
+  @media (max-width: 768px) {
+    .topbar {
+      padding: 16px 20px;
     }
 
     .main {
-      flex: 1;
-      padding: 40px;
+      padding: 24px 18px;
+      max-width: 100%;
     }
 
-    .card {
-      background: #020617;
-      padding: 20px;
-      border-radius: 10px;
-      border: 1px solid #1e293b;
-      margin-bottom: 20px;
+    .stats-grid {
+      grid-template-columns: 1fr 1fr;
     }
 
-    button {
-      background: #22c55e;
-      border: none;
-      padding: 10px 20px;
-      color: black;
-      font-weight: bold;
-      border-radius: 6px;
-      cursor: pointer;
+    table, thead, tbody, th, td, tr {
+      display: block;
     }
 
-    input {
-      margin-bottom: 10px;
+    thead {
+      display: none;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
+    td {
+      border-bottom: none;
+      padding: 4px 10px;
     }
 
-    th, td {
-      padding: 10px;
+    tr {
       border-bottom: 1px solid #1e293b;
-      text-align: left;
+      padding: 8px 0;
     }
+  }
 
-    .tag {
-      background: #dc2626;
-      padding: 4px 8px;
-      border-radius: 5px;
-      font-size: 12px;
+  @media (max-width: 420px) {
+    .stats-grid {
+      grid-template-columns: 1fr;
     }
-.logo {
-  padding: 10px 0;
-}
-
-  </style>
+  }
+</style>
 </head>
 
 <body>
 
-<div class="container">
-
-  <div class="sidebar">
-<div class="logo" style="display:flex; align-items:center; gap:12px; margin-bottom:30px;">
-  <img src="/logo.png" style="height:50px;">
-  <div style="font-size:20px; font-weight:600; letter-spacing:0.5px;">
-    Home Call <span style="color:#00ff99;">Guard</span>
+<header class="topbar">
+  <img src="/logo.png" alt="Home Call Guard logo" class="topbar-logo">
+  <div>
+    <div class="topbar-title">Home Call <span class="accent">Guard</span></div>
+    <div class="topbar-subtitle">Protection Dashboard</div>
   </div>
-</div>
+</header>
 
-    <div class="nav-item active">Dashboard</div>
-    <div class="nav-item">Call Logs</div>
-    <div class="nav-item">Contacts</div>
+<main class="main">
+
+  <h1 class="visually-hidden">Home Call Guard Dashboard</h1>
+
+  <div id="errorBanner" class="error-banner" role="status" hidden>
+    We're having trouble loading your live protection data right now. Your protection is still active — this will update automatically once the connection returns.
   </div>
 
-  <div class="main">
+  <section class="card status-card" id="statusCard" data-state="loading">
+    <svg class="shield-icon" width="120" height="120" viewBox="0 0 100 100" aria-hidden="true">
+      <path class="shield-fill" d="M50 5 L90 20 V50 C90 75 70 92 50 98 C30 92 10 75 10 50 V20 Z" stroke-width="2"/>
+      <path class="shield-check" d="M30 52 L44 66 L72 35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="status-title" id="statusTitle">Checking protection status…</div>
+    <p class="status-sub" id="statusSub">We're loading your live protection status.</p>
+  </section>
 
-    <h1>Dashboard</h1>
-
-    <div class="card">
-      <h3>Upload Contacts</h3>
-      <form action="/upload-contacts" method="post" enctype="multipart/form-data">
-        <input type="file" name="file"><br>
-        <button type="submit">Upload CSV</button>
-      </form>
+  <section class="stats-grid" aria-label="Protection statistics">
+    <div class="stat-card">
+      <div class="stat-number" id="statContacts">—</div>
+      <div class="stat-label">Protected contacts</div>
     </div>
-
-    <div class="card">
-      <h3>Recent Calls</h3>
-
-      <table>
-        <tr>
-          <th>Number</th>
-          <th>Status</th>
-          <th>AI Result</th>
-        </tr>
-
-        <tr>
-          <td>+447700900123</td>
-          <td><span class="tag">Unknown</span></td>
-          <td>Likely scam (energy)</td>
-        </tr>
-
-      </table>
+    <div class="stat-card">
+      <div class="stat-number" id="statCallsToday">—</div>
+      <div class="stat-label">Calls today</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-number" id="statBlocked">—</div>
+      <div class="stat-label">Scam calls blocked</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="statSafe">—</div>
+      <div class="stat-label">Safe calls</div>
+    </div>
+  </section>
 
-  </div>
+  <section class="card">
+    <h2>Recent Activity</h2>
+    <div id="activityContent">
+      <p class="empty-state">Your protection is active. No recent call activity to display.</p>
+    </div>
+  </section>
 
-</div>
+  <section class="card">
+    <h2>Upload Contacts</h2>
+
+    <form
+      action="/upload-contacts"
+      method="POST"
+      enctype="multipart/form-data"
+    >
+      <input
+        type="file"
+        id="contactsFile"
+        name="file"
+        accept=".csv"
+        required
+      />
+
+      <br><br>
+
+      <button type="submit">
+        Upload CSV
+      </button>
+    </form>
+  </section>
+
+</main>
+
+<script>
+  const REFRESH_MS = 15000;
+  const EMPTY_ACTIVITY_MESSAGE = "Your protection is active. No recent call activity to display.";
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = (value === undefined || value === null) ? 0 : value;
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value === undefined || value === null ? "" : value).replace(/[&<>"']/g, function (c) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[c];
+    });
+  }
+
+  function formatTime(value) {
+    if (!value) {
+      return "";
+    }
+    const date = new Date(value);
+    if (isNaN(date.getTime())) {
+      return "";
+    }
+    return date.toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" });
+  }
+
+  function renderActivity(calls) {
+    const container = document.getElementById("activityContent");
+
+    if (!calls || calls.length === 0) {
+      container.innerHTML = '<p class="empty-state">' + EMPTY_ACTIVITY_MESSAGE + '</p>';
+      return;
+    }
+
+    const rows = calls.map(function (call) {
+      const isScam = call.result === "SCAM";
+      const tagClass = isScam ? "tag tag-scam" : "tag tag-safe";
+
+      return "<tr>" +
+        "<td>" + escapeHtml(call.number || "Unknown") + "</td>" +
+        "<td>" + escapeHtml(call.status || "") + "</td>" +
+        '<td><span class="' + tagClass + '">' + escapeHtml(call.result || "") + "</span></td>" +
+        "<td>" + escapeHtml(formatTime(call.time)) + "</td>" +
+        "</tr>";
+    }).join("");
+
+    container.innerHTML =
+      "<table>" +
+      "<thead><tr><th>Number</th><th>Status</th><th>Result</th><th>Time</th></tr></thead>" +
+      "<tbody>" + rows + "</tbody>" +
+      "</table>";
+  }
+
+  function setStatus(state) {
+    const card = document.getElementById("statusCard");
+    const title = document.getElementById("statusTitle");
+    const sub = document.getElementById("statusSub");
+
+    if (!card || !title || !sub) {
+      return;
+    }
+
+    card.dataset.state = state;
+
+    if (state === "protected") {
+      title.textContent = "Protected";
+      sub.textContent = "Home Call Guard is actively screening your calls. Unknown callers are checked before they can reach you.";
+    } else if (state === "unknown") {
+      title.textContent = "Status unavailable";
+      sub.textContent = "We can't confirm your live protection status right now. This will update automatically once the connection returns.";
+    } else {
+      title.textContent = "Checking protection status…";
+      sub.textContent = "We're loading your live protection status.";
+    }
+  }
+
+  function showError() {
+    const el = document.getElementById("errorBanner");
+    if (el) {
+      el.hidden = false;
+    }
+  }
+
+  function hideError() {
+    const el = document.getElementById("errorBanner");
+    if (el) {
+      el.hidden = true;
+    }
+  }
+
+  async function loadDashboard() {
+    try {
+      const res = await fetch("/dashboard-data");
+
+      if (!res.ok) {
+        throw new Error("Request failed");
+      }
+
+      const data = await res.json();
+
+      setText("statContacts", data.protectedContacts);
+      setText("statCallsToday", data.callsToday);
+      setText("statBlocked", data.blocked);
+      setText("statSafe", data.safe);
+
+      renderActivity(data.recentCalls);
+
+      setStatus("protected");
+      hideError();
+    } catch (err) {
+      setStatus("unknown");
+      showError();
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    loadDashboard();
+    setInterval(loadDashboard, REFRESH_MS);
+  });
+</script>
 
 </body>
 </html>
