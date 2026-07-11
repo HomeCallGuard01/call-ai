@@ -124,13 +124,36 @@ Key cards:
 
 ---
 
-## Sprint 2B - Next
+## Sprint 2B - Deferred
 
 Build Stripe Checkout integration.
 
 Expected result:
 
 Customer clicks Start Protection, pays £4.99/month, then lands on onboarding page.
+
+Status: not yet built. Development took the dashboard/persistence track first (Sprints 4 and 6, see below) instead of continuing directly to Stripe. Detailed sprint-by-sprint status now lives in `docs/PROJECT_STATUS.md` — this file is the high-level roadmap, that one is the current state.
+
+---
+
+## Dashboard & Call History - Complete (Sprints 4 and 6)
+
+Built cloud contact storage, a live customer dashboard, and persistent, idempotent call history — see `docs/PROJECT_STATUS.md` for full detail on each sprint.
+
+Key outcome: the dashboard (`/dashboard`) is now backed entirely by Supabase (`contacts` and `calls` tables). No in-memory or local-file state remains for customer-facing data. `calls` is locked to server-only (service-role) access rather than the anon key `contacts` still uses — see `docs/DECISIONS.md` for why.
+
+A future commercial access model (households, subscriptions, entitlements) has been designed and approved for later sprints but not built yet — documentation only, see `docs/DECISIONS.md`.
+
+---
+
+## Roadmap - Next
+
+- Sprint 7: Household Identity (households table, auth, per-household RLS)
+- Sprint 8: Payments & Entitlements (Stripe Checkout, deferred from Sprint 2B above)
+- Sprint 9: Weekly Protection Reports
+- Sprint 10: Customer Portal
+- Sprint 11: Admin Console
+- Sprint 12: Launch Candidate
 
 ---
 
