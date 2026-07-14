@@ -1,3 +1,23 @@
+Home Call Guard
+
+Document:
+Project
+
+Version:
+0.6
+
+Last Updated:
+13 July 2026
+
+Current Sprint:
+Sprint 6 – Reliable Call History
+
+Owner:
+Andrew Deane
+
+Status:
+Active
+
 # Home Call Guard
 
 ## Vision

@@ -1,3 +1,23 @@
+Home Call Guard
+
+Document:
+Decisions
+
+Version:
+0.6
+
+Last Updated:
+13 July 2026
+
+Current Sprint:
+Sprint 6 – Reliable Call History
+
+Owner:
+Andrew Deane
+
+Status:
+Active
+
 # Home Call Guard Engineering Decisions
 
 This document records important technical and business decisions made during the development of Home Call Guard.
@@ -271,3 +291,63 @@ A `plans` table (subscriptions referencing plan rows instead of embedding `strip
 - A founding-user discount is real Stripe billing (a coupon or discounted price on a genuine subscription) plus a parallel `entitlements` row with `source = 'stripe'` and `external_reference` pointing at the Stripe subscription ID, giving a durable internal label independent of Stripe's own price/plan bookkeeping.
 - Promotions and free trials expire via `ends_at`, checked at read time (no batch job required for correctness); a periodic job to flip `status` to `expired` is a later, optional convenience for admin tooling.
 - Scope split: `households` belongs in Sprint 7 (Household Identity). `entitlements`, `subscriptions`, and the conditional `plans` table belong in Sprint 8 (Payments & Entitlements) — the sprint's own name now settles what was previously an open question about whether `entitlements` should ship alongside `households` instead.
+
+Decision 010 – Password & Account Security Roadmap
+Status: Planned (Post-Beta)
+Background
+The MVP uses Supabase Authentication, which provides secure password hashing and authentication. As Home Call Guard grows, additional usability and security enhancements should be evaluated.
+Future Improvements
+Password Policy
+Review minimum password length.
+Require a mix of uppercase, lowercase, numbers and special characters (or consider passphrase guidance instead of overly complex rules).
+Prevent commonly breached passwords using a service such as Have I Been Pwned's password API (without transmitting the user's actual password).
+Display a password strength meter during registration.
+Password Generation
+Consider an optional Generate Secure Password button.
+Allow generated passwords to be copied easily.
+Ensure compatibility with password managers.
+Password Visibility
+Eye icon to show/hide password.
+Separate eye icon for Confirm Password.
+Remember visibility only for the current session.
+Password Managers
+Ensure registration and login work seamlessly with:
+Apple Passwords
+1Password
+Bitwarden
+LastPass
+Chrome Password Manager
+Future Authentication
+Evaluate:
+Passkeys (preferred long-term)
+Apple Sign In
+Google Sign In
+Microsoft Sign In
+Security Monitoring
+Failed login rate limiting
+Temporary account lock after repeated failures
+Suspicious login alerts
+Device recognition
+Optional Two-Factor Authentication (2FA)
+Priority
+Not required for Beta.
+Current priority remains:
+Registration
+Login
+Stripe
+Connect phone number
+First protected call
+Dashboard
+Password enhancements should be implemented once the product is stable and customers are actively using it.
+One thing I would add, though, is a "Password Review" milestone before launch. Before Home Call Guard goes live to paying customers, we should deliberately spend half a day reviewing the entire authentication flow:
+Registration
+Email verification
+Login
+Password reset
+Password strength
+Session timeout
+Brute-force protection
+Password manager compatibility
+Mobile usability
+Accessibility
+That kind of focused review often catches small issues (like confusing error messages or autofill quirks) that are easy to fix but make a noticeable difference to users. For a security-focused product like Home Call Guard, having a polished authentication experience will help reinforce trust from the very first interaction.

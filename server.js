@@ -6,19 +6,30 @@ const twilio = require("twilio");
 const OpenAI = require("openai");
 const fs = require("fs");
 const multer = require("multer");
+const cookieParser = require("cookie-parser");
 const { createClient } = require("@supabase/supabase-js");
+const { setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
 
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(cookieParser());
 app.use(express.static("public"));
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
+// persistSession/autoRefreshToken disabled: this client now performs
+// per-request signUp/signInWithPassword calls for different users, and it's
+// a shared module-level instance — without this it would keep an in-memory
+// "current session" that concurrent requests from different users could
+// overwrite. Every call site below uses the session/user returned directly
+// from its own call, never an ambient one, so this only removes an unused,
+// unsafe side effect.
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_ANON_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
 );
 
 // Service-role client, used only for the `calls` table. `calls` has RLS
@@ -354,6 +365,256 @@ app.post("/upload-contacts", upload.single("file"), async (req, res) => {
     console.error("UPLOAD ERROR:", err);
     res.status(500).send("Upload failed");
   }
+});
+
+// AUTH HELPERS
+
+// Builds a Supabase client scoped to one specific user's own session —
+// never the shared `supabase` instance above, and never the service-role
+// key. Used anywhere a request needs to act as that user under RLS.
+function buildUserScopedClient() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+
+// Ensures the signed-in user has a household and a user_roles row, using
+// only that user's own authenticated session — no service-role key
+// anywhere in this path. Relies on the policies added in
+// supabase/migrations/006_authenticated_household_self_service.sql. Safe
+// to call on every registration/login: it's a no-op if both already exist.
+//
+// logPrefix drives the TEMPORARY DEBUG LOGGING below — remove both once
+// the first-login household/role flow is confirmed working end to end.
+async function ensureHouseholdAndRole(userClient, userId, email, logPrefix) {
+  const log = msg => {
+    if (logPrefix) console.log(`${logPrefix} ${msg}`);
+  };
+
+  log("Checking household");
+  const { data: existingHousehold, error: householdSelectError } = await userClient
+    .from("households")
+    .select("id")
+    .eq("auth_user_id", userId)
+    .maybeSingle();
+
+  if (householdSelectError) throw householdSelectError;
+
+  log(`Household exists? ${!!existingHousehold}`);
+
+  if (!existingHousehold) {
+    log("Creating household...");
+
+    // Try to claim the pre-existing unclaimed default household first.
+    const { data: claimed, error: claimError } = await userClient
+      .from("households")
+      .update({ auth_user_id: userId, email })
+      .is("auth_user_id", null)
+      .select();
+
+    if (claimError) throw claimError;
+
+    if (!claimed || claimed.length === 0) {
+      // Nothing unclaimed to take — create a brand-new household instead.
+      const { error: insertError } = await userClient
+        .from("households")
+        .insert({ auth_user_id: userId, email, status: "active" });
+
+      if (insertError) throw insertError;
+    }
+
+    log("Household created");
+  }
+
+  const { data: existingRole, error: roleSelectError } = await userClient
+    .from("user_roles")
+    .select("auth_user_id")
+    .eq("auth_user_id", userId)
+    .maybeSingle();
+
+  if (roleSelectError) throw roleSelectError;
+
+  if (!existingRole) {
+    log("Creating role...");
+
+    const { error: roleInsertError } = await userClient
+      .from("user_roles")
+      .insert({ auth_user_id: userId, role: "household" });
+
+    if (roleInsertError) throw roleInsertError;
+
+    log("Role created");
+  }
+}
+
+// AUTH: REGISTER
+
+app.post("/register", async (req, res) => {
+  const { email, password, confirm_password } = req.body;
+
+  if (!email || !password) {
+    const q = email ? `&email=${encodeURIComponent(email)}` : "";
+    return res.redirect(`/register.html?state=error&reason=validation${q}`);
+  }
+
+  if (password !== confirm_password) {
+    return res.redirect(
+      `/register.html?state=error&reason=mismatch&email=${encodeURIComponent(email)}`
+    );
+  }
+
+  const { data, error } = await supabase.auth.signUp({ email, password });
+
+  // TEMPORARY DEBUG LOGGING — remove once household creation is confirmed working.
+  console.log("DEBUG /register signUp result:", {
+    error: error?.message || null,
+    userId: data?.user?.id || null,
+    hasSession: !!data?.session,
+    userConfirmedAt: data?.user?.confirmed_at || null,
+    userEmailConfirmedAt: data?.user?.email_confirmed_at || null,
+  });
+
+  if (error) {
+    console.error("SUPABASE SIGNUP ERROR:", error.message);
+    return res.redirect(
+      `/register.html?state=error&reason=failed&email=${encodeURIComponent(email)}`
+    );
+  }
+
+  // Email confirmation is required on this project, so signUp() does not
+  // return a session here — household/role creation happens on first
+  // login instead (see /login below), once a real session exists.
+  if (!data.session) {
+    return res.redirect("/register.html?state=success");
+  }
+
+  // Only reachable if email confirmation is ever turned off: signUp()
+  // would then return a session immediately, so household/role setup can
+  // happen right away instead of waiting for first login.
+  try {
+    const userClient = buildUserScopedClient();
+    await userClient.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
+    await ensureHouseholdAndRole(userClient, data.user.id, email, "[REGISTER]");
+  } catch (err) {
+    console.error("REGISTER HOUSEHOLD SETUP ERROR:", err.message);
+    return res.redirect(
+      `/register.html?state=error&reason=failed&email=${encodeURIComponent(email)}`
+    );
+  }
+
+  setSessionCookies(res, data.session);
+  return res.redirect("/dashboard");
+});
+
+// AUTH: LOGIN
+
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).send("Email and password are required");
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error || !data.session) {
+    console.error("SUPABASE LOGIN ERROR:", error?.message);
+    return res.redirect("/login.html?error=invalid_credentials");
+  }
+
+  // TEMPORARY DEBUG LOGGING — remove once household creation is confirmed working.
+  console.log("[LOGIN] User authenticated");
+
+  // Confirmed email is the point a real session first exists, so this is
+  // where a first-time customer's household/role actually get created —
+  // see ensureHouseholdAndRole() above. No-op on every login after that.
+  try {
+    const userClient = buildUserScopedClient();
+    await userClient.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
+    await ensureHouseholdAndRole(userClient, data.user.id, email, "[LOGIN]");
+  } catch (err) {
+    console.error("LOGIN HOUSEHOLD SETUP ERROR:", err.message);
+    return res.redirect("/login.html?error=setup_failed");
+  }
+
+  console.log("[LOGIN] Redirect dashboard");
+  setSessionCookies(res, data.session);
+  return res.redirect("/dashboard");
+});
+
+// AUTH: LOGOUT
+
+app.post("/logout", (req, res) => {
+  clearSessionCookies(res);
+  res.redirect("/login.html");
+});
+
+// AUTH: FORGOT PASSWORD
+
+app.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+
+  if (email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${process.env.APP_URL}/reset-password.html`,
+    });
+
+    if (error) {
+      console.error("SUPABASE RESET EMAIL ERROR:", error.message);
+    }
+  }
+
+  // Same response whether or not the email is registered, to avoid
+  // leaking which addresses have accounts.
+  res.send("If that email is registered, a password reset link has been sent.");
+});
+
+// AUTH: RESET PASSWORD COMPLETE
+
+app.post("/reset-password-complete", async (req, res) => {
+  const { access_token, refresh_token, new_password } = req.body;
+
+  if (!access_token || !refresh_token || !new_password) {
+    return res.status(400).send("Missing reset token or new password");
+  }
+
+  // Fresh, per-request client: the recovery token belongs to one specific
+  // user, so it must never be set on the shared `supabase` instance above.
+  const resetClient = buildUserScopedClient();
+
+  const { error: sessionError } = await resetClient.auth.setSession({
+    access_token,
+    refresh_token,
+  });
+
+  if (sessionError) {
+    console.error("SUPABASE RESET SESSION ERROR:", sessionError.message);
+    return res.status(400).send("Password reset link is invalid or has expired.");
+  }
+
+  const { error: updateError } = await resetClient.auth.updateUser({
+    password: new_password,
+  });
+
+  if (updateError) {
+    console.error("SUPABASE PASSWORD UPDATE ERROR:", updateError.message);
+    return res.status(400).send("Password reset failed. Please try again.");
+  }
+
+  const {
+    data: { session },
+  } = await resetClient.auth.getSession();
+
+  setSessionCookies(res, session);
+  return res.redirect("/dashboard");
 });
 
 // PAGES

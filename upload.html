@@ -27,7 +27,20 @@
   }
 
   .topbar-logo {
-    height: 44px;
+    width: 56px;
+    height: 64px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .topbar-logo img {
+    position: absolute;
+    top: -38.6px;
+    left: -22.6px;
+    width: 219.4px;
+    height: 146.3px;
+    max-width: none;
   }
 
   .topbar-title {
@@ -97,11 +110,11 @@
   @keyframes shieldPulse {
     0%, 100% {
       transform: scale(1);
-      filter: drop-shadow(0 0 0px rgba(34, 197, 94, 0.55));
+      filter: drop-shadow(0 0 0px rgba(34, 197, 94, 0.65));
     }
     50% {
-      transform: scale(1.04);
-      filter: drop-shadow(0 0 20px rgba(34, 197, 94, 0.55));
+      transform: scale(1.09);
+      filter: drop-shadow(0 0 34px rgba(34, 197, 94, 0.85));
     }
   }
 
@@ -297,7 +310,9 @@
 <body>
 
 <header class="topbar">
-  <img src="/logo.png" alt="Home Call Guard logo" class="topbar-logo">
+  <div class="topbar-logo">
+    <img src="/logo.png" alt="Home Call Guard logo">
+  </div>
   <div>
     <div class="topbar-title">Home Call <span class="accent">Guard</span></div>
     <div class="topbar-subtitle">Protection Dashboard</div>
@@ -313,7 +328,7 @@
   </div>
 
   <section class="card status-card" id="statusCard" data-state="loading">
-    <svg class="shield-icon" width="120" height="120" viewBox="0 0 100 100" aria-hidden="true">
+    <svg class="shield-icon" width="180" height="180" viewBox="0 0 100 100" aria-hidden="true">
       <path class="shield-fill" d="M50 5 L90 20 V50 C90 75 70 92 50 98 C30 92 10 75 10 50 V20 Z" stroke-width="2"/>
       <path class="shield-check" d="M30 52 L44 66 L72 35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
@@ -343,7 +358,7 @@
   <section class="card">
     <h2>Recent Activity</h2>
     <div id="activityContent">
-      <p class="empty-state">Your protection is active. No recent call activity to display.</p>
+      <p class="empty-state">No recent call activity yet.</p>
     </div>
   </section>
 
@@ -375,7 +390,7 @@
 
 <script>
   const REFRESH_MS = 15000;
-  const EMPTY_ACTIVITY_MESSAGE = "Your protection is active. No recent call activity to display.";
+  const EMPTY_ACTIVITY_MESSAGE = "No recent call activity yet.";
 
   function setText(id, value) {
     const el = document.getElementById(id);

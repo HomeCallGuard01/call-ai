@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Call Guard — Log In</title>
+
+<style>
+  body {
+    font-family: Arial;
+    background: #0b1220;
+    color: white;
+    padding: 20px;
+    text-align: center;
+  }
+
+  h1 {
+    color: #00ff99;
+    font-size: 28px;
+  }
+
+  .box {
+    background: #111a2e;
+    padding: 30px;
+    margin: 20px auto;
+    border-radius: 10px;
+    max-width: 400px;
+    text-align: left;
+  }
+
+  label {
+    display: block;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+
+  input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: white;
+    font-size: 15px;
+  }
+
+  button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 12px;
+    font-size: 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    background-color: #00ff99;
+    color: black;
+    border: none;
+    font-weight: bold;
+  }
+
+  .footer-link {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 14px;
+  }
+
+  .footer-link a {
+    color: #00ff99;
+  }
+
+  .error-banner {
+    background: #1e293b;
+    border: 1px solid #f59e0b;
+    color: #fde68a;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: left;
+  }
+</style>
+</head>
+
+<body>
+
+<img src="/logo.png" style="height:80px; margin-bottom:10px;">
+
+<h1>Log in</h1>
+
+<div id="errorBanner" class="error-banner" role="alert" hidden></div>
+
+<div class="box">
+  <form action="/login" method="POST">
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" required>
+
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required>
+
+    <button type="submit">Log In</button>
+  </form>
+
+  <div class="footer-link">
+    <a href="/forgot-password.html">Forgot password?</a>
+  </div>
+  <div class="footer-link">
+    New here? <a href="/register.html">Create an account</a>
+  </div>
+</div>
+
+<script>
+  var LOGIN_ERROR_MESSAGES = {
+    invalid_credentials: "Incorrect email or password. Please try again.",
+    setup_failed: "We couldn't finish setting up your account. Please try again or contact support."
+  };
+
+  var params = new URLSearchParams(window.location.search);
+  var loginError = params.get("error");
+
+  if (loginError && LOGIN_ERROR_MESSAGES[loginError]) {
+    var banner = document.getElementById("errorBanner");
+    banner.textContent = LOGIN_ERROR_MESSAGES[loginError];
+    banner.hidden = false;
+  }
+</script>
+
+</body>
+</html>

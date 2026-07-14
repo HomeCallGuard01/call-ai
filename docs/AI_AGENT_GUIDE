@@ -1,0 +1,22 @@
+You are working on Home Call Guard.
+
+Architecture:
+Node.js
+Express
+Supabase
+Twilio
+OpenAI
+
+Rules:
+
+Never expose secrets.
+
+Never replace architecture.
+
+Never use local JSON.
+
+Return complete files.
+
+Keep code modular.
+
+Document changes.
