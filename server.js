@@ -8,7 +8,9 @@ const fs = require("fs");
 const multer = require("multer");
 const cookieParser = require("cookie-parser");
 const { createClient } = require("@supabase/supabase-js");
-const { setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
+const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
+const { getHouseholdByTwilioNumber } = require("./database/households");
+const { getContacts, insertContacts } = require("./database/contacts");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -61,21 +63,7 @@ function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
 }
 
-async function getContacts() {
-  const { data, error } = await supabase
-    .from("contacts")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("SUPABASE CONTACT READ ERROR:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-async function getCallsToday() {
+async function getCallsToday(householdId) {
   if (!supabaseAdmin) return [];
 
   const startOfToday = new Date();
@@ -84,6 +72,7 @@ async function getCallsToday() {
   const { data, error } = await supabaseAdmin
     .from("calls")
     .select("*")
+    .eq("household_id", householdId)
     .gte("created_at", startOfToday.toISOString());
 
   if (error) {
@@ -94,12 +83,13 @@ async function getCallsToday() {
   return data || [];
 }
 
-async function getRecentCalls(limit) {
+async function getRecentCalls(householdId, limit) {
   if (!supabaseAdmin) return [];
 
   const { data, error } = await supabaseAdmin
     .from("calls")
     .select("*")
+    .eq("household_id", householdId)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -111,7 +101,7 @@ async function getRecentCalls(limit) {
   return data || [];
 }
 
-async function logCall({ callSid, number, status, result, aiModel, processingTimeMs }) {
+async function logCall({ callSid, number, status, result, aiModel, processingTimeMs, householdId }) {
   if (!supabaseAdmin) {
     console.error("SUPABASE CALL LOG ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
     return;
@@ -127,6 +117,7 @@ async function logCall({ callSid, number, status, result, aiModel, processingTim
         result,
         ai_model: aiModel,
         processing_time_ms: processingTimeMs,
+        household_id: householdId,
       },
       { onConflict: "call_sid", ignoreDuplicates: true }
     );
@@ -150,7 +141,13 @@ function toClientCall(call) {
 app.post("/voice", async (req, res) => {
   const twiml = new VoiceResponse();
 
-  const contacts = await getContacts();
+  const household = await getHouseholdByTwilioNumber(req.body.To);
+
+  if (!household) {
+    console.error("CALL ROUTING ERROR: no household matches dialled number", req.body.To);
+  }
+
+  const contacts = household ? await getContacts(household.id) : [];
   const caller = req.body.From;
   const callerNorm = normaliseNumber(caller);
 
@@ -192,7 +189,13 @@ app.post("/process", async (req, res) => {
   const from = req.body.From;
   const callSid = req.body.CallSid;
 
-  const contacts = await getContacts();
+  const household = await getHouseholdByTwilioNumber(req.body.To);
+
+  if (!household) {
+    console.error("CALL ROUTING ERROR: no household matches dialled number", req.body.To);
+  }
+
+  const contacts = household ? await getContacts(household.id) : [];
   const fromNorm = normaliseNumber(from);
 
   const isKnown = contacts.some(
@@ -251,14 +254,19 @@ app.post("/process", async (req, res) => {
     }
   }
 
-  logCall({
-    callSid,
-    number: from,
-    status: isKnown ? "Known" : "Unknown",
-    result: isScam ? "SCAM" : "SAFE",
-    aiModel,
-    processingTimeMs: Date.now() - processingStart,
-  }).catch(err => console.error("CALL LOG FAILED:", err.message));
+  if (household) {
+    logCall({
+      callSid,
+      number: from,
+      status: isKnown ? "Known" : "Unknown",
+      result: isScam ? "SCAM" : "SAFE",
+      aiModel,
+      processingTimeMs: Date.now() - processingStart,
+      householdId: household.id,
+    }).catch(err => console.error("CALL LOG FAILED:", err.message));
+  } else {
+    console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
+  }
 
   if (isScam) {
     twiml.say(
@@ -283,11 +291,11 @@ app.post("/process", async (req, res) => {
 
 // DASHBOARD API
 
-app.get("/dashboard-data", async (req, res) => {
+app.get("/dashboard-data", requireAuth, async (req, res) => {
   const [contacts, callsToday, recentCalls] = await Promise.all([
-    getContacts(),
-    getCallsToday(),
-    getRecentCalls(10),
+    getContacts(req.household.id),
+    getCallsToday(req.household.id),
+    getRecentCalls(req.household.id, 10),
   ]);
 
   res.json({
@@ -308,19 +316,19 @@ app.get("/test-db", async (req, res) => {
   });
 });
 
-app.get("/test-get-contacts", async (req, res) => {
-  const contacts = await getContacts();
+app.get("/test-get-contacts", requireAuth, async (req, res) => {
+  const contacts = await getContacts(req.household.id);
   res.json({ success: true, data: contacts });
 });
 
-app.get("/logs", async (req, res) => {
-  const calls = await getRecentCalls(200);
+app.get("/logs", requireAuth, async (req, res) => {
+  const calls = await getRecentCalls(req.household.id, 200);
   res.json(calls.map(toClientCall));
 });
 
 // UPLOAD CONTACTS
 
-app.post("/upload-contacts", upload.single("file"), async (req, res) => {
+app.post("/upload-contacts", requireAuth, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).send("No file uploaded");
@@ -348,15 +356,7 @@ app.post("/upload-contacts", upload.single("file"), async (req, res) => {
       return res.status(400).send("No valid contacts found in CSV");
     }
 
-    const { data: savedContacts, error } = await supabase
-      .from("contacts")
-      .insert(contacts)
-      .select();
-
-    if (error) {
-      console.error("SUPABASE CONTACT UPLOAD ERROR:", error);
-      return res.status(500).send("Contacts upload failed");
-    }
+    const savedContacts = await insertContacts(req.household.id, contacts);
 
     res.send(
       `Contacts uploaded successfully! ${savedContacts.length} contacts saved to Supabase.`
