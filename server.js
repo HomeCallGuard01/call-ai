@@ -465,15 +465,12 @@ app.post("/register", async (req, res) => {
     );
   }
 
-  const { data, error } = await supabase.auth.signUp({ email, password });
-
-  // TEMPORARY DEBUG LOGGING — remove once household creation is confirmed working.
-  console.log("DEBUG /register signUp result:", {
-    error: error?.message || null,
-    userId: data?.user?.id || null,
-    hasSession: !!data?.session,
-    userConfirmedAt: data?.user?.confirmed_at || null,
-    userEmailConfirmedAt: data?.user?.email_confirmed_at || null,
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${process.env.APP_URL}/confirmed.html`,
+    },
   });
 
   if (error) {
@@ -517,18 +514,22 @@ app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).send("Email and password are required");
+    return res.redirect("/login.html?error=validation");
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error || !data.session) {
     console.error("SUPABASE LOGIN ERROR:", error?.message);
+
+    if (error?.message?.toLowerCase().includes("email not confirmed")) {
+      return res.redirect(
+        `/login.html?error=unconfirmed&email=${encodeURIComponent(email)}`
+      );
+    }
+
     return res.redirect("/login.html?error=invalid_credentials");
   }
-
-  // TEMPORARY DEBUG LOGGING — remove once household creation is confirmed working.
-  console.log("[LOGIN] User authenticated");
 
   // Confirmed email is the point a real session first exists, so this is
   // where a first-time customer's household/role actually get created —
@@ -548,6 +549,32 @@ app.post("/login", async (req, res) => {
   console.log("[LOGIN] Redirect dashboard");
   setSessionCookies(res, data.session);
   return res.redirect("/dashboard");
+});
+
+// AUTH: RESEND CONFIRMATION
+
+app.post("/resend-confirmation", async (req, res) => {
+  const { email } = req.body;
+
+  if (email) {
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: `${process.env.APP_URL}/confirmed.html`,
+      },
+    });
+
+    // Logged server-side only — never surfaced to the customer, whether
+    // it's a rate limit, an unknown address, or anything else. The
+    // response is identical either way so this never reveals whether an
+    // account exists for that email.
+    if (error) {
+      console.error("SUPABASE RESEND CONFIRMATION ERROR:", error.message);
+    }
+  }
+
+  res.redirect("/login.html?state=resent");
 });
 
 // AUTH: LOGOUT
@@ -574,7 +601,7 @@ app.post("/forgot-password", async (req, res) => {
 
   // Same response whether or not the email is registered, to avoid
   // leaking which addresses have accounts.
-  res.send("If that email is registered, a password reset link has been sent.");
+  return res.redirect("/forgot-password.html?state=sent");
 });
 
 // AUTH: RESET PASSWORD COMPLETE
@@ -583,7 +610,7 @@ app.post("/reset-password-complete", async (req, res) => {
   const { access_token, refresh_token, new_password } = req.body;
 
   if (!access_token || !refresh_token || !new_password) {
-    return res.status(400).send("Missing reset token or new password");
+    return res.status(400).json({ error: "invalid" });
   }
 
   // Fresh, per-request client: the recovery token belongs to one specific
@@ -597,7 +624,7 @@ app.post("/reset-password-complete", async (req, res) => {
 
   if (sessionError) {
     console.error("SUPABASE RESET SESSION ERROR:", sessionError.message);
-    return res.status(400).send("Password reset link is invalid or has expired.");
+    return res.status(400).json({ error: "invalid" });
   }
 
   const { error: updateError } = await resetClient.auth.updateUser({
@@ -606,7 +633,12 @@ app.post("/reset-password-complete", async (req, res) => {
 
   if (updateError) {
     console.error("SUPABASE PASSWORD UPDATE ERROR:", updateError.message);
-    return res.status(400).send("Password reset failed. Please try again.");
+
+    if (updateError.code === "same_password") {
+      return res.status(400).json({ error: "same_password" });
+    }
+
+    return res.status(500).json({ error: "failed" });
   }
 
   const {
@@ -614,7 +646,7 @@ app.post("/reset-password-complete", async (req, res) => {
   } = await resetClient.auth.getSession();
 
   setSessionCookies(res, session);
-  return res.redirect("/dashboard");
+  return res.json({ ok: true });
 });
 
 // PAGES
