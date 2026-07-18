@@ -1,22 +1,11 @@
-Home Call Guard
+Document: Architecture
+Version: 0.7
+Last Updated: 2026-07-14
+Status: Active
+Owner: Andrew Deane
+Related Sprint(s): Multiple — last substantively updated during [Sprint 6](sprints/Sprint_006/README.md); referenced by every sprint's schema/routing decisions
 
-Document:
-Architecture
-
-Version:
-0.6
-
-Last Updated:
-13 July 2026
-
-Current Sprint:
-Sprint 6 – Reliable Call History
-
-Owner:
-Andrew Deane
-
-Status:
-Active
+---
 
 # Home Call Guard Architecture
 

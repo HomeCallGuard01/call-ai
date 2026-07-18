@@ -1,22 +1,11 @@
-Home Call Guard
+Document: Engineering Decisions
+Version: 0.7
+Last Updated: 2026-07-14
+Status: Active
+Owner: Andrew Deane
+Related Sprint(s): Multiple — see cross-reference table below
 
-Document:
-Decisions
-
-Version:
-0.6
-
-Last Updated:
-13 July 2026
-
-Current Sprint:
-Sprint 6 – Reliable Call History
-
-Owner:
-Andrew Deane
-
-Status:
-Active
+---
 
 # Home Call Guard Engineering Decisions
 
@@ -27,6 +16,30 @@ Each decision should include:
 - Decision
 - Alternatives considered
 - Reason
+
+## Decision → Sprint cross-reference
+
+So every decision can be traced back to where it was implemented:
+
+| Decision | Date | Related Sprint |
+|---|---|---|
+| 001 (Supabase as database) | 07 July 2026 | Unknown — thematically related to Sprint 3/Sprint 4 (see the Sprint 4 conflict note in `docs/sprints/README.md`); not confirmed against a specific sprint boundary |
+| 002 (RLS on all customer data) | 07 July 2026 | Unknown — same as above |
+| 003 (env vars for config) | 08 July 2026 | Unknown — same as above |
+| 001-duplicate (replace contacts.json, first instance) | 08 July 2026 | Unknown — same as above |
+| 004 (replace local JSON contact storage) | 09 July 2026 | Unknown — same as above |
+| 005 (add `calls` table) | 10 July 2026 | [Sprint 6](../sprints/Sprint_006/DECISIONS.md) |
+| 006 (fire-and-forget call logging) | 10 July 2026 | [Sprint 6](../sprints/Sprint_006/DECISIONS.md) |
+| 007 (`calls` service-role-only access) | 11 July 2026 | [Sprint 6](../sprints/Sprint_006/DECISIONS.md) |
+| 008 (`call_sid` idempotency) | 11 July 2026 | [Sprint 6](../sprints/Sprint_006/DECISIONS.md) |
+| 009 (entitlement architecture, docs-only) | 11 July 2026 | Documented during [Sprint 6](../sprints/Sprint_006/DECISIONS.md); implementation deferred (households → Sprint 7, entitlements/subscriptions → a later sprint) |
+| 010 (password/account security roadmap) | Undated in its own section | Deferred to [Sprint 8](../sprints/Sprint_008/DECISIONS.md)'s scope decisions and `docs/ENGINEERING_ROADMAP.md` — note: this decision's content substantially overlaps with `docs/ENGINEERING_ROADMAP.md`; see Documentation Improvement Recommendations in `docs/README.md` |
+
+Note: this file contains two different, differently-formatted entries
+both numbered "Decision 001" (one about choosing Supabase, one about
+replacing `contacts.json`) — a pre-existing inconsistency, not introduced
+or corrected here. See `docs/README.md` for the repository documentation
+review.
 
 ---
 

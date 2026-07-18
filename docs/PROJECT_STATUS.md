@@ -1,3 +1,12 @@
+Document: Project Status
+Version: 1.1
+Last Updated: 2026-07-17
+Status: Active
+Owner: Andrew Deane
+Related Sprint(s): All (1–8) — see docs/sprints/README.md for the per-sprint index
+
+---
+
 # Home Call Guard – Project Status
 
 ## Current Status
@@ -121,6 +130,32 @@ Run `supabase/migrations/001_create_calls_table.sql` in the Supabase SQL Editor,
 - Recent activity remains available: **pending manual migration + key**
 - Statistics generated from database: **pending manual migration + key**
 - No functionality lost: **confirmed** — server starts cleanly and every other route works whether or not the service-role key is present
+
+---
+
+## ✅ Stripe Billing — Sandbox End-to-End Verified (17 July 2026)
+
+Full customer journey confirmed working against Stripe Sandbox, using the real app UI (Safari) rather than mocked requests:
+
+- Registration → email confirmation → login → authenticated dashboard
+- Checkout Session creation (`POST /billing/create-checkout-session`) → Stripe-hosted Checkout → test-card payment → redirect back with `checkout=success`
+- Webhook delivery to `/billing/webhook`, signature-verified, `customer.subscription.created` processed
+- `subscriptions` and `entitlements` rows created correctly; dashboard renders "Protected"
+
+Required to get here, now applied and verified against the live Supabase project:
+
+- `013_stripe_billing_rpc_functions.sql` (`set_household_stripe_customer_id`, `process_stripe_webhook_event`)
+- `014_claim_stripe_webhook_event_rpc.sql` (`claim_stripe_webhook_event`)
+- `015_fix_entitlement_expiry_subscription_match.sql` — bug found during this test: `process_stripe_webhook_event` expired *any* active entitlement for a household when *any* of its subscriptions went non-qualifying, without checking the terminating subscription was the one the entitlement actually referenced. Fixed to require `entitlements.external_reference` match before expiring. Confirmed fixed by cancelling a duplicate subscription and verifying the real active entitlement was untouched.
+
+Also fixed during this test:
+
+- Safari-specific login/session loss, caused by `localhost`/`127.0.0.1` host mixing (cookies don't carry over between the two) — fixed with a canonicalizing 301 redirect middleware in `server.js`, applied before auth
+- Dashboard's "Confirming your payment" banner never cleared once the protected state loaded (`upload.html`) — now hidden once `/dashboard-data` reports protected
+
+Known gap surfaced, not yet fixed: a duplicate Checkout Session/subscription can be created for one household from a single button click under some conditions — worth investigating the idempotency-key window in `routes/billing.js` before launch.
+
+Still unconfirmed against the live database (headers say "DRAFT — NOT APPLIED", but this project's headers have been found stale before — see 013/014 above): `007_grant_authenticated_household_reads.sql`, `008_household_isolation_contacts.sql`, `009_service_role_minimum_app_privileges.sql`. These cover contacts/household RLS isolation and minimum service-role grants — real security surface worth explicitly verifying before launch, not just trusting the header.
 
 ---
 

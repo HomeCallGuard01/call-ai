@@ -1,3 +1,12 @@
+Document: Engineering Principles
+Version: 1.1
+Last Updated: 2026-07-14
+Status: Active
+Owner: Andrew Deane
+Related Sprint(s): N/A — general principles, not tied to a specific sprint
+
+---
+
 # Home Call Guard Engineering Principles
 
 These principles guide every technical and business decision.

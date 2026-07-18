@@ -1,22 +1,11 @@
-Home Call Guard
+Document: Project
+Version: 0.7
+Last Updated: 2026-07-14
+Status: Active
+Owner: Andrew Deane
+Related Sprint(s): All — high-level roadmap; detailed sprint-by-sprint status lives in docs/PROJECT_STATUS.md and docs/sprints/README.md
 
-Document:
-Project
-
-Version:
-0.6
-
-Last Updated:
-13 July 2026
-
-Current Sprint:
-Sprint 6 – Reliable Call History
-
-Owner:
-Andrew Deane
-
-Status:
-Active
+---
 
 # Home Call Guard
 

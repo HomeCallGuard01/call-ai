@@ -9,15 +9,44 @@ const multer = require("multer");
 const cookieParser = require("cookie-parser");
 const { createClient } = require("@supabase/supabase-js");
 const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
+const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts } = require("./database/contacts");
+const { getActiveEntitlement } = require("./database/billing");
+const billingRoutes = require("./routes/billing");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
 
+// localhost and 127.0.0.1 are different origins for cookie purposes, so a
+// session cookie set on one is invisible on the other — this bit Safari
+// testing when a confirmation-email redirect (hardcoded to APP_URL's host)
+// landed on a different host than the one used to register/log in. Canonicalize
+// to APP_URL's host before anything else (including auth) runs, so the two
+// aliases can never silently diverge. Only touches the two known local
+// aliases — any other host (prod, tunnels) passes through untouched. Note:
+// a 301 turns a redirected POST into a GET per HTTP client convention, so a
+// form submitted from the non-canonical host loses its body and must be
+// resubmitted — acceptable since that's the exact behavior requested here.
+const APP_URL_PARSED = new URL(process.env.APP_URL || "http://localhost:3000");
+const CANONICAL_HOST = APP_URL_PARSED.hostname;
+const LOCAL_HOST_ALIASES = new Set(["localhost", "127.0.0.1"]);
+
+app.use((req, res, next) => {
+  if (LOCAL_HOST_ALIASES.has(req.hostname) && req.hostname !== CANONICAL_HOST) {
+    return res.redirect(301, `${APP_URL_PARSED.protocol}//${APP_URL_PARSED.host}${req.originalUrl}`);
+  }
+  next();
+});
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static("public"));
+
+// Owns its own raw-body parsing (scoped to /billing/webhook only, needed
+// for Stripe signature verification) — safe to mount alongside the global
+// urlencoded parser above, which already no-ops on non-form content types.
+app.use(billingRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -291,7 +320,7 @@ app.post("/process", async (req, res) => {
 
 // DASHBOARD API
 
-app.get("/dashboard-data", requireAuth, async (req, res) => {
+app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => {
   const [contacts, callsToday, recentCalls] = await Promise.all([
     getContacts(req.household.id),
     getCallsToday(req.household.id),
@@ -316,12 +345,12 @@ app.get("/test-db", async (req, res) => {
   });
 });
 
-app.get("/test-get-contacts", requireAuth, async (req, res) => {
+app.get("/test-get-contacts", requireAuth, requireEntitlement, async (req, res) => {
   const contacts = await getContacts(req.household.id);
   res.json({ success: true, data: contacts });
 });
 
-app.get("/logs", requireAuth, async (req, res) => {
+app.get("/logs", requireAuth, requireEntitlement, async (req, res) => {
   const calls = await getRecentCalls(req.household.id, 200);
   res.json(calls.map(toClientCall));
 });
@@ -330,6 +359,11 @@ app.get("/logs", requireAuth, async (req, res) => {
 
 app.post("/upload-contacts", requireAuth, upload.single("file"), async (req, res) => {
   try {
+    const entitlement = await getActiveEntitlement(req.household.id);
+    if (!entitlement) {
+      return res.status(402).send("An active subscription is required to upload contacts.");
+    }
+
     if (!req.file) {
       return res.status(400).send("No file uploaded");
     }
@@ -655,7 +689,12 @@ app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
-app.get("/dashboard", (req, res) => {
+// Auth only, deliberately not requireEntitlement — an unsubscribed
+// household must still be able to reach the dashboard shell to see the
+// "Get Protected Today" prompt and start Checkout from it. The page's own
+// /dashboard-data fetch (requireEntitlement-gated) is what actually decides
+// whether the protected view or the subscribe prompt renders.
+app.get("/dashboard", requireAuth, (req, res) => {
   res.sendFile(__dirname + "/upload.html");
 });
 

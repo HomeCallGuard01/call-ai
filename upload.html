@@ -162,6 +162,39 @@
     color: #f59e0b;
   }
 
+  .status-card[data-state="unsubscribed"] .shield-icon {
+    animation: none;
+  }
+
+  .status-card[data-state="unsubscribed"] .shield-fill {
+    fill: #1e293b;
+    stroke: #64748b;
+  }
+
+  .status-card[data-state="unsubscribed"] .shield-check {
+    stroke: #64748b;
+  }
+
+  .status-card[data-state="unsubscribed"] .status-title {
+    color: #cbd5e1;
+  }
+
+  .subscribe-button {
+    margin-top: 20px;
+  }
+
+  .checkout-banner {
+    background: #14532d;
+    border: 1px solid #22c55e;
+    color: #bbf7d0;
+  }
+
+  .checkout-banner.checkout-banner-error {
+    background: #1e293b;
+    border: 1px solid #f59e0b;
+    color: #fde68a;
+  }
+
   .status-title {
     font-size: 34px;
     font-weight: 700;
@@ -323,6 +356,8 @@
 
   <h1 class="visually-hidden">Home Call Guard Dashboard</h1>
 
+  <div id="checkoutBanner" class="error-banner checkout-banner" role="status" hidden></div>
+
   <div id="errorBanner" class="error-banner" role="status" hidden>
     We're having trouble loading your live protection data right now. Your protection is still active — this will update automatically once the connection returns.
   </div>
@@ -334,57 +369,65 @@
     </svg>
     <div class="status-title" id="statusTitle">Checking protection status…</div>
     <p class="status-sub" id="statusSub">We're loading your live protection status.</p>
-  </section>
 
-  <section class="stats-grid" aria-label="Protection statistics">
-    <div class="stat-card">
-      <div class="stat-number" id="statContacts">—</div>
-      <div class="stat-label">Protected contacts</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number" id="statCallsToday">—</div>
-      <div class="stat-label">Calls today</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number" id="statBlocked">—</div>
-      <div class="stat-label">Scam calls blocked</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number" id="statSafe">—</div>
-      <div class="stat-label">Safe calls</div>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Recent Activity</h2>
-    <div id="activityContent">
-      <p class="empty-state">No recent call activity yet.</p>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Upload Contacts</h2>
-
-    <form
-      action="/upload-contacts"
-      method="POST"
-      enctype="multipart/form-data"
-    >
-      <input
-        type="file"
-        id="contactsFile"
-        name="file"
-        accept=".csv"
-        required
-      />
-
-      <br><br>
-
+    <form class="subscribe-button" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
       <button type="submit">
-        Upload CSV
+        Get Protected Today
       </button>
     </form>
   </section>
+
+  <div id="protectedContent" hidden>
+    <section class="stats-grid" aria-label="Protection statistics">
+      <div class="stat-card">
+        <div class="stat-number" id="statContacts">—</div>
+        <div class="stat-label">Protected contacts</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="statCallsToday">—</div>
+        <div class="stat-label">Calls today</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="statBlocked">—</div>
+        <div class="stat-label">Scam calls blocked</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="statSafe">—</div>
+        <div class="stat-label">Safe calls</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Recent Activity</h2>
+      <div id="activityContent">
+        <p class="empty-state">No recent call activity yet.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Upload Contacts</h2>
+
+      <form
+        action="/upload-contacts"
+        method="POST"
+        enctype="multipart/form-data"
+      >
+        <input
+          type="file"
+          id="contactsFile"
+          name="file"
+          accept=".csv"
+          required
+        />
+
+        <br><br>
+
+        <button type="submit">
+          Upload CSV
+        </button>
+      </form>
+    </section>
+  </div>
 
 </main>
 
@@ -453,6 +496,8 @@
     const card = document.getElementById("statusCard");
     const title = document.getElementById("statusTitle");
     const sub = document.getElementById("statusSub");
+    const subscribeForm = document.getElementById("subscribeForm");
+    const protectedContent = document.getElementById("protectedContent");
 
     if (!card || !title || !sub) {
       return;
@@ -463,12 +508,22 @@
     if (state === "protected") {
       title.textContent = "Protected";
       sub.textContent = "Home Call Guard is actively screening your calls. Unknown callers are checked before they can reach you.";
+    } else if (state === "unsubscribed") {
+      title.textContent = "Not protected yet";
+      sub.textContent = "Subscribe to start screening unknown callers and protecting your household.";
     } else if (state === "unknown") {
       title.textContent = "Status unavailable";
       sub.textContent = "We can't confirm your live protection status right now. This will update automatically once the connection returns.";
     } else {
       title.textContent = "Checking protection status…";
       sub.textContent = "We're loading your live protection status.";
+    }
+
+    if (subscribeForm) {
+      subscribeForm.hidden = state !== "unsubscribed";
+    }
+    if (protectedContent) {
+      protectedContent.hidden = state !== "protected";
     }
   }
 
@@ -486,9 +541,43 @@
     }
   }
 
+  function hideCheckoutBanner() {
+    const el = document.getElementById("checkoutBanner");
+    if (el) {
+      el.hidden = true;
+    }
+  }
+
+  function showCheckoutBanner(kind) {
+    const el = document.getElementById("checkoutBanner");
+    if (!el) {
+      return;
+    }
+
+    if (kind === "success") {
+      el.textContent = "Confirming your payment… this can take a few seconds. Your protection status below will update automatically once it's done.";
+      el.classList.remove("checkout-banner-error");
+      el.hidden = false;
+    } else if (kind === "cancelled") {
+      el.textContent = "Checkout was cancelled — no payment was taken. You can try again any time.";
+      el.classList.add("checkout-banner-error");
+      el.hidden = false;
+    } else if (kind === "error") {
+      el.textContent = "We couldn't start checkout just now. Please try again.";
+      el.classList.add("checkout-banner-error");
+      el.hidden = false;
+    }
+  }
+
   async function loadDashboard() {
     try {
       const res = await fetch("/dashboard-data");
+
+      if (res.status === 402) {
+        setStatus("unsubscribed");
+        hideError();
+        return;
+      }
 
       if (!res.ok) {
         throw new Error("Request failed");
@@ -505,6 +594,7 @@
 
       setStatus("protected");
       hideError();
+      hideCheckoutBanner();
     } catch (err) {
       setStatus("unknown");
       showError();
@@ -512,6 +602,11 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    const checkoutState = new URLSearchParams(window.location.search).get("checkout");
+    if (checkoutState) {
+      showCheckoutBanner(checkoutState);
+    }
+
     loadDashboard();
     setInterval(loadDashboard, REFRESH_MS);
   });

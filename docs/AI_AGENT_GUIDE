@@ -1,3 +1,12 @@
+Document: AI Agent Guide
+Version: 1.1
+Last Updated: 2026-07-14
+Status: Active
+Owner: Andrew Deane
+Related Sprint(s): N/A — general working rules, not tied to a specific sprint
+
+---
+
 You are working on Home Call Guard.
 
 Architecture:

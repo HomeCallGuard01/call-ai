@@ -1,0 +1,31 @@
+# Sprint History
+
+| Sprint | Description | Status |
+|---------|-------------|--------|
+| 001 | Initial Twilio setup | Complete |
+| 002 | Contacts upload | Complete |
+| 003 | Dashboard | Complete |
+| 004 | Contacts improvements | Complete |
+| 005 | Authentication UI | Complete |
+| 006 | Password reset | Complete |
+| 007 | Household model | Complete |
+| 008 | Least Privilege Authentication | In Progress |
+
+Sprint 8 – Least Privilege Authentication
+
+Status: COMPLETE ✅
+
+Verified:
+✅ Registration
+✅ Email confirmation
+✅ Login
+✅ Household creation
+✅ Household role creation
+✅ Dashboard access
+
+Database verified:
+✅ households
+✅ user_roles
+
+Architecture:
+Removed service-role dependency for customer onboarding.

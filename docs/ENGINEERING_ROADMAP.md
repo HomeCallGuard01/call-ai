@@ -1,3 +1,18 @@
+Document: Security & Authentication Roadmap
+Version: 1.1
+Last Updated: 2026-07-14
+Status: Post-MVP / Before Public Launch
+Owner: Andrew Deane
+Related Sprint(s): Sprint 8 (deferral point — see Sprint_008/DECISIONS.md, "Password policy, generator, eye-icon, passkeys, security testing — deferred")
+
+---
+
+Note: this file overlaps substantially with "Decision 010" in
+`docs/DECISIONS.md` (password policy, generator, eye icon, password
+managers, future auth, security testing) — flagged as duplicated content
+in `docs/README.md`'s Documentation Improvement Recommendations, not
+merged here.
+
 Security & Authentication Roadmap
 Status: Post-MVP / Before Public Launch
 Password Policy Review
