@@ -590,6 +590,10 @@
       el.textContent = "We couldn't start checkout just now. Please try again.";
       el.classList.add("checkout-banner-error");
       el.hidden = false;
+    } else if (kind === "pending") {
+      el.textContent = "You already have a checkout in progress. Please finish or cancel it before starting a new one.";
+      el.classList.add("checkout-banner-error");
+      el.hidden = false;
     }
   }
 

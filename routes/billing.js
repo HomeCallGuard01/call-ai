@@ -40,6 +40,24 @@ function hasQualifyingStripeSubscription(subscriptions) {
   return subscriptions.some((s) => QUALIFYING_SUBSCRIPTION_STATUSES.has(s.status));
 }
 
+// Pure so it's directly unit-testable without mocking Stripe — see
+// tests/checkout-existing-subscription.test.mjs.
+//
+// Closes the abandoned/still-open-checkout gap: a Checkout Session that's
+// been created but never paid has no Subscription object at all (Stripe
+// only creates one on successful payment), so hasQualifyingStripeSubscription
+// above cannot see it. Without this, a household that opened Checkout and
+// didn't finish — got distracted, closed the tab, thought it failed — then
+// tried again later would sail through both existing checks and get a
+// second, independent Checkout Session, the same shape of duplicate as the
+// 2026-07-18 incident, just relocated to before payment instead of after it.
+//
+// Only Stripe's own "open" status is treated as reusable — "complete" and
+// "expired" are both terminal and must never block a fresh attempt.
+function findReusableOpenCheckoutSession(sessions) {
+  return sessions.find((s) => s.status === "open") || null;
+}
+
 // Shared identifying metadata, applied consistently to the Customer, the
 // Checkout Session, and (via subscription_data.metadata) the Subscription —
 // Stripe does not propagate metadata between these automatically, and each
@@ -139,6 +157,29 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
 
     if (hasQualifyingStripeSubscription(existingSubscriptions.data)) {
       return res.redirect("/dashboard");
+    }
+
+    // Catches what the subscription check above cannot: a Checkout Session
+    // already opened but not yet paid or abandoned. Filtered server-side by
+    // Stripe (status: "open") as well as by findReusableOpenCheckoutSession
+    // itself, so a completed or expired session never blocks a new attempt.
+    const openCheckoutSessions = await stripe.checkout.sessions.list({
+      customer: stripeCustomerId,
+      status: "open",
+      limit: 10,
+    });
+
+    const reusableSession = findReusableOpenCheckoutSession(openCheckoutSessions.data);
+    if (reusableSession) {
+      // Send the customer back to the same session rather than starting a
+      // new one — a session's url can be absent once it's no longer usable
+      // for redirect (Stripe's docs note this can be null after the session
+      // is no longer in a state to be visited), so fall back to a clear
+      // dashboard message rather than risk redirecting to `undefined`.
+      if (reusableSession.url) {
+        return res.redirect(303, reusableSession.url);
+      }
+      return res.redirect("/dashboard?checkout=pending");
     }
 
     // This idempotency key protects against the client retrying this exact
@@ -269,5 +310,6 @@ router.post(
 // `require("./routes/billing")` usage — mounting the router directly — is
 // unaffected; tests reach it as `require("../routes/billing").hasQualifyingStripeSubscription`.
 router.hasQualifyingStripeSubscription = hasQualifyingStripeSubscription;
+router.findReusableOpenCheckoutSession = findReusableOpenCheckoutSession;
 
 module.exports = router;
