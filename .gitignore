@@ -1,0 +1,20 @@
+.DS_Store
+node_modules/
+.env
+.env.*
+uploads/
+
+# Logs
+logs/
+*.log
+
+# Database exports/dumps (may contain customer data) — never commit these.
+# Named patterns only, not *.sql, so tracked supabase/migrations/*.sql files
+# are unaffected.
+*.dump
+*.dump.sql
+*_dump.sql
+*_export.csv
+*_export.sql
+backup*.sql
+db-exports/

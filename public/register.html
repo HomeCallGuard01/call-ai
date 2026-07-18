@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Call Guard — Create Account</title>
+
+<style>
+  body {
+    font-family: Arial;
+    background: #0b1220;
+    color: white;
+    padding: 20px;
+    text-align: center;
+  }
+
+  h1 {
+    color: #00ff99;
+    font-size: 28px;
+  }
+
+  .box {
+    background: #111a2e;
+    padding: 30px;
+    margin: 20px auto;
+    border-radius: 10px;
+    max-width: 400px;
+    text-align: left;
+  }
+
+  label {
+    display: block;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+
+  input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: white;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+
+  .password-field {
+    position: relative;
+  }
+
+  .password-field input {
+    padding-right: 44px;
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 4px;
+    top: 6px;
+    width: auto;
+    margin: 0;
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 16px;
+    font-weight: normal;
+    cursor: pointer;
+  }
+
+  button, .primary-button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 12px;
+    font-size: 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    background-color: #00ff99;
+    color: black;
+    border: none;
+    font-weight: bold;
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    box-sizing: border-box;
+  }
+
+  button:disabled {
+    opacity: 0.7;
+    cursor: default;
+  }
+
+  .footer-link {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 14px;
+  }
+
+  .footer-link a {
+    color: #00ff99;
+  }
+
+  .error-banner {
+    background: #2a1a0f;
+    border: 2px solid #f59e0b;
+    color: #fde68a;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    font-size: 15px;
+    line-height: 1.5;
+    text-align: left;
+  }
+
+  .success-panel {
+    text-align: center;
+  }
+
+  .success-panel h2 {
+    color: #00ff99;
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+
+  .success-panel p {
+    color: #cbd5e1;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+
+<body>
+
+<img src="/logo.png" style="height:130px; margin-bottom:10px;">
+
+<h1>Create your account</h1>
+
+<div class="box">
+
+  <div id="errorBanner" class="error-banner" role="alert" hidden></div>
+
+  <div id="successPanel" class="success-panel" hidden>
+    <h2>Account created</h2>
+    <p>Please check your email and confirm your account before logging in.</p>
+    <a class="primary-button" href="/login.html">Go to login</a>
+  </div>
+
+  <form id="registerForm" action="/register" method="POST">
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" required>
+
+    <label for="password">Password</label>
+    <div class="password-field">
+      <input type="password" id="password" name="password" minlength="8" required>
+      <button type="button" class="toggle-password" data-target="password" aria-label="Show password">👁</button>
+    </div>
+
+    <label for="confirm_password">Confirm password</label>
+    <div class="password-field">
+      <input type="password" id="confirm_password" name="confirm_password" minlength="8" required>
+      <button type="button" class="toggle-password" data-target="confirm_password" aria-label="Show password">👁</button>
+    </div>
+
+    <button type="submit" id="submitButton">Create Account</button>
+  </form>
+
+  <div class="footer-link" id="loginFooterLink">
+    Already protected? <a href="/login.html">Log in</a>
+  </div>
+</div>
+
+<script>
+  var ERROR_MESSAGES = {
+    validation: "Please enter a valid email and password.",
+    mismatch: "Passwords do not match. Please try again.",
+    failed: "We couldn't create your account. Please check your details and try again."
+  };
+
+  function showError(message) {
+    var banner = document.getElementById("errorBanner");
+    banner.textContent = "⚠ " + message;
+    banner.hidden = false;
+  }
+
+  function showSuccess() {
+    document.getElementById("registerForm").hidden = true;
+    document.getElementById("loginFooterLink").hidden = true;
+    document.getElementById("successPanel").hidden = false;
+  }
+
+  var params = new URLSearchParams(window.location.search);
+  var state = params.get("state");
+  var reason = params.get("reason");
+  var email = params.get("email");
+
+  if (state === "success") {
+    showSuccess();
+  } else if (state === "error") {
+    showError(ERROR_MESSAGES[reason] || ERROR_MESSAGES.failed);
+    if (email) {
+      document.getElementById("email").value = email;
+    }
+  }
+
+  document.querySelectorAll(".toggle-password").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var input = document.getElementById(btn.dataset.target);
+      var showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "👁" : "🙈";
+      btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    });
+  });
+
+  document.getElementById("registerForm").addEventListener("submit", function (e) {
+    var password = document.getElementById("password").value;
+    var confirmPassword = document.getElementById("confirm_password").value;
+
+    if (password !== confirmPassword) {
+      e.preventDefault();
+      showError(ERROR_MESSAGES.mismatch);
+      return;
+    }
+
+    var btn = document.getElementById("submitButton");
+    btn.disabled = true;
+    btn.textContent = "Creating account…";
+  });
+</script>
+
+</body>
+</html>

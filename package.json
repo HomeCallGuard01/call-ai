@@ -4,17 +4,25 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "startt": "node server.js"
+    "startt": "node server.js",
+    "test": "node tests/migrations.pglite.test.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.1",
     "body-parser": "^2.3.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "multer": "^2.2.0",
     "openai": "^6.42.0",
+    "stripe": "^22.3.2",
     "twilio": "^6.0.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4"
   }
 }

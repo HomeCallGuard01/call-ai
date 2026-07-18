@@ -1,0 +1,57 @@
+-- Stripe Integration: service_role minimum privileges on billing tables
+--
+-- STATUS: DRAFT — NOT APPLIED
+--
+-- Purpose: grants service_role exactly the privileges the future Stripe
+-- webhook/billing code needs on subscriptions, entitlements, and
+-- stripe_webhook_events — nothing more. Mirrors the least-privilege
+-- audit already performed for the rest of the app in
+-- 009_service_role_minimum_app_privileges.sql: as with households/
+-- user_roles/contacts/calls, these three tables were created via raw SQL
+-- migrations rather than the Supabase Table Editor, so service_role has
+-- no privileges on them at all until explicitly granted here — BYPASSRLS
+-- does not substitute for a table grant (see 009's own comment for the
+-- full reasoning; the same fact applies again here).
+--
+-- Least-privilege rationale, by table:
+--   subscriptions        — the webhook handler upserts one row per
+--                          Stripe subscription (insert on first sight,
+--                          update as status/period/cancellation flag
+--                          change over the subscription's lifetime). No
+--                          code path ever removes a subscription row —
+--                          history is preserved by design (see
+--                          011_create_subscriptions_and_entitlements.sql)
+--                          — so DELETE is deliberately not granted.
+--   entitlements         — the webhook handler inserts a new row on each
+--                          access-state change and updates the current
+--                          active row's status when it ends (active ->
+--                          expired/revoked). Same reasoning: entitlement
+--                          history must never be removable via the app's
+--                          own privileges, so DELETE is not granted.
+--   stripe_webhook_events — the webhook handler inserts one row per
+--                          event on first receipt (the dedup claim) and
+--                          updates that same row's status/attempt
+--                          tracking as it moves toward processed/failed/
+--                          ignored. This is an audit log — rows must
+--                          never be deletable through the app, so DELETE
+--                          is not granted here either.
+--
+-- No sequence grants are included: all three tables use `uuid primary
+-- key default gen_random_uuid()` (subscriptions, entitlements) or a
+-- natural text primary key (stripe_webhook_events.stripe_event_id) —
+-- none of them has a serial/bigserial/identity column backed by a
+-- sequence, so there is no sequence privilege to grant.
+--
+-- Does not touch authenticated's grants or either table's RLS policies
+-- from 011 — this migration only adds service_role privileges.
+--
+-- Safe to rerun: GRANT in Postgres is idempotent by nature (granting an
+-- already-held privilege is a silent no-op, not an error), so no
+-- if-not-exists guard is needed, consistent with 007/009.
+--
+-- Run this AFTER:
+-- 011_create_subscriptions_and_entitlements.sql
+
+grant select, insert, update on public.subscriptions to service_role;
+grant select, insert, update on public.entitlements to service_role;
+grant select, insert, update on public.stripe_webhook_events to service_role;

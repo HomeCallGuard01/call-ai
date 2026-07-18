@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Call Guard — Log In</title>
+
+<style>
+  body {
+    font-family: Arial;
+    background: #0b1220;
+    color: white;
+    padding: 20px;
+    text-align: center;
+  }
+
+  h1 {
+    color: #00ff99;
+    font-size: 28px;
+  }
+
+  .box {
+    background: #111a2e;
+    padding: 30px;
+    margin: 20px auto;
+    border-radius: 10px;
+    max-width: 400px;
+    text-align: left;
+  }
+
+  label {
+    display: block;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+
+  input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: white;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+
+  .password-field {
+    position: relative;
+  }
+
+  .password-field input {
+    padding-right: 44px;
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 4px;
+    top: 6px;
+    width: auto;
+    margin: 0;
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 16px;
+    font-weight: normal;
+    cursor: pointer;
+  }
+
+  button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 12px;
+    font-size: 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    background-color: #00ff99;
+    color: black;
+    border: none;
+    font-weight: bold;
+  }
+
+  button:disabled {
+    opacity: 0.7;
+    cursor: default;
+  }
+
+  .secondary-button {
+    width: 100%;
+    margin-top: 12px;
+    padding: 10px;
+    font-size: 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    background: transparent;
+    color: #00ff99;
+    border: 1px solid #00ff99;
+    font-weight: bold;
+  }
+
+  .footer-link {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 14px;
+  }
+
+  .footer-link a {
+    color: #00ff99;
+  }
+
+  .error-banner {
+    background: #2a1a0f;
+    border: 2px solid #f59e0b;
+    color: #fde68a;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    font-size: 15px;
+    line-height: 1.5;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: left;
+  }
+
+  .notice-banner {
+    background: #0f2a1a;
+    border: 2px solid #00ff99;
+    color: #bbf7d0;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    font-size: 15px;
+    line-height: 1.5;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: left;
+  }
+</style>
+</head>
+
+<body>
+
+<img src="/logo.png" style="height:130px; margin-bottom:10px;">
+
+<h1>Log in</h1>
+
+<div id="errorBanner" class="error-banner" role="alert" hidden></div>
+<div id="noticeBanner" class="notice-banner" role="status" hidden></div>
+
+<div class="box">
+  <form id="loginForm" action="/login" method="POST">
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" required>
+
+    <label for="password">Password</label>
+    <div class="password-field">
+      <input type="password" id="password" name="password" required>
+      <button type="button" class="toggle-password" data-target="password" aria-label="Show password">👁</button>
+    </div>
+
+    <button type="submit" id="submitButton">Log In</button>
+  </form>
+
+  <div id="resendBox" hidden>
+    <form action="/resend-confirmation" method="POST">
+      <input type="hidden" id="resend_email" name="email">
+      <button type="submit" class="secondary-button">Resend confirmation email</button>
+    </form>
+  </div>
+
+  <div class="footer-link">
+    <a href="/forgot-password.html">Forgot password?</a>
+  </div>
+  <div class="footer-link">
+    New here? <a href="/register.html">Create an account</a>
+  </div>
+</div>
+
+<script>
+  var LOGIN_ERROR_MESSAGES = {
+    invalid_credentials: "Incorrect email or password. Please try again.",
+    setup_failed: "We couldn't finish setting up your account. Please try again or contact support.",
+    unconfirmed: "Please confirm your email before logging in.",
+    validation: "Please enter your email and password."
+  };
+
+  var params = new URLSearchParams(window.location.search);
+  var loginError = params.get("error");
+  var loginEmail = params.get("email");
+  var state = params.get("state");
+
+  if (loginError && LOGIN_ERROR_MESSAGES[loginError]) {
+    var banner = document.getElementById("errorBanner");
+    banner.textContent = "⚠ " + LOGIN_ERROR_MESSAGES[loginError];
+    banner.hidden = false;
+
+    if (loginEmail) {
+      document.getElementById("email").value = loginEmail;
+    }
+
+    if (loginError === "unconfirmed") {
+      document.getElementById("resend_email").value = loginEmail || "";
+      document.getElementById("resendBox").hidden = false;
+    }
+  } else if (state === "resent") {
+    var notice = document.getElementById("noticeBanner");
+    notice.textContent = "If that email is registered and unconfirmed, a new confirmation email has been sent.";
+    notice.hidden = false;
+  }
+
+  document.querySelectorAll(".toggle-password").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var input = document.getElementById(btn.dataset.target);
+      var showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.textContent = showing ? "👁" : "🙈";
+      btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    });
+  });
+
+  document.getElementById("loginForm").addEventListener("submit", function () {
+    var btn = document.getElementById("submitButton");
+    btn.disabled = true;
+    btn.textContent = "Logging in…";
+  });
+</script>
+
+</body>
+</html>
