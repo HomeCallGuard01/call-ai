@@ -548,6 +548,30 @@
     }
   }
 
+  // TEST-EXTRACT-START: handleSubscribeFormSubmit
+  // Disables the button and gives immediate feedback the instant the form is
+  // submitted, so a slow server response (or a user unsure anything
+  // happened) can't lead to a second click firing a second, independent
+  // Checkout Session/subscription — see docs/releases/2026-07-18_RC1.md for
+  // the incident this closes. This only covers the current page instance;
+  // the server-side existing-subscription check in routes/billing.js is
+  // what actually makes a repeat attempt (e.g. after a back-navigation) safe.
+  function handleSubscribeFormSubmit(form) {
+    const btn = form.querySelector("button[type=submit]");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Redirecting to checkout…";
+    }
+  }
+  // TEST-EXTRACT-END: handleSubscribeFormSubmit
+
+  const subscribeFormEl = document.getElementById("subscribeForm");
+  if (subscribeFormEl) {
+    subscribeFormEl.addEventListener("submit", function () {
+      handleSubscribeFormSubmit(subscribeFormEl);
+    });
+  }
+
   function showCheckoutBanner(kind) {
     const el = document.getElementById("checkoutBanner");
     if (!el) {

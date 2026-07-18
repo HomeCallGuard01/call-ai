@@ -13,6 +13,33 @@ const {
 
 const router = express.Router();
 
+const QUALIFYING_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"]);
+
+// Pure so it's directly unit-testable without mocking Stripe or Express —
+// see tests/checkout-existing-subscription.test.mjs.
+//
+// past_due blocks a new Checkout Session here for a different reason than
+// it grants an entitlement in process_stripe_webhook_event (013/015): that
+// RPC's qualifying set is about whether app access continues during a
+// payment retry, a decision already made and untouched by this function.
+// This set is purely about not creating a second real Stripe subscription
+// while dunning/retries are still live on the first one — a past_due
+// subscription is still a real, active billing relationship, and starting
+// a second one alongside it risks a genuine double charge if both later
+// succeed. Normally getActiveEntitlement() above already redirects before
+// this runs (the entitlement created when the subscription first went
+// active isn't touched by a later past_due transition) — this exists for
+// the narrow window where that webhook hasn't been processed yet, exactly
+// the class of gap this whole check was added to close.
+//
+// unpaid remains deliberately excluded: it's Stripe's terminal
+// dunning-exhausted state, not an active retry in progress, and whether a
+// lapsed household should be allowed to start completely fresh is a product
+// decision this function does not make silently.
+function hasQualifyingStripeSubscription(subscriptions) {
+  return subscriptions.some((s) => QUALIFYING_SUBSCRIPTION_STATUSES.has(s.status));
+}
+
 // Shared identifying metadata, applied consistently to the Customer, the
 // Checkout Session, and (via subscription_data.metadata) the Subscription —
 // Stripe does not propagate metadata between these automatically, and each
@@ -98,9 +125,29 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
 
     const stripeCustomerId = await resolveStripeCustomerId(req.household, req.authUserId);
 
-    // Bounds accidental double-submit (double-click, back-button resubmit)
-    // to a single Checkout Session within a short window, without risking
-    // a stale key blocking a genuinely new later attempt.
+    // Catches what getActiveEntitlement() above cannot: a Checkout Session
+    // already completed and paid, but whose webhook hasn't been processed
+    // yet (delayed, or dropped entirely — see
+    // docs/releases/2026-07-18_RC1.md for the incident this closes).
+    // Queries Stripe directly rather than our own webhook-populated DB,
+    // since that DB state is exactly what's unreliable in this window.
+    const existingSubscriptions = await stripe.subscriptions.list({
+      customer: stripeCustomerId,
+      status: "all",
+      limit: 10,
+    });
+
+    if (hasQualifyingStripeSubscription(existingSubscriptions.data)) {
+      return res.redirect("/dashboard");
+    }
+
+    // This idempotency key protects against the client retrying this exact
+    // request (e.g. a network timeout firing the same submission twice)
+    // within the same 5-minute window — it is NOT a defense against a
+    // deliberate second checkout attempt minutes apart (that's what the
+    // existing-subscription check above exists to catch; it's what missed
+    // this in the 2026-07-18 incident, since both attempts fell in
+    // different 5-minute buckets despite being under 4 minutes apart).
     const fiveMinuteBucket = Math.floor(Date.now() / (5 * 60 * 1000));
     const idempotencyKey = `checkout:${req.household.id}:${fiveMinuteBucket}`;
 
@@ -217,5 +264,10 @@ router.post(
     }
   }
 );
+
+// Attached to the router (not a separate export) so server.js's existing
+// `require("./routes/billing")` usage — mounting the router directly — is
+// unaffected; tests reach it as `require("../routes/billing").hasQualifyingStripeSubscription`.
+router.hasQualifyingStripeSubscription = hasQualifyingStripeSubscription;
 
 module.exports = router;

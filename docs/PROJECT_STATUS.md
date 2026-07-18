@@ -153,7 +153,13 @@ Also fixed during this test:
 - Safari-specific login/session loss, caused by `localhost`/`127.0.0.1` host mixing (cookies don't carry over between the two) — fixed with a canonicalizing 301 redirect middleware in `server.js`, applied before auth
 - Dashboard's "Confirming your payment" banner never cleared once the protected state loaded (`upload.html`) — now hidden once `/dashboard-data` reports protected
 
-Known gap surfaced, not yet fixed: a duplicate Checkout Session/subscription can be created for one household from a single button click under some conditions — worth investigating the idempotency-key window in `routes/billing.js` before launch.
+Known gap surfaced, investigated and largely fixed (18 July 2026): the duplicate Checkout Session/subscription was root-caused to the checkout button never being disabled after submission, combined with no server-side check for an already-in-progress subscription — so when a webhook was delayed/dropped (the CLI relay bug above) and the dashboard gave no confirmation, a genuine second click minutes later was treated as a brand-new request. The idempotency key's wall-clock 5-minute bucket contributed: the two real attempts were only 218 seconds apart but straddled a bucket boundary, so Stripe's own dedup didn't catch it either. Fixed:
+
+- `upload.html`: the subscribe button now disables itself and shows "Redirecting to checkout…" immediately on submission
+- `routes/billing.js`: queries Stripe directly for an existing `active`/`trialing` subscription before creating a new Checkout Session (catches the exact "webhook hasn't arrived yet" window that the DB-based entitlement check cannot); the existing idempotency key is unchanged but now documented as only guarding against retries of the identical request, not deliberate repeat attempts
+- Automated tests added: `tests/checkout-existing-subscription.test.mjs`, `tests/subscribe-button.test.mjs`
+
+**Deferred:** a database-level concurrency lock (e.g. a Postgres advisory lock or a reservation row) for two requests arriving genuinely simultaneously — faster than the button can visually disable, or from two tabs. The fixes above close the actual incident (a slow/delayed webhook prompting a manual second click minutes later); true simultaneous-request protection is a separate, deliberately deferred defense-in-depth improvement, not required to close this gap.
 
 Still unconfirmed against the live database (headers say "DRAFT — NOT APPLIED", but this project's headers have been found stale before — see 013/014 above): `007_grant_authenticated_household_reads.sql`, `008_household_isolation_contacts.sql`, `009_service_role_minimum_app_privileges.sql`. These cover contacts/household RLS isolation and minimum service-role grants — real security surface worth explicitly verifying before launch, not just trusting the header.
 
