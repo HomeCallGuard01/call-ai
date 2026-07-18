@@ -14,6 +14,25 @@ const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts } = require("./database/contacts");
 const { getActiveEntitlement } = require("./database/billing");
 const billingRoutes = require("./routes/billing");
+const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
+
+// Fail fast and clearly in production rather than starting in a silently
+// broken or insecure state (e.g. a missing STRIPE_WEBHOOK_SECRET would
+// otherwise mean every webhook is rejected with no obvious symptom until a
+// customer notices their subscription never activated). Local development
+// keeps the existing fail-open behavior for these same vars elsewhere in
+// the codebase — this check only applies when NODE_ENV=production. Never
+// logs a variable's value, only its name (see validateProductionEnv).
+if (process.env.NODE_ENV === "production") {
+  const problems = validateProductionEnv(process.env);
+  if (problems.length > 0) {
+    console.error("FATAL: invalid production configuration:");
+    for (const problem of problems) {
+      console.error(` - ${problem}`);
+    }
+    process.exit(1);
+  }
+}
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -334,20 +353,6 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     safe: callsToday.filter(call => call.result === "SAFE").length,
     recentCalls: recentCalls.map(toClientCall),
   });
-});
-
-// TEST ROUTES
-
-app.get("/test-db", async (req, res) => {
-  res.json({
-    connected: true,
-    url: process.env.SUPABASE_URL,
-  });
-});
-
-app.get("/test-get-contacts", requireAuth, requireEntitlement, async (req, res) => {
-  const contacts = await getContacts(req.household.id);
-  res.json({ success: true, data: contacts });
 });
 
 app.get("/logs", requireAuth, requireEntitlement, async (req, res) => {
@@ -700,6 +705,8 @@ app.get("/dashboard", requireAuth, (req, res) => {
 
 // START SERVER
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+const PORT = resolvePort(process.env);
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });

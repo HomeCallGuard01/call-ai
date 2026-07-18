@@ -4,13 +4,16 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "startt": "node server.js",
-    "test": "node tests/migrations.pglite.test.mjs"
+    "start": "node server.js",
+    "test": "node tests/migrations.pglite.test.mjs && node tests/checkout-existing-subscription.test.mjs && node tests/subscribe-button.test.mjs && node tests/server-config.test.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.1",
     "body-parser": "^2.3.0",

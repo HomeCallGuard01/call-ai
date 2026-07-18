@@ -2,6 +2,9 @@
 node_modules/
 .env
 .env.*
+# Exception: this is a template with placeholder values only, meant to be
+# committed — see docs/LAUNCH_READINESS.md's production-readiness section.
+!.env.example
 uploads/
 
 # Logs
@@ -18,3 +21,14 @@ logs/
 *_export.sql
 backup*.sql
 db-exports/
+
+# Full Supabase backups (schema + data + roles) — data.sql and
+# roles-and-policies.sql contain real customer data / cluster role info and
+# must never be committed. Ignoring the whole dated backup directory for now
+# rather than picking files individually; a schema-only file may be
+# deliberately un-ignored and committed later on its own.
+backups/
+
+# Supabase CLI local cache (project ref, pooler host — no credentials, but
+# still local machine state, not repo content)
+supabase/.temp/

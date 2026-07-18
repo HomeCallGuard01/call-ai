@@ -167,6 +167,22 @@ Still unconfirmed against the live database (headers say "DRAFT — NOT APPLIED"
 
 ---
 
+## ✅ Production-Readiness Audit — Fixed (18 July 2026)
+
+An audit found the app was not deployable as-is (no `start` script, hardcoded port). Fixed:
+
+- `package.json`: `"start": "node server.js"` (was the typo `"startt"`, never wired up); added `"engines": { "node": ">=20" }`
+- `server.js`: port now resolved via `services/serverConfig.js`'s `resolvePort()`, reading `process.env.PORT` (Railway assigns this dynamically) with a `3000` local-dev fallback
+- Removed `/test-db` (unauthenticated, leaked `SUPABASE_URL`) and `/test-get-contacts` (unused by any automated test) — see `docs/LAUNCH_READINESS.md` for full reasoning
+- Added `.env.example` documenting every env var the app reads, including explicit notes that no Twilio vars and no `Resend_API_Key` are currently consumed by any code
+- Added production startup validation (`validateProductionEnv()`): refuses to boot when `NODE_ENV=production` if any of `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY`/`APP_URL`/`STRIPE_SECRET_KEY`/`STRIPE_PRICE_ID`/`STRIPE_WEBHOOK_SECRET` are missing, or if `APP_URL` still resolves to `localhost`/`127.0.0.1`. Verified by actually running it against the dev `.env` — correctly refused to start. Doesn't affect local dev (`NODE_ENV` unset there).
+- Tests added: `tests/server-config.test.mjs`
+- No Dockerfile or `railway.json` added — the fixes above are exactly what Railway's Nixpacks auto-detection needs; a Railway-specific config file wasn't judged to add real benefit
+
+**Not done, and explicitly out of scope for this pass:** setting real production values in Railway's environment variables, or triggering a deploy.
+
+---
+
 # Planned Roadmap
 
 ## Sprint 7 – Household Identity
@@ -245,7 +261,7 @@ Deliverables:
 - `contacts` table still relies on permissive anon-key RLS; `calls` now uses the stricter service-role pattern but `contacts` hasn't been aligned to match yet
 - No Stripe integration
 - No weekly reports
-- Debug routes still exist (`/test-db`, `/test-get-contacts`)
+- ~~Debug routes still exist (`/test-db`, `/test-get-contacts`)~~ — removed 18 July 2026, see Production-readiness audit below
 - Some repository cleanup required
 
 ---
