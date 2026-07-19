@@ -36,6 +36,16 @@ if (process.env.NODE_ENV === "production") {
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
+const PORT = resolvePort(process.env);
+
+// Single source of truth for the app's externally-reachable base URL —
+// used for every auth email redirect (register/confirm, resend
+// confirmation, password reset) and the canonical-host check below. The
+// localhost fallback exists only for local development; in production,
+// validateProductionEnv() above already refuses to boot if APP_URL is
+// unset or still resolves to localhost/127.0.0.1, so this fallback is
+// never actually reachable once deployed.
+const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
 // localhost and 127.0.0.1 are different origins for cookie purposes, so a
 // session cookie set on one is invisible on the other — this bit Safari
@@ -47,7 +57,7 @@ const upload = multer({ dest: "uploads/" });
 // a 301 turns a redirected POST into a GET per HTTP client convention, so a
 // form submitted from the non-canonical host loses its body and must be
 // resubmitted — acceptable since that's the exact behavior requested here.
-const APP_URL_PARSED = new URL(process.env.APP_URL || "http://localhost:3000");
+const APP_URL_PARSED = new URL(APP_URL);
 const CANONICAL_HOST = APP_URL_PARSED.hostname;
 const LOCAL_HOST_ALIASES = new Set(["localhost", "127.0.0.1"]);
 
@@ -508,7 +518,7 @@ app.post("/register", async (req, res) => {
     email,
     password,
     options: {
-      emailRedirectTo: `${process.env.APP_URL}/confirmed.html`,
+      emailRedirectTo: `${APP_URL}/confirmed.html`,
     },
   });
 
@@ -600,7 +610,7 @@ app.post("/resend-confirmation", async (req, res) => {
       type: "signup",
       email,
       options: {
-        emailRedirectTo: `${process.env.APP_URL}/confirmed.html`,
+        emailRedirectTo: `${APP_URL}/confirmed.html`,
       },
     });
 
@@ -630,7 +640,7 @@ app.post("/forgot-password", async (req, res) => {
 
   if (email) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.APP_URL}/reset-password.html`,
+      redirectTo: `${APP_URL}/reset-password.html`,
     });
 
     if (error) {
@@ -704,8 +714,6 @@ app.get("/dashboard", requireAuth, (req, res) => {
 });
 
 // START SERVER
-
-const PORT = resolvePort(process.env);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
