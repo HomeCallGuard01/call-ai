@@ -1,119 +1,2024 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Home Call Guard</title>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta
+    name="description"
+    content="Home Call Guard screens unknown callers before they reach you, helping protect you and your family from scam and nuisance calls."
+  >
+
+  <title>Home Call Guard | Protect Your Phone From Scam Callers</title>
 
   <style>
+    :root {
+      --background: #07111f;
+      --background-light: #0b1728;
+      --card: #101e31;
+      --card-light: #15263c;
+      --green: #22e59a;
+      --green-dark: #10b981;
+      --white: #ffffff;
+      --text: #d8e2ee;
+      --muted: #9babc0;
+      --border: rgba(255, 255, 255, 0.1);
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      --max-width: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
-      font-family: Arial;
-      background: #0b1220;
-      color: white;
-      padding: 20px;
+      background: var(--background);
+      color: var(--white);
+      font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .container {
+      width: min(calc(100% - 40px), var(--max-width));
+      margin: 0 auto;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: rgba(7, 17, 31, 0.9);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .navigation {
+      min-height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+
+    .brand img {
+      width: 160px;
+      height: 160px;
+      object-fit: contain;
+    }
+
+    .brand-name {
+      color: var(--white);
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-name span {
+      color: var(--green);
+    }
+
+    .desktop-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      margin-left: auto;
+    }
+
+    .desktop-links a {
+      color: var(--text);
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition:
+        color 0.2s ease,
+        opacity 0.2s ease;
+    }
+
+    .desktop-links a:hover {
+      color: var(--green);
+    }
+
+    .login-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 20px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--white);
+      font-weight: 700;
+      transition:
+        background 0.2s ease,
+        border-color 0.2s ease;
+    }
+
+    .login-link:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 22px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 10px 26px rgba(34, 229, 154, 0.22);
+      color: #04130d;
+      font-size: 0.95rem;
+      font-weight: 800;
+      transition:
+        transform 0.2s ease,
+        background 0.2s ease,
+        box-shadow 0.2s ease;
+    }
+
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      background: #42f2ae;
+      box-shadow: 0 14px 32px rgba(34, 229, 154, 0.3);
+    }
+
+    .hero {
+      position: relative;
+      min-height: calc(100vh - 78px);
+      display: flex;
+      align-items: center;
+      padding: 82px 0 94px;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      top: -140px;
+      right: -160px;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: rgba(34, 229, 154, 0.12);
+      filter: blur(110px);
+      pointer-events: none;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      bottom: -260px;
+      left: -200px;
+      width: 620px;
+      height: 620px;
+      border-radius: 50%;
+      background: rgba(38, 113, 255, 0.09);
+      filter: blur(130px);
+      pointer-events: none;
+    }
+
+    .hero-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(350px, 0.9fr);
+      gap: 70px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 24px;
+      padding: 9px 14px;
+      border: 1px solid rgba(34, 229, 154, 0.28);
+      border-radius: 999px;
+      background: rgba(34, 229, 154, 0.08);
+      color: var(--green);
+      font-size: 0.86rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .eyebrow-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 6px rgba(34, 229, 154, 0.12);
+    }
+
+    .hero h1 {
+      max-width: 780px;
+      color: var(--white);
+      font-size: clamp(3rem, 6vw, 5.6rem);
+      font-weight: 850;
+      letter-spacing: -0.055em;
+      line-height: 0.98;
+    }
+
+    .hero h1 span {
+      color: var(--green);
+    }
+
+    .hero-copy {
+      max-width: 660px;
+      margin-top: 28px;
+      color: var(--text);
+      font-size: clamp(1.08rem, 2vw, 1.28rem);
+      line-height: 1.65;
+    }
+
+    .hero-points {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 22px;
+      margin-top: 28px;
+    }
+
+    .hero-point {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--text);
+      font-size: 0.98rem;
+      font-weight: 700;
+    }
+
+    .check {
+      display: inline-flex;
+      width: 22px;
+      height: 22px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(34, 229, 154, 0.13);
+      color: var(--green);
+      font-size: 0.78rem;
+      font-weight: 900;
+    }
+
+    .reassurance-panel {
+      max-width: 560px;
+      margin-top: 26px;
+      padding: 22px 24px;
+      border: 1px solid rgba(34, 229, 154, 0.28);
+      border-radius: 18px;
+      background: var(--card);
+    }
+
+    .reassurance-panel p {
+      color: var(--text);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    .reassurance-panel p + p {
+      margin-top: 8px;
+    }
+
+    .reassurance-lead {
+      color: var(--white);
+      font-size: 1rem;
+      font-weight: 800;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 18px;
+      margin-top: 38px;
+    }
+
+    .primary-button {
+      display: inline-flex;
+      min-height: 58px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 28px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--green);
+      box-shadow: 0 14px 36px rgba(34, 229, 154, 0.2);
+      color: #04130d;
+      font-size: 1rem;
+      font-weight: 850;
+      transition:
+        transform 0.2s ease,
+        background 0.2s ease,
+        box-shadow 0.2s ease;
+    }
+
+    .primary-button:hover {
+      transform: translateY(-2px);
+      background: #42f2ae;
+      box-shadow: 0 18px 46px rgba(34, 229, 154, 0.28);
+    }
+
+    .secondary-button {
+      display: inline-flex;
+      min-height: 58px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 22px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      color: var(--white);
+      font-size: 1rem;
+      font-weight: 750;
+      transition:
+        background 0.2s ease,
+        border-color 0.2s ease;
+    }
+
+    .secondary-button:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    .price-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .price-note strong {
+      color: var(--white);
+    }
+
+    .phone-stage {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      padding: 30px;
+    }
+
+    .phone-glow {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 410px;
+      height: 410px;
+      border-radius: 50%;
+      background: rgba(34, 229, 154, 0.13);
+      filter: blur(74px);
+      transform: translate(-50%, -50%);
+    }
+
+    .phone {
+      position: relative;
+      z-index: 2;
+      width: 310px;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 44px;
+      background: linear-gradient(145deg, #2c3541, #080c12);
+      box-shadow:
+        0 40px 100px rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    .phone-screen {
+      position: relative;
+      min-height: 590px;
+      overflow: hidden;
+      border-radius: 34px;
+      background:
+        radial-gradient(circle at 50% 18%, rgba(34, 229, 154, 0.12), transparent 35%),
+        linear-gradient(180deg, #0d1a2b 0%, #07111f 100%);
+      padding: 24px 22px;
       text-align: center;
     }
 
-    h1 {
-      color: #00ff99;
-      font-size: 36px;
+    .phone-island {
+      width: 104px;
+      height: 27px;
+      margin: -10px auto 46px;
+      border-radius: 999px;
+      background: #020408;
     }
 
-    .box {
-      background: #111a2e;
-      padding: 20px;
-      margin: 20px auto;
-      border-radius: 10px;
-      max-width: 600px;
+    .incoming-label {
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
 
-    ul {
+    .caller-avatar {
+      display: flex;
+      width: 92px;
+      height: 92px;
+      align-items: center;
+      justify-content: center;
+      margin: 22px auto 18px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.06);
+      font-size: 2.3rem;
+    }
+
+    .caller-name {
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .caller-number {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .screening-card {
+      margin-top: 44px;
+      padding: 22px 18px;
+      border: 1px solid rgba(34, 229, 154, 0.25);
+      border-radius: 20px;
+      background: rgba(34, 229, 154, 0.08);
+    }
+
+    .shield-icon {
+      display: flex;
+      width: 48px;
+      height: 48px;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 13px;
+      border-radius: 14px;
+      background: var(--green);
+      color: #04130d;
+      font-size: 1.35rem;
+      font-weight: 900;
+    }
+
+    .screening-card strong {
+      display: block;
+      font-size: 1.02rem;
+    }
+
+    .screening-card p {
+      margin-top: 7px;
+      color: var(--text);
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+
+    .screening-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      margin-top: 16px;
+      color: var(--green);
+      font-size: 0.84rem;
+      font-weight: 800;
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.6s infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(34, 229, 154, 0.5);
+      }
+
+      70% {
+        box-shadow: 0 0 0 9px rgba(34, 229, 154, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(34, 229, 154, 0);
+      }
+    }
+
+    .trust-strip {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .trust-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+    }
+
+    .trust-item {
+      padding: 25px 18px;
+      border-right: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .trust-item:last-child {
+      border-right: 0;
+    }
+
+    .trust-item strong {
+      display: block;
+      color: var(--white);
+      font-size: 0.96rem;
+    }
+
+    .trust-item span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .section {
+      padding: 108px 0;
+    }
+
+    .section-light {
+      background: var(--background-light);
+    }
+
+    .section-heading {
+      max-width: 760px;
+      margin-bottom: 54px;
+    }
+
+    .section-heading.centered {
+      margin-right: auto;
+      margin-left: auto;
+      text-align: center;
+    }
+
+    .section-label {
+      display: block;
+      margin-bottom: 14px;
+      color: var(--green);
+      font-size: 0.85rem;
+      font-weight: 850;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .section-heading h2 {
+      color: var(--white);
+      font-size: clamp(2.2rem, 4vw, 3.7rem);
+      font-weight: 840;
+      letter-spacing: -0.045em;
+      line-height: 1.08;
+    }
+
+    .section-heading p {
+      margin-top: 20px;
+      color: var(--text);
+      font-size: 1.08rem;
+      line-height: 1.7;
+    }
+
+    .problem-grid {
+      display: grid;
+      grid-template-columns: 0.95fr 1.05fr;
+      gap: 70px;
+      align-items: center;
+    }
+
+    .problem-panel {
+      padding: 34px;
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .problem-panel h3 {
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .scam-list {
+      display: grid;
+      gap: 13px;
+      margin-top: 24px;
+    }
+
+    .scam-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .scam-icon {
+      display: flex;
+      width: 42px;
+      height: 42px;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      background: rgba(34, 229, 154, 0.1);
+      font-size: 1.15rem;
+    }
+
+    .scam-item strong {
+      display: block;
+      font-size: 0.96rem;
+    }
+
+    .scam-item span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 22px;
+    }
+
+    .step-card {
+      position: relative;
+      padding: 34px 28px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--card);
+      transition:
+        transform 0.22s ease,
+        border-color 0.22s ease;
+    }
+
+    .step-card:hover {
+      transform: translateY(-5px);
+      border-color: rgba(34, 229, 154, 0.28);
+    }
+
+    .step-number {
+      display: flex;
+      width: 42px;
+      height: 42px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      background: rgba(34, 229, 154, 0.12);
+      color: var(--green);
+      font-size: 0.9rem;
+      font-weight: 900;
+    }
+
+    .step-icon {
+      margin-top: 32px;
+      font-size: 2rem;
+    }
+
+    .step-card h3 {
+      margin-top: 20px;
+      font-size: 1.25rem;
+      letter-spacing: -0.025em;
+    }
+
+    .step-card p {
+      margin-top: 11px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.65;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 22px;
+    }
+
+    .feature-card {
+      display: flex;
+      gap: 20px;
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .feature-icon {
+      display: flex;
+      width: 52px;
+      height: 52px;
+      flex: 0 0 52px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 15px;
+      background: rgba(34, 229, 154, 0.11);
+      font-size: 1.35rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1.08rem;
+      letter-spacing: -0.02em;
+    }
+
+    .feature-card p {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    .flow-card {
+      padding: 36px;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns:
+        minmax(140px, 1fr)
+        60px
+        minmax(160px, 1fr)
+        60px
+        minmax(160px, 1fr);
+      align-items: center;
+      gap: 10px;
+    }
+
+    .flow-node {
+      padding: 25px 18px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.025);
+      text-align: center;
+    }
+
+    .flow-node.good {
+      border-color: rgba(34, 229, 154, 0.28);
+      background: rgba(34, 229, 154, 0.07);
+    }
+
+    .flow-node .node-icon {
+      font-size: 1.8rem;
+    }
+
+    .flow-node strong {
+      display: block;
+      margin-top: 12px;
+      font-size: 1rem;
+    }
+
+    .flow-node span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .flow-arrow {
+      color: var(--green);
+      font-size: 1.7rem;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .pricing-wrap {
+      max-width: 580px;
+      margin: 0 auto;
+    }
+
+    .pricing-card {
+      position: relative;
+      padding: 46px;
+      overflow: hidden;
+      border: 1px solid rgba(34, 229, 154, 0.3);
+      border-radius: 30px;
+      background:
+        linear-gradient(180deg, rgba(34, 229, 154, 0.07), transparent 40%),
+        var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .pricing-card::before {
+      content: "";
+      position: absolute;
+      top: -160px;
+      right: -120px;
+      width: 330px;
+      height: 330px;
+      border-radius: 50%;
+      background: rgba(34, 229, 154, 0.12);
+      filter: blur(70px);
+    }
+
+    .pricing-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .pricing-card h3 {
+      font-size: 1.35rem;
+      letter-spacing: -0.02em;
+    }
+
+    .price {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      margin-top: 24px;
+    }
+
+    .price-amount {
+      font-size: clamp(3.8rem, 8vw, 5.7rem);
+      font-weight: 880;
+      letter-spacing: -0.065em;
+      line-height: 0.9;
+    }
+
+    .price-term {
+      padding-bottom: 9px;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .pricing-description {
+      margin-top: 20px;
+      color: var(--text);
+      font-size: 1rem;
+    }
+
+    .pricing-list {
+      display: grid;
+      gap: 14px;
+      margin: 30px 0 34px;
+      list-style: none;
+    }
+
+    .pricing-list li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      font-size: 0.98rem;
+    }
+
+    .pricing-button {
+      display: flex;
+      width: 100%;
+      min-height: 60px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 15px;
+      background: var(--green);
+      color: #04130d;
+      font-size: 1.04rem;
+      font-weight: 880;
+      transition:
+        transform 0.2s ease,
+        background 0.2s ease;
+    }
+
+    .pricing-button:hover {
+      transform: translateY(-2px);
+      background: #42f2ae;
+    }
+
+    .pricing-smallprint {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+
+    .faq-list {
+      max-width: 850px;
+      margin: 0 auto;
+      border-top: 1px solid var(--border);
+    }
+
+    .faq-item {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .faq-question {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 25px 0;
+      border: 0;
+      background: transparent;
+      color: var(--white);
+      font: inherit;
+      font-size: 1.05rem;
+      font-weight: 760;
       text-align: left;
-      display: inline-block;
-    }
-
-    .buttons {
-      margin-top: 30px;
-    }
-
-    button {
-      padding: 15px 25px;
-      font-size: 16px;
-      border-radius: 8px;
       cursor: pointer;
-      margin: 10px;
     }
 
-    .primary {
-      background-color: #00ff99;
-      color: black;
-      border: none;
+    .faq-icon {
+      color: var(--green);
+      font-size: 1.5rem;
+      font-weight: 400;
+      transition: transform 0.25s ease;
     }
 
-    .secondary {
-      background-color: transparent;
-      color: #00ff99;
-      border: 2px solid #00ff99;
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+
+    .faq-answer p {
+      max-width: 750px;
+      padding: 0 0 25px;
+      color: var(--muted);
+      font-size: 0.96rem;
+      line-height: 1.7;
+    }
+
+    .faq-item.open .faq-answer {
+      max-height: 250px;
+    }
+
+    .faq-item.open .faq-icon {
+      transform: rotate(45deg);
+    }
+
+    .final-cta {
+      padding: 105px 0;
+    }
+
+    .cta-card {
+      position: relative;
+      overflow: hidden;
+      padding: 68px 50px;
+      border: 1px solid rgba(34, 229, 154, 0.25);
+      border-radius: 32px;
+      background:
+        radial-gradient(circle at 80% 25%, rgba(34, 229, 154, 0.13), transparent 35%),
+        var(--card);
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .cta-card h2 {
+      max-width: 760px;
+      margin: 0 auto;
+      font-size: clamp(2.2rem, 5vw, 4.1rem);
+      font-weight: 850;
+      letter-spacing: -0.05em;
+      line-height: 1.07;
+    }
+
+    .cta-card p {
+      max-width: 630px;
+      margin: 20px auto 30px;
+      color: var(--text);
+      font-size: 1.08rem;
+    }
+
+    .site-footer {
+      padding: 40px 0;
+      border-top: 1px solid var(--border);
+      background: #050d18;
+    }
+
+    .footer-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 30px;
+    }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .footer-brand img {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+    }
+
+    .footer-brand strong {
+      font-size: 0.95rem;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 20px;
+    }
+
+    .footer-links a {
+      color: var(--muted);
+      font-size: 0.87rem;
+      transition: color 0.2s ease;
+    }
+
+    .footer-links a:hover {
+      color: var(--green);
+    }
+
+    .copyright {
+      margin-top: 22px;
+      color: #718096;
+      font-size: 0.79rem;
+      text-align: center;
+    }
+
+    @media (max-width: 960px) {
+      .desktop-links {
+        display: none;
+      }
+
+      .hero {
+        min-height: auto;
+        padding: 70px 0 85px;
+      }
+
+      .hero-grid,
+      .problem-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-grid {
+        gap: 65px;
+      }
+
+      .hero-copy {
+        max-width: 740px;
+      }
+
+      .phone-stage {
+        justify-content: center;
+      }
+
+      .steps-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .flow {
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+
+      .flow-arrow {
+        transform: rotate(90deg);
+      }
+
+      .trust-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .trust-item:nth-child(2) {
+        border-right: 0;
+      }
+
+      .trust-item:nth-child(-n + 2) {
+        border-bottom: 1px solid var(--border);
+      }
+    }
+
+    @media (max-width: 680px) {
+      .container {
+        width: min(calc(100% - 28px), var(--max-width));
+      }
+
+      .navigation {
+        min-height: 130px;
+        flex-wrap: wrap;
+        row-gap: 10px;
+      }
+
+      .brand img {
+        width: 100px;
+        height: 100px;
+      }
+
+      .brand-name {
+        font-size: 1.12rem;
+      }
+
+      .nav-actions {
+        margin-left: auto;
+        gap: 8px;
+      }
+
+      .login-link {
+        min-height: 40px;
+        padding: 0 15px;
+        font-size: 0.88rem;
+      }
+
+      .nav-cta {
+        min-height: 40px;
+        padding: 0 16px;
+        font-size: 0.85rem;
+      }
+
+      .hero {
+        padding: 54px 0 70px;
+      }
+
+      .hero h1 {
+        font-size: clamp(2.65rem, 14vw, 4rem);
+      }
+
+      .hero-copy {
+        margin-top: 22px;
+        font-size: 1.03rem;
+      }
+
+      .hero-points {
+        display: grid;
+        gap: 11px;
+      }
+
+      .hero-actions {
+        display: grid;
+        gap: 12px;
+      }
+
+      .primary-button,
+      .secondary-button {
+        width: 100%;
+      }
+
+      .phone-stage {
+        padding: 10px 0 0;
+      }
+
+      .phone {
+        width: min(100%, 300px);
+      }
+
+      .phone-screen {
+        min-height: 550px;
+      }
+
+      .section {
+        padding: 78px 0;
+      }
+
+      .section-heading {
+        margin-bottom: 38px;
+      }
+
+      .section-heading h2 {
+        font-size: clamp(2rem, 10vw, 3rem);
+      }
+
+      .problem-grid {
+        gap: 40px;
+      }
+
+      .problem-panel,
+      .flow-card,
+      .pricing-card {
+        padding: 24px;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .feature-card {
+        padding: 23px 20px;
+      }
+
+      .trust-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .trust-item {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .trust-item:last-child {
+        border-bottom: 0;
+      }
+
+      .price {
+        align-items: flex-end;
+      }
+
+      .cta-card {
+        padding: 48px 22px;
+      }
+
+      .footer-content {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .footer-links {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
 
 <body>
 
-<img src="/logo.png" style="height:100px; margin-bottom:10px;">
+  <header class="site-header">
+    <div class="container navigation">
 
-<div class="box">
-  <h2>Protect your family from scam calls</h2>
-  <p>No apps. No confusion. Works automatically.</p>
-</div>
+      <a class="brand" href="#top" aria-label="Home Call Guard home">
+        <img src="/logo.png" alt="Home Call Guard logo">
 
-<div class="box">
-  <h3>Why people use it</h3>
-  <ul>
-    <li>✔ Feel confident answering the phone again</li>
-    <li>✔ Protect elderly parents and relatives</li>
-    <li>✔ Reduce risk of financial scams</li>
-  </ul>
-</div>
+        <div class="brand-name">
+          Home Call <span>Guard</span>
+        </div>
+      </a>
 
-<div class="box">
-  <h3>How it works</h3>
-  <p>Unknown callers are screened and monitored.</p>
-  <p>Known contacts go straight through with no interruption.</p>
-</div>
+      <nav class="desktop-links" aria-label="Main navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#benefits">Benefits</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">Questions</a>
+      </nav>
 
-<div class="box">
-  <h2>£5/month (early access)</h2>
-  <p>Takes 2 minutes to set up.</p>
-</div>
+      <div class="nav-actions">
+        <a class="login-link" href="/login.html">
+          Log in
+        </a>
 
-<div class="buttons">
+        <a class="nav-cta" href="/register.html">
+          Protect My Phone
+        </a>
+      </div>
 
-  <!-- MAIN CTA -->
-  <a href="/register.html">
-    <button class="primary">
-      Get Protected Today
-    </button>
-  </a>
+    </div>
+  </header>
 
-  <!-- EXISTING CUSTOMER LOGIN -->
-  <a href="/login.html">
-    <button class="secondary">
-      Already a customer? Log in
-    </button>
-  </a>
+  <main id="top">
 
-  <!-- WHATSAPP SUPPORT (not the purchase path) -->
-  <a href="https://wa.me/447733413030" target="_blank">
-    <button class="secondary">
-      Need help setting up?
-    </button>
-  </a>
+    <section class="hero">
+      <div class="container hero-grid">
 
-</div>
+        <div class="hero-content">
 
-<p style="margin-top: 30px; font-size: 14px; color: #aaa;">
-  Limited early access available
-</p>
+          <div class="eyebrow">
+            <span class="eyebrow-dot"></span>
+            AI-powered call protection
+          </div>
+
+          <h1>
+            Protect your phone from
+            <span>scam callers.</span>
+          </h1>
+
+          <p class="hero-copy">
+            Home Call Guard screens unknown callers before they reach you,
+            helping protect you and your family from scam and nuisance calls.
+          </p>
+
+          <div class="hero-points">
+            <div class="hero-point">
+              <span class="check">✓</span>
+              Keep your existing phone number
+            </div>
+
+            <div class="hero-point">
+              <span class="check">✓</span>
+              Friends and family call exactly as normal
+            </div>
+
+            <div class="hero-point">
+              <span class="check">✓</span>
+              Only unknown callers are screened
+            </div>
+          </div>
+
+          <div class="reassurance-panel">
+            <p class="reassurance-lead">
+              Your trusted contacts call exactly as they do today.
+            </p>
+            <p>
+              Friends, family and saved contacts are never screened or delayed.
+            </p>
+            <p>
+              Only unknown callers are screened before reaching you.
+            </p>
+          </div>
+
+          <div class="hero-actions">
+            <a class="primary-button" href="/register.html">
+              Protect My Phone
+            </a>
+
+            <a class="secondary-button" href="#how-it-works">
+              See how it works
+            </a>
+          </div>
+
+          <p class="price-note">
+            Just <strong>£4.99 per month.</strong> Cancel anytime.
+          </p>
+
+        </div>
+
+        <div class="phone-stage" aria-label="Home Call Guard screening an unknown caller">
+
+          <div class="phone-glow"></div>
+
+          <div class="phone">
+            <div class="phone-screen">
+
+              <div class="phone-island"></div>
+
+              <div class="incoming-label">
+                Incoming call
+              </div>
+
+              <div class="caller-avatar">
+                ☎
+              </div>
+
+              <div class="caller-name">
+                Unknown caller
+              </div>
+
+              <div class="caller-number">
+                Number not in your contacts
+              </div>
+
+              <div class="screening-card">
+
+                <div class="shield-icon">
+                  ✓
+                </div>
+
+                <strong>
+                  Home Call Guard
+                </strong>
+
+                <p>
+                  Screening this caller before the call reaches you.
+                </p>
+
+                <div class="screening-status">
+                  <span class="pulse"></span>
+                  Screening in progress
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="trust-strip">
+      <div class="container trust-grid">
+
+        <div class="trust-item">
+          <strong>Keep your number</strong>
+          <span>No need to change it</span>
+        </div>
+
+        <div class="trust-item">
+          <strong>Trusted contacts</strong>
+          <span>People you know can get through</span>
+        </div>
+
+        <div class="trust-item">
+          <strong>No new app</strong>
+          <span>Nothing complicated to learn</span>
+        </div>
+
+        <div class="trust-item">
+          <strong>Cancel anytime</strong>
+          <span>No long contract</span>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section section-light">
+      <div class="container problem-grid">
+
+        <div class="section-heading">
+
+          <span class="section-label">
+            The problem
+          </span>
+
+          <h2>
+            Scam calls are becoming harder to recognise.
+          </h2>
+
+          <p>
+            Fraudsters can sound convincing, create urgency and pretend to be
+            organisations you trust. Home Call Guard adds another layer of
+            protection before an unknown caller reaches you.
+          </p>
+
+        </div>
+
+        <div class="problem-panel">
+
+          <h3>
+            Scam callers may pretend to be:
+          </h3>
+
+          <div class="scam-list">
+
+            <div class="scam-item">
+              <div class="scam-icon">🏦</div>
+              <div>
+                <strong>Your bank</strong>
+                <span>Claiming there is a problem with your account</span>
+              </div>
+            </div>
+
+            <div class="scam-item">
+              <div class="scam-icon">📦</div>
+              <div>
+                <strong>A delivery company</strong>
+                <span>Asking for payment or personal information</span>
+              </div>
+            </div>
+
+            <div class="scam-item">
+              <div class="scam-icon">⚡</div>
+              <div>
+                <strong>Your energy provider</strong>
+                <span>Offering refunds or threatening disconnection</span>
+              </div>
+            </div>
+
+            <div class="scam-item">
+              <div class="scam-icon">🏛</div>
+              <div>
+                <strong>A government department</strong>
+                <span>Creating pressure with an urgent or alarming claim</span>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section" id="how-it-works">
+      <div class="container">
+
+        <div class="section-heading centered">
+
+          <span class="section-label">
+            How it works
+          </span>
+
+          <h2>
+            Your trusted contacts call you exactly as they do today.
+          </h2>
+
+          <p>
+            Home Call Guard leaves trusted contacts alone. Only unknown callers
+            are screened before they reach you.
+          </p>
+
+        </div>
+
+        <div class="steps-grid">
+
+          <article class="step-card">
+
+            <div class="step-number">01</div>
+            <div class="step-icon">☎</div>
+
+            <h3>
+              An unknown caller rings
+            </h3>
+
+            <p>
+              The call comes from a number that is not included in your trusted
+              contacts.
+            </p>
+
+          </article>
+
+          <article class="step-card">
+
+            <div class="step-number">02</div>
+            <div class="step-icon">🛡</div>
+
+            <h3>
+              Home Call Guard answers
+            </h3>
+
+            <p>
+              The caller is screened before the call is allowed to reach your
+              phone.
+            </p>
+
+          </article>
+
+          <article class="step-card">
+
+            <div class="step-number">03</div>
+            <div class="step-icon">📱</div>
+
+            <h3>
+              Genuine callers can get through
+            </h3>
+
+            <p>
+              Trusted contacts continue to reach you without unnecessary
+              interruption.
+            </p>
+
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section section-light" id="benefits">
+      <div class="container">
+
+        <div class="section-heading">
+
+          <span class="section-label">
+            Why Home Call Guard
+          </span>
+
+          <h2>
+            More confidence every time your phone rings.
+          </h2>
+
+          <p>
+            Designed to make call protection simple, understandable and easy
+            to manage.
+          </p>
+
+        </div>
+
+        <div class="features-grid">
+
+          <article class="feature-card">
+            <div class="feature-icon">🛡</div>
+
+            <div>
+              <h3>Screen unknown callers</h3>
+              <p>
+                Add protection between you and callers you do not recognise.
+              </p>
+            </div>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-icon">👨‍👩‍👧</div>
+
+            <div>
+              <h3>Help protect family members</h3>
+              <p>
+                Give relatives greater confidence when answering their phone.
+              </p>
+            </div>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-icon">☎</div>
+
+            <div>
+              <h3>Keep your existing number</h3>
+              <p>
+                Continue using the phone number that friends and family already
+                know.
+              </p>
+            </div>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-icon">✓</div>
+
+            <div>
+              <h3>Control trusted contacts</h3>
+              <p>
+                Add people you know so their calls can be handled appropriately.
+              </p>
+            </div>
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+
+        <div class="section-heading centered">
+
+          <span class="section-label">
+            One simple journey
+          </span>
+
+          <h2>
+            What happens when somebody calls?
+          </h2>
+
+        </div>
+
+        <div class="flow-card">
+          <div class="flow">
+
+            <div class="flow-node">
+              <div class="node-icon">☎</div>
+              <strong>Unknown caller</strong>
+              <span>A number you do not recognise</span>
+            </div>
+
+            <div class="flow-arrow">→</div>
+
+            <div class="flow-node">
+              <div class="node-icon">🛡</div>
+              <strong>Caller is screened</strong>
+              <span>Home Call Guard answers first</span>
+            </div>
+
+            <div class="flow-arrow">→</div>
+
+            <div class="flow-node good">
+              <div class="node-icon">📱</div>
+              <strong>You stay protected</strong>
+              <span>Genuine calls can continue</span>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section section-light" id="pricing">
+      <div class="container">
+
+        <div class="section-heading centered">
+
+          <span class="section-label">
+            Simple pricing
+          </span>
+
+          <h2>
+            Affordable protection without a long contract.
+          </h2>
+
+        </div>
+
+        <div class="pricing-wrap">
+
+          <div class="pricing-card">
+            <div class="pricing-content">
+
+              <h3>
+                Home Call Guard
+              </h3>
+
+              <div class="price">
+                <span class="price-amount">£4.99</span>
+                <span class="price-term">per month</span>
+              </div>
+
+              <p class="pricing-description">
+                Everything you need to start protecting your phone from unknown
+                callers.
+              </p>
+
+              <ul class="pricing-list">
+                <li>
+                  <span class="check">✓</span>
+                  Unknown caller screening
+                </li>
+
+                <li>
+                  <span class="check">✓</span>
+                  Trusted contact management
+                </li>
+
+                <li>
+                  <span class="check">✓</span>
+                  Keep your existing number
+                </li>
+
+                <li>
+                  <span class="check">✓</span>
+                  Online protection dashboard
+                </li>
+
+                <li>
+                  <span class="check">✓</span>
+                  Cancel anytime
+                </li>
+              </ul>
+
+              <a class="pricing-button" href="/register.html">
+                Protect My Phone
+              </a>
+
+              <p class="pricing-smallprint">
+                Secure online registration. No long-term commitment.
+              </p>
+
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section" id="faq">
+      <div class="container">
+
+        <div class="section-heading centered">
+
+          <span class="section-label">
+            Common questions
+          </span>
+
+          <h2>
+            Everything you need to know before getting started.
+          </h2>
+
+        </div>
+
+        <div class="faq-list">
+
+          <div class="faq-item open">
+
+            <button
+              class="faq-question"
+              type="button"
+              aria-expanded="true"
+            >
+              <span>Can I keep my existing phone number?</span>
+              <span class="faq-icon">+</span>
+            </button>
+
+            <div class="faq-answer">
+              <p>
+                Yes. Home Call Guard is designed so that you can continue using
+                the phone number your friends, family and important contacts
+                already know.
+              </p>
+            </div>
+
+          </div>
+
+          <div class="faq-item">
+
+            <button
+              class="faq-question"
+              type="button"
+              aria-expanded="false"
+            >
+              <span>What happens to calls from people I know?</span>
+              <span class="faq-icon">+</span>
+            </button>
+
+            <div class="faq-answer">
+              <p>
+                You can add trusted contacts to your account. This helps Home
+                Call Guard recognise callers who should be able to reach you
+                normally.
+              </p>
+            </div>
+
+          </div>
+
+          <div class="faq-item">
+
+            <button
+              class="faq-question"
+              type="button"
+              aria-expanded="false"
+            >
+              <span>Do I need to install an app?</span>
+              <span class="faq-icon">+</span>
+            </button>
+
+            <div class="faq-answer">
+              <p>
+                No. Your account and trusted contacts are managed through a
+                simple online dashboard, so there is no separate app to learn.
+              </p>
+            </div>
+
+          </div>
+
+          <div class="faq-item">
+
+            <button
+              class="faq-question"
+              type="button"
+              aria-expanded="false"
+            >
+              <span>Will every unknown caller be blocked?</span>
+              <span class="faq-icon">+</span>
+            </button>
+
+            <div class="faq-answer">
+              <p>
+                Home Call Guard screens unknown callers rather than assuming
+                every unfamiliar number is fraudulent. This helps genuine
+                callers while adding protection from suspicious calls.
+              </p>
+            </div>
+
+          </div>
+
+          <div class="faq-item">
+
+            <button
+              class="faq-question"
+              type="button"
+              aria-expanded="false"
+            >
+              <span>Can I cancel my subscription?</span>
+              <span class="faq-icon">+</span>
+            </button>
+
+            <div class="faq-answer">
+              <p>
+                Yes. The service is charged monthly and there is no long-term
+                contract.
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="container">
+
+        <div class="cta-card">
+
+          <span class="section-label">
+            Start today
+          </span>
+
+          <h2>
+            Feel more confident answering your phone.
+          </h2>
+
+          <p>
+            Add an extra layer of protection from unknown and suspicious
+            callers for just £4.99 per month.
+          </p>
+
+          <a class="primary-button" href="/register.html">
+            Protect My Phone
+          </a>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+
+      <div class="footer-content">
+
+        <a class="footer-brand" href="#top">
+          <img src="/logo.png" alt="Home Call Guard logo">
+          <strong>Home Call Guard</strong>
+        </a>
+
+        <div class="footer-links">
+          <a href="/login.html">Customer login</a>
+          <a href="mailto:support@homecallguard.co.uk">Support</a>
+          <a href="mailto:support@homecallguard.co.uk">Contact</a>
+        </div>
+
+      </div>
+
+      <p class="copyright">
+        © <span id="currentYear"></span> Home Call Guard. All rights reserved.
+      </p>
+
+    </div>
+  </footer>
+
+  <script>
+    const faqQuestions = document.querySelectorAll(".faq-question");
+
+    faqQuestions.forEach(function (question) {
+      question.addEventListener("click", function () {
+        const faqItem = question.closest(".faq-item");
+        const isOpen = faqItem.classList.contains("open");
+
+        document.querySelectorAll(".faq-item").forEach(function (item) {
+          item.classList.remove("open");
+
+          const button = item.querySelector(".faq-question");
+
+          if (button) {
+            button.setAttribute("aria-expanded", "false");
+          }
+        });
+
+        if (!isOpen) {
+          faqItem.classList.add("open");
+          question.setAttribute("aria-expanded", "true");
+        }
+      });
+    });
+
+    document.getElementById("currentYear").textContent =
+      new Date().getFullYear();
+  </script>
 
 </body>
 </html>
