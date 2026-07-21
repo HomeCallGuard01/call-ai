@@ -14,6 +14,7 @@ const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts } = require("./database/contacts");
 const { getActiveEntitlement } = require("./database/billing");
 const billingRoutes = require("./routes/billing");
+const adminRoutes = require("./routes/admin");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
 // Fail fast and clearly in production rather than starting in a silently
@@ -76,6 +77,7 @@ app.use(express.static("public"));
 // for Stripe signature verification) — safe to mount alongside the global
 // urlencoded parser above, which already no-ops on non-form content types.
 app.use(billingRoutes);
+app.use(adminRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -216,6 +218,20 @@ app.post("/voice", async (req, res) => {
   if (isKnown) {
     console.log("Known contact → bypass AI");
 
+    if (household) {
+      logCall({
+        callSid: req.body.CallSid,
+        number: caller,
+        status: "Known",
+        result: "SAFE",
+        aiModel: null,
+        processingTimeMs: 0,
+        householdId: household.id,
+      }).catch(err => console.error("CALL LOG FAILED:", err.message));
+    } else {
+      console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
+    }
+
     const dial = twiml.dial();
     dial.number("+447715562700");
 
@@ -350,17 +366,22 @@ app.post("/process", async (req, res) => {
 // DASHBOARD API
 
 app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => {
-  const [contacts, callsToday, recentCalls] = await Promise.all([
-    getContacts(req.household.id),
+  const [callsToday, recentCalls, contacts] = await Promise.all([
     getCallsToday(req.household.id),
     getRecentCalls(req.household.id, 10),
+    getContacts(req.household.id),
   ]);
 
   res.json({
-    protectedContacts: contacts.length,
-    callsToday: callsToday.length,
-    blocked: callsToday.filter(call => call.result === "SCAM").length,
-    safe: callsToday.filter(call => call.result === "SAFE").length,
+    // req.household already carries these — requireAuth's
+    // getHouseholdByAuthUserId does a plain select("*"), so no extra
+    // query is needed for the household's own provisioning state.
+    twilioNumber: req.household.twilio_number || null,
+    twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
+    contactsUploaded: contacts.length,
+    callsScreened: callsToday.filter(call => call.status === "Unknown").length,
+    suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
+    trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
     recentCalls: recentCalls.map(toClientCall),
   });
 });

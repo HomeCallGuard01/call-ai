@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Call Guard — Operations Dashboard</title>
+<style>
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: white;
+    font-size: 15px;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 32px;
+    background: #020617;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .topbar-logo {
+    width: 44px;
+    height: 50px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .topbar-logo img {
+    position: absolute;
+    top: -30.4px;
+    left: -17.8px;
+    width: 172.7px;
+    height: 115.2px;
+    max-width: none;
+  }
+
+  .topbar-title {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .topbar-title .accent {
+    color: #00ff99;
+  }
+
+  .topbar-subtitle {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+
+  .topbar-link {
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 13px;
+    padding: 8px 14px;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+  }
+
+  .topbar-link:hover {
+    color: #e2e8f0;
+    border-color: #334155;
+  }
+
+  .main {
+    padding: 28px 32px 48px;
+    max-width: 1440px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 15px;
+  }
+
+  h2 {
+    margin: 0 0 16px;
+    font-size: 17px;
+    color: #e2e8f0;
+  }
+
+  .section {
+    margin-bottom: 28px;
+  }
+
+  .card {
+    background: #020617;
+    padding: 22px;
+    border-radius: 10px;
+    border: 1px solid #1e293b;
+  }
+
+  /* --- System health --- */
+
+  .health-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+  }
+
+  .health-pill {
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .health-name {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+  }
+
+  .health-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .health-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .health-dot.ok { background: #22c55e; }
+  .health-dot.error { background: #ef4444; }
+  .health-dot.not_configured { background: #475569; }
+
+  .health-latency {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* --- KPI cards --- */
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+  }
+
+  .kpi-card {
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .kpi-number {
+    font-size: 28px;
+    font-weight: 700;
+    color: white;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kpi-number.warn {
+    color: #f59e0b;
+  }
+
+  .kpi-label {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #94a3b8;
+  }
+
+  /* --- Two-column layout --- */
+
+  .columns {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .stack > .card {
+    margin-bottom: 20px;
+  }
+
+  .stack > .card:last-child {
+    margin-bottom: 0;
+  }
+
+  .empty-state {
+    color: #94a3b8;
+    font-size: 14px;
+    padding: 8px 0;
+  }
+
+  /* --- Activity / calls / alerts lists --- */
+
+  .list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .list-item:last-child {
+    border-bottom: none;
+  }
+
+  .list-icon {
+    font-size: 18px;
+    width: 26px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .list-details {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .list-title {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .list-meta {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+  }
+
+  .list-title.severity-high { color: #f87171; }
+  .list-title.severity-medium { color: #fbbf24; }
+
+  /* --- Customer search --- */
+
+  .search-form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .search-form input {
+    flex: 1;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: white;
+    padding: 9px 12px;
+    font-size: 14px;
+  }
+
+  .search-result {
+    padding: 10px 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 13px;
+  }
+
+  .search-result:last-child {
+    border-bottom: none;
+  }
+
+  .search-result-email {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .search-result-meta {
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+
+  /* --- Quick actions --- */
+
+  .quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .quick-action-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .quick-action-row input {
+    flex: 1;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: white;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  button {
+    background: #22c55e;
+    border: none;
+    padding: 9px 16px;
+    color: black;
+    font-weight: bold;
+    font-size: 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  button:hover {
+    background: #16a34a;
+  }
+
+  .quick-action-result {
+    font-size: 12px;
+    color: #94a3b8;
+    min-height: 16px;
+  }
+
+  .external-links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .external-links a {
+    color: #94a3b8;
+    font-size: 13px;
+    text-decoration: none;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 8px 12px;
+  }
+
+  .external-links a:hover {
+    color: #e2e8f0;
+    border-color: #334155;
+  }
+
+  /* --- Launch readiness --- */
+
+  .readiness-item {
+    padding: 12px 0;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .readiness-item:last-child {
+    border-bottom: none;
+  }
+
+  .readiness-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .readiness-title {
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .readiness-badge {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .readiness-badge.blocker { background: #450a0a; color: #fca5a5; }
+  .readiness-badge.high { background: #431407; color: #fdba74; }
+  .readiness-badge.medium { background: #422006; color: #fde68a; }
+
+  .readiness-detail {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  .coming-soon {
+    color: #64748b;
+    font-style: italic;
+    font-size: 12px;
+    margin-top: 3px;
+  }
+
+  @media (max-width: 1200px) {
+    .health-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .kpi-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .columns {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .health-grid,
+    .kpi-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>
+</head>
+
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-logo">
+      <img src="/logo.png" alt="Home Call Guard logo">
+    </div>
+    <div>
+      <div class="topbar-title">Home Call <span class="accent">Guard</span></div>
+      <div class="topbar-subtitle">Operations Dashboard</div>
+    </div>
+  </div>
+  <a class="topbar-link" href="/dashboard">Customer view</a>
+</header>
+
+<main class="main">
+  <h1 class="visually-hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;">Home Call Guard Operations Dashboard</h1>
+
+  <section class="section">
+    <h2>System health</h2>
+    <div class="health-grid" id="healthGrid"></div>
+  </section>
+
+  <section class="section">
+    <h2>Key metrics</h2>
+    <div class="kpi-grid" id="kpiGrid"></div>
+  </section>
+
+  <section class="section columns">
+    <div class="stack">
+      <div class="card">
+        <h2>Recent customer activity</h2>
+        <div id="activityList"></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent calls</h2>
+        <div id="callsList"></div>
+      </div>
+
+      <div class="card">
+        <h2>Alerts &amp; errors</h2>
+        <div id="alertsList"></div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <h2>Customer search</h2>
+        <form class="search-form" id="searchForm">
+          <input type="text" id="searchInput" placeholder="Email, phone, or Twilio number">
+          <button type="submit">Search</button>
+        </form>
+        <div id="searchResults"></div>
+      </div>
+
+      <div class="card">
+        <h2>Quick actions</h2>
+        <div class="quick-actions">
+          <div class="quick-action-row">
+            <input type="text" id="retryHouseholdId" placeholder="Household ID">
+            <button type="button" id="retryProvisioningBtn">Retry provisioning</button>
+          </div>
+          <div class="quick-action-result" id="quickActionResult"></div>
+          <div class="external-links">
+            <a href="https://dashboard.stripe.com/customers" target="_blank" rel="noopener">Open Stripe customers →</a>
+            <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" target="_blank" rel="noopener">Open Twilio numbers console →</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Launch readiness</h2>
+        <div id="launchReadinessList"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // TEST-EXTRACT-START: formatHealthBadge
+  function formatHealthBadge(check) {
+    if (check.status === "ok") return { label: "Operational", className: "ok" };
+    if (check.status === "error") return { label: "Error", className: "error" };
+    return { label: "Not configured", className: "not_configured" };
+  }
+  // TEST-EXTRACT-END: formatHealthBadge
+
+  // TEST-EXTRACT-START: formatRevenue
+  function formatRevenue(revenue) {
+    if (!revenue || !revenue.available) return "—";
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: (revenue.currency || "gbp").toUpperCase(),
+    }).format(revenue.amount);
+  }
+  // TEST-EXTRACT-END: formatRevenue
+
+  // TEST-EXTRACT-START: describeActivityEvent
+  function describeActivityEvent(event) {
+    const email = event.email || "Unknown customer";
+
+    if (event.type === "signup") {
+      return { icon: "🆕", title: `${email} signed up`, meta: event.at };
+    }
+
+    if (event.type.startsWith("subscription_")) {
+      const status = event.type.replace("subscription_", "");
+      return { icon: "💳", title: `${email} — subscription ${status}`, meta: event.at };
+    }
+
+    return { icon: "•", title: `${email} — ${event.type}`, meta: event.at };
+  }
+  // TEST-EXTRACT-END: describeActivityEvent
+
+  // TEST-EXTRACT-START: describeAlert
+  function describeAlert(alert) {
+    const email = alert.email || (alert.householdId ? alert.householdId.slice(0, 8) : "Unknown");
+    const severityClass = alert.severity === "high" ? "severity-high" : "severity-medium";
+
+    if (alert.type === "provisioning_failed") {
+      return { icon: "📵", className: severityClass, title: `Provisioning failed — ${email}`, meta: alert.message };
+    }
+
+    if (alert.type === "webhook_failed") {
+      return { icon: "⚠️", className: severityClass, title: "Webhook processing failed", meta: alert.message };
+    }
+
+    return { icon: "•", className: severityClass, title: alert.type, meta: alert.message };
+  }
+  // TEST-EXTRACT-END: describeAlert
+
+  // TEST-EXTRACT-START: formatQuickActionResult
+  function formatQuickActionResult(result) {
+    if (!result || !result.attempted) {
+      return "Not attempted — household already has a number, or has reached the maximum retry attempts.";
+    }
+
+    if (result.success) {
+      return `Provisioned successfully: ${result.twilioNumber}`;
+    }
+
+    return `Failed: ${result.error}`;
+  }
+  // TEST-EXTRACT-END: formatQuickActionResult
+
+  // TEST-EXTRACT-START: formatLaunchReadinessBadge
+  function formatLaunchReadinessBadge(item) {
+    const labels = { blocker: "Blocker", high: "High", medium: "Medium" };
+    return { label: labels[item.severity] || item.severity, className: item.severity };
+  }
+  // TEST-EXTRACT-END: formatLaunchReadinessBadge
+
+  function renderHealth(checks) {
+    const grid = document.getElementById("healthGrid");
+    grid.innerHTML = "";
+
+    checks.forEach(check => {
+      const badge = formatHealthBadge(check);
+      const pill = document.createElement("div");
+      pill.className = "health-pill";
+      pill.innerHTML = `
+        <div class="health-name">${check.name}</div>
+        <div class="health-status">
+          <span class="health-dot ${badge.className}"></span>
+          <span>${badge.label}</span>
+        </div>
+        ${check.latencyMs != null ? `<div class="health-latency">${check.latencyMs}ms</div>` : ""}
+      `;
+      grid.appendChild(pill);
+    });
+  }
+
+  function renderKpis(kpis) {
+    const grid = document.getElementById("kpiGrid");
+    const cards = [
+      { label: "Customers", value: kpis.customers },
+      { label: "Protected calls", value: kpis.protectedCalls },
+      { label: "Blocked calls", value: kpis.blockedCalls },
+      { label: "Revenue (est. MRR)", value: formatRevenue(kpis.revenue) },
+      { label: "Active subscriptions", value: kpis.activeSubscriptions },
+      { label: "Failed provisioning", value: kpis.failedProvisioning, warn: kpis.failedProvisioning > 0 },
+    ];
+
+    grid.innerHTML = cards
+      .map(
+        c => `
+      <div class="kpi-card">
+        <div class="kpi-number${c.warn ? " warn" : ""}">${c.value}</div>
+        <div class="kpi-label">${c.label}</div>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  function renderList(containerId, items, emptyMessage, describe) {
+    const container = document.getElementById(containerId);
+
+    if (!items || items.length === 0) {
+      container.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+      return;
+    }
+
+    container.innerHTML = items
+      .map(item => {
+        const d = describe(item);
+        return `
+        <div class="list-item">
+          <div class="list-icon">${d.icon}</div>
+          <div class="list-details">
+            <div class="list-title ${d.className || ""}">${d.title}</div>
+            <div class="list-meta">${d.meta || ""}</div>
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+  }
+
+  function renderCalls(calls) {
+    const container = document.getElementById("callsList");
+
+    if (!calls || calls.length === 0) {
+      container.innerHTML = `<div class="empty-state">No calls recorded yet.</div>`;
+      return;
+    }
+
+    container.innerHTML = calls
+      .map(call => {
+        const icon = call.result === "SCAM" ? "🚫" : "✅";
+        const who = call.householdEmail || "Unknown household";
+        return `
+        <div class="list-item">
+          <div class="list-icon">${icon}</div>
+          <div class="list-details">
+            <div class="list-title">${call.number} — ${call.result}</div>
+            <div class="list-meta">${who} · ${call.time}</div>
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+  }
+
+  function renderLaunchReadiness(items) {
+    const container = document.getElementById("launchReadinessList");
+
+    if (!items || items.length === 0) {
+      container.innerHTML = `<div class="empty-state">Nothing outstanding.</div>`;
+      return;
+    }
+
+    container.innerHTML = items
+      .map(item => {
+        const badge = formatLaunchReadinessBadge(item);
+        return `
+        <div class="readiness-item">
+          <div class="readiness-header">
+            <div class="readiness-title">${item.title}</div>
+            <div class="readiness-badge ${badge.className}">${badge.label}</div>
+          </div>
+          <div class="readiness-detail">${item.detail}</div>
+        </div>
+      `;
+      })
+      .join("");
+  }
+
+  function renderSearchResults(results) {
+    const container = document.getElementById("searchResults");
+
+    if (!results || results.length === 0) {
+      container.innerHTML = `<div class="empty-state">No matches.</div>`;
+      return;
+    }
+
+    container.innerHTML = results
+      .map(
+        h => `
+      <div class="search-result">
+        <div class="search-result-email">${h.email}</div>
+        <div class="search-result-meta">
+          ID: ${h.id}<br>
+          Number: ${h.twilio_number || "—"} · Provisioning: ${h.twilio_provisioning_status}<br>
+          Status: ${h.status}
+        </div>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  async function loadOverview() {
+    try {
+      const res = await fetch("/admin/api/overview");
+      if (!res.ok) throw new Error("overview request failed");
+      const data = await res.json();
+
+      renderHealth(data.health);
+      renderKpis(data.kpis);
+      renderList("activityList", data.recentActivity, "No customer activity yet.", describeActivityEvent);
+      renderCalls(data.recentCalls);
+      renderList("alertsList", data.alerts, "No alerts — everything is healthy.", describeAlert);
+      renderLaunchReadiness(data.launchReadiness);
+    } catch (err) {
+      console.error("ADMIN OVERVIEW LOAD ERROR:", err);
+    }
+  }
+
+  document.getElementById("searchForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const q = document.getElementById("searchInput").value;
+
+    try {
+      const res = await fetch(`/admin/api/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      renderSearchResults(data.results);
+    } catch (err) {
+      console.error("ADMIN SEARCH ERROR:", err);
+    }
+  });
+
+  document.getElementById("retryProvisioningBtn").addEventListener("click", async () => {
+    const householdId = document.getElementById("retryHouseholdId").value.trim();
+    const resultEl = document.getElementById("quickActionResult");
+
+    if (!householdId) {
+      resultEl.textContent = "Enter a household ID first.";
+      return;
+    }
+
+    resultEl.textContent = "Retrying…";
+
+    try {
+      const res = await fetch(`/admin/api/households/${encodeURIComponent(householdId)}/retry-provisioning`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      resultEl.textContent = formatQuickActionResult(data);
+    } catch (err) {
+      resultEl.textContent = "Request failed — see console.";
+      console.error("RETRY PROVISIONING ERROR:", err);
+    }
+  });
+
+  loadOverview();
+</script>
+
+</body>
+</html>

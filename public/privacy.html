@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta
+    name="description"
+    content="Privacy Policy for Home Call Guard — how we collect, use and protect your information, and your rights under UK GDPR."
+  >
+
+  <title>Privacy Policy | Home Call Guard</title>
+
+  <style>
+    :root {
+      --background: #07111f;
+      --background-light: #0b1728;
+      --card: #101e31;
+      --green: #22e59a;
+      --white: #ffffff;
+      --text: #d8e2ee;
+      --muted: #9babc0;
+      --border: rgba(255, 255, 255, 0.1);
+      --max-width: 860px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background: var(--background);
+      color: var(--text);
+      font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      line-height: 1.65;
+    }
+
+    a {
+      color: var(--green);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .container {
+      width: min(calc(100% - 40px), var(--max-width));
+      margin: 0 auto;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(7, 17, 31, 0.92);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 76px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+    }
+
+    .brand-name {
+      color: var(--white);
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-name span {
+      color: var(--green);
+    }
+
+    .back-link {
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .doc {
+      padding: 56px 0 90px;
+    }
+
+    .doc-header {
+      margin-bottom: 40px;
+    }
+
+    .doc-label {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--green);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .doc h1 {
+      color: var(--white);
+      font-size: clamp(2rem, 4.5vw, 2.7rem);
+      font-weight: 850;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+
+    .doc-updated {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .doc-intro {
+      margin-top: 22px;
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 0.98rem;
+    }
+
+    .doc section {
+      margin-top: 42px;
+    }
+
+    .doc h2 {
+      color: var(--white);
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin-bottom: 14px;
+    }
+
+    .doc h2 .num {
+      color: var(--green);
+      margin-right: 8px;
+    }
+
+    .doc h3 {
+      color: var(--white);
+      font-size: 1.05rem;
+      font-weight: 750;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    .doc p {
+      margin-top: 12px;
+      font-size: 0.98rem;
+    }
+
+    .doc p:first-of-type {
+      margin-top: 0;
+    }
+
+    .doc ul {
+      margin: 14px 0 0 20px;
+    }
+
+    .doc li {
+      margin-top: 8px;
+      font-size: 0.98rem;
+    }
+
+    .doc table {
+      width: 100%;
+      margin-top: 16px;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    .doc th,
+    .doc td {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .doc th {
+      background: var(--card);
+      color: var(--white);
+      font-weight: 700;
+    }
+
+    .placeholder {
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.92em;
+      font-weight: 700;
+    }
+
+    .contact-card {
+      margin-top: 14px;
+      padding: 18px 20px;
+      border: 1px solid rgba(34, 229, 154, 0.25);
+      border-radius: 14px;
+      background: rgba(34, 229, 154, 0.06);
+      font-size: 0.98rem;
+    }
+
+    .site-footer {
+      padding: 32px 0 40px;
+      border-top: 1px solid var(--border);
+      background: #050d18;
+    }
+
+    .footer-content {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+
+    .footer-links a {
+      color: var(--muted);
+      font-size: 0.87rem;
+    }
+
+    .footer-links a:hover {
+      color: var(--green);
+    }
+
+    .copyright {
+      margin-top: 18px;
+      color: #718096;
+      font-size: 0.79rem;
+      text-align: center;
+    }
+
+    @media (max-width: 600px) {
+      .nav-row {
+        min-height: 64px;
+      }
+
+      .brand img {
+        width: 36px;
+        height: 36px;
+      }
+
+      .doc {
+        padding: 40px 0 70px;
+      }
+
+      .doc table {
+        font-size: 0.86rem;
+      }
+
+      .footer-content {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header class="site-header">
+    <div class="container nav-row">
+      <a class="brand" href="/">
+        <img src="/logo.png" alt="Home Call Guard logo">
+        <span class="brand-name">Home Call <span>Guard</span></span>
+      </a>
+      <a class="back-link" href="/">← Back to homepage</a>
+    </div>
+  </header>
+
+  <main class="doc">
+    <div class="container">
+
+      <div class="doc-header">
+        <span class="doc-label">Legal</span>
+        <h1>Privacy Policy</h1>
+        <p class="doc-updated">Last updated: 20 July 2026</p>
+
+        <div class="doc-intro">
+          This Privacy Policy explains how Home Call Guard collects, uses, shares and protects your
+          personal data, and the choices and rights you have. It applies to the Home Call Guard website,
+          registration and login, the online dashboard, and the call-screening service itself.
+        </div>
+      </div>
+
+      <section>
+        <h2><span class="num">1.</span>Who we are</h2>
+        <p>
+          Home Call Guard is a trading name of <strong>AFMD Ltd</strong> ("we", "us", "our"), a company
+          registered in England and Wales under company number <strong>07075723</strong>, with a
+          registered office at
+          <span class="placeholder">[REGISTERED OFFICE ADDRESS TO BE CONFIRMED]</span>. AFMD Ltd is the
+          data controller for the personal data described in this policy. Our contact details are in
+          Section 12 below.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">2.</span>Information we collect</h2>
+
+        <h3>Account and contact information</h3>
+        <p>
+          When you register, we collect your email address and a password (stored securely as a hash by
+          our authentication provider, Supabase — we never store or see your password in plain text).
+          Your account is linked to the household phone number the Service protects.
+        </p>
+
+        <h3>Trusted-contact telephone numbers</h3>
+        <p>
+          When you upload or add trusted contacts, we store the name and phone number you provide for
+          each one, so that Home Call Guard can recognise their calls and let them through without
+          screening.
+        </p>
+
+        <h3>Call and screening records</h3>
+        <p>
+          For each screened call, we record the caller's number, the call status, the screening result
+          (for example, whether it was assessed as safe or a likely scam), a decision reason, and
+          technical details such as processing time and which detection method was used. Where our AI
+          classification step is used, the caller's spoken words are converted to text and analysed at
+          the time of the call to help classify it — this text is not stored in our database once the
+          call has been processed.
+        </p>
+
+        <h3>Payment information</h3>
+        <p>
+          We do not collect or store your card details. Payment is handled entirely by our payment
+          processor, Stripe — see Section 4. We store only your Stripe customer and subscription
+          identifiers, and your subscription status.
+        </p>
+
+        <h3>Technical and session information</h3>
+        <p>
+          We use strictly necessary cookies to keep you securely logged in (see Section 9). We do not
+          currently use analytics, advertising or tracking cookies.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">3.</span>How we use your information, and our legal basis</h2>
+        <table>
+          <tr>
+            <th>Purpose</th>
+            <th>Legal basis (UK GDPR)</th>
+          </tr>
+          <tr>
+            <td>Creating and managing your account, providing the call-screening service you subscribe
+              to</td>
+            <td>Performance of a contract with you</td>
+          </tr>
+          <tr>
+            <td>Processing your subscription payment and billing</td>
+            <td>Performance of a contract with you; legal obligation (accounting/tax records)</td>
+          </tr>
+          <tr>
+            <td>Screening calls against your trusted contacts and detecting likely scam/nuisance
+              callers</td>
+            <td>Performance of a contract with you; our legitimate interest in providing effective
+              protection</td>
+          </tr>
+          <tr>
+            <td>Keeping the Service secure and preventing misuse</td>
+            <td>Legitimate interests (security and fraud prevention)</td>
+          </tr>
+          <tr>
+            <td>Responding to support requests</td>
+            <td>Performance of a contract with you; legitimate interests</td>
+          </tr>
+        </table>
+        <p>
+          We do not send marketing emails unless you separately opt in, and you can withdraw that
+          consent at any time.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">4.</span>Who we share your information with</h2>
+        <p>
+          We share personal data only with service providers who help us run Home Call Guard, under
+          contracts that require them to protect it appropriately. We do not sell your personal data.
+        </p>
+        <ul>
+          <li><strong>Stripe</strong> (payment processing) — handles your payment details and processes
+            your subscription charges directly; we never see or store your full card details.</li>
+          <li><strong>Supabase</strong> (database and authentication) — stores your account and
+            household data, and manages secure login. Hosted in the UK (London, eu-west-2 region).</li>
+          <li><strong>Railway</strong> (application hosting) — runs the Home Call Guard application.
+            Hosted in the UK (London, eu-west-2 region).</li>
+          <li><strong>Twilio</strong> (telephony) — routes and connects calls to and through the Service
+            so calls can be screened.</li>
+          <li><strong>OpenAI</strong> (AI call classification) — receives a text version of an unknown
+            caller's spoken words, at the moment of the call, solely to help classify whether the call is
+            likely to be a scam.</li>
+        </ul>
+        <p>
+          We may also disclose personal data where required by law, to protect our rights, or in
+          connection with a business transfer (such as a merger or acquisition), in which case we will
+          take reasonable steps to ensure your data continues to be protected.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">5.</span>International data transfers</h2>
+        <p>
+          Some of our service providers (including Stripe, Twilio and OpenAI) are based outside the UK,
+          or may process data outside the UK/European Economic Area as part of providing their service
+          to us. Where this happens, we rely on appropriate safeguards recognised under UK data
+          protection law — such as Standard Contractual Clauses, an equivalent UK-approved mechanism, or
+          the provider's own adequacy/compliance certifications — to ensure your data remains protected
+          to a UK standard.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">6.</span>How long we keep your information</h2>
+        <p>
+          We keep personal data for as long as reasonably necessary for the purposes it was collected
+          for, and to meet legal, accounting or reporting requirements. As a general guide:
+        </p>
+        <ul>
+          <li>Account and trusted-contact data: for as long as you have an active account, and for a
+            limited period afterwards in case you wish to reactivate or raise a query.</li>
+          <li>Call and screening records: for a limited retention period to let you review recent
+            activity and for service-quality purposes, after which they are deleted or anonymised.</li>
+          <li>Billing records: for as long as required by UK tax and accounting law (typically several
+            years) after your subscription ends.</li>
+        </ul>
+        <p class="placeholder">
+          [Exact retention periods to be confirmed against your actual business/records-retention
+          practice — the periods above are a reasonable starting point, not yet finalised policy.]
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">7.</span>Automated screening decisions</h2>
+        <p>
+          Home Call Guard uses automated methods (keyword analysis and AI classification) to assess
+          incoming calls from numbers not on your trusted-contact list. This affects how a call is
+          handled, but does not produce any legal or similarly significant automated decision about you
+          as our customer. If you believe a call was screened incorrectly, you can contact us and we
+          will look into it.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">8.</span>How we protect your information</h2>
+        <p>
+          We use industry-standard security measures, including encrypted (HTTPS) connections,
+          securely hashed passwords, and access controls that restrict who and what can read or modify
+          your data. No system can be guaranteed 100% secure, but we work to keep your information
+          protected and to respond quickly to any issue.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">9.</span>Cookies and session storage</h2>
+        <p>
+          We use two strictly necessary cookies to keep you securely signed in: an access token and a
+          refresh token. Both are set as <code>httpOnly</code> cookies (not readable by page scripts),
+          transmitted only over secure connections in production, and used solely to recognise your
+          logged-in session. We do not use these, or any other cookies, for advertising, analytics or
+          cross-site tracking.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">10.</span>Your rights under UK GDPR</h2>
+        <p>You have the right to:</p>
+        <ul>
+          <li><strong>Access</strong> the personal data we hold about you;</li>
+          <li><strong>Correct</strong> inaccurate or incomplete data;</li>
+          <li><strong>Request deletion</strong> of your data, in certain circumstances;</li>
+          <li><strong>Restrict</strong> or <strong>object to</strong> certain processing;</li>
+          <li><strong>Receive a copy</strong> of your data in a portable format, where technically
+            feasible;</li>
+          <li><strong>Withdraw consent</strong> at any time, where processing is based on consent.</li>
+        </ul>
+        <p>
+          To exercise any of these rights, email
+          <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a>. We will respond
+          without undue delay, and in any event within one month, as required by UK GDPR. We may need to
+          verify your identity before actioning certain requests.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">11.</span>Complaints</h2>
+        <p>
+          If you have concerns about how we handle your personal data, please contact us first so we can
+          try to resolve it. You also have the right to complain to the UK's data protection regulator,
+          the Information Commissioner's Office (ICO):
+        </p>
+        <div class="contact-card">
+          Website: <a href="https://ico.org.uk" target="_blank" rel="noopener">ico.org.uk</a><br>
+          Helpline: 0303 123 1113
+        </div>
+      </section>
+
+      <section>
+        <h2><span class="num">12.</span>Contact us</h2>
+        <div class="contact-card">
+          Email: <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a><br>
+          Postal address: <span class="placeholder">[BUSINESS POSTAL ADDRESS TO BE CONFIRMED]</span>
+        </div>
+      </section>
+
+      <section>
+        <h2><span class="num">13.</span>Changes to this policy</h2>
+        <p>
+          We may update this Privacy Policy from time to time, for example if our services or legal
+          obligations change. Where changes are material, we will take reasonable steps to let you know,
+          such as by email. The "Last updated" date at the top of this page shows when it was last
+          revised.
+        </p>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-content">
+        <a class="brand" href="/">
+          <img src="/logo.png" alt="Home Call Guard logo">
+          <span class="brand-name">Home Call <span>Guard</span></span>
+        </a>
+        <div class="footer-links">
+          <a href="/login.html">Customer login</a>
+          <a href="/terms.html">Terms and Conditions</a>
+          <a href="/privacy.html">Privacy Policy</a>
+          <a href="mailto:support@homecallguard.co.uk">Support</a>
+        </div>
+      </div>
+      <p class="copyright">
+        © <span id="currentYear"></span> Home Call Guard. All rights reserved.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("currentYear").textContent = new Date().getFullYear();
+  </script>
+
+</body>
+</html>

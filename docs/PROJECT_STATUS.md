@@ -183,6 +183,25 @@ An audit found the app was not deployable as-is (no `start` script, hardcoded po
 
 ---
 
+## ✅ Payment-Completion Flow Rebuild (20 July 2026)
+
+**Root cause:** a real production payment (household `andrewdeane_uk@yahoo.co.uk`, subscription `sub_1TvD5iEopg3VmrHsWzVgVmCE`, confirmed `paid`/`active` in Stripe) never activated in the app. `subscriptions`/`entitlements`/`stripe_webhook_events` were all confirmed empty for that household — not stale, genuinely never written. Cause: **no Stripe webhook endpoint has ever been registered against production** (`stripe.webhookEndpoints.list()` returns zero results). Every webhook test throughout this project used the local Stripe CLI's `stripe listen` tunnel, which only forwards while that CLI process runs on a developer machine — it was never a persistent registration, so Stripe generates `checkout.session.completed`/`customer.subscription.created` events with nowhere to deliver them (`pending_webhooks: 0`). **Still not resolved** — see Outstanding below.
+
+**Fixed, all in `routes/billing.js` / `upload.html`:**
+- `success_url` now includes `{CHECKOUT_SESSION_ID}` (was missing entirely, so no reconciliation was even possible from the return URL)
+- New `GET /billing/reconcile-session` (requireAuth): bounded fallback that retrieves the completed Checkout Session by ID, verifies it belongs to the caller's own Stripe customer, and — reusing the exact same `claimWebhookEvent`/`processWebhookEvent` pair the real webhook uses — reconciles the subscription/entitlement server-side. Idempotent by construction: if the real webhook does eventually also arrive, both paths converge on the same DB writes rather than double-applying anything.
+- New dashboard state machine (`upload.html`): `confirming` → `success` → (or `activation_delayed` after a bounded 60s poll). The subscribe button's visibility is now driven by a single `state !== "unsubscribed"` check covering every state, so a customer who has just paid — or whose activation is delayed — can never be shown a payment button or sent through checkout again, by construction rather than by remembering to guard each state individually.
+- Server-side redirect reasons made explicit (`?checkout=already_active`) instead of a silent bounce back to `/dashboard` when a household already has a qualifying subscription — closes the "confusing payment loop" symptom (never a literal double charge: `hasQualifyingStripeSubscription` already blocked a second Stripe subscription being created, confirmed by checking the live subscription status; the confusion was purely a missing explanation).
+- `billing_address_collection: "required"` added to every Checkout Session creation path — now collects a full billing address including postcode.
+- Explicit recurring-billing wording added via `custom_text.submit.message`: states £4.99/month, that it recurs until cancelled, and references Terms and Conditions/Privacy Policy.
+- Tests added: `tests/checkout-confirmation.test.mjs` (bounded polling timing, full state-machine visibility matrix proving the subscribe button is unreachable outside `unsubscribed`); extended `tests/checkout-existing-subscription.test.mjs` (`isSessionPaidWithSubscription`, `buildCheckoutSessionParams`).
+
+**Outstanding — needs a decision, not done automatically:**
+- **No webhook endpoint is registered in Stripe at all.** The reconciliation fallback above makes the app resilient to this, but the actual root cause is still live — recommend registering one via `stripe.webhookEndpoints.create()` pointing at `https://www.homecallguard.co.uk/billing/webhook` with the signing secret then set as Railway's `STRIPE_WEBHOOK_SECRET`.
+- **Stripe Checkout's enforced Terms of Service checkbox (`consent_collection.terms_of_service: "required"`) is not enabled** — confirmed by attempting real session creation: Stripe rejects it outright until a Terms of Service URL is set under Settings → Public business details in the Stripe Dashboard (not settable via the API). Only the text disclosure is live until that's configured.
+
+---
+
 # Planned Roadmap
 
 ## Sprint 7 – Household Identity

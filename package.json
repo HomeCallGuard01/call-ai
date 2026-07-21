@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/migrations.pglite.test.mjs && node tests/checkout-existing-subscription.test.mjs && node tests/subscribe-button.test.mjs && node tests/server-config.test.mjs"
+    "test": "node tests/migrations.pglite.test.mjs && node tests/checkout-existing-subscription.test.mjs && node tests/subscribe-button.test.mjs && node tests/checkout-confirmation.test.mjs && node tests/server-config.test.mjs && node tests/twilio-provisioning.test.mjs && node tests/dashboard-status.test.mjs && node tests/admin-metrics.test.mjs && node tests/admin-dashboard.test.mjs"
   },
   "keywords": [],
   "author": "",

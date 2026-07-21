@@ -15,7 +15,12 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 require('dotenv').config();
 
-const { hasQualifyingStripeSubscription, findReusableOpenCheckoutSession } = require('../routes/billing.js');
+const {
+  hasQualifyingStripeSubscription,
+  findReusableOpenCheckoutSession,
+  isSessionPaidWithSubscription,
+  buildCheckoutSessionParams,
+} = require('../routes/billing.js');
 
 let failures = 0;
 
@@ -98,6 +103,64 @@ check(
     usableOpenSession,
   ]) === usableOpenSession,
   'an open session is found even alongside completed/expired ones'
+);
+
+// isSessionPaidWithSubscription() and buildCheckoutSessionParams() — added
+// for the payment-completion-flow rebuild (docs/PROJECT_STATUS.md). Root
+// cause of that incident: no Stripe webhook endpoint was ever registered
+// against production, so the dashboard never learned a payment had
+// completed. isSessionPaidWithSubscription() backs the bounded
+// reconciliation fallback (GET /billing/reconcile-session) that no longer
+// depends on the webhook arriving at all.
+
+check(
+  isSessionPaidWithSubscription({ payment_status: 'paid', subscription: 'sub_123' }) === true,
+  'a paid session with a subscription attached is treated as a completed payment'
+);
+
+check(
+  isSessionPaidWithSubscription({ payment_status: 'unpaid', subscription: 'sub_123' }) === false,
+  'a session that is not yet paid is not treated as a completed payment'
+);
+
+check(
+  isSessionPaidWithSubscription({ payment_status: 'paid', subscription: null }) === false,
+  'a paid session with no subscription attached yet is not treated as a completed payment'
+);
+
+check(
+  isSessionPaidWithSubscription(null) === false,
+  'a missing session is handled without throwing'
+);
+
+const sessionParams = buildCheckoutSessionParams({
+  customer: 'cus_test123',
+  priceId: 'price_test456',
+  householdId: 'household-789',
+  appUrl: 'https://www.homecallguard.co.uk',
+});
+
+check(
+  sessionParams.billing_address_collection === 'required',
+  'every Checkout Session created collects a full billing address (postcode included)'
+);
+
+check(
+  sessionParams.success_url === 'https://www.homecallguard.co.uk/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}',
+  'success_url includes {CHECKOUT_SESSION_ID} so the app can reconcile a completed session if the webhook is delayed'
+);
+
+check(
+  typeof sessionParams.custom_text?.submit?.message === 'string' &&
+    sessionParams.custom_text.submit.message.includes('£4.99') &&
+    sessionParams.custom_text.submit.message.toLowerCase().includes('every month') &&
+    sessionParams.custom_text.submit.message.toLowerCase().includes('terms'),
+  'the checkout submit message states £4.99/month, that it recurs, and references Terms and Conditions'
+);
+
+check(
+  sessionParams.line_items[0].price === 'price_test456' && sessionParams.line_items[0].quantity === 1,
+  'the session is created against the exact price ID passed in, not a hardcoded one'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

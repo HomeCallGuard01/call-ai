@@ -37,15 +37,15 @@ if (startIdx === -1 || endIdx === -1) {
   const source = html.slice(startIdx + startMarker.length, endIdx);
   const handleSubscribeFormSubmit = new Function(`${source}\nreturn handleSubscribeFormSubmit;`)();
 
-  const fakeButton = { disabled: false, textContent: 'Get Protected Today' };
+  const fakeButton = { disabled: false, textContent: 'Continue to secure payment' };
   const fakeForm = { querySelector: () => fakeButton };
 
   handleSubscribeFormSubmit(fakeForm);
 
   check(fakeButton.disabled === true, 'button becomes disabled on submission');
   check(
-    fakeButton.textContent === 'Redirecting to checkout…',
-    'button text changes to "Redirecting to checkout…"'
+    fakeButton.textContent === 'Opening secure checkout…',
+    'button text changes to "Opening secure checkout…"'
   );
 
   // A real disabled button can't fire a second submit event — this confirms
@@ -54,7 +54,7 @@ if (startIdx === -1 || endIdx === -1) {
   // resetting or flipping back, i.e. repeated submission is a safe no-op.
   handleSubscribeFormSubmit(fakeForm);
   check(
-    fakeButton.disabled === true && fakeButton.textContent === 'Redirecting to checkout…',
+    fakeButton.disabled === true && fakeButton.textContent === 'Opening secure checkout…',
     'repeated submission from the same page instance stays disabled (no reset, no second distinct state)'
   );
 }

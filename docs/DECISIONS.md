@@ -364,3 +364,23 @@ Password manager compatibility
 Mobile usability
 Accessibility
 That kind of focused review often catches small issues (like confusing error messages or autofill quirks) that are easy to fix but make a noticeable difference to users. For a security-focused product like Home Call Guard, having a polished authentication experience will help reinforce trust from the very first interaction.
+
+Decision 011 – Dashboard Resilience & Last Known State
+Decision
+The Home Call Guard dashboard will never immediately show "Status unavailable" after a temporary loss of connection.
+Instead, it will:
+Display the last known protection state.
+Show the timestamp of the last successful update.
+Continue retrying automatically in the background.
+Only show a connection warning after a sustained loss of communication.
+Reason
+Customers pay for reassurance. A transient network issue should not make them think their protection has stopped. Displaying the last known state provides confidence while accurately communicating that live updates are temporarily unavailable.
+Implementation
+Cache the last successful /api/status response.
+Poll the server every 30–60 seconds.
+If polling fails:
+Keep displaying cached data.
+Show "Updating..." or "Reconnecting..."
+After several consecutive failures:
+Display "Connection lost" with the time of the last successful update.
+Never replace valid status data with zero values or "Unavailable" after a single failed request.

@@ -22,6 +22,35 @@ purpose and currency are clear without opening the file.
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — system overview, customer
   flow, data flow, folder structure, security principles, MVP decisions.
 
+## Launch
+
+- [`docs/launch/FINAL_ACCEPTANCE_REPORT.md`](launch/FINAL_ACCEPTANCE_REPORT.md) —
+  Launch Polish Sprint scope, changes, and a full end-to-end UAT run
+  against a real customer account (no auth bypass, no mocked data).
+- [`docs/launch/KNOWN_ISSUES.md`](launch/KNOWN_ISSUES.md) — pre-launch
+  issues by severity; the former Severity 1 blocker (no Twilio number
+  ever assigned to a new customer) is verified reaching Twilio's real
+  API, pending a registered-address decision before a number can
+  actually be purchased.
+- [`docs/launch/TWILIO_NUMBER_LIFECYCLE.md`](launch/TWILIO_NUMBER_LIFECYCLE.md) —
+  the full number lifecycle: automatic provisioning on payment, a 30-day
+  grace period on cancellation vs. immediate release on account deletion,
+  and why.
+- [`docs/engineering/016_017_migration_incident_notes.md`](engineering/016_017_migration_incident_notes.md) —
+  working notes from a real incident applying migrations 016/017: a
+  bundled transaction that reported success while changing nothing, the
+  staged repair that actually worked, and a real PL/pgSQL bug it
+  surfaced.
+- [`docs/launch/POST_LAUNCH_ROADMAP.md`](launch/POST_LAUNCH_ROADMAP.md) —
+  scheduling for the above, cross-referenced to the pre-existing
+  `docs/ENGINEERING_ROADMAP.md` rather than duplicating it.
+- [`docs/launch/LAUNCH_DAY.md`](launch/LAUNCH_DAY.md) — the launch-day
+  runbook: Stripe test→live switch, required env vars, deploy, smoke
+  test, rollback.
+- [`docs/business/`](business/) — commercial strategy (marketing plan,
+  KPIs, acquisition readiness, operations). Not yet written — deferred
+  until commercial strategy is worked through.
+
 ## Engineering
 
 - [`PROJECT.md`](../PROJECT.md) — high-level roadmap (root of the repo).

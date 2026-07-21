@@ -396,6 +396,83 @@
       color: var(--white);
     }
 
+    .reassurance-badge {
+      display: inline-flex;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .mini-how-it-works {
+      padding: 44px 0;
+    }
+
+    .mini-how-it-works-title {
+      text-align: center;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--white);
+      margin-bottom: 26px;
+    }
+
+    .mini-steps {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 48px;
+      flex-wrap: wrap;
+    }
+
+    .mini-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      max-width: 160px;
+      text-align: center;
+    }
+
+    .mini-step-icon {
+      font-size: 1.3rem;
+    }
+
+    .mini-step span:last-child {
+      color: var(--text);
+      font-size: 0.94rem;
+      font-weight: 600;
+    }
+
+    .home-phone-card {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 26px 28px;
+      border: 1px solid rgba(34, 229, 154, 0.28);
+      border-radius: 18px;
+      background: var(--card);
+    }
+
+    .home-phone-card h3 {
+      color: var(--white);
+      font-size: 1.08rem;
+      margin-bottom: 14px;
+    }
+
+    .home-phone-card ul {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--text);
+    }
+
+    .home-phone-card li {
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    .home-phone-card li + li {
+      margin-top: 6px;
+    }
+
     .phone-stage {
       position: relative;
       display: flex;
@@ -1194,6 +1271,16 @@
         gap: 11px;
       }
 
+      .mini-steps {
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .home-phone-card {
+        padding: 22px 20px;
+      }
+
       .hero-actions {
         display: grid;
         gap: 12px;
@@ -1340,29 +1427,34 @@
           </div>
 
           <h1>
-            Protect your phone from
-            <span>scam callers.</span>
+            Stop <span>scam callers</span> before your home phone rings
           </h1>
 
           <p class="hero-copy">
-            Home Call Guard screens unknown callers before they reach you,
-            helping protect you and your family from scam and nuisance calls.
+            Protect your home phone from nuisance and scam callers in around 2
+            minutes. Keep your existing phone number while Home Call Guard
+            automatically screens unknown callers.
           </p>
 
           <div class="hero-points">
             <div class="hero-point">
               <span class="check">✓</span>
-              Keep your existing phone number
+              Keep your existing home phone number
             </div>
 
             <div class="hero-point">
               <span class="check">✓</span>
-              Friends and family call exactly as normal
+              Upload your trusted contacts in under 2 minutes
             </div>
 
             <div class="hero-point">
               <span class="check">✓</span>
-              Only unknown callers are screened
+              Friends and family ring through exactly as normal
+            </div>
+
+            <div class="hero-point">
+              <span class="check">✓</span>
+              Unknown callers are screened by AI before your phone rings
             </div>
           </div>
 
@@ -1380,7 +1472,7 @@
 
           <div class="hero-actions">
             <a class="primary-button" href="/register.html">
-              Protect My Phone
+              Get Protected Today
             </a>
 
             <a class="secondary-button" href="#how-it-works">
@@ -1389,7 +1481,11 @@
           </div>
 
           <p class="price-note">
-            Just <strong>£4.99 per month.</strong> Cancel anytime.
+            <strong>£4.99/month (including VAT)</strong>
+          </p>
+
+          <p class="reassurance-badge">
+            🔒 Setup takes under 2 minutes · Keep your existing phone number · Cancel anytime
           </p>
 
         </div>
@@ -1445,6 +1541,26 @@
 
         </div>
 
+      </div>
+    </section>
+
+    <section class="mini-how-it-works">
+      <div class="container">
+        <h2 class="mini-how-it-works-title">How it works</h2>
+        <div class="mini-steps">
+          <div class="mini-step">
+            <span class="mini-step-icon" aria-hidden="true">1️⃣</span>
+            <span>Register</span>
+          </div>
+          <div class="mini-step">
+            <span class="mini-step-icon" aria-hidden="true">2️⃣</span>
+            <span>Upload your trusted contacts</span>
+          </div>
+          <div class="mini-step">
+            <span class="mini-step-icon" aria-hidden="true">3️⃣</span>
+            <span>We screen everyone else</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1567,15 +1683,20 @@
           <article class="step-card">
 
             <div class="step-number">01</div>
-            <div class="step-icon">☎</div>
+            <div class="step-icon">📇</div>
 
             <h3>
-              An unknown caller rings
+              Upload your trusted contacts
             </h3>
 
             <p>
-              The call comes from a number that is not included in your trusted
-              contacts.
+              <strong>Your landline doesn't need contacts.</strong>
+            </p>
+
+            <p>
+              Simply upload the people you trust from your mobile phone or
+              computer. Home Call Guard securely creates your trusted caller
+              list in under two minutes.
             </p>
 
           </article>
@@ -1583,15 +1704,25 @@
           <article class="step-card">
 
             <div class="step-number">02</div>
-            <div class="step-icon">🛡</div>
+            <div class="step-icon">☎</div>
 
             <h3>
-              Home Call Guard answers
+              Keep using your home phone
             </h3>
 
             <p>
-              The caller is screened before the call is allowed to reach your
-              phone.
+              <strong>Nothing changes for your family and friends.</strong>
+            </p>
+
+            <p>
+              They continue calling your existing home phone number exactly as
+              they always have.
+            </p>
+
+            <p>
+              No new handset.<br>
+              No new phone number.<br>
+              Nothing new to learn.
             </p>
 
           </article>
@@ -1599,15 +1730,21 @@
           <article class="step-card">
 
             <div class="step-number">03</div>
-            <div class="step-icon">📱</div>
+            <div class="step-icon">🛡</div>
 
             <h3>
-              Genuine callers can get through
+              Unknown callers are screened
             </h3>
 
             <p>
-              Trusted contacts continue to reach you without unnecessary
-              interruption.
+              Anyone not on your trusted list is politely answered before your
+              phone rings.
+            </p>
+
+            <p>
+              Trusted callers are connected immediately.<br>
+              Unknown callers are screened using AI.<br>
+              Potential scam callers never disturb you unnecessarily.
             </p>
 
           </article>
@@ -1812,6 +1949,19 @@
       </div>
     </section>
 
+    <section class="section">
+      <div class="container">
+        <div class="home-phone-card">
+          <h3>How does this work with my home phone?</h3>
+          <ul>
+            <li>Upload the phone numbers of your trusted callers once.</li>
+            <li>Family and friends come straight through as normal.</li>
+            <li>Unknown callers are automatically screened before your phone rings.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
     <section class="section" id="faq">
       <div class="container">
 
@@ -1845,6 +1995,30 @@
                 Yes. Home Call Guard is designed so that you can continue using
                 the phone number your friends, family and important contacts
                 already know.
+              </p>
+            </div>
+
+          </div>
+
+          <div class="faq-item">
+
+            <button
+              class="faq-question"
+              type="button"
+              aria-expanded="false"
+            >
+              <span>My home phone doesn't have contacts. How does this work?</span>
+              <span class="faq-icon">+</span>
+            </button>
+
+            <div class="faq-answer">
+              <p>
+                Your home phone doesn't need contacts. During setup you'll
+                upload the people you trust (usually in under two minutes).
+                Home Call Guard securely stores that trusted caller list and
+                checks every incoming call against it. Trusted callers ring
+                through immediately. Unknown callers are screened
+                automatically.
               </p>
             </div>
 
@@ -1978,6 +2152,8 @@
 
         <div class="footer-links">
           <a href="/login.html">Customer login</a>
+          <a href="/terms.html">Terms and Conditions</a>
+          <a href="/privacy.html">Privacy Policy</a>
           <a href="mailto:support@homecallguard.co.uk">Support</a>
           <a href="mailto:support@homecallguard.co.uk">Contact</a>
         </div>

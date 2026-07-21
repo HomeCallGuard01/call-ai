@@ -102,6 +102,21 @@
     color: #00ff99;
   }
 
+  .legal-links {
+    text-align: center;
+    margin-top: 24px;
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .legal-links a {
+    color: #94a3b8;
+  }
+
+  .legal-links a:hover {
+    color: #00ff99;
+  }
+
   .error-banner {
     background: #2a1a0f;
     border: 2px solid #f59e0b;
@@ -129,6 +144,25 @@
     font-size: 15px;
     line-height: 1.5;
   }
+
+  .success-panel .spam-note {
+    color: #94a3b8;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+
+  .secondary-button {
+    width: 100%;
+    margin-top: 16px;
+    padding: 10px;
+    font-size: 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    background: transparent;
+    color: #00ff99;
+    border: 1px solid #00ff99;
+    font-weight: bold;
+  }
 </style>
 </head>
 
@@ -145,7 +179,12 @@
   <div id="successPanel" class="success-panel" hidden>
     <h2>Account created</h2>
     <p>Please check your email and confirm your account before logging in.</p>
-    <a class="primary-button" href="/login.html">Go to login</a>
+    <p class="spam-note">Can't find the email? Check your spam or junk folder.</p>
+
+    <form id="resendForm" action="/resend-confirmation" method="POST">
+      <input type="hidden" id="resendEmail" name="email">
+      <button type="submit" class="secondary-button">Resend confirmation email</button>
+    </form>
   </div>
 
   <form id="registerForm" action="/register" method="POST">
@@ -172,6 +211,10 @@
   </div>
 </div>
 
+<div class="legal-links">
+  <a href="/terms.html">Terms and Conditions</a> · <a href="/privacy.html">Privacy Policy</a>
+</div>
+
 <script>
   var ERROR_MESSAGES = {
     validation: "Please enter a valid email and password.",
@@ -186,6 +229,8 @@
   }
 
   function showSuccess() {
+    var enteredEmail = document.getElementById("email").value;
+    document.getElementById("resendEmail").value = enteredEmail;
     document.getElementById("registerForm").hidden = true;
     document.getElementById("loginFooterLink").hidden = true;
     document.getElementById("successPanel").hidden = false;

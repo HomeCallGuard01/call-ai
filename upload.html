@@ -65,6 +65,22 @@
     margin: 0 auto;
   }
 
+  .legal-footer {
+    padding: 24px 40px 40px;
+    text-align: center;
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .legal-footer a {
+    color: #94a3b8;
+    text-decoration: none;
+  }
+
+  .legal-footer a:hover {
+    color: #22c55e;
+  }
+
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -179,8 +195,219 @@
     color: #cbd5e1;
   }
 
+  .status-card[data-state="confirming"] .shield-icon {
+    animation: none;
+  }
+
+  .status-card[data-state="confirming"] .shield-fill {
+    fill: #1e293b;
+    stroke: #64748b;
+  }
+
+  .status-card[data-state="confirming"] .shield-check {
+    stroke: #64748b;
+  }
+
+  .status-card[data-state="confirming"] .status-title {
+    color: #cbd5e1;
+  }
+
+  .status-card[data-state="activation_delayed"] .shield-icon {
+    animation: none;
+  }
+
+  .status-card[data-state="activation_delayed"] .shield-fill {
+    fill: #1e293b;
+    stroke: #f59e0b;
+  }
+
+  .status-card[data-state="activation_delayed"] .shield-check {
+    stroke: #f59e0b;
+  }
+
+  .status-card[data-state="activation_delayed"] .status-title {
+    color: #f59e0b;
+  }
+
+  /* Protection sub-state, only meaningful when data-state="protected" —
+     the entitlement is active either way; this reflects whether the
+     protected phone number itself is actually ready yet. Deliberately
+     never green/"active"-looking unless genuinely active — see
+     computeProtectionState(). */
+
+  .status-card[data-protection-state="pending"] .shield-icon {
+    animation: none;
+  }
+
+  .status-card[data-protection-state="pending"] .shield-fill {
+    fill: #1e293b;
+    stroke: #64748b;
+  }
+
+  .status-card[data-protection-state="pending"] .shield-check {
+    stroke: #64748b;
+  }
+
+  .status-card[data-protection-state="pending"] .status-title {
+    color: #cbd5e1;
+  }
+
+  .status-card[data-protection-state="failed"] .shield-icon {
+    animation: none;
+  }
+
+  .status-card[data-protection-state="failed"] .shield-fill {
+    fill: #1e293b;
+    stroke: #f59e0b;
+  }
+
+  .status-card[data-protection-state="failed"] .shield-check {
+    stroke: #f59e0b;
+  }
+
+  .status-card[data-protection-state="failed"] .status-title {
+    color: #f59e0b;
+  }
+
+  /* No explicit `display` on either rule below, deliberately — matching
+     this file's existing convention (.price-note, .stripe-reassurance,
+     etc.): these are toggled via the native `hidden` attribute in JS,
+     and an author stylesheet's `display` declaration overrides the
+     browser's default `[hidden] { display: none }` UA rule, silently
+     breaking the show/hide toggle regardless of what `.hidden` is set
+     to. width: fit-content + auto margins gets the same "hugs its
+     content, centered" look inline-block would have, without needing
+     a `display` override. */
+  .protected-number {
+    width: fit-content;
+    margin: 14px auto 0;
+    padding: 10px 18px;
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #22c55e;
+  }
+
+  .protected-number-label {
+    margin-top: 16px;
+    font-size: 13px;
+    color: #94a3b8;
+  }
+
+  .checklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 15px;
+  }
+
+  .checklist-item:last-child {
+    border-bottom: none;
+  }
+
+  .checklist-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .checklist-item[data-done="true"] .checklist-icon {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+  }
+
+  .checklist-item[data-done="false"] .checklist-icon {
+    background: rgba(148, 163, 184, 0.12);
+    color: #64748b;
+  }
+
+  .checklist-item[data-done="false"] .checklist-label {
+    color: #94a3b8;
+  }
+
+  .checklist-action {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    margin: 20px auto 0;
+    border: 3px solid rgba(148, 163, 184, 0.25);
+    border-top-color: #22c55e;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
+  }
+
+  #successActions,
+  #delayedActions {
+    margin-top: 20px;
+  }
+
+  .secondary-action-button {
+    background: transparent;
+    border: 1px solid #475569;
+    color: #cbd5e1;
+    padding: 10px 20px;
+    font-weight: bold;
+    font-size: 15px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
   .subscribe-button {
     margin-top: 20px;
+  }
+
+  .price-note {
+    font-size: 14px;
+    color: #94a3b8;
+    margin-top: 8px;
+  }
+
+  .stripe-reassurance {
+    max-width: 420px;
+    margin: 12px auto 0;
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1.5;
   }
 
   .checkout-banner {
@@ -248,38 +475,40 @@
     padding: 10px 0;
   }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th, td {
-    padding: 10px;
+  .activity-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 0;
     border-bottom: 1px solid #1e293b;
-    text-align: left;
-    font-size: 14px;
   }
 
-  th {
+  .activity-item:last-child {
+    border-bottom: none;
+  }
+
+  .activity-icon {
+    font-size: 22px;
+    width: 32px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .activity-details {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .activity-title {
+    font-weight: 600;
+    font-size: 15px;
+  }
+
+  .activity-meta {
+    font-size: 13px;
     color: #94a3b8;
-    font-weight: 600;
-  }
-
-  .tag {
-    padding: 4px 8px;
-    border-radius: 5px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .tag-scam {
-    background: #dc2626;
-    color: white;
-  }
-
-  .tag-safe {
-    background: #14532d;
-    color: #bbf7d0;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
   }
 
   button {
@@ -311,24 +540,6 @@
 
     .stats-grid {
       grid-template-columns: 1fr 1fr;
-    }
-
-    table, thead, tbody, th, td, tr {
-      display: block;
-    }
-
-    thead {
-      display: none;
-    }
-
-    td {
-      border-bottom: none;
-      padding: 4px 10px;
-    }
-
-    tr {
-      border-bottom: 1px solid #1e293b;
-      padding: 8px 0;
     }
   }
 
@@ -369,38 +580,82 @@
     </svg>
     <div class="status-title" id="statusTitle">Checking protection status…</div>
     <p class="status-sub" id="statusSub">We're loading your live protection status.</p>
+    <p class="protected-number-label" id="protectedNumberLabel" hidden>Your protected number</p>
+    <div class="protected-number" id="protectedNumber" hidden></div>
+    <p class="price-note" id="priceNote" hidden>£4.99 per month. Cancel anytime.</p>
+
+    <div class="spinner" id="confirmingSpinner" hidden aria-hidden="true"></div>
 
     <form class="subscribe-button" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
       <button type="submit">
-        Get Protected Today
+        Continue to secure payment
       </button>
     </form>
+
+    <p class="stripe-reassurance" id="stripeReassurance" hidden>
+      Secure payment powered by Stripe. Your card details are not stored by Home Call Guard.
+    </p>
+
+    <div id="successActions" hidden>
+      <button type="button" id="continueToSetupButton">Continue to setup</button>
+    </div>
+
+    <div id="delayedActions" hidden>
+      <button type="button" class="secondary-action-button" id="checkStatusButton">Check status again</button>
+    </div>
   </section>
 
   <div id="protectedContent" hidden>
+    <section class="card">
+      <h2>Setup checklist</h2>
+      <ul class="checklist" id="setupChecklist">
+        <li class="checklist-item" data-item="accountConfirmed">
+          <span class="checklist-icon" aria-hidden="true">✓</span>
+          <span class="checklist-label">Account confirmed</span>
+        </li>
+        <li class="checklist-item" data-item="subscriptionActive">
+          <span class="checklist-icon" aria-hidden="true">✓</span>
+          <span class="checklist-label">Subscription active</span>
+        </li>
+        <li class="checklist-item" data-item="protectedNumberAssigned">
+          <span class="checklist-icon" aria-hidden="true">✓</span>
+          <span class="checklist-label">Protected number assigned</span>
+        </li>
+        <li class="checklist-item" data-item="contactsUploaded">
+          <span class="checklist-icon" aria-hidden="true">✓</span>
+          <span class="checklist-label">Contacts uploaded</span>
+        </li>
+        <li class="checklist-item" data-item="callForwardingCompleted">
+          <span class="checklist-icon" aria-hidden="true">✓</span>
+          <span class="checklist-label">Call forwarding completed</span>
+          <button type="button" class="checklist-action" id="callForwardingToggle">Mark done</button>
+        </li>
+      </ul>
+    </section>
+
     <section class="stats-grid" aria-label="Protection statistics">
       <div class="stat-card">
-        <div class="stat-number" id="statContacts">—</div>
-        <div class="stat-label">Protected contacts</div>
+        <div class="stat-number" id="statCallsScreened">—</div>
+        <div class="stat-label">Calls screened</div>
       </div>
       <div class="stat-card">
-        <div class="stat-number" id="statCallsToday">—</div>
-        <div class="stat-label">Calls today</div>
+        <div class="stat-number" id="statSuspectedScamsBlocked">—</div>
+        <div class="stat-label">Suspected scams blocked</div>
       </div>
       <div class="stat-card">
-        <div class="stat-number" id="statBlocked">—</div>
-        <div class="stat-label">Scam calls blocked</div>
+        <div class="stat-number" id="statTrustedCallsRecognised">—</div>
+        <div class="stat-label">Trusted calls recognised</div>
       </div>
       <div class="stat-card">
-        <div class="stat-number" id="statSafe">—</div>
-        <div class="stat-label">Safe calls</div>
+        <div class="stat-number" id="statContactsUploaded">—</div>
+        <div class="stat-label">Contacts uploaded</div>
       </div>
     </section>
 
     <section class="card">
       <h2>Recent Activity</h2>
       <div id="activityContent">
-        <p class="empty-state">No recent call activity yet.</p>
+        <p class="empty-state">No calls yet. Once your phone starts receiving calls, they'll show up here.</p>
       </div>
     </section>
 
@@ -431,9 +686,13 @@
 
 </main>
 
+<footer class="legal-footer">
+  <a href="/terms.html">Terms and Conditions</a> · <a href="/privacy.html">Privacy Policy</a>
+</footer>
+
 <script>
   const REFRESH_MS = 15000;
-  const EMPTY_ACTIVITY_MESSAGE = "No recent call activity yet.";
+  const EMPTY_ACTIVITY_MESSAGE = "No calls yet. Once your phone starts receiving calls, they'll show up here.";
 
   function setText(id, value) {
     const el = document.getElementById(id);
@@ -465,6 +724,58 @@
     return date.toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" });
   }
 
+  function describeCall(call) {
+    if (call.status === "Known") {
+      return { icon: "✅", title: "Trusted caller" };
+    }
+    if (call.result === "SCAM") {
+      return { icon: "⚠️", title: "Suspected scam" };
+    }
+    return { icon: "🤖", title: "AI screened" };
+  }
+
+  // TEST-EXTRACT-START: computeProtectionState
+  // The single source of truth for whether protection is genuinely
+  // active — deliberately never returns "active" unless both a real
+  // number is assigned AND provisioning status itself says "active".
+  // /dashboard-data only ever responds at all when entitlement is
+  // active (402 otherwise, handled entirely outside this function), so
+  // this only ever runs for an already-paying household — it exists to
+  // stop a paying customer whose number provisioning is still pending or
+  // has failed from ever being told they're protected when they aren't.
+  function computeProtectionState(data) {
+    if (!data) {
+      return "pending";
+    }
+    if (data.twilioNumber && data.twilioProvisioningStatus === "active") {
+      return "active";
+    }
+    if (data.twilioProvisioningStatus === "failed") {
+      return "failed";
+    }
+    return "pending";
+  }
+  // TEST-EXTRACT-END: computeProtectionState
+
+  // TEST-EXTRACT-START: computeSetupChecklist
+  // accountConfirmed and subscriptionActive are always true here, not
+  // because they're unconditionally true in general, but because this
+  // function only ever runs once /dashboard-data has actually responded
+  // — which itself requires a confirmed account (requireAuth) and an
+  // active entitlement (requireEntitlement, 402 otherwise). Listed
+  // explicitly anyway so the checklist has one single, complete source
+  // rather than four computed items plus two silently-assumed ones.
+  function computeSetupChecklist(data, callForwardingCompleted) {
+    return {
+      accountConfirmed: true,
+      subscriptionActive: true,
+      protectedNumberAssigned: computeProtectionState(data) === "active",
+      contactsUploaded: !!(data && data.contactsUploaded > 0),
+      callForwardingCompleted: !!callForwardingCompleted,
+    };
+  }
+  // TEST-EXTRACT-END: computeSetupChecklist
+
   function renderActivity(calls) {
     const container = document.getElementById("activityContent");
 
@@ -473,31 +784,129 @@
       return;
     }
 
-    const rows = calls.map(function (call) {
-      const isScam = call.result === "SCAM";
-      const tagClass = isScam ? "tag tag-scam" : "tag tag-safe";
+    container.innerHTML = calls.map(function (call) {
+      const desc = describeCall(call);
 
-      return "<tr>" +
-        "<td>" + escapeHtml(call.number || "Unknown") + "</td>" +
-        "<td>" + escapeHtml(call.status || "") + "</td>" +
-        '<td><span class="' + tagClass + '">' + escapeHtml(call.result || "") + "</span></td>" +
-        "<td>" + escapeHtml(formatTime(call.time)) + "</td>" +
-        "</tr>";
+      return '<div class="activity-item">' +
+        '<div class="activity-icon" aria-hidden="true">' + desc.icon + "</div>" +
+        '<div class="activity-details">' +
+          '<div class="activity-title">' + desc.title + "</div>" +
+          '<div class="activity-meta">' + escapeHtml(call.number || "Unknown number") + " · " + escapeHtml(formatTime(call.time)) + "</div>" +
+        "</div>" +
+      "</div>";
     }).join("");
-
-    container.innerHTML =
-      "<table>" +
-      "<thead><tr><th>Number</th><th>Status</th><th>Result</th><th>Time</th></tr></thead>" +
-      "<tbody>" + rows + "</tbody>" +
-      "</table>";
   }
 
+  const CALL_FORWARDING_STORAGE_KEY = "hcg_call_forwarding_completed";
+
+  function getCallForwardingCompleted() {
+    try {
+      return window.localStorage.getItem(CALL_FORWARDING_STORAGE_KEY) === "true";
+    } catch (err) {
+      // Private browsing / storage disabled — treat as not yet done
+      // rather than throwing and breaking the rest of the dashboard.
+      return false;
+    }
+  }
+
+  function setCallForwardingCompleted(value) {
+    try {
+      window.localStorage.setItem(CALL_FORWARDING_STORAGE_KEY, value ? "true" : "false");
+    } catch (err) {
+      // Same fallback as above — nothing further to do if storage isn't available.
+    }
+  }
+
+  // Renders the protection sub-state (active/pending/failed) onto the
+  // main status card — title, subtitle, shield colour (via
+  // data-protection-state, styled in <style>), and the protected number
+  // itself when it exists. Deliberately separate from setStatus(): the
+  // outer data-state stays "protected" throughout (entitlement is
+  // active), this only ever changes what's shown *within* that state, so
+  // the existing state-machine tests covering data-state visibility are
+  // untouched by this.
+  function renderProtectionStatus(data) {
+    const card = document.getElementById("statusCard");
+    const title = document.getElementById("statusTitle");
+    const sub = document.getElementById("statusSub");
+    const numberLabel = document.getElementById("protectedNumberLabel");
+    const numberEl = document.getElementById("protectedNumber");
+
+    const state = computeProtectionState(data);
+    if (card) {
+      card.dataset.protectionState = state;
+    }
+
+    if (state === "active") {
+      if (title) title.textContent = "Protected";
+      if (sub) sub.textContent = "Home Call Guard is actively screening your calls. Unknown callers are checked before they can reach you.";
+      if (numberLabel) numberLabel.hidden = false;
+      if (numberEl) {
+        numberEl.hidden = false;
+        numberEl.textContent = data.twilioNumber;
+      }
+    } else if (state === "failed") {
+      if (title) title.textContent = "We could not finish setup yet";
+      if (sub) sub.textContent = "Your subscription is active, but we hit a problem setting up your protected number. Please contact support@homecallguard.co.uk and we'll sort this out.";
+      if (numberLabel) numberLabel.hidden = true;
+      if (numberEl) numberEl.hidden = true;
+    } else {
+      if (title) title.textContent = "Setting up your protected number";
+      if (sub) sub.textContent = "Your subscription is active — we're finishing setup of your protected number. This usually takes just a moment.";
+      if (numberLabel) numberLabel.hidden = true;
+      if (numberEl) numberEl.hidden = true;
+    }
+  }
+
+  function renderChecklist(data) {
+    const checklist = computeSetupChecklist(data, getCallForwardingCompleted());
+
+    Object.keys(checklist).forEach(function (key) {
+      const item = document.querySelector('.checklist-item[data-item="' + key + '"]');
+      if (item) {
+        item.dataset.done = checklist[key] ? "true" : "false";
+      }
+    });
+
+    const toggle = document.getElementById("callForwardingToggle");
+    if (toggle) {
+      toggle.textContent = checklist.callForwardingCompleted ? "Undo" : "Mark done";
+    }
+  }
+
+  const callForwardingToggleEl = document.getElementById("callForwardingToggle");
+  if (callForwardingToggleEl) {
+    callForwardingToggleEl.addEventListener("click", function () {
+      setCallForwardingCompleted(!getCallForwardingCompleted());
+      renderChecklist(lastDashboardData);
+    });
+  }
+
+  let lastDashboardData = null;
+
+  // TEST-EXTRACT-START: setStatus
+  // Single source of truth for which elements are visible in each dashboard
+  // state — critically, the subscribe button (and price note / Stripe
+  // reassurance line, which only make sense alongside it) are ONLY ever
+  // shown when state === "unsubscribed". Every other state, including the
+  // two introduced for the post-payment flow ("confirming",
+  // "activation_delayed"), falls through the same `!== "unsubscribed"`
+  // check — so a customer who has just paid (or whose activation is
+  // delayed) can never be shown a payment button or sent through checkout
+  // again, by construction rather than by remembering to guard each new
+  // state individually. See docs/PROJECT_STATUS.md, "payment-completion
+  // flow rebuild", for the incident this closes.
   function setStatus(state) {
     const card = document.getElementById("statusCard");
     const title = document.getElementById("statusTitle");
     const sub = document.getElementById("statusSub");
     const subscribeForm = document.getElementById("subscribeForm");
     const protectedContent = document.getElementById("protectedContent");
+    const priceNote = document.getElementById("priceNote");
+    const stripeReassurance = document.getElementById("stripeReassurance");
+    const confirmingSpinner = document.getElementById("confirmingSpinner");
+    const successActions = document.getElementById("successActions");
+    const delayedActions = document.getElementById("delayedActions");
 
     if (!card || !title || !sub) {
       return;
@@ -510,7 +919,16 @@
       sub.textContent = "Home Call Guard is actively screening your calls. Unknown callers are checked before they can reach you.";
     } else if (state === "unsubscribed") {
       title.textContent = "Not protected yet";
-      sub.textContent = "Subscribe to start screening unknown callers and protecting your household.";
+      sub.textContent = "Complete your subscription to activate Home Call Guard and start screening unknown callers.";
+    } else if (state === "confirming") {
+      title.textContent = "Payment received. Activating your protection…";
+      sub.textContent = "This usually takes a few seconds. Please don't close this page.";
+    } else if (state === "success") {
+      title.textContent = "Payment successful";
+      sub.textContent = "Your Home Call Guard subscription is active and your protection is now enabled.";
+    } else if (state === "activation_delayed") {
+      title.textContent = "Activation is taking longer than expected";
+      sub.textContent = "We received your payment but activation is taking longer than expected. Please refresh in a moment or contact support.";
     } else if (state === "unknown") {
       title.textContent = "Status unavailable";
       sub.textContent = "We can't confirm your live protection status right now. This will update automatically once the connection returns.";
@@ -522,10 +940,26 @@
     if (subscribeForm) {
       subscribeForm.hidden = state !== "unsubscribed";
     }
+    if (priceNote) {
+      priceNote.hidden = state !== "unsubscribed";
+    }
+    if (stripeReassurance) {
+      stripeReassurance.hidden = state !== "unsubscribed";
+    }
+    if (confirmingSpinner) {
+      confirmingSpinner.hidden = state !== "confirming";
+    }
+    if (successActions) {
+      successActions.hidden = state !== "success";
+    }
+    if (delayedActions) {
+      delayedActions.hidden = state !== "activation_delayed";
+    }
     if (protectedContent) {
       protectedContent.hidden = state !== "protected";
     }
   }
+  // TEST-EXTRACT-END: setStatus
 
   function showError() {
     const el = document.getElementById("errorBanner");
@@ -560,7 +994,7 @@
     const btn = form.querySelector("button[type=submit]");
     if (btn) {
       btn.disabled = true;
-      btn.textContent = "Redirecting to checkout…";
+      btn.textContent = "Opening secure checkout…";
     }
   }
   // TEST-EXTRACT-END: handleSubscribeFormSubmit
@@ -578,11 +1012,7 @@
       return;
     }
 
-    if (kind === "success") {
-      el.textContent = "Confirming your payment… this can take a few seconds. Your protection status below will update automatically once it's done.";
-      el.classList.remove("checkout-banner-error");
-      el.hidden = false;
-    } else if (kind === "cancelled") {
+    if (kind === "cancelled") {
       el.textContent = "Checkout was cancelled — no payment was taken. You can try again any time.";
       el.classList.add("checkout-banner-error");
       el.hidden = false;
@@ -594,7 +1024,99 @@
       el.textContent = "You already have a checkout in progress. Please finish or cancel it before starting a new one.";
       el.classList.add("checkout-banner-error");
       el.hidden = false;
+    } else if (kind === "already_active") {
+      el.textContent = "You're already subscribed — no need to check out again.";
+      el.classList.remove("checkout-banner-error");
+      el.hidden = false;
     }
+    // "success" is deliberately not handled here — it's routed through the
+    // dedicated confirming/success status-card states below instead of
+    // this lighter-weight banner, to avoid two conflicting messages.
+  }
+
+  // True from the moment we detect a checkout=success return until
+  // activation is confirmed (or the bounded wait times out). While true,
+  // the regular 15s dashboard poll below must not overwrite the
+  // confirming/delayed UI with "unsubscribed" or "unknown" — those would
+  // both incorrectly imply nothing happened, and "unsubscribed" would also
+  // re-show the payment button.
+  let awaitingConfirmation = false;
+  let reconcilePollTimer = null;
+
+  const RECONCILE_POLL_MS = 3000;
+  const RECONCILE_TIMEOUT_MS = 60000;
+
+  // TEST-EXTRACT-START: shouldContinuePolling
+  // Pure so it's directly unit-testable — see
+  // tests/checkout-confirmation.test.mjs. Bounds the reconciliation poll to
+  // a limited period (requirement: "Poll for activation for a limited
+  // period only") instead of polling forever if activation genuinely never
+  // completes.
+  function shouldContinuePolling(nowMs, deadlineMs) {
+    return nowMs < deadlineMs;
+  }
+  // TEST-EXTRACT-END: shouldContinuePolling
+
+  function markActivationConfirmed() {
+    if (reconcilePollTimer) {
+      clearTimeout(reconcilePollTimer);
+      reconcilePollTimer = null;
+    }
+    awaitingConfirmation = false;
+    setStatus("success");
+    hideCheckoutBanner();
+  }
+
+  async function pollReconciliation(sessionId, deadlineMs) {
+    try {
+      const res = await fetch("/billing/reconcile-session?session_id=" + encodeURIComponent(sessionId));
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === "active") {
+          markActivationConfirmed();
+          return;
+        }
+      }
+    } catch (err) {
+      // Swallow — a transient network error during a background poll
+      // shouldn't itself flip to the delayed state before the bounded
+      // window has genuinely elapsed; the next scheduled poll (or the
+      // timeout below) will resolve it either way.
+    }
+
+    if (shouldContinuePolling(Date.now(), deadlineMs)) {
+      reconcilePollTimer = setTimeout(function () {
+        pollReconciliation(sessionId, deadlineMs);
+      }, RECONCILE_POLL_MS);
+    } else {
+      awaitingConfirmation = false;
+      setStatus("activation_delayed");
+    }
+  }
+
+  function startReconciliationPolling(sessionId) {
+    awaitingConfirmation = true;
+    setStatus("confirming");
+    pollReconciliation(sessionId, Date.now() + RECONCILE_TIMEOUT_MS);
+  }
+
+  const checkStatusButton = document.getElementById("checkStatusButton");
+  if (checkStatusButton) {
+    checkStatusButton.addEventListener("click", function () {
+      const sessionId = new URLSearchParams(window.location.search).get("session_id");
+      if (sessionId) {
+        startReconciliationPolling(sessionId);
+      } else {
+        loadDashboard();
+      }
+    });
+  }
+
+  const continueToSetupButton = document.getElementById("continueToSetupButton");
+  if (continueToSetupButton) {
+    continueToSetupButton.addEventListener("click", function () {
+      setStatus("protected");
+    });
   }
 
   async function loadDashboard() {
@@ -602,8 +1124,10 @@
       const res = await fetch("/dashboard-data");
 
       if (res.status === 402) {
-        setStatus("unsubscribed");
-        hideError();
+        if (!awaitingConfirmation) {
+          setStatus("unsubscribed");
+          hideError();
+        }
         return;
       }
 
@@ -612,26 +1136,61 @@
       }
 
       const data = await res.json();
+      lastDashboardData = data;
 
-      setText("statContacts", data.protectedContacts);
-      setText("statCallsToday", data.callsToday);
-      setText("statBlocked", data.blocked);
-      setText("statSafe", data.safe);
+      setText("statCallsScreened", data.callsScreened);
+      setText("statSuspectedScamsBlocked", data.suspectedScamsBlocked);
+      setText("statTrustedCallsRecognised", data.trustedCallsRecognised);
+      setText("statContactsUploaded", data.contactsUploaded);
 
       renderActivity(data.recentCalls);
+      renderChecklist(data);
 
-      setStatus("protected");
+      if (awaitingConfirmation) {
+        // The regular poll discovered activation independently of our
+        // dedicated reconciliation polling (e.g. the real webhook landed
+        // first) — same outcome, same success state. Deliberately does
+        // NOT call renderProtectionStatus here: markActivationConfirmed
+        // sets the "success" state, whose exact required heading
+        // ("Payment successful") must not be overwritten by it.
+        markActivationConfirmed();
+      } else {
+        setStatus("protected");
+        // Runs after setStatus("protected") deliberately: setStatus's
+        // "protected" branch sets a generic title/subtitle, and
+        // renderProtectionStatus must be the one that has the final
+        // say — it's what stops a paying customer whose provisioning is
+        // pending or failed from ever seeing the generic "Protected"
+        // text.
+        renderProtectionStatus(data);
+        hideCheckoutBanner();
+      }
       hideError();
-      hideCheckoutBanner();
     } catch (err) {
-      setStatus("unknown");
-      showError();
+      if (!awaitingConfirmation) {
+        setStatus("unknown");
+        showError();
+      }
     }
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    const checkoutState = new URLSearchParams(window.location.search).get("checkout");
-    if (checkoutState) {
+    const params = new URLSearchParams(window.location.search);
+    const checkoutState = params.get("checkout");
+    const sessionId = params.get("session_id");
+
+    if (checkoutState === "success") {
+      // Hide the payment button and enter the confirming state
+      // synchronously, before the first network request even starts —
+      // "as soon as the customer returns from Stripe... hide the button
+      // immediately" must not wait on a round trip.
+      if (sessionId) {
+        startReconciliationPolling(sessionId);
+      } else {
+        awaitingConfirmation = true;
+        setStatus("confirming");
+      }
+    } else if (checkoutState) {
       showCheckoutBanner(checkoutState);
     }
 

@@ -105,6 +105,129 @@ async function claimOrCreateHousehold({ authUserId, email }) {
   return data;
 }
 
+// Every write below goes through the narrow RPCs from
+// supabase/migrations/016_household_twilio_provisioning.sql — never a
+// direct `.from("households").update(...)`. service_role has no UPDATE
+// grant on households at all (migration 012); the RPCs are the only
+// write path for these columns, same as stripe_customer_id above.
+
+// Sets households.twilio_number via the RPC. Idempotent: a call with the
+// same value that's already set is a no-op success (returns true). A call
+// where a *different* value is already assigned returns false rather than
+// throwing — see the RPC's own comment: the caller just purchased a
+// now-redundant Twilio number and must release it.
+async function assignHouseholdTwilioNumber(householdId, twilioNumber) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("assign_household_twilio_number", {
+    p_household_id: householdId,
+    p_twilio_number: twilioNumber,
+  });
+
+  if (error) {
+    console.error("TWILIO NUMBER ASSIGN ERROR:", error);
+    throw error;
+  }
+
+  return data === true;
+}
+
+// Records a failed Twilio provisioning attempt via the RPC — increments
+// the attempt counter and flags the household for retry/administrative
+// attention. Never downgrades a household that already has a number (see
+// the RPC's own comment).
+async function recordTwilioProvisioningFailure(householdId, errorMessage) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { error } = await supabaseAdmin.rpc("record_household_twilio_provisioning_failure", {
+    p_household_id: householdId,
+    p_error_message: errorMessage,
+  });
+
+  if (error) {
+    console.error("TWILIO PROVISIONING FAILURE RECORD ERROR:", error);
+    throw error;
+  }
+}
+
+// Lifecycle RPCs from supabase/migrations/017_household_twilio_number_lifecycle.sql
+// — see that migration's header for the grace-period-vs-immediate-release
+// reasoning. Same rule as above: never a direct table write.
+
+// Starts the grace-period clock on a household that just lost its
+// entitlement but still holds a number. Idempotent: does not push the
+// deadline out further if one is already pending (see RPC comment).
+async function markTwilioNumberPendingRelease(householdId, gracePeriodDays = 30) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("mark_household_twilio_number_pending_release", {
+    p_household_id: householdId,
+    p_grace_period: `${gracePeriodDays} days`,
+  });
+
+  if (error) {
+    console.error("TWILIO NUMBER PENDING-RELEASE MARK ERROR:", error);
+    throw error;
+  }
+
+  return data === true;
+}
+
+// Cancels a pending release — called when a household becomes entitled
+// again before its grace-period deadline, so it keeps the same number.
+async function cancelTwilioNumberPendingRelease(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { error } = await supabaseAdmin.rpc("cancel_household_twilio_number_pending_release", {
+    p_household_id: householdId,
+  });
+
+  if (error) {
+    console.error("TWILIO NUMBER PENDING-RELEASE CANCEL ERROR:", error);
+    throw error;
+  }
+}
+
+// Releases a household's number once its grace period has actually
+// passed. Returns false (and releases nothing) if the deadline hasn't
+// arrived yet, there was no deadline, or the number no longer matches —
+// the caller must only release the number via Twilio's own API when this
+// returns true.
+async function releaseHouseholdTwilioNumber(householdId, expectedNumber) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("release_household_twilio_number", {
+    p_household_id: householdId,
+    p_expected_number: expectedNumber,
+  });
+
+  if (error) {
+    console.error("TWILIO NUMBER RELEASE ERROR:", error);
+    throw error;
+  }
+
+  return data === true;
+}
+
+// Unconditional release, no grace period — intended for a future account
+// deletion feature, not called from anywhere in this codebase yet (see
+// the RPC's own comment). Returns the released number (for the caller to
+// release via Twilio's API) or null if the household had none.
+async function releaseHouseholdTwilioNumberImmediately(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("release_household_twilio_number_immediately", {
+    p_household_id: householdId,
+  });
+
+  if (error) {
+    console.error("TWILIO NUMBER IMMEDIATE RELEASE ERROR:", error);
+    throw error;
+  }
+
+  return data || null;
+}
+
 async function setUserRole(authUserId, role = "household") {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
@@ -139,6 +262,12 @@ module.exports = {
   getHouseholdByAuthUserId,
   getHouseholdByTwilioNumber,
   claimOrCreateHousehold,
+  assignHouseholdTwilioNumber,
+  recordTwilioProvisioningFailure,
+  markTwilioNumberPendingRelease,
+  cancelTwilioNumberPendingRelease,
+  releaseHouseholdTwilioNumber,
+  releaseHouseholdTwilioNumberImmediately,
   setUserRole,
   getUserRole,
 };

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta
+    name="description"
+    content="Terms and Conditions for Home Call Guard — the £4.99/month call-screening service that protects you and your family from scam and nuisance calls."
+  >
+
+  <title>Terms and Conditions | Home Call Guard</title>
+
+  <style>
+    :root {
+      --background: #07111f;
+      --background-light: #0b1728;
+      --card: #101e31;
+      --green: #22e59a;
+      --white: #ffffff;
+      --text: #d8e2ee;
+      --muted: #9babc0;
+      --border: rgba(255, 255, 255, 0.1);
+      --max-width: 860px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background: var(--background);
+      color: var(--text);
+      font-family:
+        Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      line-height: 1.65;
+    }
+
+    a {
+      color: var(--green);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .container {
+      width: min(calc(100% - 40px), var(--max-width));
+      margin: 0 auto;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(7, 17, 31, 0.92);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 76px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+    }
+
+    .brand-name {
+      color: var(--white);
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-name span {
+      color: var(--green);
+    }
+
+    .back-link {
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .doc {
+      padding: 56px 0 90px;
+    }
+
+    .doc-header {
+      margin-bottom: 40px;
+    }
+
+    .doc-label {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--green);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .doc h1 {
+      color: var(--white);
+      font-size: clamp(2rem, 4.5vw, 2.7rem);
+      font-weight: 850;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+
+    .doc-updated {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .doc-intro {
+      margin-top: 22px;
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 0.98rem;
+    }
+
+    .doc section {
+      margin-top: 42px;
+    }
+
+    .doc h2 {
+      color: var(--white);
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin-bottom: 14px;
+    }
+
+    .doc h2 .num {
+      color: var(--green);
+      margin-right: 8px;
+    }
+
+    .doc h3 {
+      color: var(--white);
+      font-size: 1.05rem;
+      font-weight: 750;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    .doc p {
+      margin-top: 12px;
+      font-size: 0.98rem;
+    }
+
+    .doc p:first-of-type {
+      margin-top: 0;
+    }
+
+    .doc ul {
+      margin: 14px 0 0 20px;
+    }
+
+    .doc li {
+      margin-top: 8px;
+      font-size: 0.98rem;
+    }
+
+    .placeholder {
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.92em;
+      font-weight: 700;
+    }
+
+    .contact-card {
+      margin-top: 14px;
+      padding: 18px 20px;
+      border: 1px solid rgba(34, 229, 154, 0.25);
+      border-radius: 14px;
+      background: rgba(34, 229, 154, 0.06);
+      font-size: 0.98rem;
+    }
+
+    .site-footer {
+      padding: 32px 0 40px;
+      border-top: 1px solid var(--border);
+      background: #050d18;
+    }
+
+    .footer-content {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+
+    .footer-links a {
+      color: var(--muted);
+      font-size: 0.87rem;
+    }
+
+    .footer-links a:hover {
+      color: var(--green);
+    }
+
+    .copyright {
+      margin-top: 18px;
+      color: #718096;
+      font-size: 0.79rem;
+      text-align: center;
+    }
+
+    @media (max-width: 600px) {
+      .nav-row {
+        min-height: 64px;
+      }
+
+      .brand img {
+        width: 36px;
+        height: 36px;
+      }
+
+      .doc {
+        padding: 40px 0 70px;
+      }
+
+      .footer-content {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header class="site-header">
+    <div class="container nav-row">
+      <a class="brand" href="/">
+        <img src="/logo.png" alt="Home Call Guard logo">
+        <span class="brand-name">Home Call <span>Guard</span></span>
+      </a>
+      <a class="back-link" href="/">← Back to homepage</a>
+    </div>
+  </header>
+
+  <main class="doc">
+    <div class="container">
+
+      <div class="doc-header">
+        <span class="doc-label">Legal</span>
+        <h1>Terms and Conditions</h1>
+        <p class="doc-updated">Last updated: 20 July 2026</p>
+
+        <div class="doc-intro">
+          These Terms and Conditions ("Terms") govern your use of the Home Call Guard call-screening
+          service ("Service", "we", "us", "our"). By registering for an account or subscribing to the
+          Service, you agree to these Terms. If you do not agree, please do not use the Service.
+        </div>
+      </div>
+
+      <section>
+        <h2><span class="num">1.</span>Who we are</h2>
+        <p>
+          Home Call Guard is a trading name of <strong>AFMD Ltd</strong> ("the Company", "we", "us"),
+          a company registered in England and Wales under company number <strong>07075723</strong>,
+          with a registered office at
+          <span class="placeholder">[REGISTERED OFFICE ADDRESS TO BE CONFIRMED]</span>.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">2.</span>The Service</h2>
+        <p>
+          Home Call Guard is a call-screening service for home telephone numbers. Once set up, unknown
+          callers — numbers not on your list of trusted contacts — are answered and screened by our
+          automated system before the call is allowed to reach your phone. Calls from numbers you have
+          added as trusted contacts are not screened and are connected as normal.
+        </p>
+        <p>
+          You keep your existing phone number. There is no app to install — your account, trusted
+          contacts and protection status are managed through the Home Call Guard online dashboard.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">3.</span>Subscription, pricing and billing</h2>
+        <p>
+          The Service is provided on a paid subscription basis at <strong>£4.99 per month</strong>. This
+          is a <strong>recurring charge</strong>: by subscribing, you authorise us (via our payment
+          processor, Stripe) to charge your payment method £4.99 automatically every month, starting on
+          the date your subscription is activated, until you cancel.
+        </p>
+        <p>
+          We may change the subscription price from time to time. If we do, we will give you reasonable
+          advance notice before any new price applies to you, and you will have the opportunity to
+          cancel before the new price takes effect.
+        </p>
+        <p>
+          The Company is registered for VAT in the United Kingdom (VAT registration number
+          <strong>GB379120684</strong>). The advertised price of £4.99 per month is inclusive of any VAT
+          applicable at the prevailing rate — you will never be charged more than the price shown.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">4.</span>When protection starts</h2>
+        <p>
+          Your protection is activated as soon as your payment is successfully processed and confirmed —
+          typically within a few seconds of completing checkout. Your dashboard will show your live
+          protection status, and we will let you know if activation is taking longer than expected.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">5.</span>Cancellation policy</h2>
+        <ul>
+          <li>Your subscription <strong>renews automatically every month</strong> until you cancel.</li>
+          <li>You may <strong>cancel at any time</strong>, with no minimum term and no exit fee.</li>
+          <li>Cancelling prevents <strong>future renewals</strong> — it stops the next and all subsequent
+            monthly charges.</li>
+          <li>The Service <strong>continues until the end of the billing period you've already paid
+            for</strong>. Cancelling does not end your protection immediately.</li>
+          <li><strong>No partial-month refunds will normally be provided</strong> once a billing period
+            has started, except where required by law (see Section 10) or where Home Call Guard has made
+            a billing error.</li>
+        </ul>
+        <p>
+          To cancel, email us at
+          <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> from the email
+          address associated with your account, and we will process your cancellation promptly and
+          confirm it in writing.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">6.</span>Your responsibilities</h2>
+        <p>You are responsible for:</p>
+        <ul>
+          <li>Providing accurate account details, including the phone number the Service protects;</li>
+          <li>Keeping your list of trusted contacts up to date, so that calls you want to receive
+            without screening are correctly recognised;</li>
+          <li>Keeping your account login details secure and not sharing them with anyone else;</li>
+          <li>Reviewing screened-call activity in your dashboard and reporting anything that looks
+            wrong.</li>
+        </ul>
+        <p>
+          We are not responsible for calls being incorrectly screened, or wanted calls being delayed or
+          missed, where this results from inaccurate or out-of-date information you have provided (for
+          example, an incorrectly entered contact number).
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">7.</span>Service limitations</h2>
+        <p>
+          Home Call Guard uses automated call-screening technology, including keyword analysis and AI
+          classification, to help identify likely scam or nuisance calls. This significantly reduces
+          your exposure to unwanted calls, but it is <strong>not a guarantee</strong>. No automated
+          system can identify every scam or nuisance call with complete accuracy, and some genuine scam
+          calls may not be detected, while some genuine calls may occasionally be flagged incorrectly.
+          You should continue to apply your own judgement to any call, and never share financial or
+          personal information with a caller you do not trust, regardless of how the call was screened.
+        </p>
+
+        <h3>AI screening limitations</h3>
+        <p>
+          Our AI classification step works from an automated, real-time transcription of what a caller
+          says, and from keyword analysis. This means its accuracy can be affected by things like
+          background noise, unclear speech, strong accents, non-English speech, or a scam caller
+          deliberately avoiding language our system recognises as suspicious. Scam techniques also
+          change over time, and our detection methods may not immediately recognise new or unusual
+          approaches. AI classification is a tool to reduce risk, not a substitute for your own caution.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">8.</span>Service availability and maintenance</h2>
+        <p>
+          We aim to keep the Service available and reliable at all times, but we do not guarantee
+          uninterrupted or error-free operation. The Service depends on third-party infrastructure
+          (including telephony, hosting, database and AI providers) that is outside our direct control,
+          and availability may occasionally be affected by planned maintenance, or by outages or issues
+          at those providers.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">9.</span>Fair use and abuse of the Service</h2>
+        <p>
+          Home Call Guard is provided for genuine personal, household use — protecting one home
+          telephone line per subscription against unknown and unwanted callers. We reserve the right to
+          review usage that is significantly outside normal household call patterns (for example,
+          unusually high call volumes suggesting commercial or non-household use) and to contact you
+          about it before taking any action.
+        </p>
+        <p>You agree not to:</p>
+        <ul>
+          <li>Use the Service for any unlawful purpose, or in a way that could damage, disable or
+            impair the Service;</li>
+          <li>Attempt to gain unauthorised access to any part of the Service, other accounts, or
+            underlying systems;</li>
+          <li>Use the Service to screen or monitor a phone line or calls without the authority to do
+            so (for example, a line you do not own or are not authorised to manage);</li>
+          <li>Misuse, resell or attempt to circumvent the Service's subscription or access controls;</li>
+          <li>Add trusted contacts, or use the Service in any way, to harass, deceive or cause harm to
+            another person.</li>
+        </ul>
+        <p>
+          If we reasonably believe you have breached this section, we may warn you, suspend your access,
+          or terminate your account. Where reasonably possible, we will tell you why before doing so.
+          Serious or repeated abuse may result in immediate suspension without prior notice.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">10.</span>Refund policy and statutory cancellation rights</h2>
+        <p>
+          If you are a consumer in the UK, you have a legal right to cancel a distance contract for
+          services within <strong>14 days</strong> of first subscribing, without giving a reason, under
+          the Consumer Contracts Regulations 2013. This 14-day right is separate from, and additional
+          to, the ongoing cancellation policy in Section 5. If you ask us to begin providing the Service
+          (activate your protection) during that 14-day period, and later cancel within it, we may
+          deduct an amount proportionate to the protection you already received before you cancel.
+        </p>
+        <p>
+          Outside of that 14-day right, and in line with Section 5, subscription fees already paid are
+          not refunded for the remainder of a billing period once it has started, except where required
+          by law or where we have made a billing error. If you believe you have been charged in error,
+          contact us at
+          <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> and we will
+          investigate promptly. Nothing in this section affects your other statutory rights as a
+          consumer under UK law, including your rights under the Consumer Rights Act 2015 if the Service
+          is not provided with reasonable care and skill.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">11.</span>Data retention</h2>
+        <p>
+          We keep your personal data, including account, trusted-contact and call-screening records,
+          for as long as reasonably necessary to provide the Service and to meet our legal and
+          accounting obligations. Full detail on what we keep, for how long, and why, is set out in our
+          <a href="/privacy.html">Privacy Policy</a>, which forms part of your agreement with us
+          alongside these Terms.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">12.</span>Limitation of liability</h2>
+        <p>
+          Nothing in these Terms limits or excludes our liability for death or personal injury caused
+          by our negligence, for fraud, or for anything else that cannot lawfully be limited or
+          excluded.
+        </p>
+        <p>
+          Subject to that, to the fullest extent permitted by law, we are not liable to you for any
+          indirect or consequential loss, or for any loss resulting from a scam, nuisance or fraudulent
+          call that the Service did not detect or prevent. Our total liability to you for any claim
+          arising from your use of the Service is limited to the amount you paid us in the 12 months
+          before the event giving rise to the claim.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">13.</span>Changes to the Service or these Terms</h2>
+        <p>
+          We may update the Service over time, including adding, changing or removing features, to
+          improve it or to reflect changes in the technology or providers we rely on. We may also update
+          these Terms from time to time — where changes are material, we will take reasonable steps to
+          notify you (for example, by email) before they take effect. Your continued use of the Service
+          after changes take effect means you accept the updated Terms.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">14.</span>Governing law</h2>
+        <p>
+          These Terms, and any dispute or claim arising out of or in connection with them or the
+          Service, are governed by the laws of England and Wales. The courts of England and Wales will
+          have exclusive jurisdiction, except that if you are a consumer resident elsewhere in the UK,
+          you may also be able to bring proceedings in your local courts.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">15.</span>Contact us</h2>
+        <p>
+          If you have any questions about these Terms, or about your subscription, please contact us:
+        </p>
+        <div class="contact-card">
+          Email: <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a><br>
+          Postal address: <span class="placeholder">[BUSINESS POSTAL ADDRESS TO BE CONFIRMED]</span>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-content">
+        <a class="brand" href="/">
+          <img src="/logo.png" alt="Home Call Guard logo">
+          <span class="brand-name">Home Call <span>Guard</span></span>
+        </a>
+        <div class="footer-links">
+          <a href="/login.html">Customer login</a>
+          <a href="/terms.html">Terms and Conditions</a>
+          <a href="/privacy.html">Privacy Policy</a>
+          <a href="mailto:support@homecallguard.co.uk">Support</a>
+        </div>
+      </div>
+      <p class="copyright">
+        © <span id="currentYear"></span> Home Call Guard. All rights reserved.
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("currentYear").textContent = new Date().getFullYear();
+  </script>
+
+</body>
+</html>

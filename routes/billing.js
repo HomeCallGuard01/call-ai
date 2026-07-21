@@ -10,6 +10,7 @@ const {
   processWebhookEvent,
   getActiveEntitlement,
 } = require("../database/billing");
+const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 
 const router = express.Router();
 
@@ -56,6 +57,50 @@ function hasQualifyingStripeSubscription(subscriptions) {
 // "expired" are both terminal and must never block a fresh attempt.
 function findReusableOpenCheckoutSession(sessions) {
   return sessions.find((s) => s.status === "open") || null;
+}
+
+// Pure — see tests/checkout-existing-subscription.test.mjs. A session can be
+// "complete" (Checkout itself finished) without yet having a usable
+// subscription record on it (Stripe attaches the subscription synchronously
+// on payment, but this still guards the shape rather than assuming it).
+function isSessionPaidWithSubscription(session) {
+  return !!session && session.payment_status === "paid" && !!session.subscription;
+}
+
+// Shared Checkout Session creation params so every session this app ever
+// creates — fresh or reconciled-against-later — collects a billing address
+// and requires Terms of Service consent, and shows the same explicit
+// recurring-billing wording. Centralized so a future second call site can't
+// silently drift from this (see docs/PROJECT_STATUS.md, "payment-completion
+// flow rebuild").
+function buildCheckoutSessionParams({ customer, priceId, householdId, appUrl }) {
+  return {
+    mode: "subscription",
+    customer,
+    line_items: [{ price: priceId, quantity: 1 }],
+    client_reference_id: householdId,
+    metadata: buildStripeMetadata(householdId),
+    subscription_data: {
+      metadata: buildStripeMetadata(householdId),
+    },
+    billing_address_collection: "required",
+    // consent_collection: { terms_of_service: "required" } is NOT enabled
+    // yet — Stripe rejects it outright ("You cannot collect consent to
+    // your terms of service unless a URL is set in the Stripe Dashboard"),
+    // confirmed by attempting a real session creation. Requires setting a
+    // Terms of Service URL under Settings → Public business details in the
+    // Stripe Dashboard first (not settable via the API) — see
+    // docs/PROJECT_STATUS.md. Until then, the custom_text.submit message
+    // below is the only ToS/recurring-billing disclosure shown.
+    custom_text: {
+      submit: {
+        message:
+          "You'll be charged £4.99 today, then £4.99 every month until you cancel. By continuing, you agree to Home Call Guard's Terms and Conditions and Privacy Policy.",
+      },
+    },
+    success_url: `${appUrl}/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appUrl}/dashboard?checkout=cancelled`,
+  };
 }
 
 // Shared identifying metadata, applied consistently to the Customer, the
@@ -137,8 +182,12 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
     const existingEntitlement = await getActiveEntitlement(req.household.id);
     if (existingEntitlement) {
       // Already protected — don't let a second Checkout Session be started
-      // for a household that's already subscribed.
-      return res.redirect("/dashboard");
+      // for a household that's already subscribed. Explicit query param
+      // (rather than a bare redirect) so the dashboard can tell the
+      // customer *why* nothing happened instead of silently bouncing them
+      // back to the same page — this confusing-with-no-explanation bounce
+      // was one of the reported payment-completion-flow problems.
+      return res.redirect("/dashboard?checkout=already_active");
     }
 
     const stripeCustomerId = await resolveStripeCustomerId(req.household, req.authUserId);
@@ -156,7 +205,7 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
     });
 
     if (hasQualifyingStripeSubscription(existingSubscriptions.data)) {
-      return res.redirect("/dashboard");
+      return res.redirect("/dashboard?checkout=already_active");
     }
 
     // Catches what the subscription check above cannot: a Checkout Session
@@ -193,18 +242,12 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
     const idempotencyKey = `checkout:${req.household.id}:${fiveMinuteBucket}`;
 
     const session = await stripe.checkout.sessions.create(
-      {
-        mode: "subscription",
+      buildCheckoutSessionParams({
         customer: stripeCustomerId,
-        line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-        client_reference_id: req.household.id,
-        metadata: buildStripeMetadata(req.household.id),
-        subscription_data: {
-          metadata: buildStripeMetadata(req.household.id),
-        },
-        success_url: `${process.env.APP_URL}/dashboard?checkout=success`,
-        cancel_url: `${process.env.APP_URL}/dashboard?checkout=cancelled`,
-      },
+        priceId: process.env.STRIPE_PRICE_ID,
+        householdId: req.household.id,
+        appUrl: process.env.APP_URL,
+      }),
       { idempotencyKey }
     );
 
@@ -212,6 +255,91 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
   } catch (err) {
     console.error("CHECKOUT SESSION ERROR:", err.message);
     return res.redirect("/dashboard?checkout=error");
+  }
+});
+
+// RECONCILE (requires auth): bounded fallback for when the webhook is
+// delayed or was never delivered — see docs/PROJECT_STATUS.md, "payment-
+// completion flow rebuild" for the incident this closes (no webhook
+// endpoint was ever registered against production, so the dashboard never
+// updated after a real successful payment). The frontend polls this after
+// returning from Checkout with a session_id, using the exact same
+// claim/process pair the real webhook uses (see the WEBHOOK route below) —
+// so if the webhook does eventually arrive too, both paths converge on the
+// same idempotent DB writes rather than double-applying anything.
+router.get("/billing/reconcile-session", requireAuth, async (req, res) => {
+  if (!stripe) {
+    return res.status(500).json({ status: "error", message: "Stripe not configured" });
+  }
+
+  const sessionId = req.query.session_id;
+  if (typeof sessionId !== "string" || !sessionId.startsWith("cs_")) {
+    return res.status(400).json({ status: "error", message: "invalid session_id" });
+  }
+
+  try {
+    // Already reconciled — by this endpoint on an earlier poll, or by the
+    // real webhook arriving in the meantime. Check first so a repeatedly
+    // polling client doesn't do redundant Stripe lookups once it's done.
+    const alreadyEntitled = await getActiveEntitlement(req.household.id);
+    if (alreadyEntitled) {
+      // A household can be entitled but still missing a Twilio number if
+      // an earlier provisioning attempt failed — this route is polled
+      // repeatedly right after checkout (and the dashboard keeps polling
+      // afterwards), so it doubles as a natural, no-new-infrastructure
+      // retry point rather than requiring a separate scheduled job. Also
+      // cancels any pending release, in case this reactivation landed
+      // just before an earlier cancellation's grace-period deadline.
+      await updateTwilioNumberForEntitlementChange(req.household, true);
+      return res.json({ status: "active" });
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    // A household may only reconcile its own Checkout Session — never
+    // trust a client-supplied session_id to belong to the caller without
+    // checking it against the household's own resolved Stripe customer.
+    if (!req.household.stripe_customer_id || session.customer !== req.household.stripe_customer_id) {
+      return res.status(403).json({ status: "error", message: "forbidden" });
+    }
+
+    if (!isSessionPaidWithSubscription(session)) {
+      return res.json({ status: "pending" });
+    }
+
+    const subscription = await stripe.subscriptions.retrieve(session.subscription);
+
+    const claimed = await claimWebhookEvent({
+      stripeEventId: `reconcile:${subscription.id}`,
+      eventType: "checkout.session.reconciled",
+      stripeCustomerId: subscription.customer,
+      householdId: req.household.id,
+      payload: { reconciledFromSession: sessionId, subscription },
+    });
+
+    if (claimed) {
+      await processWebhookEvent({
+        stripeEventId: `reconcile:${subscription.id}`,
+        householdId: req.household.id,
+        stripeCustomerId: subscription.customer,
+        stripeSubscriptionId: subscription.id,
+        stripePriceId: subscription.items?.data?.[0]?.price?.id || null,
+        subscriptionStatus: subscription.status,
+        currentPeriodEnd: subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000).toISOString()
+          : null,
+        cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
+      });
+    }
+
+    const nowEntitled = await getActiveEntitlement(req.household.id);
+    if (nowEntitled) {
+      await updateTwilioNumberForEntitlementChange(req.household, true);
+    }
+    return res.json({ status: nowEntitled ? "active" : "pending" });
+  } catch (err) {
+    console.error("RECONCILE SESSION ERROR:", err.message);
+    return res.status(500).json({ status: "error" });
   }
 });
 
@@ -291,6 +419,23 @@ router.post(
       });
 
       if (result === "processed") {
+        // Provisioning/release failure must never affect the webhook's
+        // own success — updateTwilioNumberForEntitlementChange never
+        // throws and always resolves, recording its own failure/retry
+        // state independently of the subscription/entitlement this event
+        // just changed. Covers both directions: activation (provision a
+        // number, or cancel a pending release if reactivating before its
+        // deadline) and genuine termination (start the grace-period
+        // clock on an existing number) — see migrations/017's header for
+        // why cancellation gets a grace period rather than an immediate
+        // release.
+        if (householdId) {
+          const entitlement = await getActiveEntitlement(householdId);
+          const household = await getHouseholdByStripeCustomerId(stripeCustomerId);
+          if (household) {
+            await updateTwilioNumberForEntitlementChange(household, !!entitlement);
+          }
+        }
         return res.sendStatus(200);
       }
 
@@ -311,5 +456,7 @@ router.post(
 // unaffected; tests reach it as `require("../routes/billing").hasQualifyingStripeSubscription`.
 router.hasQualifyingStripeSubscription = hasQualifyingStripeSubscription;
 router.findReusableOpenCheckoutSession = findReusableOpenCheckoutSession;
+router.isSessionPaidWithSubscription = isSessionPaidWithSubscription;
+router.buildCheckoutSessionParams = buildCheckoutSessionParams;
 
 module.exports = router;
