@@ -37,11 +37,14 @@ function extractBetween(source, name) {
 
 const names = [
   'formatHealthBadge',
-  'formatRevenue',
+  'formatCurrency',
+  'formatProtectionRate',
   'describeActivityEvent',
   'describeAlert',
   'formatQuickActionResult',
   'formatLaunchReadinessBadge',
+  'describeReadinessBanner',
+  'describeAdminAction',
 ];
 
 const sources = names.map(name => extractBetween(html, name));
@@ -53,11 +56,14 @@ if (sources.some(s => !s)) {
   const combinedSource = `${sources.join('\n')}\nreturn { ${names.join(', ')} };`;
   const {
     formatHealthBadge,
-    formatRevenue,
+    formatCurrency,
+    formatProtectionRate,
     describeActivityEvent,
     describeAlert,
     formatQuickActionResult,
     formatLaunchReadinessBadge,
+    describeReadinessBanner,
+    describeAdminAction,
   } = new Function(combinedSource)();
 
   // --- formatHealthBadge ---
@@ -77,19 +83,24 @@ if (sources.some(s => !s)) {
     'formatHealthBadge: not_configured renders as "Not configured" rather than a fake ok/error result'
   );
 
-  // --- formatRevenue ---
+  // --- formatCurrency ---
 
   check(
-    formatRevenue({ available: true, amount: 69.93, currency: 'gbp' }) === '£69.93',
-    'formatRevenue: formats an available revenue figure as GBP currency'
+    formatCurrency({ available: true, amount: 69.93, currency: 'gbp' }) === '£69.93',
+    'formatCurrency: formats an available amount as GBP currency'
   );
 
   check(
-    formatRevenue({ available: false, amount: null, currency: null }) === '—',
-    'formatRevenue: renders an em dash, not a fabricated number, when unavailable'
+    formatCurrency({ available: false, amount: null, currency: null }) === '—',
+    'formatCurrency: renders an em dash, not a fabricated number, when unavailable'
   );
 
-  check(formatRevenue(null) === '—', 'formatRevenue: handles a missing revenue object without throwing');
+  check(formatCurrency(null) === '—', 'formatCurrency: handles a missing money object without throwing');
+
+  // --- formatProtectionRate ---
+
+  check(formatProtectionRate(25) === '25%', 'formatProtectionRate: formats a numeric rate with a percent sign');
+  check(formatProtectionRate(null) === 'No calls yet', 'formatProtectionRate: null renders as "No calls yet", not "0%" or "null%"');
 
   // --- describeActivityEvent ---
 
@@ -147,6 +158,53 @@ if (sources.some(s => !s)) {
   check(
     formatLaunchReadinessBadge({ severity: 'medium' }).className === 'medium',
     'formatLaunchReadinessBadge: css class matches the severity level'
+  );
+
+  // --- describeReadinessBanner ---
+
+  check(
+    describeReadinessBanner({ status: 'not_ready', blockersCount: 2, openCount: 5 }).text.includes('2 open blockers'),
+    'describeReadinessBanner: not_ready states the number of open blockers, pluralised correctly'
+  );
+
+  check(
+    describeReadinessBanner({ status: 'not_ready', blockersCount: 1, openCount: 1 }).text.includes('1 open blocker') &&
+      !describeReadinessBanner({ status: 'not_ready', blockersCount: 1, openCount: 1 }).text.includes('1 open blockers'),
+    'describeReadinessBanner: singular "blocker" is not pluralised when there is exactly one'
+  );
+
+  check(
+    describeReadinessBanner({ status: 'ready_with_open_items', blockersCount: 0, openCount: 3 }).className === 'ready_with_open_items',
+    'describeReadinessBanner: ready_with_open_items gets its own distinct banner class'
+  );
+
+  check(
+    describeReadinessBanner({ status: 'ready', blockersCount: 0, openCount: 0 }).text === 'Ready — no outstanding launch checks',
+    'describeReadinessBanner: fully ready state has no open-count caveat in its text'
+  );
+
+  // --- describeAdminAction ---
+
+  check(
+    describeAdminAction({
+      type: 'retry_provisioning',
+      email: 'a@example.com',
+      householdId: 'h1',
+      result: { attempted: true, success: true, twilioNumber: '+447700900123' },
+      at: '2026-07-21T21:00:00Z',
+    }).title === 'Retry provisioning — a@example.com',
+    'describeAdminAction: a retry action names the customer it was performed against'
+  );
+
+  check(
+    describeAdminAction({
+      type: 'retry_provisioning',
+      email: null,
+      householdId: 'h1',
+      result: { attempted: false },
+      at: '2026-07-21T21:00:00Z',
+    }).title === 'Retry provisioning — h1',
+    'describeAdminAction: falls back to the household ID when no email is available'
   );
 }
 

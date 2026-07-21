@@ -11,10 +11,15 @@ const require = createRequire(import.meta.url);
 require('dotenv').config();
 
 const {
-  computeKpiSummary,
   mergeCustomerActivity,
   mergeAlerts,
   looksLikeUuid,
+  computeBusinessOverview,
+  computeProtectionRate,
+  computeProtectionActivity,
+  computeSubscriptionStatusBreakdown,
+  computeProvisioningStatusBreakdown,
+  computeReadinessSummary,
 } = require('../database/adminMetrics.js');
 
 let failures = 0;
@@ -28,37 +33,90 @@ function check(condition, message) {
   }
 }
 
-// --- computeKpiSummary ---
+// --- computeBusinessOverview ---
 
-const kpiWithPrice = computeKpiSummary({
-  customerCount: 10,
-  totalCalls: 200,
-  blockedCalls: 15,
+const overviewWithPrice = computeBusinessOverview({
+  totalCustomers: 10,
+  activeProtectedHouseholds: 6,
+  newCustomersThisWeek: 2,
   activeEntitlements: 7,
-  failedProvisioning: 2,
+  failedPayments: 2,
   price: { unitAmount: 999, currency: 'gbp' },
 });
 
-check(kpiWithPrice.customers === 10, 'customers KPI passes through the raw count');
-check(kpiWithPrice.protectedCalls === 200, 'protectedCalls KPI passes through the raw count');
-check(kpiWithPrice.blockedCalls === 15, 'blockedCalls KPI passes through the raw count');
-check(kpiWithPrice.activeSubscriptions === 7, 'activeSubscriptions KPI passes through the raw count');
-check(kpiWithPrice.failedProvisioning === 2, 'failedProvisioning KPI passes through the raw count');
-check(kpiWithPrice.revenue.available === true, 'revenue is marked available when a Stripe price was fetched');
-check(kpiWithPrice.revenue.amount === 69.93, 'revenue is active subscriptions × unit price, in major currency units (7 × £9.99)');
-check(kpiWithPrice.revenue.currency === 'gbp', 'revenue currency comes from the Stripe price');
+check(overviewWithPrice.totalCustomers === 10, 'totalCustomers passes through the raw count');
+check(overviewWithPrice.activeProtectedHouseholds === 6, 'activeProtectedHouseholds passes through the raw count');
+check(overviewWithPrice.newCustomersThisWeek === 2, 'newCustomersThisWeek passes through the raw count');
+check(overviewWithPrice.failedPayments === 2, 'failedPayments passes through the raw count');
+check(overviewWithPrice.mrr.available === true, 'mrr is marked available when a Stripe price was fetched');
+check(overviewWithPrice.mrr.amount === 69.93, 'mrr is active subscriptions × unit price, in major currency units (7 × £9.99)');
+check(overviewWithPrice.mrr.currency === 'gbp', 'mrr currency comes from the Stripe price');
 
-const kpiWithoutPrice = computeKpiSummary({
-  customerCount: 3,
-  totalCalls: 10,
-  blockedCalls: 1,
+const overviewWithoutPrice = computeBusinessOverview({
+  totalCustomers: 3,
+  activeProtectedHouseholds: 1,
+  newCustomersThisWeek: 0,
   activeEntitlements: 2,
-  failedProvisioning: 0,
+  failedPayments: 0,
   price: null,
 });
 
-check(kpiWithoutPrice.revenue.available === false, 'revenue is marked unavailable rather than invented when no Stripe price could be fetched');
-check(kpiWithoutPrice.revenue.amount === null, 'revenue amount is null, not a fabricated number, when unavailable');
+check(overviewWithoutPrice.mrr.available === false, 'mrr is marked unavailable rather than invented when no Stripe price could be fetched');
+check(overviewWithoutPrice.mrr.amount === null, 'mrr amount is null, not a fabricated number, when unavailable');
+
+// --- computeProtectionRate / computeProtectionActivity ---
+
+check(computeProtectionRate(5, 20) === 25, 'computeProtectionRate: 5 blocked of 20 processed is 25%');
+check(computeProtectionRate(1, 3) === 33.3, 'computeProtectionRate: rounds to one decimal place');
+check(computeProtectionRate(0, 0) === null, 'computeProtectionRate: null (not 0%) when no calls were processed at all');
+
+const activitySummary = computeProtectionActivity({
+  callsProcessedToday: 20,
+  callsBlockedToday: 5,
+  callsAllowedToday: 12,
+  unknownChallengedToday: 8,
+});
+
+check(activitySummary.protectionRate === 25, 'computeProtectionActivity derives protectionRate from the same-day counts');
+check(activitySummary.callsAllowedToday === 12, 'computeProtectionActivity passes callsAllowedToday through unchanged');
+
+// --- computeSubscriptionStatusBreakdown ---
+
+const subscriptionBreakdown = computeSubscriptionStatusBreakdown([
+  { household_id: 'a', status: 'active', updated_at: '2026-07-20T10:00:00Z' },
+  { household_id: 'a', status: 'past_due', updated_at: '2026-07-21T10:00:00Z' },
+  { household_id: 'b', status: 'active', updated_at: '2026-07-19T10:00:00Z' },
+]);
+
+check(
+  subscriptionBreakdown.find(r => r.status === 'past_due').count === 1 && subscriptionBreakdown.find(r => r.status === 'active').count === 1,
+  'computeSubscriptionStatusBreakdown counts only the most recent status per household, not every historical row'
+);
+
+// --- computeProvisioningStatusBreakdown ---
+
+const provisioningBreakdown = computeProvisioningStatusBreakdown([
+  { twilio_provisioning_status: 'active' },
+  { twilio_provisioning_status: 'failed' },
+  { twilio_provisioning_status: 'active' },
+]);
+
+check(provisioningBreakdown.find(r => r.status === 'active').count === 2, 'computeProvisioningStatusBreakdown counts households by provisioning status');
+check(provisioningBreakdown.find(r => r.status === 'failed').count === 1, 'computeProvisioningStatusBreakdown counts the failed status separately');
+
+// --- computeReadinessSummary ---
+
+check(
+  computeReadinessSummary([{ severity: 'blocker', status: 'pending' }, { severity: 'medium', status: 'pending' }]).status === 'not_ready',
+  'computeReadinessSummary: a single open blocker makes the whole launch not_ready, regardless of other items'
+);
+
+check(
+  computeReadinessSummary([{ severity: 'medium', status: 'pending' }]).status === 'ready_with_open_items',
+  'computeReadinessSummary: open items with no blocker is ready_with_open_items'
+);
+
+check(computeReadinessSummary([]).status === 'ready', 'computeReadinessSummary: no items at all is ready');
 
 // --- mergeCustomerActivity ---
 

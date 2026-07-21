@@ -44,16 +44,17 @@ function extractBetween(source, name) {
 
 const protectionStateSource = extractBetween(html, 'computeProtectionState');
 const checklistSource = extractBetween(html, 'computeSetupChecklist');
+const adminButtonSource = extractBetween(html, 'shouldShowAdminButton');
 
-if (!protectionStateSource || !checklistSource) {
-  console.error('✗ could not find computeProtectionState/computeSetupChecklist markers in upload.html — test cannot run');
+if (!protectionStateSource || !checklistSource || !adminButtonSource) {
+  console.error('✗ could not find computeProtectionState/computeSetupChecklist/shouldShowAdminButton markers in upload.html — test cannot run');
   failures++;
 } else {
   // Both functions are evaluated together, in the same combined source,
   // since computeSetupChecklist calls computeProtectionState internally
   // — matching how they actually run together in the real page.
-  const combinedSource = `${protectionStateSource}\n${checklistSource}\nreturn { computeProtectionState, computeSetupChecklist };`;
-  const { computeProtectionState, computeSetupChecklist } = new Function(combinedSource)();
+  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton };`;
+  const { computeProtectionState, computeSetupChecklist, shouldShowAdminButton } = new Function(combinedSource)();
 
   // --- computeProtectionState ---
 
@@ -125,6 +126,33 @@ if (!protectionStateSource || !checklistSource) {
   check(
     computeSetupChecklist(null, false).protectedNumberAssigned === false,
     'a checklist computed against missing data never claims the number is assigned'
+  );
+
+  // --- shouldShowAdminButton ---
+
+  check(
+    shouldShowAdminButton({ isAdmin: true }) === true,
+    'shouldShowAdminButton: shows the button when the server reports isAdmin: true'
+  );
+
+  check(
+    shouldShowAdminButton({ isAdmin: false }) === false,
+    'shouldShowAdminButton: hides the button for an ordinary customer (isAdmin: false)'
+  );
+
+  check(
+    shouldShowAdminButton({}) === false,
+    'shouldShowAdminButton: defaults to hidden when isAdmin is missing from the response'
+  );
+
+  check(
+    shouldShowAdminButton(null) === false,
+    'shouldShowAdminButton: defaults to hidden (not throwing) for null/missing data entirely'
+  );
+
+  check(
+    shouldShowAdminButton({ isAdmin: 'true' }) === false,
+    'shouldShowAdminButton: only the exact boolean true shows the button, not a truthy string'
   );
 }
 

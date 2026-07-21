@@ -20,10 +20,32 @@
   .topbar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 14px;
     padding: 20px 40px;
     background: #020617;
     border-bottom: 1px solid #1e293b;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .admin-nav-link {
+    color: #00ff99;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border: 1px solid #14532d;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .admin-nav-link:hover {
+    background: #14532d;
   }
 
   .topbar-logo {
@@ -554,13 +576,16 @@
 <body>
 
 <header class="topbar">
-  <div class="topbar-logo">
-    <img src="/logo.png" alt="Home Call Guard logo">
+  <div class="topbar-left">
+    <div class="topbar-logo">
+      <img src="/logo.png" alt="Home Call Guard logo">
+    </div>
+    <div>
+      <div class="topbar-title">Home Call <span class="accent">Guard</span></div>
+      <div class="topbar-subtitle">Protection Dashboard</div>
+    </div>
   </div>
-  <div>
-    <div class="topbar-title">Home Call <span class="accent">Guard</span></div>
-    <div class="topbar-subtitle">Protection Dashboard</div>
-  </div>
+  <a class="admin-nav-link" id="adminNavLink" href="/admin" hidden>Open Admin Dashboard</a>
 </header>
 
 <main class="main">
@@ -775,6 +800,16 @@
     };
   }
   // TEST-EXTRACT-END: computeSetupChecklist
+
+  // TEST-EXTRACT-START: shouldShowAdminButton
+  // Navigation convenience only — never the security control. /admin is
+  // gated server-side by requireAuth + requireAdmin regardless of whether
+  // this button is shown; defaults to false (hidden) for missing/malformed
+  // data rather than accidentally showing it.
+  function shouldShowAdminButton(data) {
+    return !!(data && data.isAdmin === true);
+  }
+  // TEST-EXTRACT-END: shouldShowAdminButton
 
   function renderActivity(calls) {
     const container = document.getElementById("activityContent");
@@ -1145,6 +1180,11 @@
 
       renderActivity(data.recentCalls);
       renderChecklist(data);
+
+      const adminNavLink = document.getElementById("adminNavLink");
+      if (adminNavLink) {
+        adminNavLink.hidden = !shouldShowAdminButton(data);
+      }
 
       if (awaitingConfirmation) {
         // The regular poll discovered activation independently of our

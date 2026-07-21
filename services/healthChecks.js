@@ -92,22 +92,47 @@ async function checkEmail() {
 
 // No Railway API token exists in this project's configuration — hosting
 // health (deploy status, uptime) is not queryable from the app itself
-// without one. Reported as not configured rather than invented.
+// without one. Reported as not configured rather than invented. Not
+// currently rendered on the dashboard (see getSystemHealth) but kept
+// available for when a token is added.
 async function checkRailway() {
   return { name: "Railway", status: STATUS.NOT_CONFIGURED, latencyMs: null, message: "No Railway API token configured" };
 }
 
+// Self-check: if this code is executing at all, the application server
+// process is up. Always 'ok' by construction — there is no failure mode
+// where this function runs but the server isn't — included so the
+// dashboard's health section reads as complete rather than silently
+// missing the one system component that's serving the page itself.
+async function checkApplicationServer() {
+  return {
+    name: "Application server",
+    status: STATUS.OK,
+    latencyMs: 0,
+    message: `Uptime ${Math.floor(process.uptime())}s`,
+  };
+}
+
 async function getSystemHealth() {
-  const [supabase, stripeHealth, twilio, openai, email, railway] = await Promise.all([
+  const [supabase, stripeHealth, twilio, email, appServer] = await Promise.all([
     checkSupabase(),
     checkStripe(),
     checkTwilio(),
-    checkOpenAI(),
     checkEmail(),
-    checkRailway(),
+    checkApplicationServer(),
   ]);
 
-  return [supabase, stripeHealth, twilio, openai, email, railway];
+  return [supabase, stripeHealth, twilio, email, appServer];
 }
 
-module.exports = { getSystemHealth, checkSupabase, checkStripe, checkTwilio, checkOpenAI, checkEmail, checkRailway, STATUS };
+module.exports = {
+  getSystemHealth,
+  checkSupabase,
+  checkStripe,
+  checkTwilio,
+  checkOpenAI,
+  checkEmail,
+  checkRailway,
+  checkApplicationServer,
+  STATUS,
+};

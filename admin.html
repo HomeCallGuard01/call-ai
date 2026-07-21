@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Home Call Guard — Operations Dashboard</title>
+<title>Home Call Guard — Admin Dashboard</title>
 <style>
   * {
     box-sizing: border-box;
@@ -12,7 +12,12 @@
   body {
     margin: 0;
     font-family: Arial, sans-serif;
-    background: #0f172a;
+    /* Deliberately a colder, slightly blue-black ground (vs the customer
+       dashboard's pure #0f172a navy) plus a cyan accent throughout instead
+       of the customer-facing brand green — the two dashboards share a
+       family resemblance (dark, same logo/typeface) but are never
+       mistakable for one another at a glance. */
+    background: #0b1220;
     color: white;
     font-size: 15px;
   }
@@ -23,7 +28,7 @@
     justify-content: space-between;
     gap: 14px;
     padding: 18px 32px;
-    background: #020617;
+    background: #030712;
     border-bottom: 1px solid #1e293b;
   }
 
@@ -50,24 +55,38 @@
     max-width: none;
   }
 
-  .topbar-title {
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
+  .topbar-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
-  .topbar-title .accent {
-    color: #00ff99;
+  .topbar-title {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+
+  .admin-badge {
+    background: #0e7490;
+    color: #cffafe;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid #22d3ee;
   }
 
   .topbar-subtitle {
-    font-size: 12px;
-    color: #94a3b8;
-    margin-top: 2px;
+    font-size: 12.5px;
+    color: #93a3b8;
+    margin-top: 3px;
   }
 
   .topbar-link {
-    color: #94a3b8;
+    color: #93a3b8;
     text-decoration: none;
     font-size: 13px;
     padding: 8px 14px;
@@ -82,51 +101,171 @@
 
   .main {
     padding: 28px 32px 48px;
-    max-width: 1440px;
+    max-width: 1480px;
     margin: 0 auto;
   }
 
-  h1 {
-    font-size: 15px;
-  }
-
   h2 {
-    margin: 0 0 16px;
-    font-size: 17px;
+    margin: 0;
+    font-size: 16px;
     color: #e2e8f0;
   }
 
+  h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: #7dd3fc;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
   .section {
-    margin-bottom: 28px;
+    margin-bottom: 30px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .section-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #083344;
+    color: #67e8f9;
+    font-size: 12px;
+    font-weight: 800;
+    margin-right: 10px;
   }
 
   .card {
-    background: #020617;
+    background: #030712;
     padding: 22px;
     border-radius: 10px;
     border: 1px solid #1e293b;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+  }
+
+  .stat-card {
+    background: #030712;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .stat-number {
+    font-size: 26px;
+    font-weight: 700;
+    color: white;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-number.warn { color: #f59e0b; }
+  .stat-number.good { color: #34d399; }
+
+  .stat-label {
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: #93a3b8;
+  }
+
+  .empty-state {
+    color: #93a3b8;
+    font-size: 14px;
+    padding: 8px 0;
+  }
+
+  .columns-3-1 {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .subcards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .subcards > .card {
+    padding: 18px;
+  }
+
+  .list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .list-item:last-child { border-bottom: none; }
+
+  .list-icon {
+    font-size: 17px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .list-details { flex: 1; min-width: 0; }
+
+  .list-title { font-weight: 600; font-size: 13.5px; }
+  .list-title.severity-high { color: #f87171; }
+  .list-title.severity-medium { color: #fbbf24; }
+
+  .list-meta {
+    font-size: 12px;
+    color: #93a3b8;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+  }
+
+  .breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 7px 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 13px;
+  }
+
+  .breakdown-row:last-child { border-bottom: none; }
+
+  .breakdown-count {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
   /* --- System health --- */
 
   .health-grid {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 14px;
   }
 
   .health-pill {
-    background: #020617;
+    background: #030712;
     border: 1px solid #1e293b;
     border-radius: 10px;
     padding: 14px 16px;
   }
 
-  .health-name {
-    font-size: 13px;
-    color: #94a3b8;
-    margin-bottom: 6px;
-  }
+  .health-name { font-size: 13px; color: #93a3b8; margin-bottom: 6px; }
 
   .health-status {
     display: flex;
@@ -136,13 +275,7 @@
     font-weight: 600;
   }
 
-  .health-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
+  .health-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
   .health-dot.ok { background: #22c55e; }
   .health-dot.error { background: #ef4444; }
   .health-dot.not_configured { background: #475569; }
@@ -154,113 +287,19 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* --- KPI cards --- */
-
-  .kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 14px;
-  }
-
-  .kpi-card {
-    background: #020617;
-    border: 1px solid #1e293b;
-    border-radius: 10px;
-    padding: 20px;
-  }
-
-  .kpi-number {
-    font-size: 28px;
-    font-weight: 700;
-    color: white;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .kpi-number.warn {
-    color: #f59e0b;
-  }
-
-  .kpi-label {
-    margin-top: 6px;
-    font-size: 13px;
-    color: #94a3b8;
-  }
-
-  /* --- Two-column layout --- */
-
-  .columns {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 20px;
-    align-items: start;
-  }
-
-  .stack > .card {
-    margin-bottom: 20px;
-  }
-
-  .stack > .card:last-child {
-    margin-bottom: 0;
-  }
-
-  .empty-state {
-    color: #94a3b8;
-    font-size: 14px;
-    padding: 8px 0;
-  }
-
-  /* --- Activity / calls / alerts lists --- */
-
-  .list-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 11px 0;
-    border-bottom: 1px solid #1e293b;
-  }
-
-  .list-item:last-child {
-    border-bottom: none;
-  }
-
-  .list-icon {
-    font-size: 18px;
-    width: 26px;
-    text-align: center;
-    flex-shrink: 0;
-  }
-
-  .list-details {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .list-title {
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  .list-meta {
+  .health-footer {
+    margin-top: 12px;
     font-size: 12px;
-    color: #94a3b8;
-    margin-top: 2px;
-    overflow-wrap: anywhere;
+    color: #64748b;
   }
 
-  .list-title.severity-high { color: #f87171; }
-  .list-title.severity-medium { color: #fbbf24; }
+  /* --- Search + quick actions --- */
 
-  /* --- Customer search --- */
-
-  .search-form {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 14px;
-  }
+  .search-form { display: flex; gap: 8px; margin-bottom: 14px; }
 
   .search-form input {
     flex: 1;
-    background: #0f172a;
+    background: #0b1220;
     border: 1px solid #334155;
     border-radius: 6px;
     color: white;
@@ -274,37 +313,15 @@
     font-size: 13px;
   }
 
-  .search-result:last-child {
-    border-bottom: none;
-  }
+  .search-result:last-child { border-bottom: none; }
+  .search-result-email { font-weight: 600; font-size: 14px; }
+  .search-result-meta { color: #93a3b8; margin-top: 2px; }
 
-  .search-result-email {
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  .search-result-meta {
-    color: #94a3b8;
-    margin-top: 2px;
-  }
-
-  /* --- Quick actions --- */
-
-  .quick-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .quick-action-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
+  .quick-action-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 
   .quick-action-row input {
     flex: 1;
-    background: #0f172a;
+    background: #0b1220;
     border: 1px solid #334155;
     border-radius: 6px;
     color: white;
@@ -313,10 +330,10 @@
   }
 
   button {
-    background: #22c55e;
+    background: #22d3ee;
     border: none;
     padding: 9px 16px;
-    color: black;
+    color: #04222b;
     font-weight: bold;
     font-size: 13px;
     border-radius: 6px;
@@ -324,58 +341,32 @@
     white-space: nowrap;
   }
 
-  button:hover {
-    background: #16a34a;
-  }
+  button:hover { background: #67e8f9; }
 
-  .quick-action-result {
-    font-size: 12px;
-    color: #94a3b8;
-    min-height: 16px;
-  }
-
-  .external-links {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .external-links a {
-    color: #94a3b8;
-    font-size: 13px;
-    text-decoration: none;
-    border: 1px solid #1e293b;
-    border-radius: 6px;
-    padding: 8px 12px;
-  }
-
-  .external-links a:hover {
-    color: #e2e8f0;
-    border-color: #334155;
-  }
+  .quick-action-result { font-size: 12px; color: #93a3b8; min-height: 16px; }
 
   /* --- Launch readiness --- */
 
-  .readiness-item {
-    padding: 12px 0;
-    border-bottom: 1px solid #1e293b;
-  }
-
-  .readiness-item:last-child {
-    border-bottom: none;
-  }
-
-  .readiness-header {
+  .readiness-banner {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 12px;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-weight: 700;
+    font-size: 14px;
   }
 
-  .readiness-title {
-    font-weight: 600;
-    font-size: 13px;
-  }
+  .readiness-banner.not_ready { background: #450a0a; color: #fecaca; border: 1px solid #ef4444; }
+  .readiness-banner.ready_with_open_items { background: #422006; color: #fde68a; border: 1px solid #f59e0b; }
+  .readiness-banner.ready { background: #052e1a; color: #bbf7d0; border: 1px solid #22c55e; }
+
+  .readiness-item { padding: 12px 0; border-bottom: 1px solid #1e293b; }
+  .readiness-item:last-child { border-bottom: none; }
+
+  .readiness-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .readiness-title { font-weight: 600; font-size: 13px; }
 
   .readiness-badge {
     font-size: 11px;
@@ -391,41 +382,18 @@
   .readiness-badge.high { background: #431407; color: #fdba74; }
   .readiness-badge.medium { background: #422006; color: #fde68a; }
 
-  .readiness-detail {
-    font-size: 12px;
-    color: #94a3b8;
-    margin-top: 6px;
-    line-height: 1.5;
-  }
+  .readiness-detail { font-size: 12px; color: #93a3b8; margin-top: 6px; line-height: 1.5; }
 
-  .coming-soon {
-    color: #64748b;
-    font-style: italic;
-    font-size: 12px;
-    margin-top: 3px;
-  }
-
-  @media (max-width: 1200px) {
-    .health-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
-    .kpi-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
+  @media (max-width: 1300px) {
+    .stat-grid, .health-grid { grid-template-columns: repeat(3, 1fr); }
   }
 
   @media (max-width: 1024px) {
-    .columns {
-      grid-template-columns: 1fr;
-    }
+    .columns-3-1 { grid-template-columns: 1fr; }
   }
 
   @media (max-width: 640px) {
-    .health-grid,
-    .kpi-grid {
-      grid-template-columns: 1fr 1fr;
-    }
+    .stat-grid, .health-grid, .subcards { grid-template-columns: 1fr 1fr; }
   }
 </style>
 </head>
@@ -438,75 +406,105 @@
       <img src="/logo.png" alt="Home Call Guard logo">
     </div>
     <div>
-      <div class="topbar-title">Home Call <span class="accent">Guard</span></div>
-      <div class="topbar-subtitle">Operations Dashboard</div>
+      <div class="topbar-title-row">
+        <div class="topbar-title">Home Call Guard Admin Dashboard</div>
+        <span class="admin-badge">Admin</span>
+      </div>
+      <div class="topbar-subtitle">Business operations, customer activity, system health and launch readiness.</div>
     </div>
   </div>
-  <a class="topbar-link" href="/dashboard">Customer view</a>
+  <a class="topbar-link" href="/dashboard">View Customer Dashboard</a>
 </header>
 
 <main class="main">
-  <h1 class="visually-hidden" style="position:absolute;width:1px;height:1px;overflow:hidden;">Home Call Guard Operations Dashboard</h1>
 
   <section class="section">
-    <h2>System health</h2>
-    <div class="health-grid" id="healthGrid"></div>
+    <div class="section-header"><h2><span class="section-number">1</span>Business overview</h2></div>
+    <div class="stat-grid" id="businessOverviewGrid"></div>
   </section>
 
   <section class="section">
-    <h2>Key metrics</h2>
-    <div class="kpi-grid" id="kpiGrid"></div>
+    <div class="section-header"><h2><span class="section-number">2</span>Protection activity (today)</h2></div>
+    <div class="stat-grid" id="protectionActivityGrid"></div>
   </section>
 
-  <section class="section columns">
-    <div class="stack">
-      <div class="card">
-        <h2>Recent customer activity</h2>
-        <div id="activityList"></div>
+  <section class="section">
+    <div class="section-header"><h2><span class="section-number">3</span>Customer operations</h2></div>
+    <div class="columns-3-1">
+      <div class="subcards">
+        <div class="card">
+          <h3>Recent registrations</h3>
+          <div id="recentRegistrations"></div>
+        </div>
+        <div class="card">
+          <h3>Subscription status</h3>
+          <div id="subscriptionStatusBreakdown"></div>
+        </div>
+        <div class="card">
+          <h3>Twilio number status</h3>
+          <div id="provisioningStatusBreakdown"></div>
+        </div>
+        <div class="card">
+          <h3>Provisioning failures</h3>
+          <div id="provisioningFailuresSummary"></div>
+        </div>
       </div>
-
       <div class="card">
-        <h2>Recent calls</h2>
-        <div id="callsList"></div>
-      </div>
-
-      <div class="card">
-        <h2>Alerts &amp; errors</h2>
-        <div id="alertsList"></div>
-      </div>
-    </div>
-
-    <div class="stack">
-      <div class="card">
-        <h2>Customer search</h2>
+        <h3>Customer search</h3>
         <form class="search-form" id="searchForm">
           <input type="text" id="searchInput" placeholder="Email, phone, or Twilio number">
           <button type="submit">Search</button>
         </form>
         <div id="searchResults"></div>
-      </div>
 
-      <div class="card">
-        <h2>Quick actions</h2>
-        <div class="quick-actions">
-          <div class="quick-action-row">
-            <input type="text" id="retryHouseholdId" placeholder="Household ID">
-            <button type="button" id="retryProvisioningBtn">Retry provisioning</button>
-          </div>
-          <div class="quick-action-result" id="quickActionResult"></div>
-          <div class="external-links">
-            <a href="https://dashboard.stripe.com/customers" target="_blank" rel="noopener">Open Stripe customers →</a>
-            <a href="https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" target="_blank" rel="noopener">Open Twilio numbers console →</a>
-          </div>
+        <h3 style="margin-top:20px;">Retry provisioning</h3>
+        <div class="quick-action-row">
+          <input type="text" id="retryHouseholdId" placeholder="Household ID">
+          <button type="button" id="retryProvisioningBtn">Retry</button>
         </div>
-      </div>
-
-      <div class="card">
-        <h2>Launch readiness</h2>
-        <div id="launchReadinessList"></div>
+        <div class="quick-action-result" id="quickActionResult"></div>
       </div>
     </div>
   </section>
+
+  <section class="section">
+    <div class="section-header"><h2><span class="section-number">4</span>System health</h2></div>
+    <div class="card">
+      <div class="health-grid" id="healthGrid"></div>
+      <div class="health-footer" id="healthFooter"></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-header"><h2><span class="section-number">5</span>Launch readiness</h2></div>
+    <div class="card">
+      <div id="readinessBanner"></div>
+      <div id="launchReadinessList"></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-header"><h2><span class="section-number">6</span>Recent activity</h2></div>
+    <div class="subcards">
+      <div class="card">
+        <h3>Recent calls</h3>
+        <div id="callsList"></div>
+      </div>
+      <div class="card">
+        <h3>Recent signups</h3>
+        <div id="signupsList"></div>
+      </div>
+      <div class="card">
+        <h3>Recent errors</h3>
+        <div id="errorsList"></div>
+      </div>
+      <div class="card">
+        <h3>Admin actions (this session)</h3>
+        <div id="adminActionsList"></div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <script>
@@ -518,15 +516,21 @@
   }
   // TEST-EXTRACT-END: formatHealthBadge
 
-  // TEST-EXTRACT-START: formatRevenue
-  function formatRevenue(revenue) {
-    if (!revenue || !revenue.available) return "—";
+  // TEST-EXTRACT-START: formatCurrency
+  function formatCurrency(money) {
+    if (!money || !money.available) return "—";
     return new Intl.NumberFormat("en-GB", {
       style: "currency",
-      currency: (revenue.currency || "gbp").toUpperCase(),
-    }).format(revenue.amount);
+      currency: (money.currency || "gbp").toUpperCase(),
+    }).format(money.amount);
   }
-  // TEST-EXTRACT-END: formatRevenue
+  // TEST-EXTRACT-END: formatCurrency
+
+  // TEST-EXTRACT-START: formatProtectionRate
+  function formatProtectionRate(rate) {
+    return rate === null || rate === undefined ? "No calls yet" : `${rate}%`;
+  }
+  // TEST-EXTRACT-END: formatProtectionRate
 
   // TEST-EXTRACT-START: describeActivityEvent
   function describeActivityEvent(event) {
@@ -583,47 +587,68 @@
   }
   // TEST-EXTRACT-END: formatLaunchReadinessBadge
 
-  function renderHealth(checks) {
-    const grid = document.getElementById("healthGrid");
-    grid.innerHTML = "";
+  // TEST-EXTRACT-START: describeReadinessBanner
+  function describeReadinessBanner(summary) {
+    if (summary.status === "not_ready") {
+      return {
+        className: "not_ready",
+        text: `Not ready — ${summary.blockersCount} open blocker${summary.blockersCount === 1 ? "" : "s"}`,
+      };
+    }
 
-    checks.forEach(check => {
-      const badge = formatHealthBadge(check);
-      const pill = document.createElement("div");
-      pill.className = "health-pill";
-      pill.innerHTML = `
-        <div class="health-name">${check.name}</div>
-        <div class="health-status">
-          <span class="health-dot ${badge.className}"></span>
-          <span>${badge.label}</span>
-        </div>
-        ${check.latencyMs != null ? `<div class="health-latency">${check.latencyMs}ms</div>` : ""}
-      `;
-      grid.appendChild(pill);
-    });
+    if (summary.status === "ready_with_open_items") {
+      return {
+        className: "ready_with_open_items",
+        text: `Ready with open items — ${summary.openCount} outstanding launch check${summary.openCount === 1 ? "" : "s"}`,
+      };
+    }
+
+    return { className: "ready", text: "Ready — no outstanding launch checks" };
   }
+  // TEST-EXTRACT-END: describeReadinessBanner
 
-  function renderKpis(kpis) {
-    const grid = document.getElementById("kpiGrid");
-    const cards = [
-      { label: "Customers", value: kpis.customers },
-      { label: "Protected calls", value: kpis.protectedCalls },
-      { label: "Blocked calls", value: kpis.blockedCalls },
-      { label: "Revenue (est. MRR)", value: formatRevenue(kpis.revenue) },
-      { label: "Active subscriptions", value: kpis.activeSubscriptions },
-      { label: "Failed provisioning", value: kpis.failedProvisioning, warn: kpis.failedProvisioning > 0 },
-    ];
+  // TEST-EXTRACT-START: describeAdminAction
+  function describeAdminAction(action) {
+    if (action.type === "retry_provisioning") {
+      const outcome = formatQuickActionResult(action.result);
+      return { icon: "🔁", title: `Retry provisioning — ${action.email || action.householdId}`, meta: `${outcome} · ${action.at}` };
+    }
 
-    grid.innerHTML = cards
+    return { icon: "•", title: action.type, meta: action.at };
+  }
+  // TEST-EXTRACT-END: describeAdminAction
+
+  function renderStatCards(containerId, cards) {
+    document.getElementById(containerId).innerHTML = cards
       .map(
         c => `
-      <div class="kpi-card">
-        <div class="kpi-number${c.warn ? " warn" : ""}">${c.value}</div>
-        <div class="kpi-label">${c.label}</div>
+      <div class="stat-card">
+        <div class="stat-number${c.className ? " " + c.className : ""}">${c.value}</div>
+        <div class="stat-label">${c.label}</div>
       </div>
     `
       )
       .join("");
+  }
+
+  function renderBusinessOverview(overview) {
+    renderStatCards("businessOverviewGrid", [
+      { label: "Total customers", value: overview.totalCustomers },
+      { label: "Active protected households", value: overview.activeProtectedHouseholds, className: "good" },
+      { label: "New customers this week", value: overview.newCustomersThisWeek },
+      { label: "Monthly recurring revenue", value: formatCurrency(overview.mrr) },
+      { label: "Failed payments", value: overview.failedPayments, className: overview.failedPayments > 0 ? "warn" : "" },
+    ]);
+  }
+
+  function renderProtectionActivity(activity) {
+    renderStatCards("protectionActivityGrid", [
+      { label: "Calls processed today", value: activity.callsProcessedToday },
+      { label: "Calls blocked today", value: activity.callsBlockedToday, className: activity.callsBlockedToday > 0 ? "warn" : "" },
+      { label: "Calls allowed today", value: activity.callsAllowedToday, className: "good" },
+      { label: "Unknown callers challenged", value: activity.unknownChallengedToday },
+      { label: "Protection rate", value: formatProtectionRate(activity.protectionRate) },
+    ]);
   }
 
   function renderList(containerId, items, emptyMessage, describe) {
@@ -650,8 +675,8 @@
       .join("");
   }
 
-  function renderCalls(calls) {
-    const container = document.getElementById("callsList");
+  function renderCalls(containerId, calls) {
+    const container = document.getElementById(containerId);
 
     if (!calls || calls.length === 0) {
       container.innerHTML = `<div class="empty-state">No calls recorded yet.</div>`;
@@ -675,8 +700,27 @@
       .join("");
   }
 
-  function renderLaunchReadiness(items) {
+  function renderBreakdown(containerId, rows, emptyMessage) {
+    const container = document.getElementById(containerId);
+
+    if (!rows || rows.length === 0) {
+      container.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+      return;
+    }
+
+    container.innerHTML = rows
+      .map(r => `<div class="breakdown-row"><span>${r.status}</span><span class="breakdown-count">${r.count}</span></div>`)
+      .join("");
+  }
+
+  function renderLaunchReadiness(launchReadiness) {
+    const bannerInfo = describeReadinessBanner(launchReadiness.summary);
+    document.getElementById("readinessBanner").innerHTML = `
+      <div class="readiness-banner ${bannerInfo.className}">${bannerInfo.text}</div>
+    `;
+
     const container = document.getElementById("launchReadinessList");
+    const items = launchReadiness.items;
 
     if (!items || items.length === 0) {
       container.innerHTML = `<div class="empty-state">Nothing outstanding.</div>`;
@@ -729,15 +773,49 @@
       if (!res.ok) throw new Error("overview request failed");
       const data = await res.json();
 
+      renderBusinessOverview(data.businessOverview);
+      renderProtectionActivity(data.protectionActivity);
+
+      renderList("recentRegistrations", data.customerOperations.recentRegistrations, "No registrations yet.", describeActivityEvent);
+      renderBreakdown("subscriptionStatusBreakdown", data.customerOperations.subscriptionStatusBreakdown, "No subscriptions yet.");
+      renderBreakdown("provisioningStatusBreakdown", data.customerOperations.provisioningStatusBreakdown, "No households yet.");
+      document.getElementById("provisioningFailuresSummary").innerHTML =
+        data.customerOperations.provisioningFailuresCount > 0
+          ? `<div class="stat-number warn">${data.customerOperations.provisioningFailuresCount}</div><div class="stat-label">household(s) currently failing provisioning</div>`
+          : `<div class="empty-state">No provisioning failures.</div>`;
+
       renderHealth(data.health);
-      renderKpis(data.kpis);
-      renderList("activityList", data.recentActivity, "No customer activity yet.", describeActivityEvent);
-      renderCalls(data.recentCalls);
-      renderList("alertsList", data.alerts, "No alerts — everything is healthy.", describeAlert);
+      document.getElementById("healthFooter").textContent = `Last successful health check: ${data.generatedAt}`;
+
       renderLaunchReadiness(data.launchReadiness);
+
+      renderCalls("callsList", data.recentActivityFeed.recentCalls);
+      renderList("signupsList", data.recentActivityFeed.recentSignups, "No signups yet.", describeActivityEvent);
+      renderList("errorsList", data.recentActivityFeed.recentErrors, "No errors — everything is healthy.", describeAlert);
+      renderList("adminActionsList", data.recentActivityFeed.adminActions, "No admin actions yet this session.", describeAdminAction);
     } catch (err) {
       console.error("ADMIN OVERVIEW LOAD ERROR:", err);
     }
+  }
+
+  function renderHealth(checks) {
+    const grid = document.getElementById("healthGrid");
+    grid.innerHTML = "";
+
+    checks.forEach(check => {
+      const badge = formatHealthBadge(check);
+      const pill = document.createElement("div");
+      pill.className = "health-pill";
+      pill.innerHTML = `
+        <div class="health-name">${check.name}</div>
+        <div class="health-status">
+          <span class="health-dot ${badge.className}"></span>
+          <span>${badge.label}</span>
+        </div>
+        ${check.latencyMs != null ? `<div class="health-latency">${check.latencyMs}ms</div>` : ""}
+      `;
+      grid.appendChild(pill);
+    });
   }
 
   document.getElementById("searchForm").addEventListener("submit", async e => {
@@ -770,6 +848,7 @@
       });
       const data = await res.json();
       resultEl.textContent = formatQuickActionResult(data);
+      loadOverview();
     } catch (err) {
       resultEl.textContent = "Request failed — see console.";
       console.error("RETRY PROVISIONING ERROR:", err);

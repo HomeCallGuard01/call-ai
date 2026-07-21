@@ -383,6 +383,12 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
     trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
     recentCalls: recentCalls.map(toClientCall),
+    // Drives the "Open Admin Dashboard" nav button only — never the
+    // actual access control. /admin remains gated server-side by
+    // requireAuth + requireAdmin (middleware/requireAdmin.js) regardless
+    // of what this flag says; a customer manually forging this field in
+    // devtools still hits that real check and is redirected.
+    isAdmin: req.role === "admin",
   });
 });
 
