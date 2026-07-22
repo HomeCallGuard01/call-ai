@@ -1,6 +1,6 @@
 Document: Known Issues — Pre-Launch
-Version: 3.0
-Last Updated: 2026-07-21
+Version: 3.1
+Last Updated: 2026-07-22
 Status: Active
 Owner: Andrew Deane
 Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence
@@ -40,18 +40,65 @@ prevention, and cancellation/deletion lifecycle are all exercised.
 `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` have since been added, and
 migration 016's database objects (initially found to be missing despite
 being reported as applied — see
-`docs/engineering/016_017_migration_incident_notes.md`) have been
-repaired and confirmed. A full real test (test Stripe mode, real Twilio
-credentials, a temporary ngrok tunnel standing in for a public `APP_URL`)
-confirmed the provisioning code genuinely reaches Twilio's real purchase
-endpoint. It stops there for one specific, expected reason — see
-"UK number purchase requires a registered Twilio Address" below. No
-number was purchased and no charge occurred; the failure was correctly
-recorded on the test household exactly as designed.
+`docs/engineering/016_017_migration_incident_notes.md`) were repaired and
+confirmed working *at the time*. A full real test (test Stripe mode,
+real Twilio credentials, a temporary ngrok tunnel standing in for a
+public `APP_URL`) confirmed the provisioning code genuinely reaches
+Twilio's real purchase endpoint. It stops there for one specific,
+expected reason — see "UK number purchase requires a registered Twilio
+Address" below. No number was purchased and no charge occurred; the
+failure was correctly recorded on the test household exactly as
+designed. **This "repaired and confirmed" status did not hold — see the
+2026-07-22 update immediately below. Migration 016 must no longer be
+described as repaired and confirmed until it is re-verified.**
+
+**Update, 2026-07-22 — the migration 016 fix has silently reverted;
+regression re-confirmed, do not redeploy yet.** Re-running the exact
+same nonexistent-household edge-case test that originally caught this
+bug (calling `assign_household_twilio_number` with a household ID that
+does not exist) showed the defensive "household does not exist" check
+no longer fires — the deployed function has reverted to its earlier,
+pre-fix, buggy definition (the manually-selected `v_found` flag pattern,
+not Postgres's built-in `FOUND`). This was confirmed by a read-only
+check directly against the live database (an RPC call plus, separately,
+inspecting the deployed function's actual source via
+`pg_get_functiondef`) — no code, database, or Twilio changes were made
+in the process.
+
+This does **not** currently block normal customer provisioning: the
+defect only affects the edge case of assigning a number to a household
+ID that doesn't exist, which cannot happen in real usage (household IDs
+always come from a real, already-looked-up row). The real-world
+significance is different and more serious than the immediate
+functional impact: **a database function that was previously deployed,
+tested, and independently verified working has silently reverted to an
+earlier version, with no infrastructure cause identified** (checked and
+ruled out: schema-cache staleness, a full project restart, replica/HA
+configuration, backup/restore history, DDL event triggers, pg_cron, and
+GitHub migration-sync drift reconciliation — see
+`docs/engineering/016_017_migration_incident_notes.md` for the full
+investigation trail). Until this is understood, no previously-verified
+database change in this project can be assumed to still be in place
+without re-checking it.
+
+**Decision: migration 016 and migration 017 must not be redeployed again
+until Supabase support responds with an explanation, or we agree a
+reliable mitigation and a post-deployment verification process that
+would actually catch a silent revert** (e.g. a scheduled read-only check
+re-running this same edge-case test on a recurring basis, not just a
+one-time verification after deployment). No Supabase support case
+number has been recorded in this repository yet — if one exists, it
+should be added here.
 
 ## Severity 2 — should fix before or very shortly after launch
 
 ### UK number purchase requires a registered Twilio Address
+
+**This is the Severity 1 blocker preventing live UK number purchases —
+distinct from the migration 016/017 database issues below, which are
+about database reliability/lifecycle management, not this.** Even with
+a perfectly-deployed database, no number can be purchased for any
+customer until this is resolved.
 
 Twilio's real purchase API rejected the test attempt with: *"Phone
 Number Requires an Address but the 'AddressSid' parameter was empty."*
@@ -77,11 +124,17 @@ actually land (full account in
 was written and tested against the same pattern in the same session and
 has **not** been independently re-verified the same way. One of its four
 objects, `cancel_household_twilio_number_pending_release`, was directly
-confirmed missing via a live application call on 2026-07-21. Treat the
-whole file as unconfirmed until it goes through the same staged repair —
-deliberately not done yet. Low practical urgency before launch (nothing
-exercises the cancellation/release path until a customer actually
-cancels), but should be resolved before relying on it.
+confirmed missing via a live application call on 2026-07-21, and its
+`twilio_number_pending_release_at` column was re-confirmed still absent
+on 2026-07-22. Treat the whole file as unconfirmed until it goes through
+the same staged repair — deliberately not done yet, and **per the
+2026-07-22 update above, must not be attempted until Supabase support
+responds or a reliable mitigation/post-deployment verification process
+is agreed**, since migration 016 (already independently repaired and
+verified once) has since silently reverted. Low practical urgency before
+launch on its own merits (nothing exercises the cancellation/release
+path until a customer actually cancels) — the reason to hold off now is
+the unresolved revert risk, not this migration's own priority.
 
 ### No scheduled runner for expired-number release
 
