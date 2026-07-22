@@ -90,13 +90,29 @@ check(
   'a purchased number is configured to send voice webhooks to this app\'s own /voice route'
 );
 
+check(
+  !('addressSid' in params),
+  'addressSid is omitted entirely (not sent as null/undefined) when not supplied — behaviour is unchanged from before this fix while TWILIO_ADDRESS_SID remains unset'
+);
+
+const paramsWithAddress = buildIncomingPhoneNumberParams({
+  phoneNumber: '+447700900123',
+  appUrl: 'https://www.homecallguard.co.uk',
+  addressSid: 'AD1234567890abcdef1234567890abcdef',
+});
+
+check(
+  paramsWithAddress.addressSid === 'AD1234567890abcdef1234567890abcdef',
+  'addressSid is included in the purchase params when supplied'
+);
+
 // --- ensureTwilioNumberProvisioned (orchestration, fake collaborators) ---
 
 // Build a client shaped closely enough to the real Twilio SDK for this
 // orchestrator's exact call sites: `client.incomingPhoneNumbers.create(...)`
 // and `client.incomingPhoneNumbers(sid).remove()`.
 function makeFakeTwilioClient({ available = [{ phoneNumber: '+447700900456' }], purchaseThrows = null } = {}) {
-  const calls = { list: 0, create: 0, remove: 0 };
+  const calls = { list: 0, create: 0, remove: 0, lastCreateParams: null };
 
   const incomingPhoneNumbers = (sid) => ({
     remove: async () => {
@@ -106,6 +122,7 @@ function makeFakeTwilioClient({ available = [{ phoneNumber: '+447700900456' }], 
   });
   incomingPhoneNumbers.create = async (params) => {
     calls.create++;
+    calls.lastCreateParams = params;
     if (purchaseThrows) throw purchaseThrows;
     return { sid: 'PN_test_123', phoneNumber: params.phoneNumber };
   };
@@ -185,6 +202,60 @@ async function run() {
       recordFailure.calls.length === 0,
       'successful provisioning never records a failure'
     );
+    check(
+      !('addressSid' in client.calls.lastCreateParams),
+      'with no addressSid configured (matching production today), the real Twilio purchase call is sent without one — zero behaviour change from before this fix'
+    );
+  }
+
+  // --- addressSid pass-through: the actual fix this test file was extended for ---
+  {
+    const client = makeFakeTwilioClient();
+    const assign = makeFakeAssign(true);
+    const recordFailure = makeFakeRecordFailure();
+
+    const result = await ensureTwilioNumberProvisioned(
+      { id: 'household-addresssid', twilio_number: null, twilio_provisioning_attempts: 0 },
+      {
+        client, assign: assign.fn, recordFailure: recordFailure.fn,
+        appUrl: 'https://app.example.com', addressSid: 'ADfeedfacefeedfacefeedfacefeedface',
+      }
+    );
+
+    check(
+      result.success === true,
+      'providing an addressSid does not change the success path'
+    );
+    check(
+      client.calls.lastCreateParams.addressSid === 'ADfeedfacefeedfacefeedfacefeedface',
+      'when an addressSid is configured, it is forwarded to the real Twilio purchase call — this is the actual fix for "Phone Number Requires an Address"'
+    );
+  }
+
+  // --- addressSid defaults from process.env.TWILIO_ADDRESS_SID when not passed explicitly ---
+  {
+    const previous = process.env.TWILIO_ADDRESS_SID;
+    process.env.TWILIO_ADDRESS_SID = 'ADenvvalueenvvalueenvvalueenvvalue01';
+
+    const client = makeFakeTwilioClient();
+    const assign = makeFakeAssign(true);
+    const recordFailure = makeFakeRecordFailure();
+
+    const result = await ensureTwilioNumberProvisioned(
+      { id: 'household-addresssid-env', twilio_number: null, twilio_provisioning_attempts: 0 },
+      { client, assign: assign.fn, recordFailure: recordFailure.fn, appUrl: 'https://app.example.com' }
+    );
+
+    check(
+      client.calls.lastCreateParams.addressSid === 'ADenvvalueenvvalueenvvalueenvvalue01',
+      'addressSid defaults from process.env.TWILIO_ADDRESS_SID, matching every other Twilio credential in this file (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN) — this is the only line production needs to configure once a real Address object exists'
+    );
+
+    if (previous === undefined) {
+      delete process.env.TWILIO_ADDRESS_SID;
+    } else {
+      process.env.TWILIO_ADDRESS_SID = previous;
+    }
   }
 
   // --- duplicate prevention: household already has a number ---

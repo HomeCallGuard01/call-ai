@@ -34,11 +34,21 @@ function pickAvailableNumber(availableNumbers) {
 // the voice-webhook wiring is directly testable without a real Twilio
 // client. voiceUrl must point back at this app's own /voice route, or a
 // purchased number would ring with nothing configured to answer it.
-function buildIncomingPhoneNumberParams({ phoneNumber, appUrl }) {
+//
+// addressSid is UK local numbers' one hard prerequisite: Twilio rejects
+// the purchase outright ("Phone Number Requires an Address but the
+// 'AddressSid' parameter was empty") without a registered Address object
+// on file — see docs/launch/KNOWN_ISSUES.md. Deliberately omitted from
+// the returned params (not sent as null/undefined) when not supplied, so
+// this function's behavior is byte-for-byte unchanged from today for as
+// long as TWILIO_ADDRESS_SID remains unset — this is a strict addition,
+// not a change, to the existing failure mode.
+function buildIncomingPhoneNumberParams({ phoneNumber, appUrl, addressSid }) {
   return {
     phoneNumber,
     voiceUrl: `${appUrl}/voice`,
     voiceMethod: "POST",
+    ...(addressSid ? { addressSid } : {}),
   };
 }
 
@@ -61,6 +71,7 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     assign = assignHouseholdTwilioNumber,
     recordFailure = recordTwilioProvisioningFailure,
     appUrl = process.env.APP_URL,
+    addressSid = process.env.TWILIO_ADDRESS_SID,
     maxAttempts = DEFAULT_MAX_ATTEMPTS,
   } = deps;
 
@@ -90,7 +101,7 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     }
 
     const purchased = await client.incomingPhoneNumbers.create(
-      buildIncomingPhoneNumberParams({ phoneNumber: candidate.phoneNumber, appUrl })
+      buildIncomingPhoneNumberParams({ phoneNumber: candidate.phoneNumber, appUrl, addressSid })
     );
 
     const assigned = await assign(household.id, purchased.phoneNumber);
