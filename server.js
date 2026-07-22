@@ -379,6 +379,10 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     twilioNumber: req.household.twilio_number || null,
     twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
     contactsUploaded: contacts.length,
+    // Full contact list (name + number only — never the internal id/
+    // household_id) for the "Trusted contacts" section. Same query/data
+    // already fetched above for the count; no new integration.
+    contacts: contacts.map(c => ({ name: c.name, number: c.number })),
     callsScreened: callsToday.filter(call => call.status === "Unknown").length,
     suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
     trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
@@ -389,6 +393,16 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // of what this flag says; a customer manually forging this field in
     // devtools still hits that real check and is redirected.
     isAdmin: req.role === "admin",
+    // Account details section — req.household/req.entitlement are
+    // already loaded in memory by requireAuth/requireEntitlement, so this
+    // is free (no extra query, no new integration). No renewal/next-
+    // billing date is included: this app doesn't currently fetch that
+    // from Stripe, and the frontend must not invent one.
+    account: {
+      email: req.household.email,
+      memberSince: req.household.created_at,
+      entitlementType: req.entitlement.entitlement_type,
+    },
   });
 });
 

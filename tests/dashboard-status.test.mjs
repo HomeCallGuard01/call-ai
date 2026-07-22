@@ -45,16 +45,28 @@ function extractBetween(source, name) {
 const protectionStateSource = extractBetween(html, 'computeProtectionState');
 const checklistSource = extractBetween(html, 'computeSetupChecklist');
 const adminButtonSource = extractBetween(html, 'shouldShowAdminButton');
+const progressSource = extractBetween(html, 'computeChecklistProgress');
+const memberSinceSource = extractBetween(html, 'formatMemberSince');
+const describeCallSource = extractBetween(html, 'describeCall');
+const muteStatsSource = extractBetween(html, 'shouldMuteStatsGrid');
 
-if (!protectionStateSource || !checklistSource || !adminButtonSource) {
-  console.error('✗ could not find computeProtectionState/computeSetupChecklist/shouldShowAdminButton markers in upload.html — test cannot run');
+if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource) {
+  console.error('✗ could not find one or more expected TEST-EXTRACT markers in upload.html — test cannot run');
   failures++;
 } else {
   // Both functions are evaluated together, in the same combined source,
   // since computeSetupChecklist calls computeProtectionState internally
   // — matching how they actually run together in the real page.
-  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton };`;
-  const { computeProtectionState, computeSetupChecklist, shouldShowAdminButton } = new Function(combinedSource)();
+  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid };`;
+  const {
+    computeProtectionState,
+    computeSetupChecklist,
+    shouldShowAdminButton,
+    computeChecklistProgress,
+    shouldMuteStatsGrid,
+    formatMemberSince,
+    describeCall,
+  } = new Function(combinedSource)();
 
   // --- computeProtectionState ---
 
@@ -153,6 +165,58 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource) {
   check(
     shouldShowAdminButton({ isAdmin: 'true' }) === false,
     'shouldShowAdminButton: only the exact boolean true shows the button, not a truthy string'
+  );
+
+  // --- computeChecklistProgress ---
+
+  check(
+    JSON.stringify(computeChecklistProgress({ a: true, b: true, c: false })) === JSON.stringify({ completed: 2, total: 3 }),
+    'computeChecklistProgress: counts only truthy entries as completed'
+  );
+
+  check(
+    JSON.stringify(computeChecklistProgress({})) === JSON.stringify({ completed: 0, total: 0 }),
+    'computeChecklistProgress: an empty checklist is 0 of 0, not a division error'
+  );
+
+  // --- formatMemberSince ---
+
+  check(formatMemberSince('2026-03-15T10:00:00Z') === 'March 2026', 'formatMemberSince: formats an ISO date as "Month Year"');
+  check(formatMemberSince(null) === '—', 'formatMemberSince: renders an em dash, not a fabricated date, when unavailable');
+  check(formatMemberSince('not-a-date') === '—', 'formatMemberSince: an unparseable value also renders an em dash rather than "Invalid Date"');
+
+  // --- describeCall ---
+
+  check(
+    describeCall({ status: 'Known' }).title === 'Someone you know called',
+    'describeCall: a known contact is described in plain English, not "Trusted caller"'
+  );
+
+  check(
+    describeCall({ status: 'Unknown', result: 'SCAM' }).title === 'We blocked a suspected scam call',
+    'describeCall: a blocked scam call names what actually happened'
+  );
+
+  check(
+    describeCall({ status: 'Unknown', result: 'SAFE' }).title === 'We checked this call and let it through',
+    'describeCall: a safe unknown call never mentions "AI" — plain English only'
+  );
+
+  // --- shouldMuteStatsGrid ---
+
+  check(
+    shouldMuteStatsGrid({ twilioNumber: '+447700900123', twilioProvisioningStatus: 'active' }) === false,
+    'shouldMuteStatsGrid: not muted once protection is genuinely active'
+  );
+
+  check(
+    shouldMuteStatsGrid({ twilioNumber: null, twilioProvisioningStatus: 'pending' }) === true,
+    'shouldMuteStatsGrid: muted while protection is still pending, so zeroes read as "nothing has happened yet" not "broken"'
+  );
+
+  check(
+    shouldMuteStatsGrid({ twilioNumber: null, twilioProvisioningStatus: 'failed' }) === true,
+    'shouldMuteStatsGrid: muted when provisioning has failed too'
   );
 }
 

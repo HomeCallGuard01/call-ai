@@ -103,6 +103,16 @@
     color: #22c55e;
   }
 
+  .footer-help {
+    margin: 0 0 10px;
+    font-size: 13px;
+  }
+
+  .footer-help a {
+    color: #22c55e;
+    text-decoration: none;
+  }
+
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -486,15 +496,198 @@
     color: #94a3b8;
   }
 
+  .stats-empty-note {
+    color: #94a3b8;
+    font-size: 14px;
+    margin: -6px 0 14px;
+  }
+
+  /* Applied while protection isn't active yet — four large zeroes read as
+     "the service isn't doing anything" rather than "nothing has happened
+     yet", so this visually recedes the cards and lets stats-empty-note
+     carry the explanation instead. */
+  .stats-grid.stats-muted .stat-card {
+    opacity: 0.5;
+  }
+
+  .stats-grid.stats-muted .stat-number {
+    color: #64748b;
+  }
+
   h2 {
     margin-top: 0;
     font-size: 20px;
+  }
+
+  .section-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .help-hint {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: help;
+    flex-shrink: 0;
+  }
+
+  .checklist-progress {
+    color: #94a3b8;
+    font-size: 14px;
+    margin: -4px 0 14px;
   }
 
   .empty-state {
     color: #94a3b8;
     font-size: 15px;
     padding: 10px 0;
+  }
+
+  .empty-state-hint {
+    color: #64748b;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  .contacts-list {
+    margin-bottom: 16px;
+  }
+
+  .contact-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .contact-item:last-child {
+    border-bottom: none;
+  }
+
+  .contact-icon {
+    font-size: 18px;
+    width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .contact-name {
+    font-weight: 600;
+    font-size: 15px;
+  }
+
+  .contact-number {
+    font-size: 13px;
+    color: #94a3b8;
+  }
+
+  .section-intro {
+    color: #94a3b8;
+    font-size: 14px;
+    margin: -6px 0 14px;
+  }
+
+  .upload-secondary-label {
+    color: #cbd5e1;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 16px 0 4px;
+  }
+
+  .upload-intro {
+    color: #94a3b8;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+
+  #csvUploadArea {
+    margin-top: 4px;
+  }
+
+  .account-details {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+  }
+
+  .account-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 15px;
+  }
+
+  .account-row:last-child {
+    border-bottom: none;
+  }
+
+  .account-row-label {
+    color: #94a3b8;
+  }
+
+  .account-row-value {
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .account-support-note {
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .account-support-note a {
+    color: #22c55e;
+    text-decoration: none;
+  }
+
+  .faq-item {
+    border-bottom: 1px solid #1e293b;
+    padding: 4px 0;
+  }
+
+  .faq-item:last-child {
+    border-bottom: none;
+  }
+
+  .faq-item summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 15px;
+    padding: 10px 0;
+    list-style: none;
+  }
+
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-item summary::before {
+    content: "+ ";
+    color: #22c55e;
+  }
+
+  .faq-item[open] summary::before {
+    content: "– ";
+  }
+
+  .faq-answer {
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 0 0 14px;
   }
 
   .activity-item {
@@ -553,6 +746,17 @@
   @media (max-width: 768px) {
     .topbar {
       padding: 16px 20px;
+      flex-wrap: wrap;
+      row-gap: 10px;
+    }
+
+    /* The admin button competing with the logo/title for the same row is
+       what forced "Home Call Guard" to wrap onto two lines at phone
+       widths — giving topbar-left the full row (button drops to its own
+       line beneath) means the title never needs to wrap at all. */
+    .admin-nav-link {
+      flex-basis: 100%;
+      text-align: center;
     }
 
     .main {
@@ -632,92 +836,145 @@
 
   <div id="protectedContent" hidden>
     <section class="card">
-      <h2>Setup checklist</h2>
+      <h2>Your setup progress</h2>
+      <p class="checklist-progress" id="checklistProgress"></p>
       <ul class="checklist" id="setupChecklist">
         <li class="checklist-item" data-item="accountConfirmed">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Account confirmed</span>
+          <span class="checklist-label">Your account is set up</span>
         </li>
         <li class="checklist-item" data-item="subscriptionActive">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Subscription active</span>
+          <span class="checklist-label">Your subscription is active</span>
         </li>
         <li class="checklist-item" data-item="protectedNumberAssigned">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Protected number assigned</span>
+          <span class="checklist-label">Your protected number is ready</span>
         </li>
         <li class="checklist-item" data-item="contactsUploaded">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Contacts uploaded</span>
+          <span class="checklist-label">You've added trusted contacts</span>
         </li>
         <li class="checklist-item" data-item="callForwardingCompleted">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Call forwarding completed</span>
-          <button type="button" class="checklist-action" id="callForwardingToggle">Mark done</button>
+          <span class="checklist-label">You've set up call forwarding</span>
+          <button type="button" class="checklist-action" id="callForwardingToggle">I've set up call forwarding</button>
         </li>
       </ul>
     </section>
 
-    <section class="stats-grid" aria-label="Protection statistics">
+    <h2 class="section-heading">
+      Your protection at a glance
+      <span class="help-hint" tabindex="0" aria-label="These numbers reset every day and show what Home Call Guard has done for you today." title="These numbers reset every day and show what Home Call Guard has done for you today.">?</span>
+    </h2>
+    <p class="stats-empty-note" id="statsEmptyNote" hidden>No calls have been checked yet. Once your protection is active, you'll see your activity here.</p>
+    <section class="stats-grid" id="statsGrid" aria-label="Your protection at a glance">
       <div class="stat-card">
         <div class="stat-number" id="statCallsScreened">—</div>
-        <div class="stat-label">Calls screened</div>
+        <div class="stat-label">Calls we've checked for you</div>
       </div>
       <div class="stat-card">
         <div class="stat-number" id="statSuspectedScamsBlocked">—</div>
-        <div class="stat-label">Suspected scams blocked</div>
+        <div class="stat-label">Scam calls blocked</div>
       </div>
       <div class="stat-card">
         <div class="stat-number" id="statTrustedCallsRecognised">—</div>
-        <div class="stat-label">Trusted calls recognised</div>
+        <div class="stat-label">Calls from people you know</div>
       </div>
       <div class="stat-card">
         <div class="stat-number" id="statContactsUploaded">—</div>
-        <div class="stat-label">Contacts uploaded</div>
+        <div class="stat-label">People you trust</div>
       </div>
     </section>
 
     <section class="card">
-      <h2>Recent Activity</h2>
+      <h2 class="section-heading">
+        Recent activity
+        <span class="help-hint" tabindex="0" aria-label="A record of what happened on each recent call to your protected number." title="A record of what happened on each recent call to your protected number.">?</span>
+      </h2>
       <div id="activityContent">
-        <p class="empty-state">No calls yet. Once your phone starts receiving calls, they'll show up here.</p>
+        <p class="empty-state">No calls yet.</p>
+        <p class="empty-state-hint">Once someone calls your protected number, you'll see what happened here.</p>
       </div>
     </section>
 
     <section class="card">
-      <h2>Upload Contacts</h2>
+      <h2 class="section-heading">
+        Trusted contacts
+        <span class="help-hint" tabindex="0" aria-label="Calls from these numbers always get through straight away, with no checks." title="Calls from these numbers always get through straight away, with no checks.">?</span>
+      </h2>
+      <p class="section-intro">People whose calls should always come straight through.</p>
+      <div id="trustedContactsList">
+        <p class="empty-state">You haven't added any trusted contacts yet.</p>
+        <p class="empty-state-hint">Add family and friends so their calls always get straight through.</p>
+      </div>
 
-      <form
-        action="/upload-contacts"
-        method="POST"
-        enctype="multipart/form-data"
-      >
-        <input
-          type="file"
-          id="contactsFile"
-          name="file"
-          accept=".csv"
-          required
-        />
+      <button type="button" id="addContactsButton">Add contacts</button>
 
-        <br><br>
+      <div id="csvUploadArea" hidden>
+        <p class="upload-secondary-label">Upload from CSV</p>
+        <p class="upload-intro">A CSV file with each contact's name and phone number, one per line.</p>
 
-        <button type="submit">
-          Upload CSV
-        </button>
-      </form>
+        <form
+          action="/upload-contacts"
+          method="POST"
+          enctype="multipart/form-data"
+        >
+          <input
+            type="file"
+            id="contactsFile"
+            name="file"
+            accept=".csv"
+            required
+          />
+
+          <br><br>
+
+          <button type="submit" class="secondary-action-button">
+            Upload CSV
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Your account</h2>
+      <ul class="account-details" id="accountDetailsList"></ul>
+      <p class="account-support-note" id="accountSupportNote"></p>
+    </section>
+
+    <section class="card">
+      <h2>Common questions</h2>
+      <details class="faq-item">
+        <summary>What happens when someone I don't know calls?</summary>
+        <p class="faq-answer">We briefly ask them the reason for their call and check it before letting it through — this only takes a few seconds. If it looks like a scam, the call is stopped before it reaches you.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Will calls from my family and friends be affected?</summary>
+        <p class="faq-answer">No. Anyone in your trusted contacts is put straight through, every time, with no checks or delays.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Is my home phone number changing?</summary>
+        <p class="faq-answer">No — you keep your existing number. We simply forward your calls through Home Call Guard's protected number for checking, then straight on to you.</p>
+      </details>
+      <details class="faq-item">
+        <summary>What if I need help?</summary>
+        <p class="faq-answer">Contact us any time at support@homecallguard.co.uk and we'll be glad to help.</p>
+      </details>
     </section>
   </div>
 
 </main>
 
 <footer class="legal-footer">
+  <p class="footer-help">Need help? <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a></p>
   <a href="/terms.html">Terms and Conditions</a> · <a href="/privacy.html">Privacy Policy</a>
 </footer>
 
 <script>
   const REFRESH_MS = 15000;
-  const EMPTY_ACTIVITY_MESSAGE = "No calls yet. Once your phone starts receiving calls, they'll show up here.";
+  const EMPTY_ACTIVITY_MESSAGE = "No calls yet.";
+  const EMPTY_ACTIVITY_HINT = "Once someone calls your protected number, you'll see what happened here.";
 
   function setText(id, value) {
     const el = document.getElementById(id);
@@ -749,15 +1006,19 @@
     return date.toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" });
   }
 
+  // TEST-EXTRACT-START: describeCall
+  // Plain-English descriptions only — no "AI"/technical framing, since
+  // non-technical home users are the audience this dashboard is for.
   function describeCall(call) {
     if (call.status === "Known") {
-      return { icon: "✅", title: "Trusted caller" };
+      return { icon: "✅", title: "Someone you know called" };
     }
     if (call.result === "SCAM") {
-      return { icon: "⚠️", title: "Suspected scam" };
+      return { icon: "🚫", title: "We blocked a suspected scam call" };
     }
-    return { icon: "🤖", title: "AI screened" };
+    return { icon: "✅", title: "We checked this call and let it through" };
   }
+  // TEST-EXTRACT-END: describeCall
 
   // TEST-EXTRACT-START: computeProtectionState
   // The single source of truth for whether protection is genuinely
@@ -801,6 +1062,34 @@
   }
   // TEST-EXTRACT-END: computeSetupChecklist
 
+  // TEST-EXTRACT-START: computeChecklistProgress
+  function computeChecklistProgress(checklist) {
+    const keys = Object.keys(checklist || {});
+    const completed = keys.filter(function (k) { return checklist[k]; }).length;
+    return { completed: completed, total: keys.length };
+  }
+  // TEST-EXTRACT-END: computeChecklistProgress
+
+  // TEST-EXTRACT-START: formatMemberSince
+  // Plain "Month Year" — never a raw ISO timestamp, and never invents a
+  // date when none is available.
+  function formatMemberSince(isoDate) {
+    if (!isoDate) return "—";
+    const date = new Date(isoDate);
+    if (isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  }
+  // TEST-EXTRACT-END: formatMemberSince
+
+  // TEST-EXTRACT-START: shouldMuteStatsGrid
+  // True whenever protection isn't active yet — so the empty note
+  // explains *why* everything reads zero (nothing has happened yet)
+  // rather than the cards looking broken/inactive.
+  function shouldMuteStatsGrid(data) {
+    return computeProtectionState(data) !== "active";
+  }
+  // TEST-EXTRACT-END: shouldMuteStatsGrid
+
   // TEST-EXTRACT-START: shouldShowAdminButton
   // Navigation convenience only — never the security control. /admin is
   // gated server-side by requireAuth + requireAdmin regardless of whether
@@ -815,7 +1104,7 @@
     const container = document.getElementById("activityContent");
 
     if (!calls || calls.length === 0) {
-      container.innerHTML = '<p class="empty-state">' + EMPTY_ACTIVITY_MESSAGE + '</p>';
+      container.innerHTML = '<p class="empty-state">' + EMPTY_ACTIVITY_MESSAGE + '</p><p class="empty-state-hint">' + EMPTY_ACTIVITY_HINT + '</p>';
       return;
     }
 
@@ -872,22 +1161,32 @@
       card.dataset.protectionState = state;
     }
 
+    const statsGrid = document.getElementById("statsGrid");
+    const statsEmptyNote = document.getElementById("statsEmptyNote");
+    const muteStats = shouldMuteStatsGrid(data);
+    if (statsGrid) {
+      statsGrid.classList.toggle("stats-muted", muteStats);
+    }
+    if (statsEmptyNote) {
+      statsEmptyNote.hidden = !muteStats;
+    }
+
     if (state === "active") {
-      if (title) title.textContent = "Protected";
-      if (sub) sub.textContent = "Home Call Guard is actively screening your calls. Unknown callers are checked before they can reach you.";
+      if (title) title.textContent = "You're protected";
+      if (sub) sub.textContent = "Calls to your protected number are being checked for you. People you trust always get straight through — unknown callers are checked first.";
       if (numberLabel) numberLabel.hidden = false;
       if (numberEl) {
         numberEl.hidden = false;
         numberEl.textContent = data.twilioNumber;
       }
     } else if (state === "failed") {
-      if (title) title.textContent = "We could not finish setup yet";
-      if (sub) sub.textContent = "Your subscription is active, but we hit a problem setting up your protected number. Please contact support@homecallguard.co.uk and we'll sort this out.";
+      if (title) title.textContent = "We're sorting out one part of your setup";
+      if (sub) sub.textContent = "Your subscription is active and nothing further is needed from you right now — our team has been notified and is on it. If you'd like an update, contact us any time at support@homecallguard.co.uk.";
       if (numberLabel) numberLabel.hidden = true;
       if (numberEl) numberEl.hidden = true;
     } else {
-      if (title) title.textContent = "Setting up your protected number";
-      if (sub) sub.textContent = "Your subscription is active — we're finishing setup of your protected number. This usually takes just a moment.";
+      if (title) title.textContent = "We're finishing setting up your protection";
+      if (sub) sub.textContent = "Your subscription is active — this usually only takes a few minutes and happens automatically. This page updates automatically, so you'll see it here the moment your protection is ready.";
       if (numberLabel) numberLabel.hidden = true;
       if (numberEl) numberEl.hidden = true;
     }
@@ -905,7 +1204,54 @@
 
     const toggle = document.getElementById("callForwardingToggle");
     if (toggle) {
-      toggle.textContent = checklist.callForwardingCompleted ? "Undo" : "Mark done";
+      // Only relevant once there's a protected number to forward calls
+      // to, and no longer needed once the customer's confirmed it's
+      // done — the checklist's own checkmark communicates completion
+      // without an "Undo" affordance staying visible indefinitely.
+      toggle.hidden = !checklist.protectedNumberAssigned || checklist.callForwardingCompleted;
+    }
+
+    const progress = computeChecklistProgress(checklist);
+    setText("checklistProgress", progress.completed + " of " + progress.total + " steps complete");
+  }
+
+  function renderTrustedContacts(contacts) {
+    const container = document.getElementById("trustedContactsList");
+    if (!container) return;
+
+    if (!contacts || contacts.length === 0) {
+      container.innerHTML =
+        '<p class="empty-state">You haven\'t added any trusted contacts yet.</p>' +
+        '<p class="empty-state-hint">Add family and friends so their calls always get straight through.</p>';
+      return;
+    }
+
+    container.innerHTML = '<div class="contacts-list">' + contacts.map(function (c) {
+      return '<div class="contact-item">' +
+        '<div class="contact-icon" aria-hidden="true">👤</div>' +
+        '<div>' +
+          '<div class="contact-name">' + escapeHtml(c.name || "Unnamed contact") + "</div>" +
+          '<div class="contact-number">' + escapeHtml(c.number || "") + "</div>" +
+        "</div>" +
+      "</div>";
+    }).join("") + "</div>";
+  }
+
+  function renderAccountDetails(account) {
+    const list = document.getElementById("accountDetailsList");
+    const note = document.getElementById("accountSupportNote");
+    if (!account) return;
+
+    if (list) {
+      list.innerHTML =
+        '<li class="account-row"><span class="account-row-label">Email</span><span class="account-row-value">' + escapeHtml(account.email || "—") + "</span></li>" +
+        '<li class="account-row"><span class="account-row-label">Plan</span><span class="account-row-value">Home Call Guard Protection — £4.99/month</span></li>' +
+        '<li class="account-row"><span class="account-row-label">Status</span><span class="account-row-value">Active</span></li>' +
+        '<li class="account-row"><span class="account-row-label">Member since</span><span class="account-row-value">' + escapeHtml(formatMemberSince(account.memberSince)) + "</span></li>";
+    }
+
+    if (note) {
+      note.innerHTML = "To change or cancel your plan, contact us at <a href=\"mailto:support@homecallguard.co.uk\">support@homecallguard.co.uk</a>.";
     }
   }
 
@@ -914,6 +1260,15 @@
     callForwardingToggleEl.addEventListener("click", function () {
       setCallForwardingCompleted(!getCallForwardingCompleted());
       renderChecklist(lastDashboardData);
+    });
+  }
+
+  const addContactsButtonEl = document.getElementById("addContactsButton");
+  const csvUploadAreaEl = document.getElementById("csvUploadArea");
+  if (addContactsButtonEl && csvUploadAreaEl) {
+    addContactsButtonEl.addEventListener("click", function () {
+      csvUploadAreaEl.hidden = false;
+      addContactsButtonEl.hidden = true;
     });
   }
 
@@ -950,8 +1305,8 @@
     card.dataset.state = state;
 
     if (state === "protected") {
-      title.textContent = "Protected";
-      sub.textContent = "Home Call Guard is actively screening your calls. Unknown callers are checked before they can reach you.";
+      title.textContent = "You're protected";
+      sub.textContent = "Calls to your protected number are being checked for you.";
     } else if (state === "unsubscribed") {
       title.textContent = "Not protected yet";
       sub.textContent = "Complete your subscription to activate Home Call Guard and start screening unknown callers.";
@@ -1180,6 +1535,8 @@
 
       renderActivity(data.recentCalls);
       renderChecklist(data);
+      renderTrustedContacts(data.contacts);
+      renderAccountDetails(data.account);
 
       const adminNavLink = document.getElementById("adminNavLink");
       if (adminNavLink) {
