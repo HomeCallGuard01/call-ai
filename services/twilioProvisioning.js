@@ -43,12 +43,19 @@ function pickAvailableNumber(availableNumbers) {
 // this function's behavior is byte-for-byte unchanged from today for as
 // long as TWILIO_ADDRESS_SID remains unset — this is a strict addition,
 // not a change, to the existing failure mode.
-function buildIncomingPhoneNumberParams({ phoneNumber, appUrl, addressSid }) {
+//
+// bundleSid is a second, separate UK regulatory requirement, in addition
+// to (not instead of) addressSid — confirmed via a real purchase attempt
+// that was still rejected ("Bundle required and not provided for
+// country: [GB] and numberType: [LOCAL]") even with addressSid supplied.
+// Same omit-when-unset treatment as addressSid.
+function buildIncomingPhoneNumberParams({ phoneNumber, appUrl, addressSid, bundleSid }) {
   return {
     phoneNumber,
     voiceUrl: `${appUrl}/voice`,
     voiceMethod: "POST",
     ...(addressSid ? { addressSid } : {}),
+    ...(bundleSid ? { bundleSid } : {}),
   };
 }
 
@@ -72,6 +79,7 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     recordFailure = recordTwilioProvisioningFailure,
     appUrl = process.env.APP_URL,
     addressSid = process.env.TWILIO_ADDRESS_SID,
+    bundleSid = process.env.TWILIO_BUNDLE_SID,
     maxAttempts = DEFAULT_MAX_ATTEMPTS,
   } = deps;
 
@@ -101,7 +109,7 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     }
 
     const purchased = await client.incomingPhoneNumbers.create(
-      buildIncomingPhoneNumberParams({ phoneNumber: candidate.phoneNumber, appUrl, addressSid })
+      buildIncomingPhoneNumberParams({ phoneNumber: candidate.phoneNumber, appUrl, addressSid, bundleSid })
     );
 
     const assigned = await assign(household.id, purchased.phoneNumber);

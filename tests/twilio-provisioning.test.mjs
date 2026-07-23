@@ -106,6 +106,35 @@ check(
   'addressSid is included in the purchase params when supplied'
 );
 
+check(
+  !('bundleSid' in params),
+  'bundleSid is omitted entirely (not sent as null/undefined) when not supplied — behaviour is unchanged from before this fix while TWILIO_BUNDLE_SID remains unset'
+);
+
+const paramsWithBundle = buildIncomingPhoneNumberParams({
+  phoneNumber: '+447700900123',
+  appUrl: 'https://www.homecallguard.co.uk',
+  bundleSid: 'BU1234567890abcdef1234567890abcdef',
+});
+
+check(
+  paramsWithBundle.bundleSid === 'BU1234567890abcdef1234567890abcdef',
+  'bundleSid is included in the purchase params when supplied'
+);
+
+const paramsWithBoth = buildIncomingPhoneNumberParams({
+  phoneNumber: '+447700900123',
+  appUrl: 'https://www.homecallguard.co.uk',
+  addressSid: 'AD1234567890abcdef1234567890abcdef',
+  bundleSid: 'BU1234567890abcdef1234567890abcdef',
+});
+
+check(
+  paramsWithBoth.addressSid === 'AD1234567890abcdef1234567890abcdef' &&
+    paramsWithBoth.bundleSid === 'BU1234567890abcdef1234567890abcdef',
+  'addressSid and bundleSid are both passed together when both are configured — the actual UK regulatory requirement (Address alone was proven insufficient)'
+);
+
 // --- ensureTwilioNumberProvisioned (orchestration, fake collaborators) ---
 
 // Build a client shaped closely enough to the real Twilio SDK for this
@@ -206,6 +235,42 @@ async function run() {
       !('addressSid' in client.calls.lastCreateParams),
       'with no addressSid configured (matching production today), the real Twilio purchase call is sent without one — zero behaviour change from before this fix'
     );
+    check(
+      !('bundleSid' in client.calls.lastCreateParams),
+      'with no bundleSid configured, the real Twilio purchase call is sent without one — zero behaviour change from before this fix'
+    );
+  }
+
+  // --- backwards-compatibility regression: both TWILIO_ADDRESS_SID and
+  // TWILIO_BUNDLE_SID unset (this codebase's actual state before either
+  // fix was configured in production) — the request Twilio receives must
+  // be byte-for-byte identical to before either fix existed. ---
+  {
+    const previousAddress = process.env.TWILIO_ADDRESS_SID;
+    const previousBundle = process.env.TWILIO_BUNDLE_SID;
+    delete process.env.TWILIO_ADDRESS_SID;
+    delete process.env.TWILIO_BUNDLE_SID;
+
+    const client = makeFakeTwilioClient();
+    const assign = makeFakeAssign(true);
+    const recordFailure = makeFakeRecordFailure();
+
+    const result = await ensureTwilioNumberProvisioned(
+      { id: 'household-backcompat', twilio_number: null, twilio_provisioning_attempts: 0 },
+      { client, assign: assign.fn, recordFailure: recordFailure.fn, appUrl: 'https://app.example.com' }
+    );
+
+    check(
+      result.success === true,
+      'backwards compatibility: provisioning still succeeds when both TWILIO_ADDRESS_SID and TWILIO_BUNDLE_SID are unset'
+    );
+    check(
+      JSON.stringify(Object.keys(client.calls.lastCreateParams).sort()) === JSON.stringify(['phoneNumber', 'voiceMethod', 'voiceUrl'].sort()),
+      'backwards compatibility: with both env vars unset, the exact set of keys sent to Twilio is phoneNumber/voiceUrl/voiceMethod only — identical to the request shape before either fix was introduced'
+    );
+
+    if (previousAddress === undefined) delete process.env.TWILIO_ADDRESS_SID; else process.env.TWILIO_ADDRESS_SID = previousAddress;
+    if (previousBundle === undefined) delete process.env.TWILIO_BUNDLE_SID; else process.env.TWILIO_BUNDLE_SID = previousBundle;
   }
 
   // --- addressSid pass-through: the actual fix this test file was extended for ---
@@ -256,6 +321,86 @@ async function run() {
     } else {
       process.env.TWILIO_ADDRESS_SID = previous;
     }
+  }
+
+  // --- bundleSid pass-through: the actual fix this block was added for ---
+  {
+    const client = makeFakeTwilioClient();
+    const assign = makeFakeAssign(true);
+    const recordFailure = makeFakeRecordFailure();
+
+    const result = await ensureTwilioNumberProvisioned(
+      { id: 'household-bundlesid', twilio_number: null, twilio_provisioning_attempts: 0 },
+      {
+        client, assign: assign.fn, recordFailure: recordFailure.fn,
+        appUrl: 'https://app.example.com', bundleSid: 'BUfeedfacefeedfacefeedfacefeedface',
+      }
+    );
+
+    check(
+      result.success === true,
+      'providing a bundleSid does not change the success path'
+    );
+    check(
+      client.calls.lastCreateParams.bundleSid === 'BUfeedfacefeedfacefeedfacefeedface',
+      'when a bundleSid is configured, it is forwarded to the real Twilio purchase call — this is the fix for "Bundle required and not provided for country: [GB] and numberType: [LOCAL]"'
+    );
+  }
+
+  // --- bundleSid defaults from process.env.TWILIO_BUNDLE_SID when not passed explicitly ---
+  {
+    const previous = process.env.TWILIO_BUNDLE_SID;
+    process.env.TWILIO_BUNDLE_SID = 'BUenvvalueenvvalueenvvalueenvvalue01';
+
+    const client = makeFakeTwilioClient();
+    const assign = makeFakeAssign(true);
+    const recordFailure = makeFakeRecordFailure();
+
+    const result = await ensureTwilioNumberProvisioned(
+      { id: 'household-bundlesid-env', twilio_number: null, twilio_provisioning_attempts: 0 },
+      { client, assign: assign.fn, recordFailure: recordFailure.fn, appUrl: 'https://app.example.com' }
+    );
+
+    check(
+      client.calls.lastCreateParams.bundleSid === 'BUenvvalueenvvalueenvvalueenvvalue01',
+      'bundleSid defaults from process.env.TWILIO_BUNDLE_SID, matching TWILIO_ADDRESS_SID\'s pattern — this is the only line production needs to configure once the approved bundle SID is known'
+    );
+
+    if (previous === undefined) {
+      delete process.env.TWILIO_BUNDLE_SID;
+    } else {
+      process.env.TWILIO_BUNDLE_SID = previous;
+    }
+  }
+
+  // --- addressSid and bundleSid both configured together: the actual UK
+  // regulatory requirement — Address alone was proven insufficient by a
+  // real Twilio purchase attempt, so this combination is what production
+  // must send. ---
+  {
+    const client = makeFakeTwilioClient();
+    const assign = makeFakeAssign(true);
+    const recordFailure = makeFakeRecordFailure();
+
+    const result = await ensureTwilioNumberProvisioned(
+      { id: 'household-both-sids', twilio_number: null, twilio_provisioning_attempts: 0 },
+      {
+        client, assign: assign.fn, recordFailure: recordFailure.fn,
+        appUrl: 'https://app.example.com',
+        addressSid: 'ADbothbothbothbothbothbothbothboth',
+        bundleSid: 'BUbothbothbothbothbothbothbothboth',
+      }
+    );
+
+    check(
+      result.success === true,
+      'providing both addressSid and bundleSid together does not change the success path'
+    );
+    check(
+      client.calls.lastCreateParams.addressSid === 'ADbothbothbothbothbothbothbothboth' &&
+        client.calls.lastCreateParams.bundleSid === 'BUbothbothbothbothbothbothbothboth',
+      'when both addressSid and bundleSid are configured, both are forwarded together to the real Twilio purchase call'
+    );
   }
 
   // --- duplicate prevention: household already has a number ---
