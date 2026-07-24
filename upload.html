@@ -301,34 +301,6 @@
     color: #f59e0b;
   }
 
-  /* No explicit `display` on either rule below, deliberately — matching
-     this file's existing convention (.price-note, .stripe-reassurance,
-     etc.): these are toggled via the native `hidden` attribute in JS,
-     and an author stylesheet's `display` declaration overrides the
-     browser's default `[hidden] { display: none }` UA rule, silently
-     breaking the show/hide toggle regardless of what `.hidden` is set
-     to. width: fit-content + auto margins gets the same "hugs its
-     content, centered" look inline-block would have, without needing
-     a `display` override. */
-  .protected-number {
-    width: fit-content;
-    margin: 14px auto 0;
-    padding: 10px 18px;
-    background: #020617;
-    border: 1px solid #1e293b;
-    border-radius: 8px;
-    font-size: 20px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    color: #22c55e;
-  }
-
-  .protected-number-label {
-    margin-top: 16px;
-    font-size: 13px;
-    color: #94a3b8;
-  }
-
   .checklist {
     list-style: none;
     margin: 0;
@@ -809,8 +781,6 @@
     </svg>
     <div class="status-title" id="statusTitle">Checking protection status…</div>
     <p class="status-sub" id="statusSub">We're loading your live protection status.</p>
-    <p class="protected-number-label" id="protectedNumberLabel" hidden>Your protected number</p>
-    <div class="protected-number" id="protectedNumber" hidden></div>
     <p class="price-note" id="priceNote" hidden>£4.99 per month. Cancel anytime.</p>
 
     <div class="spinner" id="confirmingSpinner" hidden aria-hidden="true"></div>
@@ -841,24 +811,24 @@
       <ul class="checklist" id="setupChecklist">
         <li class="checklist-item" data-item="accountConfirmed">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Your account is set up</span>
+          <span class="checklist-label">Account created</span>
         </li>
         <li class="checklist-item" data-item="subscriptionActive">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Your subscription is active</span>
+          <span class="checklist-label">Subscription active</span>
         </li>
         <li class="checklist-item" data-item="protectedNumberAssigned">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Your protected number is ready</span>
+          <span class="checklist-label">Protection activated</span>
         </li>
         <li class="checklist-item" data-item="contactsUploaded">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">You've added trusted contacts</span>
+          <span class="checklist-label">Add trusted contacts</span>
         </li>
         <li class="checklist-item" data-item="callForwardingCompleted">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">You've set up call forwarding</span>
-          <button type="button" class="checklist-action" id="callForwardingToggle">I've set up call forwarding</button>
+          <span class="checklist-label">Turn on call forwarding</span>
+          <button type="button" class="checklist-action" id="callForwardingToggle">I've turned on call forwarding</button>
         </li>
       </ul>
     </section>
@@ -890,11 +860,11 @@
     <section class="card">
       <h2 class="section-heading">
         Recent activity
-        <span class="help-hint" tabindex="0" aria-label="A record of what happened on each recent call to your protected number." title="A record of what happened on each recent call to your protected number.">?</span>
+        <span class="help-hint" tabindex="0" aria-label="A record of what happened on each of your recent calls." title="A record of what happened on each of your recent calls.">?</span>
       </h2>
       <div id="activityContent">
-        <p class="empty-state">No calls yet.</p>
-        <p class="empty-state-hint">Once someone calls your protected number, you'll see what happened here.</p>
+        <p class="empty-state">No calls checked yet</p>
+        <p class="empty-state-hint">Your recent call activity will appear here once Home Call Guard begins checking calls.</p>
       </div>
     </section>
 
@@ -955,7 +925,7 @@
       </details>
       <details class="faq-item">
         <summary>Is my home phone number changing?</summary>
-        <p class="faq-answer">No — you keep your existing number. We simply forward your calls through Home Call Guard's protected number for checking, then straight on to you.</p>
+        <p class="faq-answer">No — you keep your existing number. We simply check your calls for you before they reach you.</p>
       </details>
       <details class="faq-item">
         <summary>What if I need help?</summary>
@@ -973,8 +943,8 @@
 
 <script>
   const REFRESH_MS = 15000;
-  const EMPTY_ACTIVITY_MESSAGE = "No calls yet.";
-  const EMPTY_ACTIVITY_HINT = "Once someone calls your protected number, you'll see what happened here.";
+  const EMPTY_ACTIVITY_MESSAGE = "No calls checked yet";
+  const EMPTY_ACTIVITY_HINT = "Your recent call activity will appear here once Home Call Guard begins checking calls.";
 
   function setText(id, value) {
     const el = document.getElementById(id);
@@ -1022,8 +992,11 @@
 
   // TEST-EXTRACT-START: computeProtectionState
   // The single source of truth for whether protection is genuinely
-  // active — deliberately never returns "active" unless both a real
-  // number is assigned AND provisioning status itself says "active".
+  // active — deliberately never returns "active" unless provisioning
+  // status itself says "active" (the RPC that sets this status only ever
+  // does so atomically alongside actually assigning a real number, so
+  // this one field is a sufficient, real signal on its own — the actual
+  // number itself is never sent to the browser, see Stage 2/Decision log).
   // /dashboard-data only ever responds at all when entitlement is
   // active (402 otherwise, handled entirely outside this function), so
   // this only ever runs for an already-paying household — it exists to
@@ -1033,7 +1006,7 @@
     if (!data) {
       return "pending";
     }
-    if (data.twilioNumber && data.twilioProvisioningStatus === "active") {
+    if (data.twilioProvisioningStatus === "active") {
       return "active";
     }
     if (data.twilioProvisioningStatus === "failed") {
@@ -1142,19 +1115,18 @@
   }
 
   // Renders the protection sub-state (active/pending/failed) onto the
-  // main status card — title, subtitle, shield colour (via
-  // data-protection-state, styled in <style>), and the protected number
-  // itself when it exists. Deliberately separate from setStatus(): the
-  // outer data-state stays "protected" throughout (entitlement is
-  // active), this only ever changes what's shown *within* that state, so
-  // the existing state-machine tests covering data-state visibility are
-  // untouched by this.
+  // main status card — title, subtitle, and shield colour (via
+  // data-protection-state, styled in <style>). Deliberately separate from
+  // setStatus(): the outer data-state stays "protected" throughout
+  // (entitlement is active), this only ever changes what's shown *within*
+  // that state, so the existing state-machine tests covering data-state
+  // visibility are untouched by this. Never renders the household's
+  // Twilio number — that value is not present in /dashboard-data's
+  // response at all (see server.js), so there is nothing here to expose.
   function renderProtectionStatus(data) {
     const card = document.getElementById("statusCard");
     const title = document.getElementById("statusTitle");
     const sub = document.getElementById("statusSub");
-    const numberLabel = document.getElementById("protectedNumberLabel");
-    const numberEl = document.getElementById("protectedNumber");
 
     const state = computeProtectionState(data);
     if (card) {
@@ -1173,22 +1145,13 @@
 
     if (state === "active") {
       if (title) title.textContent = "You're protected";
-      if (sub) sub.textContent = "Calls to your protected number are being checked for you. People you trust always get straight through — unknown callers are checked first.";
-      if (numberLabel) numberLabel.hidden = false;
-      if (numberEl) {
-        numberEl.hidden = false;
-        numberEl.textContent = data.twilioNumber;
-      }
+      if (sub) sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
     } else if (state === "failed") {
       if (title) title.textContent = "We're sorting out one part of your setup";
       if (sub) sub.textContent = "Your subscription is active and nothing further is needed from you right now — our team has been notified and is on it. If you'd like an update, contact us any time at support@homecallguard.co.uk.";
-      if (numberLabel) numberLabel.hidden = true;
-      if (numberEl) numberEl.hidden = true;
     } else {
       if (title) title.textContent = "We're finishing setting up your protection";
       if (sub) sub.textContent = "Your subscription is active — this usually only takes a few minutes and happens automatically. This page updates automatically, so you'll see it here the moment your protection is ready.";
-      if (numberLabel) numberLabel.hidden = true;
-      if (numberEl) numberEl.hidden = true;
     }
   }
 
@@ -1204,9 +1167,9 @@
 
     const toggle = document.getElementById("callForwardingToggle");
     if (toggle) {
-      // Only relevant once there's a protected number to forward calls
-      // to, and no longer needed once the customer's confirmed it's
-      // done — the checklist's own checkmark communicates completion
+      // Only relevant once protection itself is active, and no longer
+      // needed once the customer's confirmed it's done — the checklist's
+      // own checkmark communicates completion
       // without an "Undo" affordance staying visible indefinitely.
       toggle.hidden = !checklist.protectedNumberAssigned || checklist.callForwardingCompleted;
     }
@@ -1306,7 +1269,7 @@
 
     if (state === "protected") {
       title.textContent = "You're protected";
-      sub.textContent = "Calls to your protected number are being checked for you.";
+      sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
     } else if (state === "unsubscribed") {
       title.textContent = "Not protected yet";
       sub.textContent = "Complete your subscription to activate Home Call Guard and start screening unknown callers.";

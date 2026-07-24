@@ -7,7 +7,13 @@
 // TEST-EXTRACT markers) and executed standalone, no browser or DOM
 // library required:
 //   - computeProtectionState: active/pending/failed, derived only from
-//     twilioNumber + twilioProvisioningStatus.
+//     twilioProvisioningStatus. Stage 2 (dashboard/wording cleanup):
+//     the household's actual Twilio number is no longer part of
+//     /dashboard-data's response at all (never sent to the browser), so
+//     it is also no longer part of this function's input contract —
+//     assign_household_twilio_number only ever sets provisioning status
+//     to "active" atomically alongside actually assigning a real number,
+//     so the status field alone is already a sufficient, real signal.
 //   - computeSetupChecklist: the 5-item checklist, derived from the same
 //     dashboard data plus the self-reported call-forwarding flag.
 //
@@ -71,28 +77,18 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   // --- computeProtectionState ---
 
   check(
-    computeProtectionState({ twilioNumber: '+447700900123', twilioProvisioningStatus: 'active' }) === 'active',
-    'active: a real number plus an active provisioning status is the only combination that counts as protected'
+    computeProtectionState({ twilioProvisioningStatus: 'active' }) === 'active',
+    'active: an active provisioning status is reported as protected — the number itself is never part of this input'
   );
 
   check(
-    computeProtectionState({ twilioNumber: null, twilioProvisioningStatus: 'pending' }) === 'pending',
-    'pending: no number yet, still pending, is never shown as active'
+    computeProtectionState({ twilioProvisioningStatus: 'pending' }) === 'pending',
+    'pending: still pending is never shown as active'
   );
 
   check(
-    computeProtectionState({ twilioNumber: null, twilioProvisioningStatus: 'failed' }) === 'failed',
+    computeProtectionState({ twilioProvisioningStatus: 'failed' }) === 'failed',
     'failed: provisioning failed is reported as failed, not silently treated as pending'
-  );
-
-  check(
-    computeProtectionState({ twilioNumber: '+447700900123', twilioProvisioningStatus: 'pending' }) === 'pending',
-    'a number present but status not yet active is never claimed as protected (guards against a race/inconsistent read)'
-  );
-
-  check(
-    computeProtectionState({ twilioNumber: null, twilioProvisioningStatus: 'active' }) === 'pending',
-    'status says active but no number is present — never claimed as protected; the number is what actually matters'
   );
 
   check(
@@ -107,7 +103,7 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
 
   // --- computeSetupChecklist ---
 
-  const activeData = { twilioNumber: '+447700900123', twilioProvisioningStatus: 'active', contactsUploaded: 3 };
+  const activeData = { twilioProvisioningStatus: 'active', contactsUploaded: 3 };
 
   const checklistAllDone = computeSetupChecklist(activeData, true);
   check(
@@ -119,7 +115,7 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   check(checklistAllDone.callForwardingCompleted === true, 'call forwarding reflects the self-reported flag when true');
 
   const checklistNothingDone = computeSetupChecklist(
-    { twilioNumber: null, twilioProvisioningStatus: 'pending', contactsUploaded: 0 },
+    { twilioProvisioningStatus: 'pending', contactsUploaded: 0 },
     false
   );
   check(checklistNothingDone.protectedNumberAssigned === false, 'protected number assigned is false while provisioning is still pending');
@@ -127,7 +123,7 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   check(checklistNothingDone.callForwardingCompleted === false, 'call forwarding reflects the self-reported flag when false');
 
   const checklistFailedProvisioning = computeSetupChecklist(
-    { twilioNumber: null, twilioProvisioningStatus: 'failed', contactsUploaded: 1 },
+    { twilioProvisioningStatus: 'failed', contactsUploaded: 1 },
     false
   );
   check(
@@ -205,17 +201,17 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   // --- shouldMuteStatsGrid ---
 
   check(
-    shouldMuteStatsGrid({ twilioNumber: '+447700900123', twilioProvisioningStatus: 'active' }) === false,
+    shouldMuteStatsGrid({ twilioProvisioningStatus: 'active' }) === false,
     'shouldMuteStatsGrid: not muted once protection is genuinely active'
   );
 
   check(
-    shouldMuteStatsGrid({ twilioNumber: null, twilioProvisioningStatus: 'pending' }) === true,
+    shouldMuteStatsGrid({ twilioProvisioningStatus: 'pending' }) === true,
     'shouldMuteStatsGrid: muted while protection is still pending, so zeroes read as "nothing has happened yet" not "broken"'
   );
 
   check(
-    shouldMuteStatsGrid({ twilioNumber: null, twilioProvisioningStatus: 'failed' }) === true,
+    shouldMuteStatsGrid({ twilioProvisioningStatus: 'failed' }) === true,
     'shouldMuteStatsGrid: muted when provisioning has failed too'
   );
 }

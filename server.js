@@ -373,10 +373,21 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
   ]);
 
   res.json({
-    // req.household already carries these — requireAuth's
+    // req.household already carries this — requireAuth's
     // getHouseholdByAuthUserId does a plain select("*"), so no extra
     // query is needed for the household's own provisioning state.
-    twilioNumber: req.household.twilio_number || null,
+    //
+    // Deliberately NOT included: the household's actual Twilio number
+    // (req.household.twilio_number). Stage 2 requirement: the customer
+    // must never see this number, in the rendered page, in client-side
+    // JS, or in a network response — so it must never leave the server
+    // at all, not merely be hidden by the frontend. This status field
+    // alone is a sufficient, real signal for the dashboard's protection
+    // state: assign_household_twilio_number only ever sets it to
+    // "active" atomically alongside actually assigning a real number
+    // (supabase/migrations/016_household_twilio_provisioning.sql), so
+    // "active" here already implies a number exists without the browser
+    // ever needing to know what it is.
     twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
     contactsUploaded: contacts.length,
     // Full contact list (name + number only — never the internal id/
