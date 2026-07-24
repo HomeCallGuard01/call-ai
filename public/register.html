@@ -177,8 +177,7 @@
   <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
   <div id="successPanel" class="success-panel" hidden>
-    <h2>Account created</h2>
-    <p>Please check your email and confirm your account before logging in.</p>
+    <p>Please check your email to continue setting up your account.</p>
     <p class="spam-note">Can't find the email? Check your spam or junk folder.</p>
 
     <form id="resendForm" action="/resend-confirmation" method="POST">
@@ -206,8 +205,17 @@
     <button type="submit" id="submitButton">Create Account</button>
   </form>
 
+  <!-- Deliberately always visible, regardless of whether the submitted
+       email was new or already registered — a duplicate-only or
+       conditionally-shown version of this would let anyone learn whether
+       an email has an account, defeating Supabase's own anti-enumeration
+       behaviour on signUp(). Showing it unconditionally on every page
+       load and after every outcome carries no signal at all. -->
   <div class="footer-link" id="loginFooterLink">
-    Already protected? <a href="/login.html">Log in</a>
+    Already have an account?
+    <a href="/login.html">Log in</a>
+    ·
+    <a href="/forgot-password.html">Forgot your password?</a>
   </div>
 </div>
 
@@ -232,7 +240,8 @@
     var enteredEmail = document.getElementById("email").value;
     document.getElementById("resendEmail").value = enteredEmail;
     document.getElementById("registerForm").hidden = true;
-    document.getElementById("loginFooterLink").hidden = true;
+    // loginFooterLink is deliberately left visible here — see its own
+    // comment in the markup above.
     document.getElementById("successPanel").hidden = false;
   }
 
