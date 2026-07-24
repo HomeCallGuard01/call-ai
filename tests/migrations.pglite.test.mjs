@@ -249,6 +249,111 @@ async function main() {
   );
   assert(failedEvent.status === 'failed' && !!failedEvent.error, 'mismatch is durably recorded on the event row');
 
+  // --- out-of-order webhook delivery (019): an older event arriving after
+  // a newer one must not overwrite the newer state or resurrect an
+  // entitlement the newer event already correctly expired ---
+  await asServiceRole(db);
+  const orderingSubId = 'sub_ordering_test';
+  const tEarly = new Date('2026-01-01T00:00:00Z').toISOString();
+  const tLate = new Date('2026-01-01T00:05:00Z').toISOString();
+  const tLatest = new Date('2026-01-01T00:10:00Z').toISOString();
+
+  // The genuinely newer event, processed first (as it should be in a
+  // correctly-ordered world): the subscription is cancelled.
+  await db.query(
+    `insert into public.stripe_webhook_events (stripe_event_id, event_type, payload, status) values ('evt_order_newer', 'customer.subscription.deleted', '{}'::jsonb, 'received')`
+  );
+  const { rows: [newerResult] } = await db.query(
+    `select public.process_stripe_webhook_event($1,$2,$3,$4,$5,$6,$7,$8,$9) as result`,
+    [
+      'evt_order_newer', householdId, 'cus_123', orderingSubId, 'price_123',
+      'canceled', new Date().toISOString(), false, tLate,
+    ]
+  );
+  assert(newerResult.result === 'processed', 'ordering: the genuinely newer (cancellation) event is processed normally');
+
+  const { rows: [activeAfterCancel] } = await db.query(
+    `select status from public.entitlements where household_id = $1 and status = 'active' and external_reference = $2`,
+    [householdId, orderingSubId]
+  );
+  assert(!activeAfterCancel, 'ordering: no active entitlement exists for this subscription after the newer cancellation event');
+
+  // A DIFFERENT, older event for the same subscription now arrives late
+  // (its own timestamp, tEarly, predates what's already stored, tLate) —
+  // simulating exactly the out-of-order delivery Stripe does not rule out.
+  await db.query(
+    `insert into public.stripe_webhook_events (stripe_event_id, event_type, payload, status) values ('evt_order_stale', 'customer.subscription.updated', '{}'::jsonb, 'received')`
+  );
+  const { rows: [staleResult] } = await db.query(
+    `select public.process_stripe_webhook_event($1,$2,$3,$4,$5,$6,$7,$8,$9) as result`,
+    [
+      'evt_order_stale', householdId, 'cus_123', orderingSubId, 'price_123',
+      'active', new Date().toISOString(), false, tEarly,
+    ]
+  );
+  assert(staleResult.result === 'processed', 'ordering: a stale event still returns processed, not failed — nothing went wrong, it was correctly evaluated');
+
+  const { rows: [subAfterStale] } = await db.query(
+    `select status from public.subscriptions where stripe_subscription_id = $1`,
+    [orderingSubId]
+  );
+  assert(subAfterStale.status === 'canceled', 'ordering: the stale event does NOT overwrite the subscription — status remains the newer "canceled"');
+
+  const { rows: [noReactivation] } = await db.query(
+    `select status from public.entitlements where household_id = $1 and status = 'active' and external_reference = $2`,
+    [householdId, orderingSubId]
+  );
+  assert(!noReactivation, 'ordering: the stale "active" event does not resurrect the entitlement the newer cancellation already expired');
+
+  const { rows: [staleEventRow] } = await db.query(
+    `select status from public.stripe_webhook_events where stripe_event_id = 'evt_order_stale'`
+  );
+  assert(staleEventRow.status === 'ignored', 'ordering: the stale event is recorded as ignored, distinguishable later from one that actually changed state');
+
+  // A genuinely newer event still applies correctly on top of an already-
+  // processed one (proves the guard only blocks strictly-older events, not
+  // every subsequent event for the same subscription).
+  await db.query(
+    `insert into public.stripe_webhook_events (stripe_event_id, event_type, payload, status) values ('evt_order_latest', 'customer.subscription.updated', '{}'::jsonb, 'received')`
+  );
+  await db.query(
+    `select public.process_stripe_webhook_event($1,$2,$3,$4,$5,$6,$7,$8,$9) as result`,
+    [
+      'evt_order_latest', householdId, 'cus_123', orderingSubId, 'price_123',
+      'active', new Date(Date.now() + 86400000).toISOString(), false, tLatest,
+    ]
+  );
+  const { rows: [subAfterLatest] } = await db.query(
+    `select status from public.subscriptions where stripe_subscription_id = $1`,
+    [orderingSubId]
+  );
+  assert(subAfterLatest.status === 'active', 'ordering: a genuinely newer event (tLatest > tLate) is applied normally, reactivating the subscription');
+
+  const { rows: [reactivated] } = await db.query(
+    `select status from public.entitlements where household_id = $1 and status = 'active' and external_reference = $2`,
+    [householdId, orderingSubId]
+  );
+  assert(reactivated?.status === 'active', 'ordering: the genuinely newer active event does create a fresh active entitlement');
+
+  // Existing call sites that predate this migration (8 positional args, no
+  // stripe_event_created) still work — the new parameter's default (now())
+  // covers them without any call site needing to change.
+  await db.query(
+    `insert into public.stripe_webhook_events (stripe_event_id, event_type, payload, status) values ('evt_order_legacy_call', 'customer.subscription.updated', '{}'::jsonb, 'received')`
+  );
+  // Status is 'canceled' (not 'active') deliberately: householdId already
+  // has a live subscription from the ordering tests above, and only one
+  // live subscription per household is allowed at all
+  // (subscriptions_one_live_per_household, 011) — unrelated to this
+  // migration, just a fact about the fixture state at this point. This
+  // check only needs to prove the old 8-argument call shape still
+  // resolves and runs, which 'canceled' does just as well.
+  const { rows: [legacyCallResult] } = await db.query(
+    `select public.process_stripe_webhook_event($1,$2,$3,$4,$5,$6,$7,$8) as result`,
+    ['evt_order_legacy_call', householdId, 'cus_123', 'sub_legacy_call_test', 'price_123', 'canceled', new Date().toISOString(), false]
+  );
+  assert(legacyCallResult.result === 'processed', 'ordering: the pre-019 8-argument call shape still works, defaulting stripe_event_created to now()');
+
   // --- direct execute privilege is not available to authenticated ---
   await asAuthUser(db, userId, 'a@example.com');
   let deniedToAuthenticated = false;

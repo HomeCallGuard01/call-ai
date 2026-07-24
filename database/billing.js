@@ -81,10 +81,15 @@ async function processWebhookEvent({
   subscriptionStatus,
   currentPeriodEnd,
   cancelAtPeriodEnd,
+  // Optional — the RPC defaults to now() if omitted (existing call sites
+  // that predate the ordering guard keep working unmodified). Real
+  // webhook deliveries should always pass the genuine Stripe event's own
+  // `created` timestamp; see routes/billing.js.
+  stripeEventCreated,
 }) {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
-  const { data, error } = await supabaseAdmin.rpc("process_stripe_webhook_event", {
+  const params = {
     p_stripe_event_id: stripeEventId,
     p_household_id: householdId,
     p_stripe_customer_id: stripeCustomerId,
@@ -93,7 +98,12 @@ async function processWebhookEvent({
     p_subscription_status: subscriptionStatus,
     p_current_period_end: currentPeriodEnd,
     p_cancel_at_period_end: cancelAtPeriodEnd,
-  });
+  };
+  if (stripeEventCreated) {
+    params.p_stripe_event_created = stripeEventCreated;
+  }
+
+  const { data, error } = await supabaseAdmin.rpc("process_stripe_webhook_event", params);
 
   if (error) {
     console.error("STRIPE WEBHOOK EVENT PROCESS ERROR:", error);

@@ -362,6 +362,11 @@ router.get("/billing/reconcile-session", requireAuth, async (req, res) => {
           ? new Date(subscription.current_period_end * 1000).toISOString()
           : null,
         cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
+        // A live GET straight from Stripe's API right now is always at
+        // least as fresh as any past webhook event for this subscription,
+        // so "now" is the correct ordering value here — this path has no
+        // real Stripe Event object to take a timestamp from at all.
+        stripeEventCreated: new Date().toISOString(),
       });
     }
 
@@ -449,6 +454,11 @@ router.post(
           ? new Date(subscription.current_period_end * 1000).toISOString()
           : null,
         cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
+        // The real Stripe Event's own creation time (Unix seconds) —
+        // Stripe includes this on every event, always; this is what lets
+        // the RPC tell an out-of-order delivery apart from a genuinely
+        // newer state change for the same subscription.
+        stripeEventCreated: new Date(event.created * 1000).toISOString(),
       });
 
       if (result === "processed") {
