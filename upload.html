@@ -620,13 +620,6 @@
     margin: -6px 0 14px;
   }
 
-  .upload-secondary-label {
-    color: #cbd5e1;
-    font-size: 14px;
-    font-weight: 600;
-    margin: 16px 0 4px;
-  }
-
   .upload-intro {
     color: #94a3b8;
     font-size: 14px;
@@ -647,14 +640,53 @@
     background: rgba(0, 0, 0, 0.6);
   }
 
+  /* Title stays the clear, largest heading in the dialog; the description
+     right below it is a plain reading-size sentence, not another heading —
+     the visual hierarchy is title > description > each option's own label
+     > that option's muted caption. */
   dialog h3 {
     margin-top: 0;
+    margin-bottom: 8px;
   }
 
-  #pickPhoneContactsButton {
+  .upload-dialog-description {
+    color: #cbd5e1;
+    font-size: 15px;
+    margin: 0 0 16px;
+  }
+
+  /* Each of the three ways to add contacts is its own visually distinct
+     block — enough space between them (24px) that they read as separate
+     choices rather than one dense list, at 320px as much as at 430px. */
+  .upload-option {
+    margin-bottom: 24px;
+  }
+
+  .upload-option:last-of-type {
+    margin-bottom: 16px;
+  }
+
+  .upload-option-label {
+    display: block;
+    color: #cbd5e1;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  /* Deliberately smaller/muted relative to the label/button above it, so
+     it reads as secondary supporting text rather than competing with the
+     option itself for attention. */
+  .upload-option-caption {
+    color: #94a3b8;
+    font-size: 13px;
+    margin: 4px 0 0;
+  }
+
+  #pickPhoneContactsButton,
+  #addContactManuallyFromDialog {
     display: block;
     width: 100%;
-    margin-bottom: 12px;
   }
 
   .account-details {
@@ -982,18 +1014,28 @@
 
       <dialog id="uploadContactsDialog" aria-labelledby="uploadContactsDialogTitle">
         <h3 id="uploadContactsDialogTitle">Upload contacts</h3>
-        <p class="upload-intro">Home Call Guard only imports the contacts you choose. We do not access your full address book.</p>
+        <p class="upload-dialog-description">Choose how you'd like to add your trusted contacts.</p>
+        <p class="upload-intro">Home Call Guard only imports the contacts you choose. We never access your full address book.</p>
 
-        <button type="button" id="pickPhoneContactsButton" hidden>Choose from this phone</button>
+        <div class="upload-option" id="pickPhoneContactsOption" hidden>
+          <button type="button" id="pickPhoneContactsButton">From this phone</button>
+          <p class="upload-option-caption">Choose contacts directly from your phone.</p>
+        </div>
 
-        <p class="upload-secondary-label">Choose a contacts file</p>
-        <p class="upload-intro">Choose a contacts file from your phone, tablet or computer.</p>
-        <p class="upload-intro"><a href="/trusted-contacts-template.csv" download>Download a template file</a> to see the format — replace the example row with your own contacts.</p>
-        <input type="file" id="contactsFile" accept=".vcf,.vcard,.csv,text/vcard,text/csv">
+        <div class="upload-option">
+          <label class="upload-option-label" for="contactsFile">From a contacts file</label>
+          <p class="upload-option-caption">Works with iPhone, Android and computers.</p>
+          <input type="file" id="contactsFile" accept=".vcf,.vcard,.csv,text/vcard,text/csv">
+          <p class="upload-option-caption"><a href="/trusted-contacts-template.csv" download>Need an example? Download a sample file.</a></p>
+        </div>
 
         <p id="uploadContactsStatus" class="empty-state-hint" hidden></p>
 
-        <button type="button" id="addContactManuallyFromDialog" class="secondary-action-button">Add one manually</button>
+        <div class="upload-option">
+          <button type="button" id="addContactManuallyFromDialog" class="secondary-action-button">Add one manually</button>
+          <p class="upload-option-caption">Add family and friends one at a time.</p>
+        </div>
+
         <button type="button" id="closeUploadDialogButton" class="secondary-action-button">Close</button>
       </dialog>
     </section>
@@ -1359,8 +1401,9 @@
   // Safari does not enable it for real customers, so on every other
   // browser this option simply never appears, rather than showing
   // something broken or unavailable.
-  if (pickPhoneContactsButtonEl && "contacts" in navigator) {
-    pickPhoneContactsButtonEl.hidden = false;
+  const pickPhoneContactsOptionEl = document.getElementById("pickPhoneContactsOption");
+  if (pickPhoneContactsOptionEl && "contacts" in navigator) {
+    pickPhoneContactsOptionEl.hidden = false;
   }
 
   function showUploadStatus(message) {
