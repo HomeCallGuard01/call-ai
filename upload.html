@@ -728,6 +728,29 @@
     text-decoration: none;
   }
 
+  .membership-plan {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 4px;
+  }
+
+  .membership-price {
+    color: #94a3b8;
+    font-size: 15px;
+    margin: 0 0 16px;
+  }
+
+  .membership-protection-note {
+    color: #22c55e;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 12px 0 16px;
+  }
+
+  #manageMembershipForm button {
+    width: 100%;
+  }
+
   .faq-item {
     border-bottom: 1px solid #1e293b;
     padding: 4px 0;
@@ -906,7 +929,7 @@
 
     <form class="subscribe-button" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
       <button type="submit">
-        Continue to secure payment
+        Start protection
       </button>
     </form>
 
@@ -1038,6 +1061,25 @@
 
         <button type="button" id="closeUploadDialogButton" class="secondary-action-button">Close</button>
       </dialog>
+    </section>
+
+    <section class="card">
+      <h2>Membership</h2>
+      <p class="membership-plan" id="membershipPlanName"></p>
+      <p class="membership-price" id="membershipPrice"></p>
+
+      <ul class="account-details">
+        <li class="account-row"><span class="account-row-label">Status</span><span class="account-row-value" id="membershipStatusValue"></span></li>
+        <li class="account-row"><span class="account-row-label" id="membershipDateLabel">Next payment</span><span class="account-row-value" id="membershipDateValue"></span></li>
+      </ul>
+
+      <p id="membershipStatusMessage" class="empty-state-hint" hidden></p>
+      <p class="membership-protection-note" id="membershipProtectionNote"></p>
+
+      <form action="/billing/manage-membership" method="POST" id="manageMembershipForm">
+        <button type="submit" id="manageMembershipButton">Manage Membership</button>
+      </form>
+      <p class="account-support-note" id="membershipNotManageableNote" hidden>To make changes to your membership, contact us at <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a>.</p>
     </section>
 
     <section class="card">
@@ -1340,14 +1382,94 @@
     if (list) {
       list.innerHTML =
         '<li class="account-row"><span class="account-row-label">Email</span><span class="account-row-value">' + escapeHtml(account.email || "—") + "</span></li>" +
-        '<li class="account-row"><span class="account-row-label">Plan</span><span class="account-row-value">Home Call Guard Protection — £4.99/month</span></li>' +
-        '<li class="account-row"><span class="account-row-label">Status</span><span class="account-row-value">Active</span></li>' +
         '<li class="account-row"><span class="account-row-label">Member since</span><span class="account-row-value">' + escapeHtml(formatMemberSince(account.memberSince)) + "</span></li>";
     }
 
     if (note) {
-      note.innerHTML = "To change or cancel your plan, contact us at <a href=\"mailto:support@homecallguard.co.uk\">support@homecallguard.co.uk</a>.";
+      note.innerHTML = "Need help with your account? Contact us at <a href=\"mailto:support@homecallguard.co.uk\">support@homecallguard.co.uk</a>.";
     }
+  }
+
+  // TEST-EXTRACT-START: daysRemaining
+  function daysRemaining(isoDate) {
+    if (!isoDate) return null;
+    const end = new Date(isoDate);
+    if (isNaN(end.getTime())) return null;
+    return Math.max(0, Math.ceil((end.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  }
+  // TEST-EXTRACT-END: daysRemaining
+
+  function formatMembershipDate(isoDate) {
+    if (!isoDate) return "—";
+    const date = new Date(isoDate);
+    if (isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  }
+
+  // Membership status always comes from the server (data.membership,
+  // computed in /dashboard-data from the real subscriptions/entitlements
+  // rows the Stripe webhook wrote) — this function only ever formats what
+  // it's given, never decides status itself.
+  function renderMembership(data) {
+    const membership = data && data.membership;
+    const planNameEl = document.getElementById("membershipPlanName");
+    const priceEl = document.getElementById("membershipPrice");
+    const statusValueEl = document.getElementById("membershipStatusValue");
+    const dateLabelEl = document.getElementById("membershipDateLabel");
+    const dateValueEl = document.getElementById("membershipDateValue");
+    const protectionNoteEl = document.getElementById("membershipProtectionNote");
+    const statusMessageEl = document.getElementById("membershipStatusMessage");
+    const manageButtonEl = document.getElementById("manageMembershipButton");
+    const manageFormEl = document.getElementById("manageMembershipForm");
+    const notManageableNoteEl = document.getElementById("membershipNotManageableNote");
+
+    if (!membership) return;
+
+    if (protectionNoteEl) {
+      protectionNoteEl.textContent = computeProtectionState(data) === "active"
+        ? "Your protection is active."
+        : "Your protection is being set up.";
+    }
+
+    const STATUS_LABELS = { active: "Active", trial: "Trial", payment_issue: "Payment issue", cancelled: "Cancelled" };
+    if (statusValueEl) statusValueEl.textContent = STATUS_LABELS[membership.status] || "Active";
+    if (planNameEl) planNameEl.textContent = membership.status === "trial" ? "Free Trial" : membership.planName;
+    if (priceEl) priceEl.textContent = membership.priceLabel;
+
+    if (membership.status === "trial") {
+      if (dateLabelEl) dateLabelEl.textContent = "Trial ends";
+      if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.trialEndDate);
+      const remaining = daysRemaining(membership.trialEndDate);
+      if (statusMessageEl) {
+        statusMessageEl.textContent = (remaining !== null ? remaining + " day" + (remaining === 1 ? "" : "s") + " remaining. " : "") + "Your protection is fully active during your trial.";
+        statusMessageEl.hidden = false;
+      }
+    } else if (membership.status === "payment_issue") {
+      if (dateLabelEl) dateLabelEl.textContent = "Access until";
+      if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.accessUntil);
+      if (statusMessageEl) {
+        statusMessageEl.textContent = "We couldn't take your latest payment. Your protection will continue while we retry payment. Please update your payment method if needed.";
+        statusMessageEl.hidden = false;
+      }
+    } else if (membership.status === "cancelled") {
+      if (dateLabelEl) dateLabelEl.textContent = "Protected until";
+      if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.accessUntil);
+      if (statusMessageEl) {
+        statusMessageEl.textContent = "Cancelling your membership stops future payments. Your protection remains active until the end of your paid period.";
+        statusMessageEl.hidden = false;
+      }
+    } else {
+      if (dateLabelEl) dateLabelEl.textContent = "Next payment";
+      if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.nextBillingDate);
+      if (statusMessageEl) statusMessageEl.hidden = true;
+    }
+
+    if (manageButtonEl) {
+      manageButtonEl.textContent = membership.status === "payment_issue" ? "Update payment details" : "Manage Membership";
+    }
+
+    if (manageFormEl) manageFormEl.hidden = !membership.manageable;
+    if (notManageableNoteEl) notManageableNoteEl.hidden = !!membership.manageable;
   }
 
   const callForwardingToggleEl = document.getElementById("callForwardingToggle");
@@ -1620,8 +1742,8 @@
       title.textContent = "You're protected";
       sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
     } else if (state === "unsubscribed") {
-      title.textContent = "Not protected yet";
-      sub.textContent = "Complete your subscription to activate Home Call Guard and start screening unknown callers.";
+      title.textContent = "You don't currently have an active membership.";
+      sub.textContent = "Protect your home phone from scam callers today.";
     } else if (state === "confirming") {
       title.textContent = "Payment received. Activating your protection…";
       sub.textContent = "This usually takes a few seconds. Please don't close this page.";
@@ -1729,6 +1851,14 @@
     } else if (kind === "already_active") {
       el.textContent = "You're already subscribed — no need to check out again.";
       el.classList.remove("checkout-banner-error");
+      el.hidden = false;
+    } else if (kind === "membership_error") {
+      el.textContent = "We couldn't open your membership settings just now. Please try again.";
+      el.classList.add("checkout-banner-error");
+      el.hidden = false;
+    } else if (kind === "not_manageable") {
+      el.textContent = "There's nothing to manage here — contact us if you'd like to make changes to your membership.";
+      el.classList.add("checkout-banner-error");
       el.hidden = false;
     }
     // "success" is deliberately not handled here — it's routed through the
@@ -1849,6 +1979,7 @@
       renderChecklist(data);
       renderTrustedContacts(data.contacts);
       renderAccountDetails(data.account);
+      renderMembership(data);
 
       const adminNavLink = document.getElementById("adminNavLink");
       if (adminNavLink) {
@@ -1901,6 +2032,13 @@
       }
     } else if (checkoutState) {
       showCheckoutBanner(checkoutState);
+    }
+
+    const membershipState = params.get("membership");
+    if (membershipState === "error") {
+      showCheckoutBanner("membership_error");
+    } else if (membershipState === "not_manageable") {
+      showCheckoutBanner("not_manageable");
     }
 
     loadDashboard();

@@ -12,7 +12,7 @@ const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middl
 const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
-const { getActiveEntitlement } = require("./database/billing");
+const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
@@ -384,11 +384,31 @@ app.post("/process", async (req, res) => {
 // DASHBOARD API
 
 app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => {
-  const [callsToday, recentCalls, contacts] = await Promise.all([
+  const [callsToday, recentCalls, contacts, subscription] = await Promise.all([
     getCallsToday(req.household.id),
     getRecentCalls(req.household.id, 10),
     getContacts(req.household.id),
+    getSubscriptionByHouseholdId(req.household.id),
   ]);
+
+  // Membership status is always derived here, server-side, from the real
+  // subscriptions/entitlements rows the Stripe webhook itself wrote — never
+  // from anything client-supplied. 'trial' is checked first since
+  // entitlements.entitlement_type already supports 'free_trial' (Decision
+  // 009) even though nothing creates one yet; this makes the UI trial-
+  // ready without a real trial-issuing flow existing.
+  let membershipStatus = "active";
+  if (req.entitlement.entitlement_type === "free_trial") {
+    membershipStatus = "trial";
+  } else if (subscription && subscription.status === "past_due") {
+    // Still an active entitlement (past_due qualifies — see
+    // process_stripe_webhook_event in migration 013) — protection
+    // continues while Stripe retries payment; this is a status to
+    // surface, not a reason to withdraw access.
+    membershipStatus = "payment_issue";
+  } else if (subscription && subscription.cancel_at_period_end) {
+    membershipStatus = "cancelled";
+  }
 
   res.json({
     // req.household already carries this — requireAuth's
@@ -413,13 +433,27 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     isAdmin: req.role === "admin",
     // Account details section — req.household/req.entitlement are
     // already loaded in memory by requireAuth/requireEntitlement, so this
-    // is free (no extra query, no new integration). No renewal/next-
-    // billing date is included: this app doesn't currently fetch that
-    // from Stripe, and the frontend must not invent one.
+    // is free (no extra query, no new integration).
     account: {
       email: req.household.email,
       memberSince: req.household.created_at,
       entitlementType: req.entitlement.entitlement_type,
+    },
+    // Membership card (Stage 4). planName/priceLabel are hardcoded,
+    // matching this project's existing single-price-point convention
+    // (Decision 009) — not a live Stripe Price lookup. Every date/status
+    // value here comes from the real subscriptions/entitlements rows the
+    // webhook wrote; never invented client-side.
+    membership: {
+      planName: "Home Call Guard Standard",
+      priceLabel: "£4.99 per month",
+      status: membershipStatus,
+      nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
+      accessUntil: subscription ? subscription.current_period_end : null,
+      trialEndDate: req.entitlement.entitlement_type === "free_trial" ? req.entitlement.ends_at : null,
+      // False for complimentary/founding/promotional/staff access, which
+      // has no real Stripe subscription behind it to manage in the portal.
+      manageable: !!(req.household.stripe_customer_id && subscription),
     },
   });
 });

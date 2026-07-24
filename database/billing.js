@@ -126,10 +126,35 @@ async function getActiveEntitlement(householdId) {
   return data;
 }
 
+// Plain read for the Membership card — service_role already has SELECT on
+// subscriptions (migration 012), so no new grant is needed. A household
+// can have more than one historical subscriptions row (e.g. an old one
+// replaced by a resubscribe); the most recently updated one is the real,
+// current membership, hence the ordering.
+async function getSubscriptionByHouseholdId(householdId) {
+  if (!supabaseAdmin) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("subscriptions")
+    .select("*")
+    .eq("household_id", householdId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("SUPABASE SUBSCRIPTION READ ERROR:", error);
+    return null;
+  }
+
+  return data;
+}
+
 module.exports = {
   setHouseholdStripeCustomerId,
   getHouseholdByStripeCustomerId,
   claimWebhookEvent,
   processWebhookEvent,
   getActiveEntitlement,
+  getSubscriptionByHouseholdId,
 };

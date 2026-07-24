@@ -258,6 +258,39 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
   }
 });
 
+// MANAGE MEMBERSHIP (requires auth): the customer's Stripe Customer ID
+// comes only from req.household.stripe_customer_id, resolved server-side
+// from the verified session (requireAuth) — never from anything
+// client-supplied, so a request can only ever open the portal for the
+// caller's own household. No billing logic (cancel/update payment method/
+// invoices) lives in this app at all; the Billing Portal is entirely
+// Stripe's own hosted UI, and Stripe's webhook remains the only thing
+// that ever writes subscription/entitlement state back into this app.
+router.post("/billing/manage-membership", requireAuth, async (req, res) => {
+  if (!stripe) {
+    console.error("PORTAL SESSION ERROR: STRIPE_SECRET_KEY not configured");
+    return res.redirect("/dashboard?membership=error");
+  }
+
+  if (!req.household.stripe_customer_id) {
+    // Complimentary/founding/promotional/staff access has no real Stripe
+    // subscription behind it to manage — nothing to redirect to.
+    return res.redirect("/dashboard?membership=not_manageable");
+  }
+
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: req.household.stripe_customer_id,
+      return_url: `${process.env.APP_URL}/dashboard`,
+    });
+
+    return res.redirect(303, session.url);
+  } catch (err) {
+    console.error("PORTAL SESSION ERROR:", err.message);
+    return res.redirect("/dashboard?membership=error");
+  }
+});
+
 // RECONCILE (requires auth): bounded fallback for when the webhook is
 // delayed or was never delivered — see docs/PROJECT_STATUS.md, "payment-
 // completion flow rebuild" for the incident this closes (no webhook
