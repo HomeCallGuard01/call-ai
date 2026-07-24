@@ -32,4 +32,43 @@ async function insertContacts(householdId, contacts) {
   return data;
 }
 
-module.exports = { getContacts, insertContacts };
+// Scoped by householdId in the same query as the id, not just the id alone
+// — a contactId belonging to a different household matches zero rows
+// (returns []) rather than ever updating/deleting someone else's contact.
+async function updateContact(householdId, contactId, { name, number }) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin
+    .from("contacts")
+    .update({ name, number })
+    .eq("id", contactId)
+    .eq("household_id", householdId)
+    .select();
+
+  if (error) {
+    console.error("SUPABASE CONTACT UPDATE ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+async function deleteContact(householdId, contactId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin
+    .from("contacts")
+    .delete()
+    .eq("id", contactId)
+    .eq("household_id", householdId)
+    .select();
+
+  if (error) {
+    console.error("SUPABASE CONTACT DELETE ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+module.exports = { getContacts, insertContacts, updateContact, deleteContact };

@@ -11,7 +11,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
 const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber } = require("./database/households");
-const { getContacts, insertContacts } = require("./database/contacts");
+const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement } = require("./database/billing");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
@@ -379,10 +379,10 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // twilioNumber deliberately not included — never sent to the browser.
     twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
     contactsUploaded: contacts.length,
-    // Full contact list (name + number only — never the internal id/
-    // household_id) for the "Trusted contacts" section. Same query/data
-    // already fetched above for the count; no new integration.
-    contacts: contacts.map(c => ({ name: c.name, number: c.number })),
+    // Full contact list (id, so Edit/Delete can target the right row,
+    // plus name + number — never household_id) for the "Trusted contacts"
+    // section. Same query/data already fetched above for the count.
+    contacts: contacts.map(c => ({ id: c.id, name: c.name, number: c.number })),
     callsScreened: callsToday.filter(call => call.status === "Unknown").length,
     suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
     trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
@@ -454,6 +454,75 @@ app.post("/upload-contacts", requireAuth, upload.single("file"), async (req, res
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
     res.status(500).send("Upload failed");
+  }
+});
+
+// ADD / EDIT / DELETE ONE TRUSTED CONTACT
+//
+// Same ownership model as /upload-contacts above: req.household.id comes
+// only from requireAuth's verified session, never from the request body,
+// so a contact can never be added/edited/deleted against another
+// household. updateContact/deleteContact additionally scope their query
+// by household_id (not just the contact id), so a contactId belonging to
+// a different household is never affected even if guessed/forged.
+
+app.post("/contacts", requireAuth, requireEntitlement, async (req, res) => {
+  try {
+    const name = (req.body.name || "").trim();
+    const number = normaliseNumber(req.body.number);
+
+    if (!name || number.length !== 10) {
+      return res.status(400).json({ error: "invalid_input" });
+    }
+
+    const existing = await getContacts(req.household.id);
+    if (existing.some(c => normaliseNumber(c.number) === number)) {
+      return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
+    }
+
+    const [saved] = await insertContacts(req.household.id, [{ name, number, customer_id: null }]);
+    res.status(201).json({ id: saved.id, name: saved.name, number: saved.number });
+  } catch (err) {
+    console.error("ADD CONTACT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+app.put("/contacts/:id", requireAuth, requireEntitlement, async (req, res) => {
+  try {
+    const name = (req.body.name || "").trim();
+    const number = normaliseNumber(req.body.number);
+
+    if (!name || number.length !== 10) {
+      return res.status(400).json({ error: "invalid_input" });
+    }
+
+    const existing = await getContacts(req.household.id);
+    if (existing.some(c => c.id !== req.params.id && normaliseNumber(c.number) === number)) {
+      return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
+    }
+
+    const updated = await updateContact(req.household.id, req.params.id, { name, number });
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    res.json({ id: updated[0].id, name: updated[0].name, number: updated[0].number });
+  } catch (err) {
+    console.error("UPDATE CONTACT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+app.delete("/contacts/:id", requireAuth, requireEntitlement, async (req, res) => {
+  try {
+    const deleted = await deleteContact(req.household.id, req.params.id);
+    if (deleted.length === 0) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE CONTACT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
   }
 });
 

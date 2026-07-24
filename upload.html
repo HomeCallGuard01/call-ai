@@ -901,17 +901,30 @@
         Trusted contacts
         <span class="help-hint" tabindex="0" aria-label="Calls from these numbers always get through straight away, with no checks." title="Calls from these numbers always get through straight away, with no checks.">?</span>
       </h2>
-      <p class="section-intro">People whose calls should always come straight through.</p>
+      <p class="section-intro">People you trust always get straight through.</p>
       <div id="trustedContactsList">
         <p class="empty-state">You haven't added any trusted contacts yet.</p>
         <p class="empty-state-hint">Add family and friends so their calls always get straight through.</p>
       </div>
 
-      <button type="button" id="addContactsButton">Add contacts</button>
+      <button type="button" id="addContactButton">Add trusted contact</button>
+
+      <div id="addContactForm" hidden>
+        <p id="addContactError" class="empty-state-hint" hidden></p>
+        <label for="contactName">Name</label>
+        <input type="text" id="contactName" required>
+        <label for="contactNumber">Phone number</label>
+        <input type="tel" id="contactNumber" autocomplete="tel" required>
+        <br><br>
+        <button type="button" id="saveContactButton">Save contact</button>
+      </div>
+
+      <button type="button" id="addContactsButton" class="secondary-action-button">Upload a contacts file</button>
 
       <div id="csvUploadArea" hidden>
         <p class="upload-secondary-label">Upload a contacts file</p>
-        <p class="upload-intro">A file listing each contact's name and phone number, one per line.</p>
+        <p class="upload-intro">Upload a file listing each contact's name and phone number, one per line, from a computer, phone or tablet. This does not read contacts directly from your landline or any other device.</p>
+        <p class="upload-intro"><a href="/trusted-contacts-template.csv" download>Download a template file</a> to see the format — replace the example row with your own contacts.</p>
 
         <form
           action="/upload-contacts"
@@ -1219,6 +1232,8 @@
           '<div class="contact-name">' + escapeHtml(c.name || "Unnamed contact") + "</div>" +
           '<div class="contact-number">' + escapeHtml(c.number || "") + "</div>" +
         "</div>" +
+        '<button type="button" class="secondary-action-button contact-edit-button" data-id="' + escapeHtml(c.id) + '" data-name="' + escapeHtml(c.name || "") + '" data-number="' + escapeHtml(c.number || "") + '">Edit</button>' +
+        '<button type="button" class="secondary-action-button contact-delete-button" data-id="' + escapeHtml(c.id) + '">Delete</button>' +
       "</div>";
     }).join("") + "</div>";
   }
@@ -1255,6 +1270,113 @@
     addContactsButtonEl.addEventListener("click", function () {
       csvUploadAreaEl.hidden = false;
       addContactsButtonEl.hidden = true;
+    });
+  }
+
+  // Add/edit trusted contact — one form reused for both (editingContactId
+  // is null for "add", set to a contact's id while editing it), matching
+  // this file's existing "extend, don't duplicate" pattern.
+  let editingContactId = null;
+  const addContactButtonEl = document.getElementById("addContactButton");
+  const addContactFormEl = document.getElementById("addContactForm");
+  const contactNameEl = document.getElementById("contactName");
+  const contactNumberEl = document.getElementById("contactNumber");
+  const saveContactButtonEl = document.getElementById("saveContactButton");
+  const addContactErrorEl = document.getElementById("addContactError");
+
+  function showAddContactForm() {
+    if (addContactFormEl) addContactFormEl.hidden = false;
+    if (addContactButtonEl) addContactButtonEl.hidden = true;
+    if (addContactErrorEl) addContactErrorEl.hidden = true;
+  }
+
+  function resetContactForm() {
+    editingContactId = null;
+    if (contactNameEl) contactNameEl.value = "";
+    if (contactNumberEl) contactNumberEl.value = "";
+    if (saveContactButtonEl) saveContactButtonEl.textContent = "Save contact";
+    if (addContactErrorEl) addContactErrorEl.hidden = true;
+    if (addContactFormEl) addContactFormEl.hidden = true;
+    if (addContactButtonEl) addContactButtonEl.hidden = false;
+  }
+
+  if (addContactButtonEl) {
+    addContactButtonEl.addEventListener("click", showAddContactForm);
+  }
+
+  if (saveContactButtonEl) {
+    saveContactButtonEl.addEventListener("click", async function () {
+      const name = contactNameEl ? contactNameEl.value.trim() : "";
+      const number = contactNumberEl ? contactNumberEl.value.trim() : "";
+      if (addContactErrorEl) addContactErrorEl.hidden = true;
+
+      try {
+        const url = editingContactId ? "/contacts/" + encodeURIComponent(editingContactId) : "/contacts";
+        const res = await fetch(url, {
+          method: editingContactId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ name, number }).toString(),
+        });
+
+        if (res.status === 409) {
+          const body = await res.json();
+          if (addContactErrorEl) {
+            addContactErrorEl.textContent = body.message || "This number is already in your trusted contacts.";
+            addContactErrorEl.hidden = false;
+          }
+          return;
+        }
+
+        if (!res.ok) {
+          if (addContactErrorEl) {
+            addContactErrorEl.textContent = "Please enter a name and a valid phone number.";
+            addContactErrorEl.hidden = false;
+          }
+          return;
+        }
+
+        resetContactForm();
+        loadDashboard();
+      } catch (err) {
+        if (addContactErrorEl) {
+          addContactErrorEl.textContent = "Something went wrong. Please try again.";
+          addContactErrorEl.hidden = false;
+        }
+      }
+    });
+  }
+
+  // Edit/Delete buttons are rendered dynamically inside #trustedContactsList
+  // (see renderTrustedContacts), so they're handled via delegation on the
+  // list's static parent rather than re-binding listeners on every render.
+  const trustedContactsListEl = document.getElementById("trustedContactsList");
+  if (trustedContactsListEl) {
+    trustedContactsListEl.addEventListener("click", async function (e) {
+      const editBtn = e.target.closest(".contact-edit-button");
+      if (editBtn) {
+        editingContactId = editBtn.dataset.id;
+        if (contactNameEl) contactNameEl.value = editBtn.dataset.name || "";
+        if (contactNumberEl) contactNumberEl.value = editBtn.dataset.number || "";
+        if (saveContactButtonEl) saveContactButtonEl.textContent = "Save changes";
+        showAddContactForm();
+        return;
+      }
+
+      const deleteBtn = e.target.closest(".contact-delete-button");
+      if (deleteBtn) {
+        if (!window.confirm("Remove this trusted contact?")) {
+          return;
+        }
+        try {
+          const res = await fetch("/contacts/" + encodeURIComponent(deleteBtn.dataset.id), { method: "DELETE" });
+          if (res.ok) {
+            loadDashboard();
+          }
+        } catch (err) {
+          // Swallow — a failed delete just leaves the contact in place;
+          // the next dashboard refresh reflects real state either way.
+        }
+      }
     });
   }
 
