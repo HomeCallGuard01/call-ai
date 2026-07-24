@@ -36,7 +36,25 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const app = express();
-const upload = multer({ dest: "uploads/" });
+const MAX_CONTACTS_FILE_BYTES = 512 * 1024; // 512KB — far more than any real household contact list needs
+const MAX_CONTACTS_PER_UPLOAD = 500; // a file needing more than this is almost certainly the wrong file
+
+const upload = multer({ dest: "uploads/", limits: { fileSize: MAX_CONTACTS_FILE_BYTES } });
+
+// Wraps upload.single("file") so a file-too-large (or any other multer)
+// error becomes the same clear JSON error shape every other /upload-contacts
+// failure uses, instead of an unhandled middleware-level exception.
+function uploadContactsFile(req, res, next) {
+  upload.single("file")(req, res, function (err) {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ error: "file_too_large", message: "That file is too large. Please choose a smaller contacts file." });
+      }
+      return res.status(400).json({ error: "upload_failed", message: "We could not import that contacts file. Please check the file and try again." });
+    }
+    next();
+  });
+}
 const PORT = resolvePort(process.env);
 
 // Single source of truth for the app's externally-reachable base URL —
@@ -412,48 +430,108 @@ app.get("/logs", requireAuth, requireEntitlement, async (req, res) => {
 });
 
 // UPLOAD CONTACTS
+//
+// Handles three customer-facing entry points, all through this one route:
+// a real CSV file, a real VCF/vCard file, and the Android Contact Picker
+// path (upload.html builds a synthetic "name,number" text file client-side
+// from the customer's picked contacts and uploads it here exactly like a
+// real CSV) — one parsing/validation/insertion path to keep correct rather
+// than three.
 
-app.post("/upload-contacts", requireAuth, upload.single("file"), async (req, res) => {
+function parseContactsCsv(text) {
+  return text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .map(line => {
+      const parts = line.split(",");
+      return { name: parts[0]?.trim() || "Unknown", number: normaliseNumber(parts[1]) };
+    });
+}
+
+// Minimal RFC 6350-shaped parser: enough for the simple name+phone vCards
+// real phones export, not a fully spec-compliant implementation (e.g. does
+// not unfold long folded lines, which only matters for fields like PHOTO:
+// that this app never reads anyway — those lines simply don't match FN/N/TEL
+// and are harmlessly ignored).
+function parseContactsVcf(text) {
+  const blocks = text.split(/BEGIN:VCARD/i).slice(1);
+
+  return blocks.map(block => {
+    const lines = block.split(/\r?\n/);
+    let name = null;
+    let number = null;
+
+    for (const line of lines) {
+      if (!name && /^FN[:;]/i.test(line)) {
+        name = line.split(":").slice(1).join(":").trim();
+      } else if (!name && /^N[:;]/i.test(line)) {
+        // Fallback when FN is missing: N is "Last;First;...", reassembled
+        // as "First Last" for a readable name.
+        const parts = (line.split(":")[1] || "").split(";");
+        name = [parts[1], parts[0]].filter(Boolean).join(" ").trim();
+      } else if (!number && /^TEL[:;]/i.test(line)) {
+        number = line.split(":").slice(1).join(":").trim();
+      }
+    }
+
+    return { name: name || "Unknown", number: normaliseNumber(number) };
+  });
+}
+
+app.post("/upload-contacts", requireAuth, uploadContactsFile, async (req, res) => {
   try {
     const entitlement = await getActiveEntitlement(req.household.id);
     if (!entitlement) {
-      return res.status(402).send("An active subscription is required to upload contacts.");
+      return res.status(402).json({ error: "not_entitled", message: "An active subscription is required to upload contacts." });
     }
 
     if (!req.file) {
-      return res.status(400).send("No file uploaded");
+      return res.status(400).json({ error: "no_file", message: "We could not import that contacts file. Please check the file and try again." });
     }
 
     const filePath = req.file.path;
     const data = fs.readFileSync(filePath, "utf8");
+    const isVcf = /\.(vcf|vcard)$/i.test(req.file.originalname || "");
 
-    const contacts = data
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => {
-        const parts = line.split(",");
+    const rawContacts = isVcf ? parseContactsVcf(data) : parseContactsCsv(data);
+    const validContacts = rawContacts.filter(c => c.number.length === 10);
 
-        return {
-          name: parts[0]?.trim() || "Unknown",
-          number: normaliseNumber(parts[1]),
-          customer_id: null,
-        };
-      })
-      .filter(c => c.number.length === 10);
-
-    if (contacts.length === 0) {
-      return res.status(400).send("No valid contacts found in CSV");
+    if (validContacts.length === 0) {
+      return res.status(400).json({ error: "no_valid_contacts", message: "We could not import that contacts file. Please check the file and try again." });
     }
 
-    const savedContacts = await insertContacts(req.household.id, contacts);
+    if (validContacts.length > MAX_CONTACTS_PER_UPLOAD) {
+      return res.status(400).json({ error: "too_many_contacts", message: "That file has too many contacts. Please check the file and try again." });
+    }
 
-    res.send(
-      `Contacts uploaded successfully! ${savedContacts.length} contacts saved to Supabase.`
-    );
+    // Duplicate prevention, both against the household's existing contacts
+    // and within the file itself — same normalised-number comparison as
+    // the single-contact add/edit routes.
+    const existing = await getContacts(req.household.id);
+    const seen = new Set(existing.map(c => normaliseNumber(c.number)));
+    const toInsert = [];
+    let skippedDuplicates = 0;
+
+    for (const c of validContacts) {
+      if (seen.has(c.number)) {
+        skippedDuplicates++;
+        continue;
+      }
+      seen.add(c.number);
+      toInsert.push({ name: c.name, number: c.number, customer_id: null });
+    }
+
+    const savedContacts = toInsert.length > 0 ? await insertContacts(req.household.id, toInsert) : [];
+
+    res.json({
+      added: savedContacts.length,
+      skippedDuplicates,
+      message: `${savedContacts.length} trusted contact${savedContacts.length === 1 ? "" : "s"} added successfully.`,
+    });
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
-    res.status(500).send("Upload failed");
+    res.status(500).json({ error: "failed", message: "We could not import that contacts file. Please check the file and try again." });
   }
 });
 

@@ -633,8 +633,28 @@
     margin-bottom: 12px;
   }
 
-  #csvUploadArea {
-    margin-top: 4px;
+  dialog {
+    background: #0f172a;
+    color: white;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 24px;
+    max-width: 420px;
+    width: 90%;
+  }
+
+  dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+  }
+
+  dialog h3 {
+    margin-top: 0;
+  }
+
+  #pickPhoneContactsButton {
+    display: block;
+    width: 100%;
+    margin-bottom: 12px;
   }
 
   .account-details {
@@ -958,33 +978,24 @@
         <button type="button" id="saveContactButton">Save contact</button>
       </div>
 
-      <button type="button" id="addContactsButton" class="secondary-action-button">Upload a contacts file</button>
+      <button type="button" id="uploadContactsButton" class="secondary-action-button">Upload contacts</button>
 
-      <div id="csvUploadArea" hidden>
-        <p class="upload-secondary-label">Upload a contacts file</p>
-        <p class="upload-intro">Upload a file listing each contact's name and phone number, one per line, from a computer, phone or tablet. This does not read contacts directly from your landline or any other device.</p>
+      <dialog id="uploadContactsDialog" aria-labelledby="uploadContactsDialogTitle">
+        <h3 id="uploadContactsDialogTitle">Upload contacts</h3>
+        <p class="upload-intro">Home Call Guard only imports the contacts you choose. We do not access your full address book.</p>
+
+        <button type="button" id="pickPhoneContactsButton" hidden>Choose from this phone</button>
+
+        <p class="upload-secondary-label">Choose a contacts file</p>
+        <p class="upload-intro">Choose a contacts file from your phone, tablet or computer.</p>
         <p class="upload-intro"><a href="/trusted-contacts-template.csv" download>Download a template file</a> to see the format — replace the example row with your own contacts.</p>
+        <input type="file" id="contactsFile" accept=".vcf,.vcard,.csv,text/vcard,text/csv">
 
-        <form
-          action="/upload-contacts"
-          method="POST"
-          enctype="multipart/form-data"
-        >
-          <input
-            type="file"
-            id="contactsFile"
-            name="file"
-            accept=".csv"
-            required
-          />
+        <p id="uploadContactsStatus" class="empty-state-hint" hidden></p>
 
-          <br><br>
-
-          <button type="submit" class="secondary-action-button">
-            Upload file
-          </button>
-        </form>
-      </div>
+        <button type="button" id="addContactManuallyFromDialog" class="secondary-action-button">Add one manually</button>
+        <button type="button" id="closeUploadDialogButton" class="secondary-action-button">Close</button>
+      </dialog>
     </section>
 
     <section class="card">
@@ -1305,12 +1316,121 @@
     });
   }
 
-  const addContactsButtonEl = document.getElementById("addContactsButton");
-  const csvUploadAreaEl = document.getElementById("csvUploadArea");
-  if (addContactsButtonEl && csvUploadAreaEl) {
-    addContactsButtonEl.addEventListener("click", function () {
-      csvUploadAreaEl.hidden = false;
-      addContactsButtonEl.hidden = true;
+  // "Upload contacts" opens a native <dialog> — showModal()/close() give
+  // focus-trapping, a backdrop and Escape-to-close for free, so there's no
+  // custom modal/ARIA plumbing to get right by hand.
+  const uploadContactsButtonEl = document.getElementById("uploadContactsButton");
+  const uploadContactsDialogEl = document.getElementById("uploadContactsDialog");
+  const pickPhoneContactsButtonEl = document.getElementById("pickPhoneContactsButton");
+  const contactsFileEl = document.getElementById("contactsFile");
+  const uploadContactsStatusEl = document.getElementById("uploadContactsStatus");
+  const addContactManuallyFromDialogEl = document.getElementById("addContactManuallyFromDialog");
+  const closeUploadDialogButtonEl = document.getElementById("closeUploadDialogButton");
+
+  if (uploadContactsButtonEl && uploadContactsDialogEl) {
+    uploadContactsButtonEl.addEventListener("click", function () {
+      if (uploadContactsStatusEl) uploadContactsStatusEl.hidden = true;
+      if (contactsFileEl) contactsFileEl.value = "";
+      uploadContactsDialogEl.showModal();
+    });
+
+    // Covers Escape, the native close button and our own Close button —
+    // "close" fires regardless of how the dialog was dismissed.
+    uploadContactsDialogEl.addEventListener("close", function () {
+      uploadContactsButtonEl.focus();
+    });
+  }
+
+  if (closeUploadDialogButtonEl && uploadContactsDialogEl) {
+    closeUploadDialogButtonEl.addEventListener("click", function () {
+      uploadContactsDialogEl.close();
+    });
+  }
+
+  if (addContactManuallyFromDialogEl && uploadContactsDialogEl) {
+    addContactManuallyFromDialogEl.addEventListener("click", function () {
+      uploadContactsDialogEl.close();
+      showAddContactForm();
+    });
+  }
+
+  // Feature-detected per MDN's own recommended check. Only Android Chrome
+  // supports this today (confirmed against Chrome's developer docs) — iOS
+  // Safari does not enable it for real customers, so on every other
+  // browser this option simply never appears, rather than showing
+  // something broken or unavailable.
+  if (pickPhoneContactsButtonEl && "contacts" in navigator) {
+    pickPhoneContactsButtonEl.hidden = false;
+  }
+
+  function showUploadStatus(message) {
+    if (uploadContactsStatusEl) {
+      uploadContactsStatusEl.textContent = message;
+      uploadContactsStatusEl.hidden = false;
+    }
+  }
+
+  // Shared by both entry points: a real file the customer picked, or a
+  // synthetic "name,number" blob built from Contact Picker results below —
+  // one upload path, one set of server-side rules, for both.
+  async function submitContactsBlob(blob, filename) {
+    showUploadStatus("Uploading…");
+    try {
+      const formData = new FormData();
+      formData.append("file", blob, filename);
+      const res = await fetch("/upload-contacts", { method: "POST", body: formData });
+      const body = await res.json().catch(function () { return {}; });
+
+      if (!res.ok) {
+        showUploadStatus(body.message || "We could not import that contacts file. Please check the file and try again.");
+        return;
+      }
+
+      showUploadStatus(body.message || "Contacts added successfully.");
+      loadDashboard();
+    } catch (err) {
+      showUploadStatus("We could not import that contacts file. Please check the file and try again.");
+    }
+  }
+
+  if (contactsFileEl) {
+    contactsFileEl.addEventListener("change", function () {
+      const file = contactsFileEl.files && contactsFileEl.files[0];
+      if (!file) return;
+      submitContactsBlob(file, file.name);
+    });
+  }
+
+  if (pickPhoneContactsButtonEl) {
+    pickPhoneContactsButtonEl.addEventListener("click", async function () {
+      try {
+        const picked = await navigator.contacts.select(["name", "tel"], { multiple: true });
+
+        if (!picked || picked.length === 0) {
+          // Cancelled, or nothing selected — never treated as an error.
+          return;
+        }
+
+        const lines = picked
+          .map(function (c) {
+            const name = (c.name && c.name[0] ? c.name[0] : "Unknown").replace(/,/g, " ");
+            const number = c.tel && c.tel[0] ? c.tel[0] : "";
+            return name + "," + number;
+          })
+          .filter(function (line) {
+            return line.split(",")[1];
+          });
+
+        if (lines.length === 0) {
+          showUploadStatus("None of the selected contacts had a phone number.");
+          return;
+        }
+
+        submitContactsBlob(new Blob([lines.join("\n")], { type: "text/csv" }), "picked-contacts.csv");
+      } catch (err) {
+        // A rejected promise here means the customer cancelled/dismissed
+        // the picker — never surfaced as an error.
+      }
     });
   }
 
