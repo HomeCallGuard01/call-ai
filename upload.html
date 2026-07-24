@@ -591,6 +591,29 @@
     color: #94a3b8;
   }
 
+  /* min-width: 0 overrides flex's default min-width: auto, which would
+     otherwise refuse to let a long name/number shrink below its own
+     intrinsic width and force the whole row wider than its container. */
+  .contact-details {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .contact-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Visually quieter than Edit, not smaller — same touch target, just a
+     dimmer tone so Delete doesn't compete for attention or get pressed
+     by reflex. The confirm() prompt before any delete is the actual
+     accidental-press safeguard; this is a visual cue on top of that. */
+  .contact-delete-button {
+    color: #64748b;
+  }
+
   .section-intro {
     color: #94a3b8;
     font-size: 14px;
@@ -766,6 +789,22 @@
 
     .stats-grid {
       grid-template-columns: 1fr 1fr;
+    }
+
+    /* Icon + name/number stay together on one line (they comfortably fit
+       even at 320px); Edit/Delete wrap to their own line below rather
+       than cramming four items into one row — flex-wrap plus
+       flex-basis: 100% on .contact-actions forces that wrap point
+       deterministically, rather than relying on shrink/wrap behaviour
+       that varies by exact content width. */
+    .contact-item {
+      flex-wrap: wrap;
+    }
+
+    .contact-actions {
+      flex-basis: 100%;
+      justify-content: flex-end;
+      margin-top: 4px;
     }
   }
 
@@ -1228,12 +1267,14 @@
     container.innerHTML = '<div class="contacts-list">' + contacts.map(function (c) {
       return '<div class="contact-item">' +
         '<div class="contact-icon" aria-hidden="true">👤</div>' +
-        '<div>' +
+        '<div class="contact-details">' +
           '<div class="contact-name">' + escapeHtml(c.name || "Unnamed contact") + "</div>" +
           '<div class="contact-number">' + escapeHtml(c.number || "") + "</div>" +
         "</div>" +
-        '<button type="button" class="secondary-action-button contact-edit-button" data-id="' + escapeHtml(c.id) + '" data-name="' + escapeHtml(c.name || "") + '" data-number="' + escapeHtml(c.number || "") + '">Edit</button>' +
-        '<button type="button" class="secondary-action-button contact-delete-button" data-id="' + escapeHtml(c.id) + '">Delete</button>' +
+        '<div class="contact-actions">' +
+          '<button type="button" class="secondary-action-button contact-edit-button" data-id="' + escapeHtml(c.id) + '" data-name="' + escapeHtml(c.name || "") + '" data-number="' + escapeHtml(c.number || "") + '">Edit</button>' +
+          '<button type="button" class="secondary-action-button contact-delete-button" data-id="' + escapeHtml(c.id) + '">Delete</button>' +
+        "</div>" +
       "</div>";
     }).join("") + "</div>";
   }
