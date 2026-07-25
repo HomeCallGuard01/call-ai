@@ -137,14 +137,25 @@ async function run() {
   const loginHtml = readFileSync(path.join(__dirname, '..', 'public', 'login.html'), 'utf8');
 
   check(
-    registerHtml.includes('An account is already waiting for confirmation') &&
-      registerHtml.includes('Please use the password you originally chose'),
-    'register.html states plainly that an account is already waiting for confirmation and the original password remains in use'
+    registerHtml.includes('We’ve sent a confirmation email if this email address has a pending registration'),
+    'register.html never definitively confirms a pending registration exists — hedged "if this email address has..." wording'
+  );
+
+  check(
+    registerHtml.includes('please use the password you originally chose') ||
+      registerHtml.includes('please use the password you originally chose.'),
+    'item 4 (revised): register.html states the original password remains in use, in case an unconfirmed account already existed, without confirming that it does'
   );
 
   check(
     registerHtml.includes('pending_confirmation'),
-    'register.html handles the pending_confirmation state distinctly from the plain first-time success state'
+    'register.html still routes the pending_confirmation state server-side (the fix’s logic is unchanged) — only the displayed wording changed'
+  );
+
+  check(
+    !registerHtml.includes('SUCCESS_MESSAGES') &&
+      (registerHtml.match(/showSuccess\(\s*\)/g) || []).length >= 2,
+    'security wording fix: no state-conditional message table remains — showSuccess() is called identically for both the "success" and "pending_confirmation" states, so the customer sees the exact same text either way'
   );
 
   check(
@@ -153,13 +164,13 @@ async function run() {
   );
 
   check(
-    loginHtml.includes('already_registered') && loginHtml.includes('already registered'),
-    'item 5: login.html directs an already-confirmed existing user to log in or reset their password'
+    loginHtml.includes('already_registered') && loginHtml.includes('may already be registered'),
+    'item 5 (revised): login.html directs a possibly-existing user to sign in or reset their password, using hedged "may already be" wording rather than a definitive claim'
   );
 
   check(
     !loginHtml.match(/already_registered[\s\S]{0,400}(confirmed|subscription|entitlement|household)/i),
-    'item 5 / enumeration: the already_registered message stays neutral — no confirmation state or account detail beyond "an account exists"'
+    'item 5 / enumeration: the already_registered message stays neutral — no confirmation state or account detail beyond "may already be registered"'
   );
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
