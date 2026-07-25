@@ -14,6 +14,7 @@ const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
+const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
@@ -652,75 +653,6 @@ function buildUserScopedClient() {
   );
 }
 
-// Ensures the signed-in user has a household and a user_roles row, using
-// only that user's own authenticated session — no service-role key
-// anywhere in this path. Relies on the policies added in
-// supabase/migrations/006_authenticated_household_self_service.sql. Safe
-// to call on every registration/login: it's a no-op if both already exist.
-//
-// logPrefix drives the TEMPORARY DEBUG LOGGING below — remove both once
-// the first-login household/role flow is confirmed working end to end.
-async function ensureHouseholdAndRole(userClient, userId, email, logPrefix) {
-  const log = msg => {
-    if (logPrefix) console.log(`${logPrefix} ${msg}`);
-  };
-
-  log("Checking household");
-  const { data: existingHousehold, error: householdSelectError } = await userClient
-    .from("households")
-    .select("id")
-    .eq("auth_user_id", userId)
-    .maybeSingle();
-
-  if (householdSelectError) throw householdSelectError;
-
-  log(`Household exists? ${!!existingHousehold}`);
-
-  if (!existingHousehold) {
-    log("Creating household...");
-
-    // Try to claim the pre-existing unclaimed default household first.
-    const { data: claimed, error: claimError } = await userClient
-      .from("households")
-      .update({ auth_user_id: userId, email })
-      .is("auth_user_id", null)
-      .select();
-
-    if (claimError) throw claimError;
-
-    if (!claimed || claimed.length === 0) {
-      // Nothing unclaimed to take — create a brand-new household instead.
-      const { error: insertError } = await userClient
-        .from("households")
-        .insert({ auth_user_id: userId, email, status: "active" });
-
-      if (insertError) throw insertError;
-    }
-
-    log("Household created");
-  }
-
-  const { data: existingRole, error: roleSelectError } = await userClient
-    .from("user_roles")
-    .select("auth_user_id")
-    .eq("auth_user_id", userId)
-    .maybeSingle();
-
-  if (roleSelectError) throw roleSelectError;
-
-  if (!existingRole) {
-    log("Creating role...");
-
-    const { error: roleInsertError } = await userClient
-      .from("user_roles")
-      .insert({ auth_user_id: userId, role: "household" });
-
-    if (roleInsertError) throw roleInsertError;
-
-    log("Role created");
-  }
-}
-
 // AUTH: REGISTER
 
 app.post("/register", async (req, res) => {
@@ -837,7 +769,7 @@ app.post("/login", async (req, res) => {
 
   // Confirmed email is the point a real session first exists, so this is
   // where a first-time customer's household/role actually get created —
-  // see ensureHouseholdAndRole() above. No-op on every login after that.
+  // see services/householdBootstrap.js. No-op on every login after that.
   try {
     const userClient = buildUserScopedClient();
     await userClient.auth.setSession({
@@ -948,6 +880,23 @@ app.post("/reset-password-complete", async (req, res) => {
   const {
     data: { session },
   } = await resetClient.auth.getSession();
+
+  // A password reset establishes a real, valid session (setSessionCookies
+  // below), but requireAuth also requires a households/user_roles row to
+  // exist before it will accept that session — see requireAuth's own
+  // "no household -> clearSessionCookies + redirect" branch. /login and
+  // /register both call ensureHouseholdAndRole() for exactly this reason;
+  // this route previously didn't, so a customer resetting their password
+  // before ever completing a first login got a genuinely valid session
+  // that requireAuth then destroyed on the very next request. Uses the
+  // already-session-bearing resetClient (same idempotent, no-op-if-
+  // already-exists behaviour as the /login and /register call sites).
+  try {
+    await ensureHouseholdAndRole(resetClient, session.user.id, session.user.email, "[RESET PASSWORD]");
+  } catch (err) {
+    console.error("RESET PASSWORD HOUSEHOLD SETUP ERROR:", err.message);
+    return res.status(500).json({ error: "failed" });
+  }
 
   setSessionCookies(res, session);
   return res.json({ ok: true });
