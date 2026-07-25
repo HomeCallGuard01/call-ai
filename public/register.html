@@ -177,8 +177,12 @@
   <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
   <div id="successPanel" class="success-panel" hidden>
-    <p>Please check your email to continue setting up your account.</p>
+    <p id="successMessage">Please check your email to continue setting up your account.</p>
     <p class="spam-note">Can't find the email? Check your spam or junk folder.</p>
+    <p id="passwordResetNote" class="spam-note" hidden>
+      Not sure of your original password? You can
+      <a href="/forgot-password.html">reset it</a> once your email is confirmed.
+    </p>
 
     <form id="resendForm" action="/resend-confirmation" method="POST">
       <input type="hidden" id="resendEmail" name="email">
@@ -230,16 +234,24 @@
     failed: "We couldn't create your account. Please check your details and try again."
   };
 
+  var SUCCESS_MESSAGES = {
+    success: "Please check your email to continue setting up your account.",
+    pending_confirmation: "An account is already waiting for confirmation. We’ve resent the confirmation email. Please use the password you originally chose."
+  };
+
   function showError(message) {
     var banner = document.getElementById("errorBanner");
     banner.textContent = "⚠ " + message;
     banner.hidden = false;
   }
 
-  function showSuccess() {
+  function showSuccess(state) {
     var enteredEmail = document.getElementById("email").value;
     document.getElementById("resendEmail").value = enteredEmail;
     document.getElementById("registerForm").hidden = true;
+    document.getElementById("successMessage").textContent =
+      SUCCESS_MESSAGES[state] || SUCCESS_MESSAGES.success;
+    document.getElementById("passwordResetNote").hidden = state !== "pending_confirmation";
     // loginFooterLink is deliberately left visible here — see its own
     // comment in the markup above.
     document.getElementById("successPanel").hidden = false;
@@ -250,8 +262,8 @@
   var reason = params.get("reason");
   var email = params.get("email");
 
-  if (state === "success") {
-    showSuccess();
+  if (state === "success" || state === "pending_confirmation") {
+    showSuccess(state);
   } else if (state === "error") {
     showError(ERROR_MESSAGES[reason] || ERROR_MESSAGES.failed);
     if (email) {

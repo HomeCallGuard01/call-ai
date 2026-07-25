@@ -230,6 +230,10 @@
     var notice = document.getElementById("noticeBanner");
     notice.textContent = "If that email is registered and unconfirmed, a new confirmation email has been sent.";
     notice.hidden = false;
+  } else if (state === "already_registered") {
+    var registeredNotice = document.getElementById("noticeBanner");
+    registeredNotice.textContent = "This email is already registered. Log in below, or reset your password if you've forgotten it.";
+    registeredNotice.hidden = false;
   }
 
   document.querySelectorAll(".toggle-password").forEach(function (btn) {

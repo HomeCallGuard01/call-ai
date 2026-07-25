@@ -13,6 +13,7 @@ const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
+const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
@@ -734,6 +735,38 @@ app.post("/register", async (req, res) => {
     return res.redirect(
       `/register.html?state=error&reason=mismatch&email=${encodeURIComponent(email)}`
     );
+  }
+
+  // See services/registrationFlow.js for why this check exists: calling
+  // signUp() a second time for an already-existing unconfirmed email
+  // silently discards the newly submitted password (documented Supabase
+  // behaviour, not something this app controls) — this routes around
+  // that instead of ever hitting it.
+  const existing = await findExistingAuthUser(email, { adminClient: supabaseAdmin });
+  const decision = decideRegistrationAction(existing);
+
+  if (decision.action === "resend") {
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: `${APP_URL}/confirmed.html`,
+      },
+    });
+
+    if (resendError) {
+      console.error("SUPABASE RESEND (from /register) ERROR:", resendError.message);
+    }
+
+    return res.redirect("/register.html?state=pending_confirmation");
+  }
+
+  if (decision.action === "already_registered") {
+    // Already a real, confirmed account — never attempt another signup.
+    // This redirect reveals only that some account exists for this email
+    // (the same thing a normal failed-login attempt already implies),
+    // nothing more specific about the account itself.
+    return res.redirect("/login.html?state=already_registered");
   }
 
   const { data, error } = await supabase.auth.signUp({
