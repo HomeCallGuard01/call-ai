@@ -1,6 +1,20 @@
 -- Stripe Integration: guard against out-of-order webhook delivery
 --
--- STATUS: DRAFT — NOT APPLIED
+-- STATUS: APPLIED
+--
+-- Applied to production (project ref psbzynxplxfbyrbdidmn) after two
+-- earlier attempts each reported a successful commit in the Supabase SQL
+-- Editor without the column or new function overload actually existing
+-- afterwards — most likely an earlier statement aborting the transaction
+-- silently, with the trailing `commit;` downgraded to a no-op ROLLBACK
+-- rather than raising a visible error. Full diagnostic history (the
+-- step-by-step RAISE NOTICE script used to pin this down, and the run
+-- that finally verified cleanly) is kept at
+-- docs/engineering/sql/019_diagnostic_with_progress_notices.sql.
+-- Post-application verification: stripe_event_created (timestamptz)
+-- confirmed present on public.subscriptions; process_stripe_webhook_event
+-- confirmed to have exactly one 9-argument overload including
+-- p_stripe_event_created, with no 8-argument overload remaining.
 --
 -- Purpose: Stripe does not guarantee webhook delivery order (documented
 -- Stripe behaviour, not this app's assumption). process_stripe_webhook_event
@@ -171,5 +185,71 @@ revoke all on function public.process_stripe_webhook_event(
 grant execute on function public.process_stripe_webhook_event(
   text, uuid, text, text, text, text, timestamptz, boolean, timestamptz
 ) to service_role;
+
+-- Hard assertion: if either change above did not actually take hold in
+-- this transaction, raise a real, visible exception rather than silently
+-- reaching COMMIT with nothing changed. This is what makes this run
+-- self-diagnosing instead of relying on the SQL Editor's own "success"
+-- reporting, which is exactly what gave a false positive twice before.
+do $$
+declare
+  v_column_exists boolean;
+  v_old_fn_count integer;
+  v_new_fn_count integer;
+begin
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'subscriptions'
+      and column_name = 'stripe_event_created'
+  ) into v_column_exists;
+
+  if not v_column_exists then
+    raise exception 'MIGRATION 019 VERIFICATION FAILED: public.subscriptions.stripe_event_created does not exist after ALTER TABLE';
+  end if;
+
+  select count(*) into v_old_fn_count
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname = 'process_stripe_webhook_event'
+    and p.pronargs = 8;
+
+  if v_old_fn_count <> 0 then
+    raise exception 'MIGRATION 019 VERIFICATION FAILED: the old 8-argument process_stripe_webhook_event overload still exists (% found) after DROP FUNCTION', v_old_fn_count;
+  end if;
+
+  select count(*) into v_new_fn_count
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.proname = 'process_stripe_webhook_event'
+    and p.pronargs = 9;
+
+  if v_new_fn_count <> 1 then
+    raise exception 'MIGRATION 019 VERIFICATION FAILED: expected exactly 1 nine-argument process_stripe_webhook_event overload, found %', v_new_fn_count;
+  end if;
+
+  raise notice 'MIGRATION 019 VERIFICATION PASSED: column exists, exactly one 9-argument overload exists, 0 eight-argument overloads remain';
+end $$;
+
+-- Informational verification output — visible in the SQL Editor's results
+-- pane for this run, in addition to the hard assertion above. Run again
+-- any time after COMMIT to re-confirm from a fresh query.
+select column_name, data_type, is_nullable, column_default
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'subscriptions'
+  and column_name = 'stripe_event_created';
+
+select
+  p.pronargs as arg_count,
+  pg_get_function_identity_arguments(p.oid) as identity_arguments,
+  pg_get_function_arguments(p.oid) as arguments_with_defaults
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname = 'process_stripe_webhook_event'
+order by p.pronargs;
 
 commit;
