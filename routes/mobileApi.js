@@ -10,12 +10,14 @@
 // scope ("existing query logic... fully reusable; only the route layer
 // wrapping them needs a mobile-appropriate variant").
 const express = require("express");
-const { requireAuthApi } = require("../middleware/requireAuthApi");
+const { requireAuthApi, verifyBearerToken } = require("../middleware/requireAuthApi");
 const { requireEntitlement } = require("../middleware/requireEntitlement");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("../database/contacts");
 const { getSubscriptionByHouseholdId } = require("../database/billing");
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
 const { markActivationVerified } = require("../database/households");
+const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
+const { buildUserScopedClient } = require("../services/supabaseClients");
 const { normaliseNumber } = require("../services/phone");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 
@@ -28,6 +30,62 @@ const router = express.Router();
 // and break signature verification. Scoping here means mount order
 // elsewhere in server.js can never introduce that hazard.
 router.use(express.json());
+
+// POST /api/v1/me/bootstrap
+//
+// The mobile app authenticates directly against Supabase (signUp/
+// signInWithPassword/updateUser after a recovery flow — see
+// docs/mobile-app/APP_DECISION_005), never through the web app's own
+// /register, /login, or /reset-password-complete Express routes. Those
+// three web routes are the ONLY places ensureHouseholdAndRole() has ever
+// run — a mobile client bypassing them entirely would leave every new
+// customer with a genuinely valid Supabase session but no households/
+// user_roles row at all, and every other /api/v1 route (gated by
+// requireAuthApi, which requires a household to already exist) would
+// 401 with no_household forever. This route exists specifically to
+// close that gap: call it once, right after the app establishes a
+// session (post-registration-confirmation, post-login, post-password-
+// reset), before calling anything else.
+//
+// Deliberately NOT gated by requireAuthApi — that middleware requires a
+// household to already exist, which is exactly the chicken-and-egg
+// problem this route solves. Uses verifyBearerToken (token validity
+// only) instead, then builds a user-scoped client from the access +
+// refresh token pair the app sends, exactly mirroring how server.js's
+// /login and /reset-password-complete already do this
+// (buildUserScopedClient + setSession + ensureHouseholdAndRole).
+// Idempotent — a no-op for a customer who already has a household.
+router.post("/api/v1/me/bootstrap", async (req, res) => {
+  const verified = await verifyBearerToken(req);
+
+  if (!verified) {
+    return res.status(401).json({ error: "unauthenticated" });
+  }
+
+  const { refresh_token } = req.body;
+
+  if (!refresh_token) {
+    return res.status(400).json({ error: "invalid_input", message: "refresh_token is required" });
+  }
+
+  try {
+    const userClient = buildUserScopedClient();
+    const { error: sessionError } = await userClient.auth.setSession({
+      access_token: verified.token,
+      refresh_token,
+    });
+
+    if (sessionError) {
+      return res.status(401).json({ error: "unauthenticated" });
+    }
+
+    await ensureHouseholdAndRole(userClient, verified.userId, verified.email, "[MOBILE BOOTSTRAP]");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("MOBILE BOOTSTRAP ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
 
 // GET /api/v1/me/dashboard
 //

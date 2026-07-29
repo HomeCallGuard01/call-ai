@@ -16,6 +16,7 @@ const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./databa
 const { getCallsToday, getRecentCalls, logCall, toClientCall } = require("./database/calls");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
+const { buildUserScopedClient } = require("./services/supabaseClients");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const mobileApiRoutes = require("./routes/mobileApi");
@@ -571,17 +572,11 @@ app.delete("/contacts/:id", requireAuth, requireEntitlement, async (req, res) =>
 });
 
 // AUTH HELPERS
-
-// Builds a Supabase client scoped to one specific user's own session —
-// never the shared `supabase` instance above, and never the service-role
-// key. Used anywhere a request needs to act as that user under RLS.
-function buildUserScopedClient() {
-  return createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
+//
+// buildUserScopedClient is imported from services/supabaseClients.js
+// (shared with routes/mobileApi.js's /api/v1/me/bootstrap, which needs
+// the exact same "act as this one user under RLS" client) — see that
+// module for the implementation.
 
 // AUTH: REGISTER
 

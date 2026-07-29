@@ -18,32 +18,47 @@ const { getHouseholdByAuthUserId, getUserRole } = require("../database/household
 // access token it's given; a 401 here means "get a new access token and
 // retry," which the app's own Supabase client handles automatically on
 // every other call already.
-async function requireAuthApi(req, res, next) {
+// Verifies just the bearer token itself — no household requirement.
+// Extracted so /api/v1/me/bootstrap (routes/mobileApi.js) can use the
+// exact same token-verification logic without requiring a household to
+// already exist, which would be a chicken-and-egg problem for the one
+// endpoint whose entire job is to create that household in the first
+// place. Returns { userId, email } or null; never throws.
+async function verifyBearerToken(req) {
   const authHeader = req.headers.authorization || "";
   const [scheme, token] = authHeader.split(" ");
 
   if (scheme !== "Bearer" || !token) {
-    return res.status(401).json({ error: "unauthenticated" });
+    return null;
   }
 
   const { data: userData, error } = await supabase.auth.getUser(token);
 
   if (error || !userData?.user) {
+    return null;
+  }
+
+  return { userId: userData.user.id, email: userData.user.email, token };
+}
+
+async function requireAuthApi(req, res, next) {
+  const verified = await verifyBearerToken(req);
+
+  if (!verified) {
     return res.status(401).json({ error: "unauthenticated" });
   }
 
-  const userId = userData.user.id;
-  const household = await getHouseholdByAuthUserId(userId);
+  const household = await getHouseholdByAuthUserId(verified.userId);
 
   if (!household) {
     return res.status(401).json({ error: "no_household" });
   }
 
   req.household = household;
-  req.authUserId = userId;
-  req.role = await getUserRole(userId);
+  req.authUserId = verified.userId;
+  req.role = await getUserRole(verified.userId);
 
   next();
 }
 
-module.exports = { requireAuthApi };
+module.exports = { requireAuthApi, verifyBearerToken };
