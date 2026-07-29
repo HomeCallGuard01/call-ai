@@ -228,6 +228,27 @@ async function releaseHouseholdTwilioNumberImmediately(householdId) {
   return data || null;
 }
 
+// Mobile app Phase 2 (migration 021): marks the CUSTOMER's own call-
+// forwarding activation as verified, distinct from twilio_provisioning_
+// status (whether a number was successfully purchased server-side).
+// Idempotent — the RPC itself never overwrites an already-set timestamp,
+// see that migration's own comment. Returns the (possibly pre-existing)
+// verified timestamp.
+async function markActivationVerified(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("mark_household_activation_verified", {
+    p_household_id: householdId,
+  });
+
+  if (error) {
+    console.error("ACTIVATION VERIFIED MARK ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
 async function setUserRole(authUserId, role = "household") {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
@@ -268,6 +289,7 @@ module.exports = {
   cancelTwilioNumberPendingRelease,
   releaseHouseholdTwilioNumber,
   releaseHouseholdTwilioNumberImmediately,
+  markActivationVerified,
   setUserRole,
   getUserRole,
 };

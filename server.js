@@ -13,10 +13,12 @@ const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
+const { getCallsToday, getRecentCalls, logCall, toClientCall } = require("./database/calls");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
+const mobileApiRoutes = require("./routes/mobileApi");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
 // Fail fast and clearly in production rather than starting in a silently
@@ -98,6 +100,7 @@ app.use(express.static("public"));
 // urlencoded parser above, which already no-ops on non-form content types.
 app.use(billingRoutes);
 app.use(adminRoutes);
+app.use(mobileApiRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -141,79 +144,6 @@ const openai = new OpenAI({
 
 function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
-}
-
-async function getCallsToday(householdId) {
-  if (!supabaseAdmin) return [];
-
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-
-  const { data, error } = await supabaseAdmin
-    .from("calls")
-    .select("*")
-    .eq("household_id", householdId)
-    .gte("created_at", startOfToday.toISOString());
-
-  if (error) {
-    console.error("SUPABASE CALLS READ ERROR:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-async function getRecentCalls(householdId, limit) {
-  if (!supabaseAdmin) return [];
-
-  const { data, error } = await supabaseAdmin
-    .from("calls")
-    .select("*")
-    .eq("household_id", householdId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("SUPABASE CALLS READ ERROR:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-async function logCall({ callSid, number, status, result, aiModel, processingTimeMs, householdId }) {
-  if (!supabaseAdmin) {
-    console.error("SUPABASE CALL LOG ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
-    return;
-  }
-
-  const { error } = await supabaseAdmin
-    .from("calls")
-    .upsert(
-      {
-        call_sid: callSid,
-        number,
-        status,
-        result,
-        ai_model: aiModel,
-        processing_time_ms: processingTimeMs,
-        household_id: householdId,
-      },
-      { onConflict: "call_sid", ignoreDuplicates: true }
-    );
-
-  if (error) {
-    console.error("SUPABASE CALL LOG ERROR:", error);
-  }
-}
-
-function toClientCall(call) {
-  return {
-    number: call.number,
-    status: call.status,
-    result: call.result,
-    time: call.created_at,
-  };
 }
 
 // VOICE CALL ENTRY

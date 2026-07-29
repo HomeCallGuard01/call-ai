@@ -1,0 +1,192 @@
+// Mobile app API surface (Phase 0/2 backend work, docs/mobile-app/
+// APP_DECISION_005). Namespaced under /api/v1 so mobile traffic is
+// trivially distinguishable from the web app's page/route traffic in
+// logs and metrics (a gap explicitly flagged in CODEBASE_AUDIT.md).
+//
+// Deliberately thin: every route here calls the exact same
+// database/*.js functions the web app already uses. No new business
+// logic is introduced — only a bearer-token-authenticated, JSON-native
+// route layer suited to a mobile client, per APP_DECISION_005's stated
+// scope ("existing query logic... fully reusable; only the route layer
+// wrapping them needs a mobile-appropriate variant").
+const express = require("express");
+const { requireAuthApi } = require("../middleware/requireAuthApi");
+const { requireEntitlement } = require("../middleware/requireEntitlement");
+const { getContacts, insertContacts, updateContact, deleteContact } = require("../database/contacts");
+const { getSubscriptionByHouseholdId } = require("../database/billing");
+const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
+const { markActivationVerified } = require("../database/households");
+const { normaliseNumber } = require("../services/phone");
+const { isCallWithinVerificationWindow } = require("../services/activationVerification");
+
+const router = express.Router();
+
+// Scoped to this router only, never applied globally — routes/billing.js's
+// /billing/webhook route deliberately parses its own raw body for Stripe
+// signature verification (also application/json content-type); a global
+// JSON parser mounted ahead of it would silently consume that raw body
+// and break signature verification. Scoping here means mount order
+// elsewhere in server.js can never introduce that hazard.
+router.use(express.json());
+
+// GET /api/v1/me/dashboard
+//
+// requireEntitlement (not requireAuthApi alone) deliberately mirrors
+// /dashboard-data's existing gating exactly — a 402 { error: "not_entitled" }
+// is how the web app already signals "show the subscribe flow instead,"
+// and the mobile app's B1/B2 screens are designed against that same
+// contract (APP_VISUAL_SPECIFICATION.md) rather than inventing a new one.
+router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (req, res) => {
+  try {
+    const [callsToday, recentCalls, contacts, subscription] = await Promise.all([
+      getCallsToday(req.household.id),
+      getRecentCalls(req.household.id, 30),
+      getContacts(req.household.id),
+      getSubscriptionByHouseholdId(req.household.id),
+    ]);
+
+    // Same membership-status derivation as /dashboard-data (server.js) —
+    // always from the real subscriptions/entitlements rows the webhook
+    // wrote, never client-supplied. Kept in sync deliberately rather than
+    // extracted, since the two call sites' surrounding context differs
+    // enough (req.entitlement shape, response shape) that a shared
+    // function would need as much branching as just repeating the small
+    // derivation itself — revisit if a third call site ever needs this.
+    let membershipStatus = "active";
+    if (req.entitlement.entitlement_type === "free_trial") {
+      membershipStatus = "trial";
+    } else if (subscription && subscription.status === "past_due") {
+      membershipStatus = "payment_issue";
+    } else if (subscription && subscription.cancel_at_period_end) {
+      membershipStatus = "cancelled";
+    }
+
+    const activationRecentlyConfirmedByACall = isCallWithinVerificationWindow(recentCalls[0]);
+
+    res.json({
+      protection: {
+        twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
+        activationVerifiedAt: req.household.activation_verified_at || null,
+        // Surfaced so the app can offer "check now" even if the customer
+        // hasn't hit /api/v1/activation/verify yet themselves — see that
+        // route below for what actually persists this.
+        recentUnconfirmedCallSeen: activationRecentlyConfirmedByACall && !req.household.activation_verified_at,
+      },
+      membership: {
+        planName: "Home Call Guard Standard",
+        priceLabel: "£4.99 per month",
+        status: membershipStatus,
+        nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
+        accessUntil: subscription ? subscription.current_period_end : null,
+        trialEndDate: req.entitlement.entitlement_type === "free_trial" ? req.entitlement.ends_at : null,
+        manageable: !!(req.household.stripe_customer_id && subscription),
+      },
+      contacts: contacts.map(c => ({ id: c.id, name: c.name, number: c.number })),
+      activity: recentCalls.map(toClientCall),
+      stats: {
+        callsScreened: callsToday.filter(call => call.status === "Unknown").length,
+        suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
+        trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
+      },
+    });
+  } catch (err) {
+    console.error("MOBILE DASHBOARD ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /api/v1/activation/verify
+//
+// Checks for a real routed call within the verification window and, if
+// found, persists activation_verified_at (idempotent — see migration 021
+// and markActivationVerified's own comment). Does not require an active
+// entitlement — a customer should be able to verify activation as part
+// of setup even in the narrow window before/around their subscription
+// taking effect, and the check itself reveals nothing entitlement-gated.
+router.post("/api/v1/activation/verify", requireAuthApi, async (req, res) => {
+  try {
+    const recentCalls = await getRecentCalls(req.household.id, 1);
+    const verified = isCallWithinVerificationWindow(recentCalls[0]);
+
+    if (!verified) {
+      return res.json({ verified: false });
+    }
+
+    const verifiedAt = await markActivationVerified(req.household.id);
+    res.json({ verified: true, verifiedAt });
+  } catch (err) {
+    console.error("MOBILE ACTIVATION VERIFY ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /api/v1/contacts, PUT/DELETE /api/v1/contacts/:id
+//
+// Same validation and database/contacts.js calls as the existing web
+// /contacts routes (server.js) — deliberately not extracted into a
+// shared handler, since the two Express apps' surrounding
+// request/response shapes already match closely enough that a shared
+// function would mostly just be indirection; the actual data operations
+// (getContacts/insertContacts/updateContact/deleteContact) are the real
+// reused logic, and that reuse is already complete.
+router.post("/api/v1/contacts", requireAuthApi, requireEntitlement, async (req, res) => {
+  try {
+    const name = (req.body.name || "").trim();
+    const number = normaliseNumber(req.body.number);
+
+    if (!name || number.length !== 10) {
+      return res.status(400).json({ error: "invalid_input" });
+    }
+
+    const existing = await getContacts(req.household.id);
+    if (existing.some(c => normaliseNumber(c.number) === number)) {
+      return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
+    }
+
+    const [saved] = await insertContacts(req.household.id, [{ name, number, customer_id: null }]);
+    res.status(201).json({ id: saved.id, name: saved.name, number: saved.number });
+  } catch (err) {
+    console.error("MOBILE ADD CONTACT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+router.put("/api/v1/contacts/:id", requireAuthApi, requireEntitlement, async (req, res) => {
+  try {
+    const name = (req.body.name || "").trim();
+    const number = normaliseNumber(req.body.number);
+
+    if (!name || number.length !== 10) {
+      return res.status(400).json({ error: "invalid_input" });
+    }
+
+    const existing = await getContacts(req.household.id);
+    if (existing.some(c => c.id !== req.params.id && normaliseNumber(c.number) === number)) {
+      return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
+    }
+
+    const updated = await updateContact(req.household.id, req.params.id, { name, number });
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    res.json({ id: updated[0].id, name: updated[0].name, number: updated[0].number });
+  } catch (err) {
+    console.error("MOBILE UPDATE CONTACT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+router.delete("/api/v1/contacts/:id", requireAuthApi, requireEntitlement, async (req, res) => {
+  try {
+    const deleted = await deleteContact(req.household.id, req.params.id);
+    if (deleted.length === 0) {
+      return res.status(404).json({ error: "not_found" });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("MOBILE DELETE CONTACT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+module.exports = router;

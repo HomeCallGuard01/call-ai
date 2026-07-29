@@ -664,6 +664,54 @@ async function main() {
   }
   assert(lifecycleRpcDeniedToAuthenticated, 'authenticated role cannot execute release_household_twilio_number_immediately directly');
 
+  console.log('\nRunning smoke checks on migration 021 (household activation verified)...\n');
+
+  await db.exec(`reset role;`);
+  const userId4 = '44444444-4444-4444-4444-444444444444';
+  await db.query(`insert into auth.users (id, email) values ($1, $2)`, [userId4, 'd@example.com']);
+  const { rows: [household4] } = await db.query(
+    `insert into public.households (auth_user_id, email) values ($1, $2) returning id`,
+    [userId4, 'd@example.com']
+  );
+  const householdId4 = household4.id;
+
+  await asServiceRole(db);
+
+  const { rows: [firstActivationMark] } = await db.query(
+    `select public.mark_household_activation_verified($1) as ts`,
+    [householdId4]
+  );
+  assert(!!firstActivationMark.ts, 'the first verification call sets activation_verified_at');
+
+  const { rows: [secondActivationMark] } = await db.query(
+    `select public.mark_household_activation_verified($1) as ts`,
+    [householdId4]
+  );
+  assert(
+    secondActivationMark.ts.getTime() === firstActivationMark.ts.getTime(),
+    'a second verification call is idempotent — returns the original timestamp, does not overwrite it with a later one'
+  );
+
+  let raisedForMissingHousehold = false;
+  try {
+    await db.query(
+      `select public.mark_household_activation_verified($1)`,
+      ['00000000-0000-0000-0000-000000000000']
+    );
+  } catch {
+    raisedForMissingHousehold = true;
+  }
+  assert(raisedForMissingHousehold, 'mark_household_activation_verified raises for a nonexistent household');
+
+  await asAuthUser(db, userId4, 'd@example.com');
+  let activationRpcDeniedToAuthenticated = false;
+  try {
+    await db.query(`select public.mark_household_activation_verified($1)`, [householdId4]);
+  } catch {
+    activationRpcDeniedToAuthenticated = true;
+  }
+  assert(activationRpcDeniedToAuthenticated, 'authenticated role cannot execute mark_household_activation_verified directly');
+
   await db.close();
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
