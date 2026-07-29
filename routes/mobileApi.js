@@ -13,15 +13,29 @@ const express = require("express");
 const { requireAuthApi, verifyBearerToken } = require("../middleware/requireAuthApi");
 const { requireEntitlement } = require("../middleware/requireEntitlement");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("../database/contacts");
-const { getSubscriptionByHouseholdId } = require("../database/billing");
+const { getSubscriptionByHouseholdId, getActiveEntitlement } = require("../database/billing");
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
 const { markActivationVerified } = require("../database/households");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { buildUserScopedClient } = require("../services/supabaseClients");
 const { normaliseNumber } = require("../services/phone");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
+const { stripe } = require("../services/stripeClient");
+const {
+  hasQualifyingStripeSubscription,
+  findReusableOpenCheckoutSession,
+  buildCheckoutSessionParams,
+  resolveStripeCustomerId,
+} = require("../services/checkoutSession");
 
 const router = express.Router();
+
+// Must match app.json's "scheme" in mobile/ — the in-app browser session
+// (Expo WebBrowser.openAuthSessionAsync) detects a redirect to this
+// custom scheme and closes itself, returning control to the app; the web
+// route's equivalent redirects to a real page (routes/billing.js).
+const MOBILE_CHECKOUT_SUCCESS_URL = "homecallguard://setup/subscribe?checkout=success";
+const MOBILE_CHECKOUT_CANCEL_URL = "homecallguard://setup/subscribe?checkout=cancelled";
 
 // Scoped to this router only, never applied globally — routes/billing.js's
 // /billing/webhook route deliberately parses its own raw body for Stripe
@@ -30,6 +44,83 @@ const router = express.Router();
 // and break signature verification. Scoping here means mount order
 // elsewhere in server.js can never introduce that hazard.
 router.use(express.json());
+
+// POST /api/v1/billing/create-checkout-session
+//
+// Mobile equivalent of routes/billing.js's /billing/create-checkout-session
+// — same exception-list gating (requireAuthApi only, deliberately NOT
+// requireEntitlement, since an unsubscribed household must be able to
+// reach this to ever become subscribed), same duplicate-subscription
+// guards (services/checkoutSession.js, shared with the web route so
+// neither can silently drift from the 2026-07-18-incident fix), same
+// idempotency-key protection. Differs only in: JSON response shape
+// ({ url } or a structured error) instead of a redirect, and deep-link
+// success/cancel URLs instead of web dashboard URLs — the app opens the
+// returned url in an in-app browser session (Expo WebBrowser) and
+// detects the redirect back to homecallguard:// to close it.
+router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (req, res) => {
+  if (!stripe) {
+    console.error("MOBILE CHECKOUT SESSION ERROR: STRIPE_SECRET_KEY not configured");
+    return res.status(500).json({ error: "not_configured" });
+  }
+
+  if (!process.env.STRIPE_PRICE_ID) {
+    console.error("MOBILE CHECKOUT SESSION ERROR: STRIPE_PRICE_ID not configured");
+    return res.status(500).json({ error: "not_configured" });
+  }
+
+  try {
+    const existingEntitlement = await getActiveEntitlement(req.household.id);
+    if (existingEntitlement) {
+      return res.status(409).json({ error: "already_active" });
+    }
+
+    const stripeCustomerId = await resolveStripeCustomerId(req.household, req.authUserId);
+
+    const existingSubscriptions = await stripe.subscriptions.list({
+      customer: stripeCustomerId,
+      status: "all",
+      limit: 10,
+    });
+
+    if (hasQualifyingStripeSubscription(existingSubscriptions.data)) {
+      return res.status(409).json({ error: "already_active" });
+    }
+
+    const openCheckoutSessions = await stripe.checkout.sessions.list({
+      customer: stripeCustomerId,
+      status: "open",
+      limit: 10,
+    });
+
+    const reusableSession = findReusableOpenCheckoutSession(openCheckoutSessions.data);
+    if (reusableSession) {
+      if (reusableSession.url) {
+        return res.json({ url: reusableSession.url });
+      }
+      return res.status(409).json({ error: "pending" });
+    }
+
+    const fiveMinuteBucket = Math.floor(Date.now() / (5 * 60 * 1000));
+    const idempotencyKey = `mobile-checkout:${req.household.id}:${fiveMinuteBucket}`;
+
+    const session = await stripe.checkout.sessions.create(
+      buildCheckoutSessionParams({
+        customer: stripeCustomerId,
+        priceId: process.env.STRIPE_PRICE_ID,
+        householdId: req.household.id,
+        successUrl: MOBILE_CHECKOUT_SUCCESS_URL,
+        cancelUrl: MOBILE_CHECKOUT_CANCEL_URL,
+      }),
+      { idempotencyKey }
+    );
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("MOBILE CHECKOUT SESSION ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
 
 // POST /api/v1/me/bootstrap
 //
