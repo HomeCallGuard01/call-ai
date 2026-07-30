@@ -145,6 +145,35 @@ there is no cron/job runner configured in this project today. Needs a
 daily Railway Cron Job (or equivalent) before the first cancellation's
 window elapses; a manual run is a fine stopgap until then.
 
+### Web dashboard has no real activation instructions — customer has no self-service way to learn their forwarding number
+
+Discovered during mobile app Phase 2 backend work (docs/mobile-app/),
+while building the equivalent mobile screen. `upload.html`'s setup
+checklist shows only a bare manual toggle ("I've set up call
+forwarding") with no number, code, or instructions anywhere — and by
+deliberate Stage 2 design, the Twilio number itself is never sent to
+any client (`GET /dashboard-data`'s own comment: "twilioNumber
+deliberately not included — never sent to the browser"). Investigated
+directly: no automated channel communicates this number to a real
+customer today either — no welcome email, no SMS (`Resend_API_Key`
+exists but is confirmed unused anywhere in this codebase). The number
+is visible only to admin/support staff via `admin.html`'s household
+search, implying the only path today is an undocumented, manual,
+human-mediated one.
+
+Net effect: **a real customer today has no self-service way to
+complete activation on the web dashboard at all.** The mobile app adds
+`GET /api/v1/activation/instructions` (routes/mobileApi.js,
+services/activationInstructions.js) to solve this for its own
+onboarding flow — a narrowly-scoped endpoint that generates the
+complete, ready-to-dial forwarding code server-side without exposing
+the raw number through any general-purpose endpoint. The web dashboard
+has no equivalent yet; it would need its own screen/copy consuming the
+same new endpoint (or an equivalent web route). Not fixed as part of
+mobile Phase 2, per explicit scope decision — recorded here as a
+genuine pre-existing gap worth a real fix, web-side, before or shortly
+after launch.
+
 ### Stripe Customer Portal not yet built
 
 Manage-subscription, cancel, and reactivate all currently require manual

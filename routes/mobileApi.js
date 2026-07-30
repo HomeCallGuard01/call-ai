@@ -41,6 +41,7 @@ const router = express.Router();
 // route's equivalent redirects to a real page (routes/billing.js).
 const MOBILE_CHECKOUT_SUCCESS_URL = "homecallguard://setup/subscribe?checkout=success";
 const MOBILE_CHECKOUT_CANCEL_URL = "homecallguard://setup/subscribe?checkout=cancelled";
+const MOBILE_PORTAL_RETURN_URL = "homecallguard://account/membership";
 
 // Scoped to this router only, never applied globally — routes/billing.js's
 // /billing/webhook route deliberately parses its own raw body for Stripe
@@ -123,6 +124,38 @@ router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (re
     res.json({ url: session.url });
   } catch (err) {
     console.error("MOBILE CHECKOUT SESSION ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /api/v1/billing/manage-membership
+//
+// Mobile equivalent of routes/billing.js's /billing/manage-membership —
+// same "no Stripe customer means nothing to manage" guard (complimentary/
+// founding/promotional/staff access), same Stripe Billing Portal session
+// creation. Differs only in: JSON { url } response instead of a
+// redirect, and a homecallguard:// return_url instead of the web
+// dashboard, matching D1's in-app-browser handoff
+// (APP_VISUAL_SPECIFICATION.md).
+router.post("/api/v1/billing/manage-membership", requireAuthApi, async (req, res) => {
+  if (!stripe) {
+    console.error("MOBILE PORTAL SESSION ERROR: STRIPE_SECRET_KEY not configured");
+    return res.status(500).json({ error: "not_configured" });
+  }
+
+  if (!req.household.stripe_customer_id) {
+    return res.status(409).json({ error: "not_manageable" });
+  }
+
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: req.household.stripe_customer_id,
+      return_url: MOBILE_PORTAL_RETURN_URL,
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("MOBILE PORTAL SESSION ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });
