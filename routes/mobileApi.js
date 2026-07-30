@@ -27,6 +27,11 @@ const {
   buildCheckoutSessionParams,
   resolveStripeCustomerId,
 } = require("../services/checkoutSession");
+const {
+  DEVICE_TYPES,
+  LANDLINE_PROVIDERS,
+  buildActivationInstructions,
+} = require("../services/activationInstructions");
 
 const router = express.Router();
 
@@ -240,6 +245,69 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     });
   } catch (err) {
     console.error("MOBILE DASHBOARD ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// GET /api/v1/activation/instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other
+//
+// The one deliberate, narrow exception to "the Twilio number is never
+// sent to any client" — added because B4 (activation instructions)
+// cannot function without the customer learning their forwarding
+// destination somehow, and no automated channel for that exists
+// anywhere else in this codebase (confirmed by investigation: no
+// welcome email, no SMS, nothing — see the conversation record this
+// endpoint was approved in). GET /api/v1/me/dashboard and the existing
+// web /dashboard-data route are both completely unchanged by this;
+// this route's response never includes a bare `twilioNumber` field —
+// only the fully-formed, ready-to-dial code and plain-language framing
+// (services/activationInstructions.js generates it server-side so
+// per-provider formatting/caveats — Virgin's extra zero, Sky/Virgin's
+// preliminary 150 call — live in exactly one place, never duplicated in
+// client code).
+router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement, async (req, res) => {
+  const { deviceType, provider } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  if (!req.household.twilio_number) {
+    // Provisioning hasn't completed yet (or failed) — a real, honest
+    // state the app should show as "still setting up," never a bare
+    // error. Matches twilio_provisioning_status already surfaced on
+    // GET /api/v1/me/dashboard, which the app checks before ever
+    // reaching this screen in the normal flow.
+    return res.status(409).json({ error: "not_provisioned" });
+  }
+
+  try {
+    const instructions = buildActivationInstructions({
+      twilioNumber: req.household.twilio_number,
+      deviceType,
+      provider,
+    });
+
+    res.json({
+      code: instructions.code,
+      cancelCode: instructions.cancelCode,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+      explanation: "This is Home Call Guard's protection number — you'll forward your calls to it now.",
+    });
+  } catch (err) {
+    console.error("MOBILE ACTIVATION INSTRUCTIONS ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });
