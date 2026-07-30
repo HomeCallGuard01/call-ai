@@ -38,6 +38,7 @@ export default function Welcome() {
           setPageIndex(index);
         }}
         style={styles.carousel}
+        contentContainerStyle={styles.carouselContent}
       >
         {PANELS.map((panel, index) => (
           <View key={index} style={[styles.panel, { width }]}>
@@ -67,7 +68,26 @@ const styles = StyleSheet.create({
   carousel: {
     flex: 1,
   },
+  // Without this, ScrollView's inner content collapses to its own
+  // natural content height instead of filling the ScrollView's flex:1
+  // container — leaving each panel's justifyContent: "center" with
+  // nothing to actually center within (content stuck at the top, with a
+  // large dead gap below it instead). Found via real visual testing,
+  // not something a type-check can catch.
+  // flexGrow on this row-direction container only grows its main axis
+  // (width) — it does NOT stretch height. alignItems: "stretch" (the
+  // default, restated for clarity) makes each row *child* (each panel)
+  // stretch to the container's cross-axis size, but the container itself
+  // still needs an explicit height for that to mean anything — height:
+  // "100%" resolves against the ScrollView's own measured height, which
+  // is the actual, correct fix (confirmed by re-inspecting the rendered
+  // DOM after the flexGrow-only attempt changed nothing visible).
+  carouselContent: {
+    flexGrow: 1,
+    height: "100%",
+  },
   panel: {
+    height: "100%",
     padding: spacing.lg,
     justifyContent: "center",
   },

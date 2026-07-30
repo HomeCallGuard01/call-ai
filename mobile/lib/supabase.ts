@@ -7,6 +7,7 @@
 // the backend's new /api/v1 routes (see api.ts), verified there by
 // middleware/requireAuthApi.js — the same Supabase project, two different
 // client-auth models for two different client types.
+import { Platform } from "react-native";
 import { createClient, type SupportedStorage } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 
@@ -14,11 +15,28 @@ import * as SecureStore from "expo-secure-store";
 // which is why a small adapter is needed — Supabase's client expects a
 // storage interface shaped like localStorage/AsyncStorage
 // (getItem/setItem/removeItem, each returning/accepting a Promise here).
-const SecureStoreAdapter: SupportedStorage = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
-};
+//
+// expo-secure-store has genuinely no web implementation at all (confirmed:
+// the package ships no SecureStore.web.js) — web was never a target
+// platform for this product, but react-native-web is now a real
+// dependency (added for local visual QA via a browser), so a web branch
+// is needed for the app to run there at all rather than crashing on
+// first launch. localStorage is the standard, Supabase-documented
+// fallback for exactly this combination — not a security-relevant choice
+// for this app in practice, since iOS/Android (the only real distribution
+// targets) always use the real Keychain/EncryptedSharedPreferences-backed
+// SecureStore, never this branch.
+const SecureStoreAdapter: SupportedStorage = Platform.OS === "web"
+  ? {
+      getItem: async (key: string) => globalThis.localStorage?.getItem(key) ?? null,
+      setItem: async (key: string, value: string) => globalThis.localStorage?.setItem(key, value),
+      removeItem: async (key: string) => globalThis.localStorage?.removeItem(key),
+    }
+  : {
+      getItem: (key: string) => SecureStore.getItemAsync(key),
+      setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
+      removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+    };
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
