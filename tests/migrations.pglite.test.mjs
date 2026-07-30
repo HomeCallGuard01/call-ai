@@ -70,14 +70,11 @@ grant usage on schema auth to service_role;
 grant select, insert, update, delete on auth.users to service_role;
 
 -- public.contacts was created via the Supabase Table Editor, not a
--- tracked migration (see 009_service_role_minimum_app_privileges.sql's
--- own comment on this) — 003_add_household_id_ownership.sql alters it.
--- Stub just enough of it here for the migration chain to apply.
-create table public.contacts (
-  id uuid primary key default gen_random_uuid(),
-  household_id uuid,
-  created_at timestamptz not null default now()
-);
+-- tracked migration — this used to require a stub table here. As of
+-- docs/engineering/MIGRATION_RECOVERY_PLAN.md,
+-- 000_baseline_contacts_table.sql now creates the real, authoritative
+-- table (captured by read-only introspection of production), so no stub
+-- is needed: the migration chain itself now provides it.
 `;
 
 // Plain SET (not SET LOCAL) is used deliberately here, not as a stylistic
@@ -124,16 +121,16 @@ async function main() {
   console.log('Bootstrapping auth/role shim...');
   await db.exec(BOOTSTRAP_SQL);
 
-  // 005_household_rls.sql is explicitly frozen in its own header ("STATUS:
-  // REVIEWED DRAFT — NOT APPLIED... Do not run against production until
-  // explicitly re-approved") and was superseded for contacts by
-  // 008_household_isolation_contacts.sql, which creates the same policy
-  // names. Applying both would collide, and 005 was never actually run
-  // against the real database, so skip it here to match reality.
-  const SKIP = new Set(['005_household_rls.sql']);
-
+  // 005_household_rls.sql used to need a name-based skip here (frozen,
+  // superseded for contacts by 008_household_isolation_contacts.sql —
+  // applying both collides on policy names). As of
+  // docs/engineering/MIGRATION_RECOVERY_PLAN.md it's been physically
+  // relocated to supabase/migrations/_superseded/, along with the 019 and
+  // 021 rollback scripts (supabase/migrations/_rollbacks/), so a plain
+  // readdir of this directory no longer sees any of them — no filename
+  // skip-list needed to match reality anymore.
   const files = (await readdir(migrationsDir))
-    .filter((f) => f.endsWith('.sql') && !SKIP.has(f))
+    .filter((f) => f.endsWith('.sql'))
     .sort();
 
   for (const file of files) {
