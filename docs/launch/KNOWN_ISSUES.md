@@ -92,7 +92,7 @@ should be added here.
 
 ## Severity 2 — should fix before or very shortly after launch
 
-### Migration 021 (mobile activation verification) is not applied to the real database
+### There is no staging/sandbox Supabase environment at all — migration 021 cannot be safely applied anywhere yet
 
 Discovered during the RC1 mobile handover QA pass (`docs/mobile-app/
 RC1_HANDOVER.md` §6/§10). `supabase/migrations/021_household_
@@ -108,11 +108,34 @@ column as a plain JS property access, so it just stays `null` — Home
 shows "Setting up" forever, even after real activation). `POST /api/v1/
 activation/verify` does not degrade gracefully: it will throw a runtime
 500 the first time it detects a real qualifying call and tries to call
-the missing RPC. Given the wider project's own precedent immediately
-below (migration 016 silently reverting after being verified once),
-apply this migration and then independently re-verify it live —
-re-running the deploy step alone is not sufficient evidence it's
-actually in place.
+the missing RPC.
+
+**Attempting the fix surfaced a bigger, prior gap.** Instructed to apply
+the migration to "the approved sandbox/QA environment, not production,"
+investigation before applying anything found there is only **one**
+Supabase project anywhere in this codebase — the same one project used
+for both live customers and the QA sandbox household's test data. No
+Supabase CLI, no config, no second project reference exists anywhere.
+That project is production, regardless of which row a test touches, so
+per instruction **no DDL was applied**. A full staging-environment plan
+(new project, CLI-based migration deployment, env vars, synthetic
+fixtures, verification approach, staging-to-production promotion
+process, anti-cross-contamination safeguards, backup/rollback) is at
+`docs/engineering/STAGING_ENVIRONMENT_PLAN.md` — proposed only, nothing
+in it executed yet.
+
+Directly relevant precedent for why this matters, from the very next
+item below and from `docs/engineering/016_017_migration_incident_notes.md`:
+manual SQL Editor application on this project has already caused two
+independently-confirmed silent failures (migration 019's own header
+describes two earlier attempts each reporting a successful commit
+without the change actually existing afterwards; migration 016 was
+independently verified working, then found silently reverted). Given
+that history, this migration should not be applied to production via
+the same manual mechanism at all — it should go through a genuine
+staging environment and a scripted, repeatable deployment process
+first, then be independently re-verified live on production afterward,
+not just re-run and trusted.
 
 ### UK number purchase requires a registered Twilio Address
 

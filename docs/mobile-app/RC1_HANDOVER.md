@@ -173,6 +173,12 @@ No existing web route or endpoint was modified. `GET /dashboard-data` (web) and 
 
 No other schema changes were made or are pending from this phase.
 
+**Update, 2026-07-30 — attempted fix, found a bigger blocker underneath.** Per explicit instruction, migration 021 was to be applied to "the approved sandbox/QA Supabase environment, not production" and verified there. Investigation before applying anything found there **is no separate sandbox/QA Supabase project** — only one Supabase project exists anywhere in this codebase, used for both live customers and the QA sandbox household's test data (confirmed: single `SUPABASE_URL` referenced everywhere, no Supabase CLI/config, no second project ref anywhere). That project is production, regardless of which row a test happens to touch.
+
+Per instruction, **no DDL was applied anywhere** once this was found. Full detail and an 8-point staging-environment implementation plan (new project, migration deployment sequence, env vars, synthetic fixtures, verification approach, promotion process, anti-cross-contamination safeguards, backup/rollback) are in `docs/engineering/STAGING_ENVIRONMENT_PLAN.md`. That plan is proposed only — nothing in it has been executed.
+
+**Migration 021 remains unapplied everywhere.** The lack of a staging environment is now the actual blocking dependency ahead of the original fix — see the updated §12.
+
 ---
 
 ## 8. Installation instructions
@@ -286,7 +292,7 @@ Given there is no RN-side automated test suite, this is the primary release gate
 
 Ordered by severity:
 
-1. **Migration 021 is not applied to the real database.** Must be applied and independently re-verified (both the column and the RPC, live, not just re-running the deploy) before any real activation-verification testing — otherwise B5's success path will 500 for the first real tester who completes it. Given the wider project's own precedent of a previously-verified migration silently reverting, verify after applying, don't just trust the deploy step.
+1. **There is no staging/sandbox Supabase environment, and migration 021 is still unapplied everywhere.** Attempting the original fix surfaced that the project's only Supabase database is production — there is no safe place to apply or test schema changes at all today. See `docs/engineering/STAGING_ENVIRONMENT_PLAN.md` for the proposed fix (new project, deployment process, verification approach); none of it has been executed yet. Until a staging project exists, migration 021 cannot be applied anywhere, and B5's real success path will 500 for the first tester who completes it, whenever this eventually ships.
 2. **No real simulator/device run has happened yet.** Everything in this handover was verified via a web-preview substitute. SecureStore, deep links, the in-app browser Stripe handoff, and native gesture/accessibility behavior are all unverified on a real iOS/Android runtime.
 3. **Twilio UK number purchase is blocked on a registered Address** (inherited, Severity 1 in the wider project's own known-issues doc) — without this, B3/B4 have nothing real to activate for a genuinely new signup, only for households that already have a number (like the QA fixture).
 4. **Store-readiness is at zero**: no EAS config, no developer accounts, placeholder icons/bundle ID, no real data-safety/privacy answers prepared. None of this blocks an *internal* beta via direct device installs, but all of it blocks TestFlight/Play distribution.
