@@ -7,14 +7,15 @@
 import { useState } from "react";
 import { Text, View, Pressable, StyleSheet } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 import type { DeviceType, LandlineProvider } from "../../lib/types";
 
-const DEVICE_OPTIONS: { type: DeviceType; label: string }[] = [
-  { type: "iphone", label: "iPhone" },
-  { type: "android", label: "Android phone" },
-  { type: "landline", label: "Landline" },
+const DEVICE_OPTIONS: { type: DeviceType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { type: "iphone", label: "iPhone", icon: "logo-apple" },
+  { type: "android", label: "Android phone", icon: "logo-android" },
+  { type: "landline", label: "Landline", icon: "call" },
 ];
 
 const LANDLINE_PROVIDERS: { provider: LandlineProvider; label: string }[] = [
@@ -64,13 +65,14 @@ export default function DevicePicker() {
     <Screen>
       <Text style={styles.title}>What are we setting up protection on?</Text>
       <View style={styles.cards}>
-        {DEVICE_OPTIONS.map(({ type, label }) => (
+        {DEVICE_OPTIONS.map(({ type, label, icon }) => (
           <Pressable
             key={type}
             onPress={() => selectDevice(type)}
             style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
             accessibilityRole="button"
           >
+            <Ionicons name={icon} size={32} color={colors.accent} style={styles.cardIcon} />
             <Text style={styles.cardText}>{label}</Text>
           </Pressable>
         ))}
@@ -100,6 +102,9 @@ const styles = StyleSheet.create({
   },
   cardPressed: {
     borderColor: colors.accent,
+  },
+  cardIcon: {
+    marginBottom: spacing.xs,
   },
   cardText: {
     ...typography.title,
