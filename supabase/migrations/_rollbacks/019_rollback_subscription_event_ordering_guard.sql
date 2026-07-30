@@ -4,6 +4,11 @@
 -- alongside 019 for reference only. Only run this if 019 needs to be
 -- reversed after being applied to the real Supabase project.
 --
+-- RELOCATED (docs/engineering/MIGRATION_RECOVERY_PLAN.md): moved out of
+-- supabase/migrations/ so it can never be swept up by a mechanical
+-- `supabase db push`/`for f in *.sql` run — structural version of the
+-- "reference only" note above, not a change of intent.
+--
 -- Reverts process_stripe_webhook_event to 015's exact 8-argument signature
 -- and behaviour (byte-for-byte the same function body as 015 defines).
 -- Does NOT drop the stripe_event_created column — dropping it would
