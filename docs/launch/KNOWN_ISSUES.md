@@ -92,6 +92,28 @@ should be added here.
 
 ## Severity 2 — should fix before or very shortly after launch
 
+### Migration 021 (mobile activation verification) is not applied to the real database
+
+Discovered during the RC1 mobile handover QA pass (`docs/mobile-app/
+RC1_HANDOVER.md` §6/§10). `supabase/migrations/021_household_
+activation_verified.sql` (adds `households.activation_verified_at` and
+the `mark_household_activation_verified` RPC) was validated against
+PGlite but never confirmed applied to the real Supabase project.
+Directly confirmed missing two ways: selecting the column by name
+errors with "column does not exist," and calling the RPC returns
+`PGRST202: Could not find the function ... in the schema cache`.
+
+`GET /api/v1/me/dashboard` degrades gracefully (reads the missing
+column as a plain JS property access, so it just stays `null` — Home
+shows "Setting up" forever, even after real activation). `POST /api/v1/
+activation/verify` does not degrade gracefully: it will throw a runtime
+500 the first time it detects a real qualifying call and tries to call
+the missing RPC. Given the wider project's own precedent immediately
+below (migration 016 silently reverting after being verified once),
+apply this migration and then independently re-verify it live —
+re-running the deploy step alone is not sufficient evidence it's
+actually in place.
+
 ### UK number purchase requires a registered Twilio Address
 
 **This is the Severity 1 blocker preventing live UK number purchases —
