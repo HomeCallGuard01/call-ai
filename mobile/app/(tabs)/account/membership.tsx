@@ -5,12 +5,12 @@
 // UI is already well-designed and well-tested).
 import { useCallback, useState } from "react";
 import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { Screen } from "../../../components/Screen";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
-import { fetchDashboard, createPortalSession, ApiError } from "../../../lib/api";
+import { fetchDashboard, createPortalSession, ApiError, NotEntitledError } from "../../../lib/api";
 import type { DashboardResponse } from "../../../lib/types";
 import { colors, spacing, typography } from "../../../lib/theme";
 
@@ -25,10 +25,18 @@ export default function Membership() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notEntitled, setNotEntitled] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      fetchDashboard().then(setData).catch(() => {});
+      fetchDashboard()
+        .then(result => {
+          setData(result);
+          setNotEntitled(false);
+        })
+        .catch(err => {
+          if (err instanceof NotEntitledError) setNotEntitled(true);
+        });
     }, [])
   );
 
@@ -47,6 +55,19 @@ export default function Membership() {
     } finally {
       setIsOpeningPortal(false);
     }
+  }
+
+  if (notEntitled) {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.centered}>
+          <Text style={styles.status}>No active membership</Text>
+          <View style={styles.notEntitledButton}>
+            <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
+          </View>
+        </View>
+      </Screen>
+    );
   }
 
   if (!data) {
@@ -93,6 +114,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    padding: spacing.lg,
+  },
+  notEntitledButton: {
+    marginTop: spacing.md,
+    alignSelf: "stretch",
   },
   plan: {
     ...typography.hero,

@@ -5,7 +5,6 @@
 import { useCallback, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Alert } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import { fetchDashboard } from "../../../lib/api";
 import { supabase } from "../../../lib/supabase";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -14,8 +13,11 @@ export default function Account() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchDashboard()
-        .then(() => supabase.auth.getUser())
+      // Deliberately independent of membership/entitlement status — a
+      // customer without an active subscription is still authenticated
+      // and should still see their own email address here.
+      supabase.auth
+        .getUser()
         .then(({ data }) => setEmail(data.user?.email ?? null))
         .catch(() => {});
     }, [])

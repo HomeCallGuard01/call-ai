@@ -6,8 +6,9 @@
 // intentionally the full V1 screen, no navigation out of it.
 import { useCallback, useState } from "react";
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
-import { useFocusEffect } from "expo-router";
-import { fetchDashboard } from "../../lib/api";
+import { router, useFocusEffect } from "expo-router";
+import { PrimaryButton } from "../../components/PrimaryButton";
+import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import type { DashboardActivityItem } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
 
@@ -25,14 +26,20 @@ export default function Activity() {
   const [items, setItems] = useState<DashboardActivityItem[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [notEntitled, setNotEntitled] = useState(false);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setIsRefreshing(true);
     try {
       const data = await fetchDashboard();
       setItems(data.activity);
-    } catch {
-      setItems(current => current ?? []);
+      setNotEntitled(false);
+    } catch (err) {
+      if (err instanceof NotEntitledError) {
+        setNotEntitled(true);
+      } else {
+        setItems(current => current ?? []);
+      }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -49,6 +56,19 @@ export default function Activity() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={colors.accent} size="large" />
+      </View>
+    );
+  }
+
+  if (notEntitled) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.emptyText}>
+          Start your protection to see which calls have been screened.
+        </Text>
+        <View style={styles.notEntitledButton}>
+          <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
+        </View>
       </View>
     );
   }
@@ -87,6 +107,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.background,
+    padding: spacing.lg,
+  },
+  notEntitledButton: {
+    marginTop: spacing.lg,
+    alignSelf: "stretch",
   },
   list: {
     backgroundColor: colors.background,

@@ -10,23 +10,29 @@ import { View, Text, FlatList, Pressable, StyleSheet, Alert, ActivityIndicator }
 import { router, useFocusEffect } from "expo-router";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Screen } from "../../../components/Screen";
-import { fetchDashboard, deleteContact as apiDeleteContact } from "../../../lib/api";
+import { fetchDashboard, deleteContact as apiDeleteContact, NotEntitledError } from "../../../lib/api";
 import type { DashboardContact } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
 export default function ContactsList() {
   const [contacts, setContacts] = useState<DashboardContact[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [notEntitled, setNotEntitled] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const data = await fetchDashboard();
       setContacts(data.contacts);
-    } catch {
-      // Falls back to an empty list rather than a broken screen — the
-      // Home tab is the authoritative place to surface a real
-      // not-entitled/offline state; this screen just shows what it can.
-      setContacts(c => c ?? []);
+      setNotEntitled(false);
+    } catch (err) {
+      if (err instanceof NotEntitledError) {
+        // Distinct from a genuinely empty list — without this, a lapsed
+        // or not-yet-subscribed customer sees "No trusted contacts yet",
+        // which reads as data loss rather than a membership problem.
+        setNotEntitled(true);
+      } else {
+        setContacts(c => c ?? []);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -61,6 +67,21 @@ export default function ContactsList() {
       <Screen scroll={false}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (notEntitled) {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>
+            Start your protection to add and manage trusted contacts.
+          </Text>
+          <View style={styles.notEntitledButton}>
+            <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
+          </View>
         </View>
       </Screen>
     );
@@ -116,6 +137,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    padding: spacing.lg,
+  },
+  notEntitledButton: {
+    marginTop: spacing.lg,
+    alignSelf: "stretch",
   },
   listContent: {
     padding: spacing.lg,
