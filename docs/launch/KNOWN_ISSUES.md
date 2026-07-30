@@ -1,9 +1,9 @@
 Document: Known Issues — Pre-Launch
-Version: 3.1
-Last Updated: 2026-07-22
+Version: 3.2
+Last Updated: 2026-07-30
 Status: Active
 Owner: Andrew Deane
-Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence
+Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence. Severity 1 grant issue found during migration-recovery/staging work — see docs/engineering/MIGRATION_RECOVERY_PLAN.md.
 
 ---
 
@@ -89,6 +89,68 @@ re-running this same edge-case test on a recurring basis, not just a
 one-time verification after deployment). No Supabase support case
 number has been recorded in this repository yet — if one exists, it
 should be added here.
+
+## Severity 1 — blocking (found 2026-07-30, staging verification)
+
+### Every SECURITY DEFINER RPC grants EXECUTE to anon/authenticated, not just service_role
+
+Discovered while applying the full migration set to the new staging
+project (`docs/engineering/STAGING_ENVIRONMENT_PLAN.md`) — the first time
+any migration in this project has been verified against a real Supabase
+database from a clean state, rather than hand-applied incrementally to
+production over time. Confirmed directly via
+`information_schema.role_routine_grants` on staging: `anon` and
+`authenticated` both have `EXECUTE` on **every** `SECURITY DEFINER`
+function in `public` — `set_household_stripe_customer_id`,
+`process_stripe_webhook_event`, `claim_stripe_webhook_event`,
+`assign_household_twilio_number`, `release_household_twilio_number`,
+`release_household_twilio_number_immediately`,
+`mark_household_twilio_number_pending_release`,
+`record_household_twilio_provisioning_failure`,
+`anonymize_inactive_household`, `mark_household_activation_verified` —
+10 functions checked, all affected, including the ones intended to be
+the *only* sanctioned write path for Stripe/Twilio state.
+
+**Root cause:** every one of these migrations ends with `revoke all on
+function ... from public; grant execute on function ... to
+service_role;`. That revoke only removes what was granted to the
+`PUBLIC` pseudo-role. Supabase's platform default privileges grant
+`EXECUTE` on new `public`-schema functions **directly** to
+`anon`/`authenticated`/`service_role` as named roles, not via `PUBLIC` —
+so the revoke never reaches them. This is a real Supabase platform
+behavior, confirmed empirically, not a staging misconfiguration —
+strongly implying production has the same exposure, though that has not
+been directly checked yet (would need a separate, explicitly-approved
+read-only pass).
+
+**Why this matters, concretely:** several of these functions take a raw
+`household_id` argument with no internal check that the caller owns that
+household (they were only ever intended to be reachable via the backend's
+service-role client, which enforces that ownership check at the
+application layer instead). If `authenticated` genuinely has direct
+`EXECUTE` in production too, any signed-in customer could in principle
+call `set_household_stripe_customer_id` with someone else's household ID,
+or invoke `process_stripe_webhook_event` directly — bypassing Stripe
+signature verification entirely — to attempt to forge a subscription or
+entitlement state. This has not been exploited or tested against
+production; flagging the exposure, not a confirmed incident.
+
+**Why the existing PGlite test suite didn't catch this:**
+`tests/migrations.pglite.test.mjs` asserts "authenticated role cannot
+execute X directly" for several of these functions, and those assertions
+currently pass — for the wrong reason. PGlite's role stub never
+replicates Supabase's default-privilege grants in the first place, so
+there's nothing for the migration's `revoke`/`grant` pair to fail to
+override; the test was never exercising the real platform behavior. This
+is a fidelity gap in the harness itself, not just a missed case.
+
+**Not fixed yet, deliberately** — per this session's explicit instruction
+not to improvise database changes outside tracked migrations. Recommended
+fix: a new forward migration that explicitly `REVOKE EXECUTE ... FROM
+anon, authenticated` (in addition to `FROM PUBLIC`) on every affected
+function, verified on staging before being promoted to production. See
+`docs/engineering/MIGRATION_RECOVERY_PLAN.md`'s Execution Outcome section
+for full detail.
 
 ## Severity 2 — should fix before or very shortly after launch
 
