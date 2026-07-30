@@ -51,6 +51,27 @@ const MOBILE_PORTAL_RETURN_URL = "homecallguard://account/membership";
 // elsewhere in server.js can never introduce that hazard.
 router.use(express.json());
 
+// A real native iOS/Android app is never subject to CORS at all — it's a
+// browser-only enforcement mechanism — so this was never required for
+// the app itself to work. It's added anyway because it's the standard,
+// widely-used Expo development workflow (`expo start --web`) to visually
+// iterate on a React Native app in a browser before testing on a real
+// device/simulator, and every route on this router already requires a
+// real bearer token (verified server-side, never a browser-supplied
+// cookie) — permissive CORS doesn't introduce CSRF exposure here the way
+// it would on a cookie-authenticated API, since a cross-origin page has
+// no way to read or forge another site's bearer token just because CORS
+// allows the request through.
+router.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // POST /api/v1/billing/create-checkout-session
 //
 // Mobile equivalent of routes/billing.js's /billing/create-checkout-session
