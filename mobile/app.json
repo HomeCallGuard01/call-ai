@@ -27,8 +27,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Home Call Guard only reads the specific contact you choose to add as a trusted contact — never your full address book."
+        }
+      ]
     ]
   }
 }

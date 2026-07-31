@@ -122,7 +122,7 @@ export default function ContactsList() {
         )}
       />
       <View style={styles.footer}>
-        <PrimaryButton label="Add contact" onPress={() => router.push("/(tabs)/contacts/add")} />
+        <PrimaryButton label="Add contact" onPress={() => router.push("/(tabs)/contacts/choose")} />
       </View>
     </View>
   );

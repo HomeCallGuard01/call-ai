@@ -11,6 +11,8 @@ export default function ContactsLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ title: "Trusted Contacts" }} />
+      <Stack.Screen name="choose" options={{ title: "Add Contact", presentation: "modal" }} />
+      <Stack.Screen name="from-phone" options={{ title: "Add From Contacts", presentation: "modal" }} />
       <Stack.Screen name="add" options={{ title: "Add Contact", presentation: "modal" }} />
     </Stack>
   );
