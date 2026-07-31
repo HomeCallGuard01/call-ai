@@ -661,6 +661,69 @@ async function main() {
   }
   assert(lifecycleRpcDeniedToAuthenticated, 'authenticated role cannot execute release_household_twilio_number_immediately directly');
 
+  // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
+  //
+  // Discovers every SECURITY DEFINER function in public from pg_proc
+  // itself (prosecdef = true), not a hardcoded name list — a future
+  // migration that adds a new one is covered automatically, without this
+  // file needing an edit. Enforces the fail-closed convention migration
+  // 022 establishes: PUBLIC/anon/authenticated get nothing, service_role
+  // must be explicit, search_path must be pinned, owner must be the
+  // project's administrative role.
+  //
+  // Important limitation, stated plainly: PGlite never reproduces
+  // Supabase's platform default-privilege behavior (the actual root cause
+  // of the anon/authenticated exposure found on staging — see
+  // docs/engineering/MIGRATION_RECOVERY_PLAN.md) — there is no phantom
+  // default grant here to accidentally pass against. This check catches a
+  // *future migration* that forgets its own revoke/grant lines; it cannot
+  // catch a live Supabase project's default-ACL configuration diverging
+  // from what every migration assumes. That real-database check is
+  // scripts/verify-security-definer-grants.js, run against staging/
+  // production directly — this test and that script are deliberately
+  // complementary, not redundant.
+  console.log('\nChecking SECURITY DEFINER grant/search_path/owner policy...\n');
+  // information_schema.role_routine_grants only shows grants visible to
+  // the *current* role (as grantee, grantor, or a role it's a member of)
+  // — the preceding check left the session as `authenticated`, under
+  // which service_role's own grants are invisible, not absent. Reset to
+  // the full-visibility bootstrap role before reading grants for real.
+  await db.exec('reset role;');
+  const ADMIN_OWNER = 'postgres';
+  const { rows: secdefFns } = await db.query(`
+    select p.proname, pg_get_function_identity_arguments(p.oid) as args,
+           pg_get_userbyid(p.proowner) as owner, p.proconfig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prosecdef = true
+    order by p.proname;
+  `);
+  assert(secdefFns.length > 0, 'at least one SECURITY DEFINER function exists to check (sanity check on the check itself)');
+
+  for (const fn of secdefFns) {
+    const label = `${fn.proname}(${fn.args})`;
+
+    const { rows: grants } = await db.query(
+      `select grantee, privilege_type from information_schema.role_routine_grants
+       where routine_schema = 'public' and routine_name = $1`,
+      [fn.proname]
+    );
+    const grantees = new Set(grants.map((g) => g.grantee));
+
+    assert(!grantees.has('PUBLIC'), `${label}: PUBLIC has no EXECUTE`);
+    assert(!grantees.has('anon'), `${label}: anon has no EXECUTE`);
+    assert(!grantees.has('authenticated'), `${label}: authenticated has no EXECUTE`);
+    assert(grantees.has('service_role'), `${label}: service_role has EXECUTE`);
+
+    const searchPathEntry = (fn.proconfig || []).find((c) => c.startsWith('search_path='));
+    assert(
+      searchPathEntry === 'search_path=""' || searchPathEntry === "search_path=",
+      `${label}: search_path is safely fixed (empty), found: ${searchPathEntry ?? '<not set>'}`
+    );
+
+    assert(fn.owner === ADMIN_OWNER, `${label}: owner is the intended administrative role (${ADMIN_OWNER}), found: ${fn.owner}`);
+  }
+
   await db.close();
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
