@@ -1,6 +1,6 @@
 # Migration Recovery Plan — supabase/migrations
 
-**Status:** Executed against staging (`home-call-guard-staging`, ref `tigwgmayeuisrxjjykqd`) on 2026-07-30. See "Execution Outcome" at the end of this document for actual results, deviations, and a newly-discovered risk this pass surfaced. Production (`psbzynxplxfbyrbdidmn`) was not touched by execution — read-only introspection only, in the prior planning pass.
+**Status:** Executed against staging (`home-call-guard-staging`, ref `tigwgmayeuisrxjjykqd`) on 2026-07-30, with a follow-up fix (migration 022) applied and verified on staging on 2026-07-31 — see "Execution Outcome" and "Follow-up: migration 022" at the end of this document. Production (`psbzynxplxfbyrbdidmn`) has been read-only introspected only (twice — once for the `contacts` schema, once for the SECURITY DEFINER grant comparison); no migration, DDL, or write of any kind has been applied to it at any point in this whole exercise.
 **Trigger:** Attempting to push the full migration set to the new staging project (`home-call-guard-staging`, ref `tigwgmayeuisrxjjykqd`) surfaced two real defects in `supabase/migrations/` that a from-scratch database exposes but production's own gradual, hand-applied history never did:
 
 1. `public.contacts` has no `CREATE TABLE` anywhere in this repo — it was created via the Supabase Table Editor. Migration 003 assumes it already exists and fails on a fresh database.
@@ -146,7 +146,31 @@ Root cause: `revoke all ... from public` only revokes what was granted to the `P
 This is exactly the class of gap `STAGING_ENVIRONMENT_PLAN.md` §5 exists to catch — its own schema-verification script explicitly checks for "grants: service_role only, no authenticated/anon/public" for this reason. That script wasn't built as a standing artifact this pass (the equivalent checks were run ad hoc via `supabase db query`); building it for real is now higher-priority than it was, since it would have caught this immediately and should catch it going forward. `tests/migrations.pglite.test.mjs` does not catch this either — PGlite's role stub doesn't replicate Supabase's default-privilege behavior, so its "authenticated role cannot execute X" assertions currently pass for the wrong reason (no default-privilege grant exists in PGlite to begin with). This is a real fidelity gap between the test harness and the platform it's standing in for, independent of anything specific to migration 021.
 
 **Remaining risks / follow-up work, not done as part of this pass:**
-1. **Write a new, forward migration** (not a hand-edit of any existing file) that explicitly `REVOKE EXECUTE ... FROM anon, authenticated` on every affected function, in addition to `FROM PUBLIC`. Needs review before writing, given the security implications — flagging, not fixing, per this session's instruction not to improvise database changes outside tracked migrations.
-2. **Check whether production has the same exposure** — not done this pass; would need a separate, explicitly-approved read-only pass, the same way `contacts`' schema was captured.
-3. **Build `scripts/verify-migration-021.js`** (or a general schema-verification script covering all functions, not just 021's two objects) as a standing artifact, per `STAGING_ENVIRONMENT_PLAN.md` §5 — this pass's checks were run ad hoc and aren't yet a repeatable asset.
-4. Migration 021 itself (and the file restored into this worktree) still needs a real git commit to `main` — see the commits made alongside this outcome.
+1. ~~Write a new, forward migration...~~ **Done — see "Follow-up: migration 022" below.**
+2. ~~Check whether production has the same exposure~~ **Done, separately approved and read-only** — production does **not** have this exposure; its `pg_default_acl` for public-schema functions never included `anon`/`authenticated` in the first place. Full comparison below.
+3. ~~Build a general schema-verification script~~ **Done — `scripts/verify-security-definer-grants.js`**, generalized beyond 021 to every `SECURITY DEFINER` function, discovered dynamically rather than a hardcoded list.
+4. ~~Migration 021 itself... still needs a real git commit~~ **Done** — committed to `main`, see commit history.
+
+---
+
+## Follow-up: migration 022 (2026-07-31)
+
+### Production comparison
+
+Read-only introspection of production (`psbzynxplxfbyrbdidmn`), explicitly approved separately from this plan, found production **was never exposed**. Every one of the same 10 `SECURITY DEFINER` functions has `proacl = {postgres=X/postgres,service_role=X/postgres}` there — no `anon`, no `authenticated`, no bare `PUBLIC`. Root cause confirmed directly via `pg_default_acl`: production's `postgres`-scoped default for `public`-schema functions is `{postgres=X/postgres}` only, while staging's (a project created 2026-07-30, versus production's much older creation date) was `{postgres=X/postgres, anon=X/postgres, authenticated=X/postgres, service_role=X/postgres}`. Confirmed via Supabase's own documentation this is expected, documented platform behavior for new projects (not a regression) — https://supabase.com/docs/guides/api/securing-your-api — though widely enough considered an unsafe default that Supabase has said they intend to make it opt-in (see https://github.com/supabase/supabase/issues/43884). Production's clean state is best explained as predating whenever that default template was introduced, not deliberate hardening.
+
+### Migration 022
+
+`022_lock_down_security_definer_execute_grants.sql` — two parts:
+1. An existence-checked `DO` block (`to_regprocedure`, so it's safe to run whether or not migration 021's function exists yet) that explicitly revokes `PUBLIC`/`anon`/`authenticated` and grants `service_role` on all 11 current functions.
+2. `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM public, anon, authenticated, service_role` — matching Supabase's own documented recovery snippet, including revoking the default for `service_role` too (deliberate, fail-closed: every future RPC migration must now grant `service_role` explicitly, exactly as all 13 existing ones already do — nothing can work "by accident" via a platform default anymore).
+
+**Applied to staging only**, approved explicitly, after staging-only scope was reconfirmed. Verified two ways: `scripts/verify-security-definer-grants.js` (new standing script, dynamic discovery via `pg_proc`, checks grants/`search_path`/owner per function plus `pg_default_acl` for the schema) reports all-clear; and a live, non-destructive call — `mark_household_activation_verified` with a nonexistent household UUID as `service_role` raised the function's own `P0001` business-logic exception (proves the call reached the function body), while the identical call as `authenticated` got `42501 permission denied` before the function body ever ran. No real data touched by either call (confirmed: the pre-existing `default-household@homecallguard.internal` fixture row's `stripe_customer_id` was unchanged after an earlier, separate no-op verification call against `set_household_stripe_customer_id`, which surfaced a minor, pre-existing, unrelated bug — see note below).
+
+`tests/migrations.pglite.test.mjs` gained a matching dynamic check (same `pg_proc`-driven discovery, runs on every `npm test`) enforcing the same policy locally — deliberately complementary to the live script, not redundant: PGlite can catch a future migration that forgets its own grant lines, but can never reproduce a live project's default-ACL configuration, which only the live script can see.
+
+Migration histories (`supabase migration list --linked`) match exactly, locally and remotely, after applying 022.
+
+**Minor, unrelated finding surfaced while verifying:** `set_household_stripe_customer_id` (013) uses `select h.stripe_customer_id, true into v_existing, v_found from ... where h.id = p_household_id` — when zero rows match, plpgsql's `select into` sets `v_found` to `NULL`, not `false`, so `if not v_found then raise exception ...` never fires (`not NULL` is `NULL`, which is falsy in an `if`). The function silently no-ops (a zero-row `UPDATE`) for a nonexistent household instead of raising, unlike `mark_household_activation_verified`'s equivalent guard (021, uses plpgsql's `FOUND`, which is always `true`/`false`, never `NULL`) which works correctly. Pre-existing, unrelated to this session's work, not fixed — flagging only.
+
+**Production:** not touched by 022 in any way. Applying migrations 021 and 022 to production remains a deliberate, separate, explicitly-controlled future change — not bundled into this staging fix.

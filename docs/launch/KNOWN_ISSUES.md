@@ -1,9 +1,9 @@
 Document: Known Issues — Pre-Launch
-Version: 3.2
-Last Updated: 2026-07-30
+Version: 3.3
+Last Updated: 2026-07-31
 Status: Active
 Owner: Andrew Deane
-Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence. Severity 1 grant issue found during migration-recovery/staging work — see docs/engineering/MIGRATION_RECOVERY_PLAN.md.
+Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence. Severity 1 grant issue found and resolved-on-staging during migration-recovery/staging work — see docs/engineering/MIGRATION_RECOVERY_PLAN.md. Production fix still pending as a separate controlled change.
 
 ---
 
@@ -90,9 +90,9 @@ one-time verification after deployment). No Supabase support case
 number has been recorded in this repository yet — if one exists, it
 should be added here.
 
-## Severity 1 — blocking (found 2026-07-30, staging verification)
+## Severity 1 — resolved on staging, production fix still pending (found 2026-07-30)
 
-### Every SECURITY DEFINER RPC grants EXECUTE to anon/authenticated, not just service_role
+### Every SECURITY DEFINER RPC granted EXECUTE to anon/authenticated, not just service_role
 
 Discovered while applying the full migration set to the new staging
 project (`docs/engineering/STAGING_ENVIRONMENT_PLAN.md`) — the first time
@@ -144,13 +144,60 @@ there's nothing for the migration's `revoke`/`grant` pair to fail to
 override; the test was never exercising the real platform behavior. This
 is a fidelity gap in the harness itself, not just a missed case.
 
-**Not fixed yet, deliberately** — per this session's explicit instruction
-not to improvise database changes outside tracked migrations. Recommended
-fix: a new forward migration that explicitly `REVOKE EXECUTE ... FROM
-anon, authenticated` (in addition to `FROM PUBLIC`) on every affected
-function, verified on staging before being promoted to production. See
-`docs/engineering/MIGRATION_RECOVERY_PLAN.md`'s Execution Outcome section
-for full detail.
+**Update, 2026-07-31 — fixed and verified on staging via migration 022
+(`022_lock_down_security_definer_execute_grants.sql`). Production is
+unaffected by this update — still pending as a separate, explicitly
+controlled deployment.**
+
+Migration 022 does two things: (1) an existence-checked `DO` block that
+explicitly `revoke`s `PUBLIC`/`anon`/`authenticated` and re-`grant`s
+`service_role` on all 11 current functions (the 10 above plus
+`mark_household_activation_verified` from migration 021, itself also
+staging-only so far); (2) `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN
+SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM public, anon,
+authenticated, service_role` — matching Supabase's own documented
+recovery snippet
+(https://supabase.com/docs/guides/api/securing-your-api) — so every
+function created after this migration, by any future migration, starts
+with **no** automatic grant to anyone, `service_role` included. This is a
+deliberate fail-closed convention going forward: **every future migration
+that adds a SECURITY DEFINER RPC must include its own explicit `grant
+execute on function ... to service_role` line, exactly as all 13 existing
+RPC migrations already do — there is no longer a platform default to fall
+back on.** A migration that forgets this will fail loudly in testing
+(`permission denied for function X`) rather than silently working by
+accident.
+
+Verified directly on staging, not just by the migration exiting 0:
+- `scripts/verify-security-definer-grants.js` (new, dynamic — discovers
+  every `SECURITY DEFINER` function in `public` from `pg_proc` itself,
+  not a hardcoded list) reports all 11 functions PUBLIC/anon/authenticated-free,
+  service_role-granted, safe `search_path`, correct owner — and
+  `pg_default_acl` for the `postgres`-scoped default on public functions
+  now reads `{postgres=X/postgres}` only.
+- Live, non-destructive proof `service_role` still works for real: called
+  `mark_household_activation_verified` with a nonexistent household UUID
+  as `service_role` — got the function's own `P0001` "household does not
+  exist" business-logic exception (proves the call reached the function
+  body), not a permission error. The same call as `authenticated` gets
+  `42501 permission denied for function` before the function body ever
+  runs. No real household, subscription, Stripe, or Twilio data was
+  touched by either check.
+- `tests/migrations.pglite.test.mjs` gained a matching dynamic check
+  (same discovery approach, run automatically on every `npm test`) — this
+  catches a *future* migration that forgets the explicit grant; it cannot
+  catch a live project's default-ACL configuration on its own, which is
+  what the live script above is for. Both are needed; neither is
+  redundant with the other.
+
+**Production still has the original, safe state described above (never
+exposed anon/authenticated in the first place — see the root-cause note)
+and has not been touched.** Applying migrations 021 and 022 to production
+is intentionally deferred as a separate, controlled change, not bundled
+into this staging fix.
+
+See `docs/engineering/MIGRATION_RECOVERY_PLAN.md`'s Execution Outcome
+section for the full migration text and reasoning.
 
 ## Severity 2 — should fix before or very shortly after launch
 
