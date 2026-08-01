@@ -4,6 +4,19 @@
 -- Frozen after Sprint 7 for MVP launch; revisit post-launch (Phase 2).
 -- Do not run against production until explicitly re-approved.
 --
+-- RELOCATED (docs/engineering/MIGRATION_RECOVERY_PLAN.md): moved out of
+-- supabase/migrations/ so a mechanical `supabase db push` on a fresh
+-- database can never execute it. Its contacts-RLS half was superseded by
+-- 008_household_isolation_contacts.sql (applying both collides — 008
+-- creates policies of the same name without dropping them first). Its
+-- calls-RLS half (calls_select_own_household) is obsolete: it assumes a
+-- client reads `calls` directly with the signed-in user's own session,
+-- but every read of `calls` goes through the backend's service-role
+-- client instead — confirmed live, production's `calls` table has zero
+-- RLS policies today. Kept here for history only; never applied anywhere,
+-- so relocating it doesn't rewrite any database's actual migration
+-- history.
+--
 -- Run this AFTER:
 -- 002_create_households_and_roles.sql
 -- 003_add_household_id_ownership.sql
