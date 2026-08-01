@@ -2,7 +2,7 @@
 // hero screen — answers "Am I protected?" at a glance. Once setup is
 // complete this should be almost entirely passive reassurance; the only
 // interactive element is the conditional "finish setup" card.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Text, View, StyleSheet, ActivityIndicator, RefreshControl, ScrollView } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,6 +11,7 @@ import { Banner } from "../../components/Banner";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { deriveLoadOutcome, isSettingUp as computeIsSettingUp } from "../../lib/homeStatus";
+import { resumeSetupAt } from "../../lib/setupFlow";
 import type { DashboardResponse } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
 
@@ -33,6 +34,17 @@ export default function Home() {
   const [isStale, setIsStale] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // load() is triggered from two independent sources — useFocusEffect
+  // (every time this tab regains focus) and pull-to-refresh — so two
+  // calls can genuinely overlap (e.g. pull-to-refresh started, then the
+  // user switches tabs and back before it resolves). Without this, a
+  // slow earlier response landing after a faster later one would
+  // silently overwrite fresher state with stale state, and an earlier
+  // call's `finally` could clear isRefreshing while a newer refresh is
+  // still in flight. Only the most recently started call is allowed to
+  // touch state.
+  const loadId = useRef(0);
+
   // Identity changed (sign-out/sign-in as a different account, or session
   // lost) — any previously-loaded data belonged to a different user and
   // must never be shown as this user's status, even for an instant while
@@ -40,12 +52,19 @@ export default function Home() {
   // state from a previous or failed session may be attributed to the
   // current user.
   useEffect(() => {
+    // Bump loadId here too, not only inside load() itself: an in-flight
+    // request started under the previous identity has no way to know the
+    // session changed underneath it, and without this its response would
+    // still pass the "am I the latest call" check below and write the
+    // previous user's data into the newly-reset state.
+    loadId.current++;
     setData(null);
     setIsStale(false);
     setState("loading");
   }, [session?.user?.id]);
 
   const load = useCallback(async (isRefresh = false) => {
+    const thisLoadId = ++loadId.current;
     if (isRefresh) setIsRefreshing(true);
     let succeeded = false;
     let isNotEntitledError = false;
@@ -56,9 +75,15 @@ export default function Home() {
       succeeded = true;
     } catch (err) {
       isNotEntitledError = err instanceof NotEntitledError;
-    } finally {
-      setIsRefreshing(false);
     }
+
+    // A newer load() call started (and possibly already resolved) while
+    // this one was in flight — this result is stale, discard it rather
+    // than let it clobber more recent state or spuriously clear the
+    // refresh spinner for a refresh that's still running.
+    if (thisLoadId !== loadId.current) return;
+
+    setIsRefreshing(false);
 
     // See lib/homeStatus.ts — this is the single, tested decision point
     // for what the screen is allowed to claim next. hadPriorData reads
@@ -97,7 +122,7 @@ export default function Home() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <Text style={styles.statusTitle}>Action needed</Text>
+          <Text style={styles.statusTitle} accessibilityRole="header">Action needed</Text>
           <Text style={styles.statusBody}>
             You don't currently have an active membership. Protect your home phone from scam
             callers today.
@@ -115,7 +140,7 @@ export default function Home() {
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
         >
-          <Text style={styles.statusTitle}>Protection status unavailable</Text>
+          <Text style={styles.statusTitle} accessibilityRole="header">Protection status unavailable</Text>
           <Text style={styles.statusBody}>
             We couldn't confirm your protection status. Check your connection and try again.
           </Text>
@@ -129,6 +154,37 @@ export default function Home() {
   // was positively confirmed by the backend for the current user (or is
   // the last such confirmation, with isStale flagging that explicitly).
   const isSettingUp = computeIsSettingUp(data!);
+  const hasNoContacts = data!.contacts.length === 0;
+
+  // Same decision point B1 uses to skip already-done steps — reused here
+  // so "Finish setup" always sends the customer to the actual next
+  // unfinished step (which, since contacts now come before activation,
+  // is often contacts, not device-picker), rather than a hardcoded
+  // screen that assumes the old step order.
+  const resumeTarget = resumeSetupAt({
+    isEntitled: true,
+    contactCount: data!.contacts.length,
+    isActivationVerified: !!data!.protection.activationVerifiedAt,
+  });
+  // No "subscribe" entry: `isEntitled: true` above is hardcoded, not
+  // read from `data`, because `state === "ready"` is only reachable once
+  // deriveLoadOutcome has confirmed entitlement (its own tests assert a
+  // not_entitled result always wins over stale prior data) — so
+  // resumeTarget.screen can never legitimately be "subscribe" here. The
+  // fallback below exists purely so that if that invariant is ever
+  // broken by a future change, this button navigates somewhere sane
+  // instead of silently calling router.push(undefined).
+  const RESUME_ROUTE: Record<string, string> = {
+    contacts: "/(setup)/contacts",
+    "device-picker": "/(setup)/device-picker",
+    complete: "/(setup)/complete",
+  };
+  const resumeRoute = RESUME_ROUTE[resumeTarget.screen] ?? "/(setup)/welcome";
+  const finishSetupLabel = resumeTarget.screen === "contacts" ? "Add trusted contacts" : "Finish setup";
+  const finishSetupBody =
+    resumeTarget.screen === "contacts"
+      ? "Add at least one trusted contact, then turn on call forwarding to complete your protection."
+      : "Finish activating call forwarding to complete your protection.";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -140,13 +196,16 @@ export default function Home() {
 
         {isSettingUp ? (
           <>
-            <Text style={styles.statusTitle}>Setting up</Text>
-            <Text style={styles.statusBody}>Finish activating call forwarding to complete your protection.</Text>
-            <PrimaryButton label="Finish setup" onPress={() => router.push("/(setup)/device-picker")} />
+            <Text style={styles.statusTitle} accessibilityRole="header">Setting up</Text>
+            <Text style={styles.statusBody}>{finishSetupBody}</Text>
+            <PrimaryButton
+              label={finishSetupLabel}
+              onPress={() => router.push(resumeRoute as any)}
+            />
           </>
         ) : (
           <>
-            <Text style={styles.statusTitle}>Protected</Text>
+            <Text style={styles.statusTitle} accessibilityRole="header">Protected</Text>
             <Text style={styles.statusBody}>
               {data!.stats.callsScreened} unknown caller{data!.stats.callsScreened === 1 ? "" : "s"} screened
               today
@@ -154,6 +213,20 @@ export default function Home() {
                 ? `, ${data!.stats.suspectedScamsBlocked} suspected scam${data!.stats.suspectedScamsBlocked === 1 ? "" : "s"} blocked.`
                 : ", all clear."}
             </Text>
+
+            {hasNoContacts && (
+              <View style={styles.nudge}>
+                <Text style={styles.nudgeText}>
+                  You haven't added a trusted contact yet — family and friends may be screened like an
+                  unknown caller until you do.
+                </Text>
+                <PrimaryButton
+                  label="Add a trusted contact"
+                  variant="secondary"
+                  onPress={() => router.push("/(setup)/contacts")}
+                />
+              </View>
+            )}
           </>
         )}
 
@@ -192,5 +265,18 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.text,
     marginBottom: spacing.lg,
+  },
+  nudge: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  nudgeText: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
   },
 });

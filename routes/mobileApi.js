@@ -72,6 +72,20 @@ router.use((req, res, next) => {
   next();
 });
 
+// Every response on this router carries per-user entitlement/subscription
+// state — without this, nothing stops a browser's HTTP cache (or, just as
+// real on native, iOS URLSession's default response caching) from serving
+// a stale GET response after the underlying entitlement genuinely
+// changes. Found live during this session's onboarding-redesign testing:
+// a lapsed/nonexistent entitlement was masked by a cached
+// GET /api/v1/me/dashboard response, letting the client believe checkout
+// had succeeded when it hadn't. Applies to every method, not just GET —
+// no response from this router should ever be reused across requests.
+router.use((req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
 // POST /api/v1/billing/create-checkout-session
 //
 // Mobile equivalent of routes/billing.js's /billing/create-checkout-session

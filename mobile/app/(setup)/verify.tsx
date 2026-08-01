@@ -11,12 +11,13 @@
 // approved Launch Feature Matrix. V1's trusted-contact flow is manual
 // entry only (C2/C3), added from the Contacts tab after setup, same as
 // the spec's own "Skip for now" path already describes.
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
+import { SetupProgress } from "../../components/SetupProgress";
 import { verifyActivation } from "../../lib/api";
 import { colors, spacing, typography } from "../../lib/theme";
 
@@ -26,15 +27,24 @@ export default function Verify() {
   const [state, setState] = useState<CheckState>("checking");
   const [hasCheckedOnce, setHasCheckedOnce] = useState(false);
 
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   async function runCheck() {
     setState("checking");
     try {
       const result = await verifyActivation();
+      if (!isMounted.current) return;
       setState(result.verified ? "verified" : "not_yet");
     } catch {
+      if (!isMounted.current) return;
       setState("not_yet");
     } finally {
-      setHasCheckedOnce(true);
+      if (isMounted.current) setHasCheckedOnce(true);
     }
   }
 
@@ -47,7 +57,7 @@ export default function Verify() {
     return (
       <Screen scroll={false}>
         <View style={styles.centered}>
-          <ActivityIndicator color={colors.accent} size="large" />
+          <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Checking your activation" />
           <Text style={styles.checkingText}>Checking...</Text>
         </View>
       </Screen>
@@ -57,7 +67,8 @@ export default function Verify() {
   if (state === "verified") {
     return (
       <Screen>
-        <Text style={styles.title}>Verified!</Text>
+        <SetupProgress currentStep={3} />
+        <Text style={styles.title} accessibilityRole="header">Verified!</Text>
         <Text style={styles.body}>Your calls are now forwarding correctly.</Text>
         <PrimaryButton label="Continue" onPress={() => router.push("/(setup)/complete")} />
       </Screen>
@@ -66,7 +77,8 @@ export default function Verify() {
 
   return (
     <Screen>
-      <Text style={styles.title}>Still checking...</Text>
+      <SetupProgress currentStep={3} />
+      <Text style={styles.title} accessibilityRole="header">Still checking...</Text>
       <Text style={styles.body}>
         We haven't detected a forwarded call yet. This is normal if it's only been a moment —
         try calling your own number from another phone to test it, then check again.
@@ -80,6 +92,11 @@ export default function Verify() {
       )}
 
       <PrimaryButton label="Try again" onPress={runCheck} />
+      <PrimaryButton
+        label="Change device or provider"
+        variant="secondary"
+        onPress={() => router.replace("/(setup)/device-picker")}
+      />
       <PrimaryButton
         label="Contact support"
         variant="secondary"

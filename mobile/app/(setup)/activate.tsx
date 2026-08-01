@@ -5,13 +5,14 @@
 // for the case where someone is on the phone with a family member
 // walking them through this (a single phone can't dial the code while
 // also being used for that call).
-import { useEffect, useState } from "react";
-import { Text, View, StyleSheet } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
+import { SetupProgress } from "../../components/SetupProgress";
 import { fetchActivationInstructions, ApiError } from "../../lib/api";
 import type { ActivationInstructionsResponse, DeviceType, LandlineProvider } from "../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
@@ -23,10 +24,30 @@ export default function Activate() {
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  // Retry ("Try again") re-runs load() while a previous attempt might
+  // still be in flight, and the params effect below can also re-fire
+  // mid-request — without this, a slow earlier response could land after
+  // a newer one and silently overwrite the correct instructions (or
+  // loading/error state) with stale data.
+  const loadId = useRef(0);
+  const isMounted = useRef(true);
   useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  function load() {
+    const thisLoadId = ++loadId.current;
+    setIsLoading(true);
+    setError(null);
     fetchActivationInstructions(params.deviceType, params.provider)
-      .then(setInstructions)
+      .then(result => {
+        if (thisLoadId !== loadId.current || !isMounted.current) return;
+        setInstructions(result);
+      })
       .catch(err => {
+        if (thisLoadId !== loadId.current || !isMounted.current) return;
         if (err instanceof ApiError && err.code === "not_provisioned") {
           // Still setting up server-side — not an error, just not ready
           // yet. Route back to the setup welcome screen, which re-checks
@@ -34,21 +55,28 @@ export default function Activate() {
           router.replace("/(setup)/welcome");
           return;
         }
-        setError("We couldn't load your activation code. Please try again.");
+        setError("We couldn't load your activation code. Check your connection and try again.");
       })
-      .finally(() => setIsLoading(false));
-  }, [params.deviceType, params.provider]);
+      .finally(() => {
+        if (thisLoadId !== loadId.current || !isMounted.current) return;
+        setIsLoading(false);
+      });
+  }
+
+  useEffect(load, [params.deviceType, params.provider]);
 
   async function handleCopy() {
     if (!instructions) return;
     await Clipboard.setStringAsync(instructions.code);
-    setCopied(true);
+    if (isMounted.current) setCopied(true);
   }
 
   if (isLoading) {
     return (
-      <Screen>
-        <Text style={styles.title}>Loading your activation code…</Text>
+      <Screen scroll={false}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Loading your activation code" />
+        </View>
       </Screen>
     );
   }
@@ -56,19 +84,22 @@ export default function Activate() {
   if (error || !instructions) {
     return (
       <Screen>
+        <SetupProgress currentStep={3} />
         <Banner variant="error" message={error || "Something went wrong."} />
-        <PrimaryButton label="Try again" onPress={() => router.replace("/(setup)/device-picker")} />
+        <PrimaryButton label="Try again" onPress={load} />
+        <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
       </Screen>
     );
   }
 
   return (
     <Screen>
-      <Text style={styles.title}>Turn on call forwarding</Text>
+      <SetupProgress currentStep={3} />
+      <Text style={styles.title} accessibilityRole="header">Turn on call forwarding</Text>
       <Text style={styles.explanation}>{instructions.explanation}</Text>
 
-      <View style={styles.codeBox}>
-        <Text style={styles.code}>{instructions.code}</Text>
+      <View style={styles.codeBox} accessibilityRole="text" accessibilityLabel={`Your activation code is ${instructions.code}`}>
+        <Text style={styles.code} selectable>{instructions.code}</Text>
       </View>
       <PrimaryButton
         label={copied ? "Copied!" : "Copy code"}
@@ -100,6 +131,11 @@ export default function Activate() {
 }
 
 const styles = StyleSheet.create({
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: {
     ...typography.hero,
     color: colors.text,

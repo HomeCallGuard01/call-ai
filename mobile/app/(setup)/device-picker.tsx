@@ -9,6 +9,7 @@ import { Text, View, Pressable, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
+import { SetupProgress } from "../../components/SetupProgress";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 import type { DeviceType, LandlineProvider } from "../../lib/types";
 
@@ -44,7 +45,12 @@ export default function DevicePicker() {
   if (deviceType === "landline") {
     return (
       <Screen>
-        <Text style={styles.title}>Which landline provider do you have?</Text>
+        <SetupProgress currentStep={3} />
+        <Pressable onPress={() => setDeviceType(null)} accessibilityRole="button" style={styles.backLink}>
+          <Text style={styles.backLinkText}>‹ Back</Text>
+        </Pressable>
+        <Text style={styles.title} accessibilityRole="header">Which landline provider do you have?</Text>
+        <Text style={styles.subtitle}>This just tells us the right dialling code to show you next.</Text>
         <View style={styles.list}>
           {LANDLINE_PROVIDERS.map(({ provider, label }) => (
             <Pressable
@@ -52,6 +58,7 @@ export default function DevicePicker() {
               onPress={() => selectProvider(provider)}
               style={({ pressed }) => [styles.listItem, pressed && styles.listItemPressed]}
               accessibilityRole="button"
+              accessibilityLabel={label}
             >
               <Text style={styles.listItemText}>{label}</Text>
             </Pressable>
@@ -63,7 +70,9 @@ export default function DevicePicker() {
 
   return (
     <Screen>
-      <Text style={styles.title}>What are we setting up protection on?</Text>
+      <SetupProgress currentStep={3} />
+      <Text style={styles.title} accessibilityRole="header">What are we setting up protection on?</Text>
+      <Text style={styles.subtitle}>Pick the phone whose calls you want screened.</Text>
       <View style={styles.cards}>
         {DEVICE_OPTIONS.map(({ type, label, icon }) => (
           <Pressable
@@ -71,8 +80,9 @@ export default function DevicePicker() {
             onPress={() => selectDevice(type)}
             style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
             accessibilityRole="button"
+            accessibilityLabel={label}
           >
-            <Ionicons name={icon} size={32} color={colors.accent} style={styles.cardIcon} />
+            <Ionicons name={icon} size={32} color={colors.accent} style={styles.cardIcon} accessibilityElementsHidden importantForAccessibility="no" />
             <Text style={styles.cardText}>{label}</Text>
           </Pressable>
         ))}
@@ -82,9 +92,24 @@ export default function DevicePicker() {
 }
 
 const styles = StyleSheet.create({
+  backLink: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: "center",
+    marginLeft: -spacing.sm,
+  },
+  backLinkText: {
+    color: colors.accent,
+    fontWeight: "600",
+    fontSize: 15,
+  },
   title: {
     ...typography.hero,
     color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    ...typography.body,
+    color: colors.textMuted,
     marginBottom: spacing.lg,
   },
   cards: {

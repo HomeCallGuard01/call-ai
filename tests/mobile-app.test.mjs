@@ -25,8 +25,16 @@
 
 import { deriveLoadOutcome, isSettingUp } from '../mobile/lib/homeStatus.ts';
 import { computePageIndex, shouldResyncScrollPosition, scrollOffsetForPage } from '../mobile/lib/carousel.ts';
-import { addPickedContact, removePickedContact, usableNumbers } from '../mobile/lib/contactSelection.ts';
+import {
+  addPickedContact,
+  removePickedContact,
+  usableNumbers,
+  looksLikePhoneNumber,
+  contactsStillNeedingSave,
+  describeSaveFailure,
+} from '../mobile/lib/contactSelection.ts';
 import { shouldTriggerBootstrap } from '../mobile/lib/bootstrapTrigger.ts';
+import { resumeSetupAt, stepIndexForScreen, SETUP_STEPS } from '../mobile/lib/setupFlow.ts';
 
 let failures = 0;
 
@@ -202,6 +210,117 @@ function check(condition, message) {
     usableNumbers([{ number: '07700900123' }, { number: undefined }, { number: '' }]).length === 1,
     'usableNumbers: filters out entries with a missing or empty number, never passes a fake blank number through'
   );
+
+  check(looksLikePhoneNumber('07700 900123') === true, 'looksLikePhoneNumber: accepts a normal UK mobile number with spaces');
+  check(looksLikePhoneNumber('+44 7700 900123') === true, 'looksLikePhoneNumber: accepts an international-format number');
+  check(looksLikePhoneNumber('12345') === false, 'looksLikePhoneNumber: rejects an obviously too-short number');
+  check(looksLikePhoneNumber('not a number') === false, 'looksLikePhoneNumber: rejects letters with no real digits');
+  check(looksLikePhoneNumber('') === false, 'looksLikePhoneNumber: rejects an empty string');
+}
+
+// --- Batch contact save: per-contact outcomes (parallel save, task #40 hardening) ---
+
+{
+  // Regression for a real bug: the original implementation filtered the
+  // retry list by `failures.some(f => f.startsWith(c.name))`, a
+  // name-prefix string match. Two contacts where one name is a prefix of
+  // the other (e.g. "Jo" and "Jo Smith") would misclassify which one
+  // failed, since "Jo Smith — reason".startsWith("Jo") is true. Outcomes
+  // are now tracked by each contact's own stable `key`.
+  const results = [
+    { key: 'a', name: 'Jo', outcome: 'failed' },
+    { key: 'b', name: 'Jo Smith', outcome: 'saved' },
+  ];
+  const stillNeeded = contactsStillNeedingSave(results);
+  check(
+    stillNeeded.length === 1 && stillNeeded[0] === 'a',
+    'contactsStillNeedingSave: keyed by contact key, not name-prefix matching — "Jo Smith" saving does not hide "Jo" failing'
+  );
+
+  // Regression for a real bug: a "duplicate" result (the contact is
+  // already trusted server-side, just saved via a different action) was
+  // previously treated as a blocking failure that stayed in the retry
+  // list forever, with no way to clear it short of manually pressing
+  // Remove. It should be treated the same as a fresh save success.
+  const withDuplicate = [
+    { key: 'a', name: 'Mum', outcome: 'duplicate' },
+    { key: 'b', name: 'Dad', outcome: 'saved' },
+  ];
+  check(
+    contactsStillNeedingSave(withDuplicate).length === 0,
+    'contactsStillNeedingSave: a duplicate (already saved elsewhere) is a complete outcome, not a failure to retry'
+  );
+
+  const withMixed = [
+    { key: 'a', name: 'Mum', outcome: 'invalid' },
+    { key: 'b', name: 'Dad', outcome: 'failed' },
+    { key: 'c', name: 'Aunt Jo', outcome: 'duplicate' },
+    { key: 'd', name: 'Uncle Jo', outcome: 'saved' },
+  ];
+  const mixedStillNeeded = contactsStillNeedingSave(withMixed);
+  check(
+    mixedStillNeeded.length === 2 && mixedStillNeeded.includes('a') && mixedStillNeeded.includes('b'),
+    'contactsStillNeedingSave: with a mix of outcomes, only genuine failures (invalid/failed) remain'
+  );
+
+  check(
+    describeSaveFailure({ key: 'a', name: 'Mum', outcome: 'invalid' }) === "Mum — that number doesn't look right",
+    'describeSaveFailure: invalid_input produces a specific, actionable message'
+  );
+  check(
+    describeSaveFailure({ key: 'b', name: 'Dad', outcome: 'failed' }) === "Dad — couldn't be saved",
+    'describeSaveFailure: an unexpected error falls back to a generic per-contact message'
+  );
+}
+
+// --- Onboarding redesign: setup resume/progress logic ---
+
+{
+  // resumeSetupAt is the single decision point both B1 (on arrival) and
+  // the Home dashboard ("Finish setup") use to send a customer to the
+  // actual next unfinished step - critical that this reflects the new
+  // contacts-before-activation order, not the old one.
+
+  check(
+    resumeSetupAt({ isEntitled: false, contactCount: 0, isActivationVerified: false }).screen === 'subscribe',
+    'resumeSetupAt: no entitlement at all sends the customer to Subscribe first'
+  );
+
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationVerified: false }).screen === 'contacts',
+    'resumeSetupAt: entitled but zero contacts sends the customer to Trusted Contacts next - this is the core reordering this redesign makes'
+  );
+
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 1, isActivationVerified: false }).screen === 'device-picker',
+    'resumeSetupAt: contacts already added but not yet activated sends the customer to the device picker'
+  );
+
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationVerified: true }).screen === 'complete',
+    'resumeSetupAt: everything done sends the customer to the completion screen, not back through steps already finished'
+  );
+
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationVerified: true }).screen === 'contacts',
+    'resumeSetupAt: activation verified but somehow zero contacts (e.g. the honest "skip for now" path) still surfaces the contacts step as unfinished, not "complete"'
+  );
+
+  check(
+    stepIndexForScreen('subscribe') === 1 && stepIndexForScreen('contacts') === 2,
+    'stepIndexForScreen: subscribe and contacts map to their own distinct macro-steps'
+  );
+  check(
+    stepIndexForScreen('device-picker') === 3 &&
+      stepIndexForScreen('activate') === 3 &&
+      stepIndexForScreen('verify') === 3,
+    'stepIndexForScreen: device-picker, activate, and verify all collapse into the same visible "Activate" macro-step'
+  );
+  check(
+    stepIndexForScreen('welcome') === null && stepIndexForScreen('complete') === null,
+    'stepIndexForScreen: screens outside the guided flow (welcome, complete) have no step number at all'
+  );
+  check(SETUP_STEPS.length === 3, 'SETUP_STEPS: exactly three macro-steps are shown, matching the progress indicator');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

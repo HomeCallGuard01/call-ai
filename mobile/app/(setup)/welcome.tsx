@@ -1,25 +1,49 @@
-// B1 — Setup welcome. Per APP_VISUAL_SPECIFICATION.md: checks
-// entitlement on arrival to skip straight to B3 if already subscribed
-// (e.g. a family member completing setup on someone else's already-paid
-// account), sets expectations for the short journey ahead otherwise.
+// B1 — Setup welcome. Checks real account state on arrival and skips
+// straight to wherever setup actually left off — not just "already
+// subscribed", but the exact next step (lib/setupFlow.ts's
+// resumeSetupAt), so a family member finishing setup on someone else's
+// already-paid, already-has-contacts account lands on activation
+// directly, not back at the start.
 import { useEffect, useState } from "react";
 import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
+import { resumeSetupAt } from "../../lib/setupFlow";
 import { colors, spacing, typography } from "../../lib/theme";
+
+const RESUME_ROUTE: Record<string, string> = {
+  subscribe: "/(setup)/subscribe",
+  contacts: "/(setup)/contacts",
+  "device-picker": "/(setup)/device-picker",
+  complete: "/(setup)/complete",
+};
 
 export default function SetupWelcome() {
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+
     fetchDashboard()
-      .then(() => {
-        // Already entitled — skip straight past the subscribe step.
-        router.replace("/(setup)/device-picker");
+      .then(data => {
+        if (!isMounted) return;
+        const target = resumeSetupAt({
+          isEntitled: true,
+          contactCount: data.contacts.length,
+          isActivationVerified: !!data.protection.activationVerifiedAt,
+        });
+        if (target.screen === "subscribe") {
+          // Shouldn't happen (fetchDashboard succeeded, so entitlement
+          // exists) — fall through to showing this screen normally.
+          setIsChecking(false);
+          return;
+        }
+        router.replace(RESUME_ROUTE[target.screen] as any);
       })
       .catch(err => {
+        if (!isMounted) return;
         if (err instanceof NotEntitledError) {
           setIsChecking(false);
           return;
@@ -30,6 +54,10 @@ export default function SetupWelcome() {
         // genuinely wrong with the account.
         setIsChecking(false);
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   if (isChecking) {
@@ -44,16 +72,31 @@ export default function SetupWelcome() {
 
   return (
     <Screen>
-      <Text style={styles.title}>Let's get you protected — this takes about 5 minutes</Text>
+      <Text style={styles.title} accessibilityRole="header">Let's get you protected — about 5 minutes, start to finish</Text>
+      <Text style={styles.subtitle}>Three quick steps:</Text>
 
       <View style={styles.steps}>
-        <Text style={styles.step}>1. Membership</Text>
-        <Text style={styles.step}>2. Activate</Text>
-        <Text style={styles.step}>3. Trusted contacts</Text>
+        <Step number={1} label="Membership" detail="£4.99/month, protected by a 30-day money-back guarantee" />
+        <Step number={2} label="Trusted contacts" detail="So family and friends always ring straight through" />
+        <Step number={3} label="Activate" detail="Turn on call forwarding — we'll confirm it's working" />
       </View>
 
       <PrimaryButton label="Let's get started" onPress={() => router.push("/(setup)/subscribe")} />
     </Screen>
+  );
+}
+
+function Step({ number, label, detail }: { number: number; label: string; detail: string }) {
+  return (
+    <View style={styles.step} accessibilityRole="text" accessibilityLabel={`Step ${number}: ${label}. ${detail}`}>
+      <View style={styles.stepNumber}>
+        <Text style={styles.stepNumberText}>{number}</Text>
+      </View>
+      <View style={styles.stepText}>
+        <Text style={styles.stepLabel}>{label}</Text>
+        <Text style={styles.stepDetail}>{detail}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -66,14 +109,47 @@ const styles = StyleSheet.create({
   title: {
     ...typography.hero,
     color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  subtitle: {
+    ...typography.body,
+    color: colors.textMuted,
     marginBottom: spacing.lg,
   },
   steps: {
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    gap: spacing.lg,
+    marginBottom: spacing.xl,
   },
   step: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  stepNumberText: {
+    color: colors.accent,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  stepText: {
+    flex: 1,
+  },
+  stepLabel: {
     ...typography.body,
+    color: colors.text,
+    fontWeight: "700",
+  },
+  stepDetail: {
+    ...typography.caption,
     color: colors.textMuted,
+    marginTop: 2,
   },
 });
