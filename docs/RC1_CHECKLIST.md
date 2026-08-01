@@ -7,6 +7,16 @@
 - **Commit:** `629c06f` (`feat(onboarding): redesign and production hardening`)
 - **Status:** Open, unmerged, feature frozen — only fixes for issues found during RC1 review/testing are permitted from this point forward
 
+## Staging environment
+
+A genuinely separate Supabase staging project exists and is now wired into this branch:
+
+- **Project:** `home-call-guard-staging`, ref `tigwgmayeuisrxjjykqd`, region `eu-west-2`, created 2026-07-30. Distinct project, distinct credentials, distinct auth users — no shared state with production (`psbzynxplxfbyrbdidmn`).
+- **Discovered, not created, by this pass** — it was already set up and substantially verified via parallel work on `main` (`docs/engineering/STAGING_ENVIRONMENT_PLAN.md`, `docs/engineering/MIGRATION_RECOVERY_PLAN.md`) that this branch had no visibility into until 2026-08-01. Reconciled into `sandbox/mobile-app-v1` via commit `6affdc9` — cherry-picked (not merged): migration `000_baseline_contacts_table.sql`, migration `022_lock_down_security_definer_execute_grants.sql`, both migrations' rollback scripts, the relocation of `005_household_rls.sql` and 019's rollback to non-scanned directories, `scripts/verify-security-definer-grants.js`, and a merge (not overwrite) of `tests/migrations.pglite.test.mjs` that keeps this branch's own migration-021-specific behavioural tests alongside main's new dynamic grant check.
+- **Environment files:** `.env.staging.local` (repo root) and `mobile/.env.staging.local` — both gitignored (`.gitignore`'s `.env.*` and `mobile/.gitignore`'s `.env*.local` patterns, confirmed via `git check-ignore`), never committed, clearly labeled as staging in their own header comments. Stripe keys in the root file are the existing **test-mode** keys already present in `.env` (`STRIPE_TEST_SECRET_KEY` etc.) — never live keys. Twilio credentials deliberately left blank — activation-verification testing uses a synthetic database row, never a real Twilio call.
+- **Migration history:** `supabase migration list --linked` (run from this worktree, linked to staging) shows local and remote versions matching exactly for all 21 applied migrations (`000`–`004`, `006`–`022`; `005` and the `019` rollback are relocated out of the scanned path on both sides).
+- **Existing data confirmed synthetic:** staging has 2 household rows. One is the hardcoded placeholder every environment gets from migration `004_backfill_default_household.sql` (`default-household@homecallguard.internal`) — its email/phone/Twilio-number match production's own copy of the same migration exactly, which is expected and not a data leak. The other has zero field overlap with any production household (checked: email, phone number, Twilio number, Stripe customer ID — compared in-memory, no raw values logged or displayed). Neither row was modified or deleted by this pass.
+
 ## How to read this checklist
 
 - `[x]` — supported by evidence cited alongside it (a test count, commit hash, PR reference, or file). Only items that can be pointed at concrete evidence are checked.
@@ -17,7 +27,7 @@
 ## Code quality
 
 - [x] TypeScript strict compile clean — `npx tsc --noEmit` (`mobile/tsconfig.json`), exit 0
-- [x] Full automated test suite passing — 383/383 checks across 15 test files (`npm test`, repo root), exit 0
+- [x] Full automated test suite passing — 450/450 checks across 15 test files (`npm test`, repo root), exit 0 — up from 383 after reconciling with main's SECURITY DEFINER grant test coverage (commit `6affdc9`)
 - [x] Regression tests added for every hardening fix found this pass — commit `629c06f`, `tests/mobile-app.test.mjs` (+121 lines, 12 new checks covering `looksLikePhoneNumber`, `contactsStillNeedingSave`, `describeSaveFailure`)
 - [ ] Lint / static analysis — not run as part of this pass
 - [ ] Component/integration test harness (Jest/React Native Testing Library) — does not exist; see **Deferred items**
@@ -60,6 +70,7 @@
 
 - [x] Fail-closed protection status: the dashboard can never render "Protected" without backend-confirmed data — `mobile/lib/homeStatus.ts`, 6 checks in `tests/mobile-app.test.mjs` (`deriveLoadOutcome`)
 - [x] Activation-instructions logic covered per landline provider (BT, Sky, Virgin, TalkTalk, Plusnet, other) — 17 checks in `tests/activation-instructions.test.mjs`
+- [x] **Activation-verification flow exercised end-to-end against staging**, 2026-08-01 — real Supabase auth user created, signed in, bootstrapped via `POST /api/v1/me/bootstrap`, a synthetic "recent call" row inserted, `POST /api/v1/activation/verify` called for real over HTTP against the running backend (not a direct RPC/unit test): returned `verified: true` with a real `activation_verified_at` timestamp; called again, confirmed idempotent (identical timestamp returned, not a new one). Every synthetic artifact (auth user, household, call row) was deleted afterward — staging's household count confirmed back at 2, matching its pre-test state.
 - [ ] Live call-forwarding activation verified against a real Twilio number / real carrier dial — requires live Twilio; see **Deferred items**
 - [ ] Actual AI call-screening behaviour tested live — not exercised in this pass
 
@@ -79,6 +90,7 @@
 - [x] Contact duplicate-check confirmed household-scoped — no cross-household data leak possible via the "duplicate" outcome — code review, `routes/mobileApi.js`
 - [x] `Cache-Control: no-store` fix confirmed present on the mobile API router — verified via `grep` this session, `routes/mobileApi.js`
 - [x] CORS wildcard (`Access-Control-Allow-Origin: *`) reviewed — accepted as low-risk given bearer-token-only auth (no ambient browser credentials to ride); flagged to revisit if the auth model ever changes
+- [x] **Every `SECURITY DEFINER` function's grants verified against staging**, 2026-08-01 — `node scripts/verify-security-definer-grants.js` (linked to `tigwgmayeuisrxjjykqd`): all 11 functions (including `mark_household_activation_verified`) have `service_role`-only `EXECUTE` (no `PUBLIC`/`anon`/`authenticated`), a pinned empty `search_path`, and `postgres` ownership; the schema's default privileges for future functions are confirmed fail-closed. This closes a real gap found while staging was first provisioned — Supabase's platform default originally granted `EXECUTE` on new functions directly to `anon`/`authenticated` (not via `PUBLIC`, so `revoke all from public` alone never caught it) — fixed by migration `022_lock_down_security_definer_execute_grants.sql`. Production was separately confirmed (2026-07-31, on `main`) to never have had this exposure — its default privileges predate whatever introduced this Supabase platform default. Full detail: `docs/engineering/MIGRATION_RECOVERY_PLAN.md` on `main`.
 - [ ] Rate limiting on `/api/v1/contacts` and `/api/v1/activation/verify` — not reviewed; see **Deferred items**
 - [ ] External penetration test / security audit — not performed
 
@@ -101,7 +113,9 @@
 - [ ] Production Stripe keys/webhook configuration verified — not checked this pass
 - [ ] Production Twilio configuration verified — not checked this pass
 - [ ] Production `EXPO_PUBLIC_API_BASE_URL` value confirmed — not checked this pass
-- [x] Migration `021_household_activation_verified.sql` applied status — **confirmed NOT applied**, live, 2026-08-01. Verified two independent ways against the database at `psbzynxplxfbyrbdidmn.supabase.co` (the project this app's `.env` connects to): `households.select("activation_verified_at")` → Postgres error `42703 column households.activation_verified_at does not exist`; `rpc("mark_household_activation_verified", ...)` → PostgREST error `PGRST202 Could not find the function`. A sanity check against a known-applied migration's column (`twilio_provisioning_status`, migration 016) succeeded on the same connection, confirming these are real negative results, not a connectivity fault. See **Deferred items** for the full finding, including a correction to this checklist's own earlier, incorrect entry.
+- [x] Migration `021_household_activation_verified.sql` applied status on **staging** — **confirmed applied and fully verified**, 2026-08-01. `supabase migration list --linked` shows local/remote history matching exactly; `households.activation_verified_at` exists; `mark_household_activation_verified` exists and behaves correctly (idempotent, raises for a nonexistent household, denies `authenticated` role, confirmed both via direct RPC call and via the full HTTP activation-verify flow — see **Protection and call routing** above).
+- [x] Migration `022_lock_down_security_definer_execute_grants.sql` applied status on **staging** — confirmed applied and verified (see **Security** above).
+- [ ] Migrations 021/022 applied status on **production** — **confirmed NOT applied**, deliberately. Live-verified 2026-07-31/2026-08-01 (read-only, two independent ways: column/function existence checks both fail as expected). A complete, ready-to-execute runbook already exists on `main` (`docs/engineering/PRODUCTION_MIGRATION_RUNBOOK_021_022.md`) — pre-flight checklist, exact execution sequence, post-deployment verification, and rollback strategy — but has never been run and requires separate, explicit approval before it is. See **Release decision**.
 
 ## Rollback and monitoring
 
@@ -114,10 +128,9 @@
 These are already listed in PR #2 and remain open:
 
 - Legal review of consent and guarantee wording (`subscribe.tsx`'s "start immediately" checkbox and founding-member/guarantee terms) not yet performed
-- **Migration `021_household_activation_verified.sql` is confirmed NOT applied** — resolved 2026-08-01, live-verified against the database (see above). **Correction to this checklist's own earlier entry:** the previous wording here claimed "live testing earlier this session exercis[ed] the column successfully against staging" — that was never actually confirmed and turned out to be wrong; there is no separate staging Supabase project at all (see below), and the column genuinely does not exist anywhere. **Real-world impact while unresolved:** `POST /api/v1/activation/verify` will 500 the first time it genuinely detects a qualifying call and tries to call the (missing) RPC — this is the single highest-value screen in the activation flow. The Home dashboard itself won't crash (it reads the missing column as a plain property, which just returns `undefined`), but no customer's status can ever flip from "Setting up" to "Protected," even after they've genuinely completed activation.
-- **There is no separate staging Supabase project.** The only Supabase project referenced anywhere in this codebase (`psbzynxplxfbyrbdidmn`) is production — used for both live customers and QA test data. This was independently discovered and documented on 2026-07-30 (`docs/mobile-app/RC1_HANDOVER.md` §10, `docs/launch/KNOWN_ISSUES.md`, `docs/engineering/STAGING_ENVIRONMENT_PLAN.md`) and reconfirmed today. This is why migration 021 can't simply be "applied to staging" — there is nowhere to apply it except production itself. `docs/engineering/STAGING_ENVIRONMENT_PLAN.md` proposes creating a real, separate staging project before any further schema changes are applied anywhere; that plan is not yet started and requires separate explicit approval before any of its steps are executed.
-- Live Stripe flow not fully tested in this pass
-- Live Twilio flow not fully tested in this pass
+- **RESOLVED 2026-08-01 — staging environment now exists and migrations 021/022 are applied and verified there.** History: on 2026-08-01 this checklist incorrectly claimed live testing had exercised migration 021 against "staging" when no such project was known to this branch; that was corrected the same day to "no staging environment exists, migration 021 not applied anywhere." Both corrections are now superseded — a real staging project (`tigwgmayeuisrxjjykqd`, created 2026-07-30) was found to already exist via parallel work on `main`, and has been reconciled into this branch (commit `6affdc9`). See **Staging environment** above for full detail. The one item that remains genuinely open is applying 021/022 to **production** — see **Release decision**.
+- Live Stripe flow not fully tested in this pass (staging config now uses Stripe **test-mode** keys, but no live Checkout session has been run against it yet)
+- Live Twilio flow not fully tested in this pass (activation-verification was tested via a synthetic database row, not a real Twilio call — deliberately, per this task's own scope)
 - No component-test harness (Jest/RNTL) exists — mobile tests are pure-logic-extraction only
 - Rate limiting on the mobile API still requires review, particularly now that contact saves fire in parallel rather than sequentially
 
@@ -125,6 +138,6 @@ These are already listed in PR #2 and remain open:
 
 - [ ] **Approved to merge PR #2 into `main`** — not yet decided; requires explicit sign-off from the repo owner after the items above requiring live Stripe, Twilio, email, device, and production-configuration testing are resolved or explicitly accepted as known launch risks.
 
-**Current recommendation: not ready to merge or deploy.** Code-level correctness, races, accessibility, and security have been reviewed and hardened with automated-test coverage; nothing here has yet been verified against live payment processing, live call forwarding, a real device, or production configuration.
+**Current recommendation: not ready to merge or deploy.** Code-level correctness, races, accessibility, and security have been reviewed and hardened with automated-test coverage, and migrations 021/022 are now fully applied and verified on a real staging environment, including a full end-to-end activation-verification test. What remains is applying 021/022 to production and everything requiring live payment processing, live call forwarding, a real device, or production configuration.
 
-**Confirmed launch blocker (2026-08-01):** migration 021 is not applied anywhere, and there is no staging environment to apply it to without touching the live production database. B5 (activation verification) will 500 for the first real customer who reaches it until this is resolved. This must be explicitly resolved — either by executing `docs/engineering/STAGING_ENVIRONMENT_PLAN.md` first, or by a deliberate, explicitly-approved decision to apply migration 021 directly to production with a pre-migration backup and immediate post-apply schema verification — before merge.
+**Remaining launch blocker (updated 2026-08-01):** migrations 021 and 022 must still be applied to production before the mobile app's activation-verification flow can work for a real customer — `POST /api/v1/activation/verify` will still 500 on production today. This is no longer blocked by "nowhere safe to test it" (staging now exists and both migrations are verified there) — it is now purely a deliberate go/no-go decision on executing the already-written `docs/engineering/PRODUCTION_MIGRATION_RUNBOOK_021_022.md` (on `main`), which requires separate, explicit approval per this project's own standing convention for production changes. Not executed as part of this task, and not implied by anything above.
