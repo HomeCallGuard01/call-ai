@@ -3,7 +3,7 @@
 // deferred per the Launch Feature Matrix, so D2 doesn't exist yet;
 // adding it back is a small, additive change once push ships.
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Alert, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, Alert, ActivityIndicator, Platform } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/AuthContext";
@@ -75,6 +75,18 @@ export default function Account() {
   );
 
   function handleLogout() {
+    // Alert.alert's multi-button form is a silent no-op on React Native
+    // Web (confirmed live, RC1 staging test, 2026-08-02) — the dialog
+    // never renders and its callback never fires, so the button did
+    // nothing at all on web. window.confirm is the reliable equivalent
+    // there; native (iOS/Android) keeps the original Alert, which this
+    // gap has no evidence of affecting.
+    if (Platform.OS === "web") {
+      if (window.confirm("Log out?")) {
+        supabase.auth.signOut();
+      }
+      return;
+    }
     Alert.alert("Log out?", undefined, [
       { text: "Cancel", style: "cancel" },
       {
