@@ -21,6 +21,7 @@ export default function Activate() {
   const params = useLocalSearchParams<{ deviceType: DeviceType; provider?: LandlineProvider }>();
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notProvisioned, setNotProvisioned] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -41,6 +42,7 @@ export default function Activate() {
     const thisLoadId = ++loadId.current;
     setIsLoading(true);
     setError(null);
+    setNotProvisioned(false);
     fetchActivationInstructions(params.deviceType, params.provider)
       .then(result => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
@@ -49,10 +51,19 @@ export default function Activate() {
       .catch(err => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
         if (err instanceof ApiError && err.code === "not_provisioned") {
-          // Still setting up server-side — not an error, just not ready
-          // yet. Route back to the setup welcome screen, which re-checks
-          // state on arrival.
-          router.replace("/(setup)/welcome");
+          // Still setting up server-side (the household's Twilio number
+          // isn't assigned yet) — not an error, just not ready yet. This
+          // used to router.replace to /(setup)/welcome, which re-derives
+          // its target from resumeSetupAt() — but that function has no
+          // concept of "provisioning in progress" and, since activation
+          // isn't verified either, always sends the customer straight
+          // back to device-picker. Net effect was a silent, unexplained
+          // bounce (confirmed live during RC1 staging E2E testing,
+          // 2026-08-04) with the customer landing back where they
+          // started and no indication anything happened. Showing this
+          // state in place, with its own retry, fixes that without
+          // touching resumeSetupAt's unrelated logic.
+          setNotProvisioned(true);
           return;
         }
         setError("We couldn't load your activation code. Check your connection and try again.");
@@ -77,6 +88,21 @@ export default function Activate() {
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Loading your activation code" />
         </View>
+      </Screen>
+    );
+  }
+
+  if (notProvisioned) {
+    return (
+      <Screen>
+        <SetupProgress currentStep={3} />
+        <Text style={styles.title} accessibilityRole="header">Still setting up your line</Text>
+        <Text style={styles.explanation}>
+          We're finishing the setup on our side before we can show you an activation code. This
+          usually only takes a few minutes — please check back shortly.
+        </Text>
+        <PrimaryButton label="Check again" onPress={load} />
+        <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
       </Screen>
     );
   }

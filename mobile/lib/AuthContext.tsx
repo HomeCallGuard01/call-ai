@@ -9,6 +9,7 @@
 // going back after re-auth lands where the customer left off.
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { router } from "expo-router";
 import { supabase } from "./supabase";
 import { bootstrapHousehold } from "./api";
 import { shouldTriggerBootstrap } from "./bootstrapTrigger";
@@ -39,6 +40,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
+
+      // The comment this function opens with has always described this
+      // redirect as existing ("firing with a null session redirects to
+      // login from wherever the customer happens to be") but the actual
+      // call was never written — confirmed live during RC1 staging E2E
+      // testing, 2026-08-04: logging out from the Account tab correctly
+      // cleared the session but left the screen showing an infinite
+      // loading spinner forever, since that screen's own dashboard-fetch
+      // failure has nothing that would navigate it anywhere. SIGNED_OUT
+      // covers both a manual sign-out and Supabase invalidating a session
+      // it can no longer refresh (E4), matching the doc comment's intent
+      // for both cases.
+      if (event === "SIGNED_OUT") {
+        router.replace("/(auth)/welcome");
+      }
 
       const userId = newSession?.user?.id ?? null;
 
