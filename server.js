@@ -1,4 +1,22 @@
-require("dotenv").config();
+// ENV_FILE selects exactly one environment file to load — set it to run
+// against a specific environment (e.g. ENV_FILE=.env.staging), or leave it
+// unset for plain default local development (loads .env as before). This
+// is deliberately an either/or, never both: server.js used to always also
+// load cwd's .env regardless of what was passed via `-r dotenv/config
+// dotenv_config_path=...`, which is how a real backend ended up silently
+// drawing its Stripe/Twilio/OpenAI config from the sandbox repo's default
+// .env — including a live-prefixed Stripe key — even when it had been
+// launched against a staging-only file that set none of those. See
+// services/serverConfig.js's validateStagingEnv() for the boot-time
+// safeguard this enables.
+const ENV_FILE = process.env.ENV_FILE;
+if (ENV_FILE) {
+  require("dotenv").config({ path: ENV_FILE });
+} else {
+  require("dotenv").config();
+}
+// Non-secret by design — the path only, never a value from the file.
+console.log(`[env] Loaded environment from: ${ENV_FILE || ".env (default, local development)"}`);
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -20,7 +38,8 @@ const { buildUserScopedClient } = require("./services/supabaseClients");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const mobileApiRoutes = require("./routes/mobileApi");
-const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
+const { resolvePort, validateProductionEnv, validateStagingEnv } = require("./services/serverConfig");
+const { stripe } = require("./services/stripeClient");
 
 // Fail fast and clearly in production rather than starting in a silently
 // broken or insecure state (e.g. a missing STRIPE_WEBHOOK_SECRET would
@@ -34,6 +53,22 @@ if (process.env.NODE_ENV === "production") {
   if (problems.length > 0) {
     console.error("FATAL: invalid production configuration:");
     for (const problem of problems) {
+      console.error(` - ${problem}`);
+    }
+    process.exit(1);
+  }
+}
+
+// Same fail-fast principle, for an explicitly-selected non-production
+// environment (ENV_FILE set) — catches the exact gap that let this
+// backend silently draw Stripe config from the sandbox repo's default
+// .env instead of its intended staging-only file. Plain default local dev
+// (no ENV_FILE) is untouched by this check.
+if (ENV_FILE && process.env.NODE_ENV !== "production") {
+  const stagingProblems = validateStagingEnv(process.env);
+  if (stagingProblems.length > 0) {
+    console.error(`FATAL: invalid staging configuration (ENV_FILE=${ENV_FILE}):`);
+    for (const problem of stagingProblems) {
       console.error(` - ${problem}`);
     }
     process.exit(1);
@@ -139,9 +174,22 @@ if (!supabaseAdmin) {
   );
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Guarded the same way supabaseAdmin above and services/stripeClient.js's
+// stripe client already are: the SDK's own constructor throws synchronously
+// if apiKey is undefined, which previously crashed the entire process at
+// boot whenever OPENAI_API_KEY was unset — not just the AI-classification
+// feature that actually needs it. The one call site (below) already
+// try/catches and falls open to a "SAFE" result on any failure, so a null
+// client here degrades the same way a failed API call already did.
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+if (!openai) {
+  console.warn(
+    "OPENAI_API_KEY is not set — scam-call AI classification will fail open to SAFE until it is configured."
+  );
+}
 
 function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
@@ -251,7 +299,7 @@ app.post("/process", async (req, res) => {
   let result = "SAFE";
   let aiModel = null;
 
-  if (!isKeywordScam && speech.length > 5) {
+  if (openai && !isKeywordScam && speech.length > 5) {
     try {
       const aiResponse = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -843,7 +891,35 @@ app.get("/dashboard", requireAuth, (req, res) => {
 });
 
 // START SERVER
+//
+// The staging safeguard above catches a wrong project ref or an obviously
+// live-prefixed key synchronously at boot from the key's shape alone. This
+// closes the gap prefix-matching can't: whether a syntactically
+// sk_test_-shaped key is actually in test mode right now is something
+// only Stripe's own account state can confirm, so ask it directly with a
+// read-only, no-side-effect call (balance.retrieve — no billing action)
+// before accepting traffic. Same gate as the sync check: only for an
+// explicitly-selected non-production environment.
+async function startServer() {
+  if (ENV_FILE && process.env.NODE_ENV !== "production" && stripe) {
+    try {
+      const balance = await stripe.balance.retrieve();
+      if (balance.livemode) {
+        console.error(
+          `FATAL: Stripe reports livemode=true for the key loaded from ENV_FILE=${ENV_FILE} — refusing to start a non-production process against live Stripe.`
+        );
+        process.exit(1);
+      }
+      console.log("[env] Stripe account confirmed test mode (livemode=false).");
+    } catch (err) {
+      console.error(`FATAL: could not verify the Stripe account's mode: ${err.message}`);
+      process.exit(1);
+    }
+  }
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer();
