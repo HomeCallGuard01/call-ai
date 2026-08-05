@@ -35,6 +35,7 @@ import {
 } from '../mobile/lib/contactSelection.ts';
 import { shouldTriggerBootstrap } from '../mobile/lib/bootstrapTrigger.ts';
 import { resumeSetupAt, stepIndexForScreen, SETUP_STEPS } from '../mobile/lib/setupFlow.ts';
+import { canAutoOpenDialer, buildDialerUrl } from '../mobile/lib/dialerLink.ts';
 
 let failures = 0;
 
@@ -321,6 +322,28 @@ function check(condition, message) {
     'stepIndexForScreen: screens outside the guided flow (welcome, complete) have no step number at all'
   );
   check(SETUP_STEPS.length === 3, 'SETUP_STEPS: exactly three macro-steps are shown, matching the progress indicator');
+
+  check(
+    canAutoOpenDialer('iphone') === true && canAutoOpenDialer('android') === true,
+    'canAutoOpenDialer: iphone and android are the customer\'s own line — safe to auto-open the dialer'
+  );
+  check(
+    canAutoOpenDialer('landline') === false,
+    'canAutoOpenDialer: landline must never auto-open this device\'s dialer — the code has to be dialled from the physical landline handset, a different device entirely, or it would silently forward the wrong line'
+  );
+
+  check(
+    buildDialerUrl('*21*07700900000#') === 'tel:*21*07700900000%23',
+    'buildDialerUrl: percent-encodes the trailing # (so URL-parsing layers cannot treat it as a fragment separator and truncate the code) and produces the exact expected tel: URL for a real forwarding code'
+  );
+  check(
+    buildDialerUrl('##21#') === 'tel:%23%2321%23',
+    'buildDialerUrl: encodes every # in the string, not just the first (the cancel code starts with two)'
+  );
+  check(
+    buildDialerUrl('*21*07700900000#').includes('*') && !buildDialerUrl('*21*07700900000#').includes('%2A'),
+    'buildDialerUrl: leaves * unencoded — not a reserved URI character, matches Apple\'s own documented tel: feature-code examples'
+  );
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

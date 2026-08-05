@@ -72,7 +72,7 @@ export default function SetupWelcome() {
 
   return (
     <Screen>
-      <Text style={styles.title} accessibilityRole="header">Let's get you protected — about 5 minutes, start to finish</Text>
+      <Text style={styles.title} accessibilityRole="header">Let's get you protected — in just a few clicks</Text>
       <Text style={styles.subtitle}>Three quick steps:</Text>
 
       <View style={styles.steps}>

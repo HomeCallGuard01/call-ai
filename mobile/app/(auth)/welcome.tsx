@@ -26,7 +26,7 @@ import { colors, spacing, typography } from "../../lib/theme";
 const PANELS = [
   {
     headline: "Stop scam callers before they reach you",
-    body: "Protect your phone from nuisance and scam callers in around 2 minutes.",
+    body: "Protect your phone from nuisance and scam callers in just a few clicks.",
   },
   {
     headline: "Keep your number, keep your family's calls coming through exactly as normal",

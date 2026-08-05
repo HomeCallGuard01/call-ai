@@ -1,12 +1,26 @@
-// B4 — Activation instructions. Per APP_VISUAL_SPECIFICATION.md: the
-// code itself large and copyable, plain numbered steps, honest that this
-// is a manual step the app cannot do for the customer, and — per the
-// persona review's most important finding — an explicit acknowledgment
-// for the case where someone is on the phone with a family member
-// walking them through this (a single phone can't dial the code while
-// also being used for that call).
+// B4 — Activation. Redesigned 2026-08-05 around the shortest honest path
+// per device type, researched against real platform restrictions before
+// writing any of this (see mobile/lib/dialerLink.ts for the detail):
+//
+// - iPhone/Android: this device's OWN line is what's being forwarded, so
+//   tapping "Activate protection" opens the native Phone app with the
+//   code already filled in (Linking.openURL('tel:...')) — no copying or
+//   typing. Neither iOS nor Android will place the call itself; the
+//   customer must press the green call button themselves, and no
+//   permission or native module changes that (see dialerLink.ts). An
+//   AppState listener detects the customer returning from the Phone app
+//   and auto-advances to verification — no extra tap needed for the
+//   "come back here" step the old copy asked for manually.
+// - Landline: the code must be dialled from the physical landline
+//   handset, a different device entirely from the phone this app runs
+//   on. Auto-opening THIS device's dialer here would not just be
+//   restricted, it would be wrong — it would silently attempt to forward
+//   this device's own mobile line instead. "Activate protection" here
+//   does not open a dialer; it means "I've dialled it on my landline
+//   phone, check now," and the code stays visible/copyable throughout
+//   since referencing it from a second device is genuinely unavoidable.
 import { useEffect, useRef, useState } from "react";
-import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
+import { Text, View, StyleSheet, ActivityIndicator, AppState, Linking, Pressable } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Screen } from "../../components/Screen";
@@ -14,6 +28,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { fetchActivationInstructions, ApiError } from "../../lib/api";
+import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
 import type { ActivationInstructionsResponse, DeviceType, LandlineProvider } from "../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
@@ -24,6 +39,9 @@ export default function Activate() {
   const [notProvisioned, setNotProvisioned] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [dialerError, setDialerError] = useState(false);
+
+  const canAutoDial = canAutoOpenDialer(params.deviceType);
 
   // Retry ("Try again") re-runs load() while a previous attempt might
   // still be in flight, and the params effect below can also re-fire
@@ -36,6 +54,22 @@ export default function Activate() {
     return () => {
       isMounted.current = false;
     };
+  }, []);
+
+  // Set the moment the dialer is opened, so the AppState listener below
+  // knows a return-to-foreground is actually "back from dialling", not
+  // just an unrelated app switch (e.g. bringing up the keyboard's app
+  // switcher, or a notification banner).
+  const dialerOpened = useRef(false);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", nextState => {
+      if (nextState === "active" && dialerOpened.current) {
+        dialerOpened.current = false;
+        router.push("/(setup)/verify");
+      }
+    });
+    return () => subscription.remove();
   }, []);
 
   function load() {
@@ -82,6 +116,33 @@ export default function Activate() {
     if (isMounted.current) setCopied(true);
   }
 
+  async function handleActivate() {
+    if (!instructions) return;
+
+    if (!canAutoDial) {
+      // Landline: nothing to open on this device — the customer has
+      // already dialled from their landline phone by the time they tap
+      // this, so go straight to verification.
+      router.push("/(setup)/verify");
+      return;
+    }
+
+    setDialerError(false);
+    const url = buildDialerUrl(instructions.code);
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) {
+        setDialerError(true);
+        return;
+      }
+      dialerOpened.current = true;
+      await Linking.openURL(url);
+    } catch {
+      dialerOpened.current = false;
+      setDialerError(true);
+    }
+  }
+
   if (isLoading) {
     return (
       <Screen scroll={false}>
@@ -96,6 +157,7 @@ export default function Activate() {
     return (
       <Screen>
         <SetupProgress currentStep={3} />
+        <BackLink />
         <Text style={styles.title} accessibilityRole="header">Still setting up your line</Text>
         <Text style={styles.explanation}>
           We're finishing the setup on our side before we can show you an activation code. This
@@ -111,6 +173,7 @@ export default function Activate() {
     return (
       <Screen>
         <SetupProgress currentStep={3} />
+        <BackLink />
         <Banner variant="error" message={error || "Something went wrong."} />
         <PrimaryButton label="Try again" onPress={load} />
         <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
@@ -121,38 +184,62 @@ export default function Activate() {
   return (
     <Screen>
       <SetupProgress currentStep={3} />
+      <BackLink />
       <Text style={styles.title} accessibilityRole="header">Turn on call forwarding</Text>
-      <Text style={styles.explanation}>{instructions.explanation}</Text>
+      <Text style={styles.explanation}>
+        {canAutoDial
+          ? "Tap Activate protection to open your Phone app with the code ready — just press the call button, then come straight back here."
+          : "This code needs to be dialled from your landline phone, not this device. Once you've dialled it there and heard the confirmation, come back here and tap Activate protection."}
+      </Text>
 
       <View style={styles.codeBox} accessibilityRole="text" accessibilityLabel={`Your activation code is ${instructions.code}`}>
         <Text style={styles.code} selectable>{instructions.code}</Text>
       </View>
-      <PrimaryButton
-        label={copied ? "Copied!" : "Copy code"}
-        onPress={handleCopy}
-        variant="secondary"
-      />
+      <Pressable onPress={handleCopy} accessibilityRole="button" style={styles.copyLink}>
+        <Text style={styles.copyLinkText}>{copied ? "Copied!" : "Copy code"}</Text>
+      </Pressable>
 
       {instructions.requiresPreliminaryCall && instructions.preliminaryCallNote && (
         <Banner variant="notice" message={instructions.preliminaryCallNote} />
       )}
 
-      <View style={styles.steps}>
-        <Text style={styles.step}>1. Open your Phone app</Text>
-        <Text style={styles.step}>2. Dial the code above</Text>
-        <Text style={styles.step}>
-          3. You may hear a beep or a short recorded message confirming it — that's normal, you can hang up
-        </Text>
-        <Text style={styles.step}>4. Come back here</Text>
-      </View>
+      {dialerError && (
+        <Banner
+          variant="error"
+          message="We couldn't open your Phone app automatically. Copy the code above and dial it manually, then come back here."
+        />
+      )}
+
+      {!canAutoDial && (
+        <View style={styles.steps}>
+          <Text style={styles.step}>1. Go to your landline phone</Text>
+          <Text style={styles.step}>2. Dial the code above</Text>
+          <Text style={styles.step}>
+            3. You may hear a beep or a short recorded message confirming it — that's normal, you can hang up
+          </Text>
+          <Text style={styles.step}>4. Come back here and tap Activate protection</Text>
+        </View>
+      )}
 
       <Banner
         variant="notice"
         message="If you're on the phone with someone helping you, you may need to put them on speaker, or ask them to call you back on another phone while you dial this."
       />
 
-      <PrimaryButton label="I've done this" onPress={() => router.push("/(setup)/verify")} />
+      <PrimaryButton label="Activate protection" onPress={handleActivate} />
     </Screen>
+  );
+}
+
+function BackLink() {
+  return (
+    <Pressable
+      onPress={() => router.replace("/(setup)/device-picker")}
+      accessibilityRole="button"
+      style={styles.backLink}
+    >
+      <Text style={styles.backLinkText}>‹ Back</Text>
+    </Pressable>
   );
 }
 
@@ -161,6 +248,16 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  backLink: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: "center",
+    marginLeft: -spacing.sm,
+  },
+  backLinkText: {
+    color: colors.accent,
+    fontWeight: "600",
+    fontSize: 15,
   },
   title: {
     ...typography.hero,
@@ -188,9 +285,21 @@ const styles = StyleSheet.create({
     color: colors.accent,
     letterSpacing: 1,
   },
+  copyLink: {
+    alignSelf: "center",
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  copyLinkText: {
+    color: colors.accent,
+    fontWeight: "600",
+    fontSize: 14,
+  },
   steps: {
     gap: spacing.sm,
-    marginTop: spacing.lg,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
   step: {
