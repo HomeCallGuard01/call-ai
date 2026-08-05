@@ -6,16 +6,16 @@ const ITEMS = [
   {
     title: "Registered office address decision",
     severity: "blocker",
-    status: "pending",
+    status: "resolved",
     detail:
-      "public/terms.html §1 still has a placeholder. This same address is required for the Twilio Address object needed to purchase UK numbers — resolving this one decision unblocks both.",
+      "Resolved: 128 City Road, London, EC1V 2NX, United Kingdom (AFMD Ltd's registered office) is now stated in public/terms.html §1 and public/privacy.html §1. This unblocks the Twilio Address object item below.",
   },
   {
     title: "Twilio Address object for UK number purchase",
     severity: "blocker",
     status: "pending",
     detail:
-      "Twilio's real purchase API rejected a test attempt: an AddressSid is required for UK local numbers. Blocked on the registered office address decision above.",
+      "Twilio's real purchase API rejected a test attempt: an AddressSid is required for UK local numbers. The registered office address decision above is now resolved (128 City Road, London, EC1V 2NX) — the remaining work is creating the Twilio Address object itself and wiring its SID through buildIncomingPhoneNumberParams() in services/twilioProvisioning.js, not a further business decision.",
   },
   {
     title: "Migration 017 real-database repair",
@@ -43,7 +43,7 @@ const ITEMS = [
     severity: "medium",
     status: "pending",
     detail:
-      "public/terms.html is a considered draft, not a solicitor-reviewed contract. Recommend UK consumer-law review before go-live.",
+      "public/terms.html is a considered draft, not a solicitor-reviewed contract. Recommend UK consumer-law review before go-live, particularly §5 (Cancellation), §9 (Fair use and abuse), §10 (Refund policy and statutory cancellation rights), and the new §11 (Money-back guarantee) added in the 2026-08-05 launch-readiness audit.",
   },
 ];
 

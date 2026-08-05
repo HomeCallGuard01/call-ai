@@ -265,6 +265,21 @@ launch — a UK consumer contract needs a real registered office stated.
 **This same address is also now needed for the Twilio Address object**
 above — resolving this one decision unblocks both.
 
+**Resolved, 2026-08-05.** `public/terms.html` §1 and `public/privacy.html`
+§1 now both state AFMD Ltd's registered office as 128 City Road, London,
+EC1V 2NX, United Kingdom, confirmed during the launch-readiness
+content audit that session. `services/launchReadiness.js` updated to
+match. This unblocks the "UK number purchase requires a registered
+Twilio Address" item above on the address-decision front — the
+remaining work there is purely operational (create the Twilio Address
+object and wire its SID through), not a further business decision.
+The same audit added a new `public/terms.html` §11 ("Money-back
+guarantee"), formalising the 30-day guarantee already shown in the
+mobile app's Subscribe/Confirmation screens as a distinct commercial
+commitment from AFMD Ltd, separate from the §10 statutory 14-day right
+— this still needs the solicitor review already flagged below, same as
+the rest of the document.
+
 ## Severity 3 — cosmetic / optional
 
 ### Hero paragraph doesn't hold to two lines on every phone
