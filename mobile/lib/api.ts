@@ -5,6 +5,8 @@
 // calls the V1 app actually makes, matching the Launch Feature Matrix.
 import { supabase } from "./supabase";
 import type {
+  RegisterResponse,
+  ResendConfirmationResponse,
   DashboardResponse,
   NotEntitledResponse,
   ActivationVerifyResponse,
@@ -113,6 +115,36 @@ export async function bootstrapHousehold(accessToken: string, refreshToken: stri
     const body = (await response.json().catch(() => null)) as ApiErrorResponse | null;
     throw new ApiError(response.status, body?.error || "unknown_error", body?.message);
   }
+}
+
+// No Authorization header — this happens before any session exists.
+// Replaces the old direct supabase.auth.signUp() call from
+// (auth)/register.tsx: the decision of whether this is a genuinely new
+// signup, a resend to an existing unconfirmed email, or an existing
+// confirmed account is made server-side (routes/mobileApi.js,
+// services/mobileRegistration.js) using the service-role admin client
+// this mobile client must never hold. See lib/registrationOutcome.ts for
+// what the app does with the returned status.
+export async function registerAccount(email: string, password: string): Promise<RegisterResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  return parseJsonOrThrow<RegisterResponse>(response);
+}
+
+// Powers (auth)/confirm-email.tsx's "Resend confirmation email" button.
+// Replaces the old direct supabase.auth.resend() call, which showed the
+// same "sent again" notice unconditionally regardless of whether
+// anything was actually sent.
+export async function resendConfirmationEmail(email: string): Promise<ResendConfirmationResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/register/resend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseJsonOrThrow<ResendConfirmationResponse>(response);
 }
 
 // "already_active" (409) is a normal, expected outcome (e.g. the

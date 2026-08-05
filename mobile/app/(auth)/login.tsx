@@ -6,7 +6,7 @@
 // it doesn't need to know setup state itself.
 import { useState } from "react";
 import { Text, StyleSheet, View } from "react-native";
-import { Link, router } from "expo-router";
+import { Link, router, useLocalSearchParams } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { TextField } from "../../components/TextField";
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -15,6 +15,12 @@ import { supabase } from "../../lib/supabase";
 import { colors, spacing, typography } from "../../lib/theme";
 
 export default function Login() {
+  // Set by (auth)/register.tsx when registration found an existing,
+  // already-confirmed account for the entered email — see
+  // lib/registrationOutcome.ts. Shown once, on arrival; not re-derived
+  // from anything else, so it naturally disappears on any subsequent
+  // visit to this screen that didn't come from that redirect.
+  const { notice: incomingNotice } = useLocalSearchParams<{ notice?: string }>();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +57,7 @@ export default function Login() {
     <Screen>
       <Text style={styles.title}>Log in</Text>
 
+      {!error && incomingNotice && <Banner variant="notice" message={incomingNotice} />}
       {error && <Banner variant="error" message={error} />}
 
       <TextField

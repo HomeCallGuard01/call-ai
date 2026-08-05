@@ -4,6 +4,16 @@
 // (shaped only by what upload.html's JS happens to read); this file is
 // the one place that contract is written down for the mobile app.
 
+// POST /api/v1/register and POST /api/v1/register/resend — see
+// services/mobileRegistration.js for the decision logic behind these.
+export interface RegisterResponse {
+  status: "pending_confirmation" | "already_registered";
+}
+
+export interface ResendConfirmationResponse {
+  status: "resent" | "already_registered" | "no_action";
+}
+
 export type MembershipStatus = "active" | "trial" | "payment_issue" | "cancelled";
 
 export type TwilioProvisioningStatus = "pending" | "active" | "failed";

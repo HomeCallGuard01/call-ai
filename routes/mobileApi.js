@@ -17,7 +17,8 @@ const { getSubscriptionByHouseholdId, getActiveEntitlement } = require("../datab
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
 const { markActivationVerified } = require("../database/households");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
-const { buildUserScopedClient } = require("../services/supabaseClients");
+const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
+const { handleMobileRegister, handleMobileResendConfirmation } = require("../services/mobileRegistration");
 const { normaliseNumber } = require("../services/phone");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 const { stripe } = require("../services/stripeClient");
@@ -211,6 +212,59 @@ router.post("/api/v1/billing/manage-membership", requireAuthApi, async (req, res
 // session (post-registration-confirmation, post-login, post-password-
 // reset), before calling anything else.
 //
+// POST /api/v1/register — replaces the mobile client's old direct
+// supabase.auth.signUp() call. Deliberately unauthenticated (no session
+// exists yet) and deliberately NOT given the service-role key itself —
+// findExistingAuthUser's admin lookup and the actual signUp()/resend()
+// calls all happen server-side, inside handleMobileRegister, using this
+// process's own supabaseAdmin/supabase clients. The mobile client only
+// ever sees the resulting { status } and never touches a service-role
+// key. See services/mobileRegistration.js for the full defect this
+// fixes and why "pending_confirmation" deliberately covers two different
+// underlying outcomes (new signup vs. resend to an existing unconfirmed
+// email) — that's the anti-enumeration design, not an oversight.
+router.post("/api/v1/register", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "invalid_input", message: "email and password are required" });
+  }
+
+  try {
+    const result = await handleMobileRegister({ email, password, adminClient: supabaseAdmin, authClient: supabase });
+
+    if (result.status === "error") {
+      return res.status(400).json({ error: "failed" });
+    }
+
+    res.json({ status: result.status });
+  } catch (err) {
+    console.error("MOBILE REGISTER ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /api/v1/register/resend — replaces the mobile confirm-email
+// screen's old direct supabase.auth.resend() call, which showed the same
+// "sent again" notice unconditionally, even for an email that was
+// already confirmed (nothing to resend, nothing actually sent). See
+// services/mobileRegistration.js.
+router.post("/api/v1/register/resend", async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: "invalid_input", message: "email is required" });
+  }
+
+  try {
+    const result = await handleMobileResendConfirmation({ email, adminClient: supabaseAdmin, authClient: supabase });
+    res.json({ status: result.status });
+  } catch (err) {
+    console.error("MOBILE RESEND CONFIRMATION ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 // Deliberately NOT gated by requireAuthApi — that middleware requires a
 // household to already exist, which is exactly the chicken-and-egg
 // problem this route solves. Uses verifyBearerToken (token validity

@@ -10,7 +10,8 @@ import { Screen } from "../../components/Screen";
 import { TextField } from "../../components/TextField";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
-import { supabase } from "../../lib/supabase";
+import { registerAccount, ApiError } from "../../lib/api";
+import { planRegisterOutcome } from "../../lib/registrationOutcome";
 import { colors, spacing, typography } from "../../lib/theme";
 
 export default function Register() {
@@ -35,22 +36,34 @@ export default function Register() {
 
     setIsSubmitting(true);
     try {
-      // Supabase's own signUp() behaviour (documented, not a bug in this
-      // app — see the web fix, services/registrationFlow.js) already
-      // handles the repeat-registration case safely: calling this again
-      // for an unconfirmed email resends confirmation without
-      // overwriting the original password, and never reveals whether an
-      // account already existed. No extra logic needed here to match
-      // that — it's inherent to calling the same Supabase API the fixed
-      // web flow relies on.
-      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+      // The decision of whether this is a genuinely new signup, a resend
+      // to an existing unconfirmed email, or an existing confirmed
+      // account is made server-side (routes/mobileApi.js,
+      // services/mobileRegistration.js), reusing the exact same logic
+      // the web app's /register route already uses
+      // (services/registrationFlow.js). This used to call
+      // supabase.auth.signUp() directly here and only check for an
+      // error — but Supabase's signUp() returns success with no error
+      // and sends no email at all when called for an already-registered,
+      // already-confirmed account (deliberate anti-enumeration
+      // behaviour), so that left the customer pushed to "check your
+      // email" waiting for something that was never sent. See
+      // lib/registrationOutcome.ts for what each possible status means.
+      const { status } = await registerAccount(email, password);
+      const outcome = planRegisterOutcome(status);
 
-      if (signUpError) {
-        setError("We couldn't create your account. Please check your details and try again.");
+      if (outcome.screen === "login") {
+        router.push({ pathname: "/(auth)/login", params: { notice: outcome.notice } });
         return;
       }
 
       router.push({ pathname: "/(auth)/confirm-email", params: { email } });
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "invalid_input") {
+        setError("Please enter a valid email and password.");
+      } else {
+        setError("We couldn't create your account. Please check your details and try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }

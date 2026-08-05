@@ -36,6 +36,7 @@ import {
 import { shouldTriggerBootstrap } from '../mobile/lib/bootstrapTrigger.ts';
 import { resumeSetupAt, stepIndexForScreen, SETUP_STEPS } from '../mobile/lib/setupFlow.ts';
 import { canAutoOpenDialer, buildDialerUrl } from '../mobile/lib/dialerLink.ts';
+import { planRegisterOutcome, planResendOutcome } from '../mobile/lib/registrationOutcome.ts';
 
 let failures = 0;
 
@@ -343,6 +344,42 @@ function check(condition, message) {
   check(
     buildDialerUrl('*21*07700900000#').includes('*') && !buildDialerUrl('*21*07700900000#').includes('%2A'),
     'buildDialerUrl: leaves * unencoded — not a reserved URI character, matches Apple\'s own documented tel: feature-code examples'
+  );
+
+  check(
+    planRegisterOutcome('pending_confirmation').screen === 'confirm-email',
+    'planRegisterOutcome: pending_confirmation (new signup or resend to unconfirmed) goes to the confirm-email screen'
+  );
+  check(
+    planRegisterOutcome('already_registered').screen === 'login',
+    'planRegisterOutcome: already_registered routes to login, not confirm-email — never leaves the customer waiting for an email that was never sent'
+  );
+  check(
+    planRegisterOutcome('already_registered').screen === 'login' &&
+      'notice' in planRegisterOutcome('already_registered') &&
+      planRegisterOutcome('already_registered').notice === "This email may already be registered. Please try signing in, or reset your password if you've forgotten it.",
+    'planRegisterOutcome: already_registered uses the exact hedged wording already shipped on web (public/login.html state=already_registered) — never a definitive claim the account exists'
+  );
+  check(
+    !/confirmed|subscription|entitlement|household/i.test(planRegisterOutcome('already_registered').notice),
+    'planRegisterOutcome: already_registered notice reveals no account detail beyond the hedge itself'
+  );
+
+  check(
+    planResendOutcome('resent').variant === 'notice' && !planResendOutcome('resent').showLoginGuidance,
+    'planResendOutcome: resent (a real resend happened) shows a genuine success notice'
+  );
+  check(
+    planResendOutcome('already_registered').showLoginGuidance === true,
+    'planResendOutcome: already_registered (nothing to resend) points the customer toward login/password-reset guidance'
+  );
+  check(
+    planResendOutcome('already_registered').message !== planResendOutcome('resent').message,
+    'planResendOutcome: already_registered never reuses the real "sent again" wording — no false success state'
+  );
+  check(
+    planResendOutcome('no_action').message === "If this email address has a pending registration, we've sent the confirmation link again.",
+    'planResendOutcome: no_action keeps the original neutral, non-committal wording — never claims success, never reveals absence'
   );
 }
 
