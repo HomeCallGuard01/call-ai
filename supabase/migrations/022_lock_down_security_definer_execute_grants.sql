@@ -1,6 +1,11 @@
 -- Lock down SECURITY DEFINER function execute grants: service_role only
 --
--- STATUS: DRAFT — NOT APPLIED
+-- STATUS: APPLIED — staging (tigwgmayeuisrxjjykqd) and production
+-- (psbzynxplxfbyrbdidmn, 2026-08-02, see
+-- docs/releases/RELEASE_2026-08-02.md on main). Live re-verified against
+-- both projects 2026-08-05 (anon correctly receives "permission denied"
+-- calling a SECURITY DEFINER RPC on both) — see docs/launch/
+-- KNOWN_ISSUES.md's reconciliation summary.
 --
 -- Every SECURITY DEFINER RPC in this codebase ends its own migration with
 -- `revoke all on function ... from public; grant execute on function ...

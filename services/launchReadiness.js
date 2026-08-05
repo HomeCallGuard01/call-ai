@@ -2,27 +2,38 @@
 // a structured mirror of it for the admin panel, not a second, separately
 // maintained list. Update both together when an item's status changes;
 // see that file for the full explanation behind each entry.
+//
+// status values, matching KNOWN_ISSUES.md's taxonomy exactly — see
+// computeReadinessSummary in database/adminMetrics.js for how these are
+// interpreted: only "resolved" counts as fully closed.
+//   resolved              — fixed and verified, including on production
+//   resolved_staging_only — fixed and verified on staging; not yet true
+//                           for production/customers
+//   blocked               — cannot proceed without an external dependency
+//                           (business decision or third-party approval)
+//   deferred               — legitimately not started, not due yet
+//   pending                — genuinely still open, no special category
 const ITEMS = [
   {
     title: "Registered office address decision",
     severity: "blocker",
     status: "resolved",
     detail:
-      "Resolved: 128 City Road, London, EC1V 2NX, United Kingdom (AFMD Ltd's registered office) is now stated in public/terms.html §1 and public/privacy.html §1. This unblocks the Twilio Address object item below.",
+      "Resolved: 128 City Road, London, EC1V 2NX, United Kingdom (AFMD Ltd's registered office) is now stated in public/terms.html §1 and public/privacy.html §1. This unblocked the Twilio Address object item below.",
   },
   {
-    title: "Twilio Address object for UK number purchase",
+    title: "Twilio Address / Regulatory Bundle for UK number purchase",
     severity: "blocker",
-    status: "pending",
+    status: "blocked",
     detail:
-      "Twilio's real purchase API rejected a test attempt: an AddressSid is required for UK local numbers. The registered office address decision above is now resolved (128 City Road, London, EC1V 2NX) — the remaining work is creating the Twilio Address object itself and wiring its SID through buildIncomingPhoneNumberParams() in services/twilioProvisioning.js, not a further business decision.",
+      "Twilio's real purchase API requires both a registered Address object and an approved UK Regulatory Bundle for local numbers — confirmed via two separate real purchase-attempt rejections. Code-side, both are done and merged (TWILIO_ADDRESS_SID/TWILIO_BUNDLE_SID pass-through in services/twilioProvisioning.js). Neither variable is actually set anywhere (confirmed 2026-08-05) — the real Twilio Address object and an approved Bundle still need to be created/submitted with Twilio, whose own approval turnaround is outside this codebase's control.",
   },
   {
-    title: "Migration 017 real-database repair",
+    title: "Migration 016/017 silent-revert regression",
     severity: "high",
-    status: "in_progress",
+    status: "resolved",
     detail:
-      "Currently paused pending Supabase support — a verified, working database change (assign_household_twilio_number) was found to have silently reverted, with no infrastructure cause identified. See docs/engineering/016_017_migration_incident_notes.md.",
+      "Resolved and re-verified live 2026-08-05 against both staging (tigwgmayeuisrxjjykqd) and production (psbzynxplxfbyrbdidmn): the exact regression test that originally caught the 2026-07-22 silent revert (assign_household_twilio_number with a nonexistent household ID) now correctly raises its expected exception on both. See docs/engineering/016_017_migration_incident_notes.md for the incident history and docs/launch/KNOWN_ISSUES.md for the verification evidence.",
   },
   {
     title: "Scheduled runner for expired-number release",
@@ -34,9 +45,9 @@ const ITEMS = [
   {
     title: "Stripe Customer Portal",
     severity: "medium",
-    status: "pending",
+    status: "resolved_staging_only",
     detail:
-      "Manage-subscription, cancel, and reactivate all currently require manual support intervention. Design plan exists; estimated ~2–3 days to build.",
+      "The 'not yet built' status previously recorded here was wrong — the portal is fully implemented (routes/billing.js, routes/mobileApi.js, real stripe.billingPortal.sessions.create) and, as of 2026-08-05, live-tested successfully in Stripe test mode against a genuine staging customer. Recorded as staging-only because the full in-app round trip (tap through to the portal and back) hasn't been exercised yet, and live-mode Stripe Dashboard portal configuration hasn't been separately confirmed.",
   },
   {
     title: "Terms & Conditions solicitor sign-off",

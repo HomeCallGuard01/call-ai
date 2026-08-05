@@ -1,7 +1,7 @@
 Document: Known Issues — Pre-Launch
-Version: 3.1
-Last Updated: 2026-07-22
-Status: Active
+Version: 4.0
+Last Updated: 2026-08-05
+Status: Active — reconciled against live production and staging state
 Owner: Andrew Deane
 Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence
 
@@ -12,174 +12,227 @@ Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINA
 Ordered by severity. Full evidence and reasoning for each is in
 `FINAL_ACCEPTANCE_REPORT.md`; this file is the short, scannable list.
 
-## Resolved this sprint
+**Status legend**, used consistently below:
+- **Resolved** — fixed and verified, including on production where relevant.
+- **Resolved on staging only** — fixed and verified on the staging Supabase
+  project (`tigwgmayeuisrxjjykqd`); not yet deployed/exercised on production,
+  or not yet customer-facing (e.g. the mobile app itself isn't released).
+- **Pending production** — code complete and staging-verified; production
+  deployment specifically has not happened yet.
+- **Blocked** — cannot proceed without an external dependency (a business
+  decision or a third party's approval/action), not a coding task.
+- **Deferred** — legitimately not started; nothing today is blocking it,
+  it simply isn't due yet.
 
-### ~~No Twilio number is ever assigned to a new customer~~ — fixed, one configuration step remains
+## Reconciliation summary — 2026-08-05
+
+This pass corrected several items that were stale or flatly wrong given the
+project's actual current state, verified live (not just read from docs)
+against both Supabase projects immediately before writing this:
+
+| Item | Status | Evidence |
+|---|---|---|
+| Separate staging Supabase environment | **Resolved** | `tigwgmayeuisrxjjykqd` exists, distinct from production `psbzynxplxfbyrbdidmn`, wired into `services/serverConfig.js` and `.env.staging`. The "no staging environment exists" claim below is now corrected. |
+| Staging migration recovery (016/017 silent revert) | **Resolved** | Live-reverified 2026-08-05: `assign_household_twilio_number` correctly raises "household does not exist" on both staging and production — the reverted/buggy behaviour has not recurred. |
+| Migrations 021 and 022 | **Resolved** (staging and production) | Live-reverified 2026-08-05 on both projects: `households.activation_verified_at` present, `mark_household_activation_verified` and `cancel_household_twilio_number_pending_release` callable, anon correctly gets `permission denied` (022's grant lockdown enforced). See `docs/releases/RELEASE_2026-08-02.md` on `main` (not yet on this branch) for the original deployment record. Migration files' own `STATUS` headers corrected to match in this pass. |
+| Registered office address | **Resolved** | 128 City Road, London, EC1V 2NX stated in `public/terms.html` §1 and `public/privacy.html` §1 (2026-08-05 content audit). |
+| Stripe Customer Portal | **Resolved on staging only** | Code is fully implemented (`routes/billing.js`, `routes/mobileApi.js`, real `stripe.billingPortal.sessions.create`) — the "not yet built" claim below was wrong. Live-tested 2026-08-05: a real portal session was created in Stripe test mode for a genuine staging customer. Full in-app UI round-trip ("Manage membership" → portal → back) not exercised this pass; live-mode Stripe portal configuration not separately confirmed. |
+| Twilio Address / Bundle provisioning | **Blocked** | Code is ready and merged (`TWILIO_ADDRESS_SID`/`TWILIO_BUNDLE_SID` pass-through, from the now-merged `sandbox/twilio-addresssid-fix` and `sandbox/twilio-bundlesid-fix` branches). Neither variable is actually set anywhere (`.env`, `.env.staging`) — the real Twilio `Address` object and an approved UK Regulatory Bundle have not been created/submitted yet. This needs a Twilio-side action and Twilio's own approval turnaround, not further coding. |
+| Overall production migration status | **Resolved** | Production is current through migration 022 with no gaps; live-verified 2026-08-05 (016, 017, 021, 022 all present and correctly enforced). |
+| Mobile app staging validation | **Resolved on staging only** | Full E2E walkthrough (registration → email verification → login → Stripe checkout → trusted contact → device/provider → activation → dashboard → logout/login → household-scoping) completed 2026-08-05 against staging; automated suite 467/0. Not deployed to production or any app store; PR #2 (`sandbox/mobile-app-v1` → `main`) remains unmerged. |
+| Remaining App Store / Google Play requirements | **Deferred** | Nothing started — see `docs/mobile-app/RC1_HANDOVER.md` §10 for the full checklist (no `eas.json`, placeholder icons, no developer accounts, no store listings). Not blocked on anything; genuinely just not due yet. |
+
+---
+
+## Resolved
+
+### Twilio number auto-provisioning, and the migration 016/017 silent-revert incident
 
 Was Severity 1, blocking. Root cause and full design are in
-`TWILIO_NUMBER_LIFECYCLE.md` and `FINAL_ACCEPTANCE_REPORT.md`. Summary of
-the fix: a Twilio number is now purchased and assigned automatically the
-moment a household's entitlement first becomes active, via
-`services/twilioProvisioning.js` and the RPC functions in
-`supabase/migrations/016_household_twilio_provisioning.sql` /
-`017_household_twilio_number_lifecycle.sql`. Idempotency (never two
-numbers for one household) is enforced at the database layer with a
-row-locked RPC, not application-level timing. Failure is never silent:
-every household tracks `twilio_provisioning_status`,
-`twilio_provisioning_attempts`, and `twilio_provisioning_last_error`, and
-a failed attempt is retried automatically (bounded, default 5 attempts)
-on every subsequent webhook/reconciliation check before settling into
-"flagged for administrative attention." Covered by two layers of
-automated tests: RPC-level tests against a real Postgres-compatible
-engine (`tests/migrations.pglite.test.mjs`) and orchestration-level unit
-tests with injected fakes (`tests/twilio-provisioning.test.mjs`) —
-successful provisioning, Twilio-failure retry, duplicate-webhook/race
-prevention, and cancellation/deletion lifecycle are all exercised.
+`TWILIO_NUMBER_LIFECYCLE.md` and `FINAL_ACCEPTANCE_REPORT.md`. A Twilio
+number is purchased and assigned automatically the moment a household's
+entitlement first becomes active, via `services/twilioProvisioning.js` and
+the RPC functions in `016_household_twilio_provisioning.sql` /
+`017_household_twilio_number_lifecycle.sql`. Idempotency is enforced at the
+database layer with a row-locked RPC. Failure is never silent: every
+household tracks `twilio_provisioning_status`, `twilio_provisioning_attempts`,
+and `twilio_provisioning_last_error`, with bounded automatic retry. Covered
+by `tests/migrations.pglite.test.mjs` and `tests/twilio-provisioning.test.mjs`.
 
-**Update, 2026-07-21 — verified end-to-end against the real Twilio API.**
-`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` have since been added, and
-migration 016's database objects (initially found to be missing despite
-being reported as applied — see
-`docs/engineering/016_017_migration_incident_notes.md`) were repaired and
-confirmed working *at the time*. A full real test (test Stripe mode,
-real Twilio credentials, a temporary ngrok tunnel standing in for a
-public `APP_URL`) confirmed the provisioning code genuinely reaches
-Twilio's real purchase endpoint. It stops there for one specific,
-expected reason — see "UK number purchase requires a registered Twilio
-Address" below. No number was purchased and no charge occurred; the
-failure was correctly recorded on the test household exactly as
-designed. **This "repaired and confirmed" status did not hold — see the
-2026-07-22 update immediately below. Migration 016 must no longer be
-described as repaired and confirmed until it is re-verified.**
+**History, for context — the fix genuinely reverted once, then was
+re-fixed and has now held:**
+- 2026-07-21: verified working end-to-end against the real Twilio API
+  (test Stripe mode, real Twilio credentials, a temporary ngrok tunnel).
+  Reached Twilio's real purchase endpoint; stopped only on the (then)
+  missing Address object — see the Twilio Address/Bundle item below.
+- 2026-07-22: the same regression test (`assign_household_twilio_number`
+  with a nonexistent household ID) showed the fix had silently reverted —
+  the deployed function had reverted to its earlier, pre-fix, buggy
+  definition (a manually-selected `v_found` flag instead of Postgres's
+  built-in `FOUND`). Root cause never conclusively identified (schema-cache
+  staleness, project restart, replica/HA, backup/restore, DDL event
+  triggers, pg_cron, and GitHub migration-sync drift were all checked and
+  ruled out — see `docs/engineering/016_017_migration_incident_notes.md`).
+  Migrations 016/017 were held back from any further deployment pending
+  Supabase support or a reliable re-verification process.
+- **2026-08-02: migrations 021 and 022 deployed to production** (see
+  `docs/releases/RELEASE_2026-08-02.md` on `main`), which included
+  re-confirming 016/017's objects as part of the same verified `db push`.
+- **2026-08-05 (this reconciliation pass): re-verified live, independently,
+  against both staging and production** — the exact 2026-07-22 regression
+  test now correctly raises `assign_household_twilio_number: household ...
+  does not exist` on both databases. The revert has not recurred. Treating
+  this as resolved, not merely "repaired again" — but per the project's own
+  hard-won lesson here, any future session relying on this should still
+  re-verify rather than assume, given the one-time unexplained root cause.
 
-**Update, 2026-07-22 — the migration 016 fix has silently reverted;
-regression re-confirmed, do not redeploy yet.** Re-running the exact
-same nonexistent-household edge-case test that originally caught this
-bug (calling `assign_household_twilio_number` with a household ID that
-does not exist) showed the defensive "household does not exist" check
-no longer fires — the deployed function has reverted to its earlier,
-pre-fix, buggy definition (the manually-selected `v_found` flag pattern,
-not Postgres's built-in `FOUND`). This was confirmed by a read-only
-check directly against the live database (an RPC call plus, separately,
-inspecting the deployed function's actual source via
-`pg_get_functiondef`) — no code, database, or Twilio changes were made
-in the process.
+### There is now a separate staging Supabase environment
 
-This does **not** currently block normal customer provisioning: the
-defect only affects the edge case of assigning a number to a household
-ID that doesn't exist, which cannot happen in real usage (household IDs
-always come from a real, already-looked-up row). The real-world
-significance is different and more serious than the immediate
-functional impact: **a database function that was previously deployed,
-tested, and independently verified working has silently reverted to an
-earlier version, with no infrastructure cause identified** (checked and
-ruled out: schema-cache staleness, a full project restart, replica/HA
-configuration, backup/restore history, DDL event triggers, pg_cron, and
-GitHub migration-sync drift reconciliation — see
-`docs/engineering/016_017_migration_incident_notes.md` for the full
-investigation trail). Until this is understood, no previously-verified
-database change in this project can be assumed to still be in place
-without re-checking it.
+**This item as originally written below is stale — corrected here.** A
+second, genuine Supabase project (`tigwgmayeuisrxjjykqd`, created
+2026-07-30) now exists, fully separate from production
+(`psbzynxplxfbyrbdidmn`), with its own migrations, its own test data, and
+its own `.env.staging`. `services/serverConfig.js` defines
+`STAGING_SUPABASE_REF`/`PRODUCTION_SUPABASE_REF` and validates a server
+process is pointed at the right one before starting. See
+`docs/engineering/STAGING_ENVIRONMENT_PLAN.md` for the design, and
+`docs/mobile-app/CLAUDE_SESSION_HANDOVER.md` for the canonical env-file
+arrangement. (The staging→production promotion process described in that
+plan's §6 is still manual/human-driven — that part is not itself an open
+issue, just worth knowing.)
 
-**Decision: migration 016 and migration 017 must not be redeployed again
-until Supabase support responds with an explanation, or we agree a
-reliable mitigation and a post-deployment verification process that
-would actually catch a silent revert** (e.g. a scheduled read-only check
-re-running this same edge-case test on a recurring basis, not just a
-one-time verification after deployment). No Supabase support case
-number has been recorded in this repository yet — if one exists, it
-should be added here.
+### Migrations 021 and 022
 
-## Severity 2 — should fix before or very shortly after launch
+Both applied and live-verified, on staging and on production, as of this
+2026-08-05 reconciliation pass (see the summary table above for the exact
+checks run). Production deployment happened 2026-08-02, approved by the
+repository owner via the project's required confirmation phrase, with a
+full pre-flight/rollback plan — see `docs/releases/RELEASE_2026-08-02.md`
+on `main` (not yet brought into this branch). Both migration files'
+`STATUS` headers, previously still reading `DRAFT — NOT APPLIED`, are
+corrected in this pass to reflect the real applied state.
 
-### There is no staging/sandbox Supabase environment at all — migration 021 cannot be safely applied anywhere yet
+### Registered office address
 
-Discovered during the RC1 mobile handover QA pass (`docs/mobile-app/
-RC1_HANDOVER.md` §6/§10). `supabase/migrations/021_household_
-activation_verified.sql` (adds `households.activation_verified_at` and
-the `mark_household_activation_verified` RPC) was validated against
-PGlite but never confirmed applied to the real Supabase project.
-Directly confirmed missing two ways: selecting the column by name
-errors with "column does not exist," and calling the RPC returns
-`PGRST202: Could not find the function ... in the schema cache`.
+Resolved 2026-08-05. `public/terms.html` §1 and `public/privacy.html` §1
+both state AFMD Ltd's registered office as 128 City Road, London, EC1V
+2NX, United Kingdom. `services/launchReadiness.js` updated to match. This
+also unblocks the address-decision half of the Twilio Address item below —
+the remaining work there is now purely operational (see Blocked, below).
 
-`GET /api/v1/me/dashboard` degrades gracefully (reads the missing
-column as a plain JS property access, so it just stays `null` — Home
-shows "Setting up" forever, even after real activation). `POST /api/v1/
-activation/verify` does not degrade gracefully: it will throw a runtime
-500 the first time it detects a real qualifying call and tries to call
-the missing RPC.
+### Stripe Customer Portal
 
-**Attempting the fix surfaced a bigger, prior gap.** Instructed to apply
-the migration to "the approved sandbox/QA environment, not production,"
-investigation before applying anything found there is only **one**
-Supabase project anywhere in this codebase — the same one project used
-for both live customers and the QA sandbox household's test data. No
-Supabase CLI, no config, no second project reference exists anywhere.
-That project is production, regardless of which row a test touches, so
-per instruction **no DDL was applied**. A full staging-environment plan
-(new project, CLI-based migration deployment, env vars, synthetic
-fixtures, verification approach, staging-to-production promotion
-process, anti-cross-contamination safeguards, backup/rollback) is at
-`docs/engineering/STAGING_ENVIRONMENT_PLAN.md` — proposed only, nothing
-in it executed yet.
+**The "not yet built" status previously recorded here was wrong — corrected
+in this pass.** The Billing Portal is implemented for both the web
+(`routes/billing.js` `POST /billing/manage-membership`) and mobile
+(`routes/mobileApi.js`) surfaces, using `stripe.billingPortal.sessions.create`
+scoped server-side to the caller's own household — no client-supplied
+customer ID. Live-tested 2026-08-05: a real Stripe test-mode portal session
+was successfully created for a genuine staging household. Recorded as
+**resolved on staging only** because the full in-app round trip ("Manage
+membership" tap → Stripe-hosted portal → return) hasn't been exercised in
+this pass (`docs/RC1_CHECKLIST.md`: "Account / billing-portal live flow —
+not tested this pass"), and live-mode Stripe Dashboard portal configuration
+hasn't been separately confirmed.
 
-Directly relevant precedent for why this matters, from the very next
-item below and from `docs/engineering/016_017_migration_incident_notes.md`:
-manual SQL Editor application on this project has already caused two
-independently-confirmed silent failures (migration 019's own header
-describes two earlier attempts each reporting a successful commit
-without the change actually existing afterwards; migration 016 was
-independently verified working, then found silently reverted). Given
-that history, this migration should not be applied to production via
-the same manual mechanism at all — it should go through a genuine
-staging environment and a scripted, repeatable deployment process
-first, then be independently re-verified live on production afterward,
-not just re-run and trusted.
+### Mobile app staging validation
 
-### UK number purchase requires a registered Twilio Address
+Full RC1 end-to-end walkthrough completed 2026-08-05 against staging:
+registration, email verification, login, Stripe checkout, trusted-contact
+add (manual and native-picker), device/provider selection, activation
+instructions, activation verification, dashboard state, logout/login, and
+household-scoping — all confirmed against the real staging backend. Two
+real app defects were found and fixed in the process (see
+`docs/mobile-app/CLAUDE_SESSION_HANDOVER.md`). Automated suite: 467
+checks, 0 failures. Recorded as **resolved on staging only**: nothing here
+has touched production, and PR #2 (`sandbox/mobile-app-v1` → `main`)
+remains open and unmerged, so none of this is customer-facing yet.
 
-**This is the Severity 1 blocker preventing live UK number purchases —
-distinct from the migration 016/017 database issues below, which are
-about database reliability/lifecycle management, not this.** Even with
-a perfectly-deployed database, no number can be purchased for any
-customer until this is resolved.
+## Blocked
 
-Twilio's real purchase API rejected the test attempt with: *"Phone
-Number Requires an Address but the 'AddressSid' parameter was empty."*
-UK local numbers require a registered `Address` object on file with
-Twilio (a real business address), referenced by its ID when purchasing.
-This is the same open decision as "Registered office address is a
-placeholder" below — not a second, separate blocker, the same missing
-piece of information surfacing in a second place. Once a registered
-office address is confirmed, create the corresponding Twilio `Address`
-object and pass its SID through `buildIncomingPhoneNumberParams()` in
-`services/twilioProvisioning.js`. Explicitly not done yet — no Address
-object has been created, no placeholder or personal address has been
-used. **Blocks real call screening from working for any customer until
-resolved**, though the subscription/entitlement flow around it is
-unaffected either way (fails open, exactly as designed).
+### Twilio Address / Regulatory Bundle for UK number purchase
 
-### Migration 017's database objects are unconfirmed — separate outstanding repair
+**This remains the Severity 1 blocker preventing any live UK number
+purchase.** Even with a perfectly-deployed database, no number can be
+purchased for any customer until this is resolved. Two separate Twilio
+requirements were discovered via real purchase attempts:
+1. UK local numbers require a registered `Address` object on file
+   (*"Phone Number Requires an Address but the 'AddressSid' parameter was
+   empty"*).
+2. UK local numbers additionally require an approved Regulatory `Bundle`
+   (*"Bundle required and not provided for country: [GB] and numberType:
+   [LOCAL]"*), a second, separate Twilio requirement discovered after the
+   first was understood.
 
-Migration 016 was found to be reported-applied but actually missing from
-the real database, requiring a staged, statement-by-statement repair to
-actually land (full account in
-`docs/engineering/016_017_migration_incident_notes.md`). Migration 017
-was written and tested against the same pattern in the same session and
-has **not** been independently re-verified the same way. One of its four
-objects, `cancel_household_twilio_number_pending_release`, was directly
-confirmed missing via a live application call on 2026-07-21, and its
-`twilio_number_pending_release_at` column was re-confirmed still absent
-on 2026-07-22. Treat the whole file as unconfirmed until it goes through
-the same staged repair — deliberately not done yet, and **per the
-2026-07-22 update above, must not be attempted until Supabase support
-responds or a reliable mitigation/post-deployment verification process
-is agreed**, since migration 016 (already independently repaired and
-verified once) has since silently reverted. Low practical urgency before
-launch on its own merits (nothing exercises the cancellation/release
-path until a customer actually cancels) — the reason to hold off now is
-the unresolved revert risk, not this migration's own priority.
+**Code-side, both are done and merged into this branch**
+(`sandbox/twilio-addresssid-fix`, `sandbox/twilio-bundlesid-fix`):
+`buildIncomingPhoneNumberParams()` in `services/twilioProvisioning.js`
+passes `TWILIO_ADDRESS_SID` and `TWILIO_BUNDLE_SID` through when
+configured, with zero behaviour change while unset, covered by a
+backwards-compatibility regression test.
+
+**What's actually still missing, confirmed by this reconciliation pass:**
+neither `TWILIO_ADDRESS_SID` nor `TWILIO_BUNDLE_SID` is set in `.env`,
+`.env.staging`, or `.env.staging.local` — only placeholder keys exist in
+`.env.example`. The registered-office address decision that was blocking
+the Address object is now resolved (see above); what remains is creating
+the Twilio `Address` object itself, and — separately, and likely slower —
+submitting and getting Twilio's approval on a UK Regulatory Bundle, which
+is an external, Twilio-side KYC-style review process outside this
+codebase's or this session's control. This is why the item is marked
+**Blocked** rather than **Pending production**: there is no further coding
+task that moves it forward.
+
+## Deferred
+
+### App Store / Google Play submission requirements
+
+Nothing has been started — full checklist in
+`docs/mobile-app/RC1_HANDOVER.md` §10: no `eas.json`, only default Expo
+template icon/splash assets, bundle ID never reserved with either store,
+no developer accounts, no store-listing copy, no real-device screenshots,
+no data-safety/App Privacy answers prepared. Not blocked on anything else
+in this list — it simply isn't due until the app is otherwise ready to
+submit, and none of it was in scope for the mobile app Phase 2 work.
+
+## Legal items — deliberately kept open
+
+Not resolving these further without your explicit direction; each needs a
+business/legal decision, not a lookup.
+
+### Solicitor review of `public/terms.html`
+
+The Terms are a considered draft, not a solicitor-reviewed contract.
+Recommend UK consumer-law review before go-live, particularly §5
+(Cancellation), §9 (Fair use and abuse), §10 (Refund policy and statutory
+cancellation rights), and the new §11 (Money-back guarantee) added in the
+2026-08-05 launch-readiness audit.
+
+### Whether to show the 30-day guarantee on the public landing page
+
+The guarantee appears throughout the mobile app's onboarding (Subscribe,
+Complete, Welcome, Confirmation screens) and, as of the 2026-08-05 audit,
+in `terms.html` §11 — but not on `public/index.html`, the public marketing
+site. Not a contradiction as-is, but an open decision on whether it should
+be surfaced there too as a conversion/trust signal.
+
+### Contractual wording for the Founding Member 12-month price lock
+
+`mobile/app/(setup)/subscribe.tsx` promises "your price is locked for 12
+months" as a founding-member benefit, but `terms.html` §3 only states the
+general price-change clause (reasonable advance notice, opportunity to
+cancel) without mentioning a founding-member lock specifically. Needs a
+decision on whether to add explicit contractual language for this
+time-limited offer.
+
+### Whether the existing cookie disclosure is sufficient
+
+There is no standalone cookie policy page. `public/privacy.html` §9
+discloses the two strictly-necessary session cookies inline. Needs
+confirmation that this inline disclosure is sufficient for launch, rather
+than requiring a separate cookie policy page or banner.
+
+## Still open — Severity 2
 
 ### No scheduled runner for expired-number release
 
@@ -190,95 +243,34 @@ there is no cron/job runner configured in this project today. Needs a
 daily Railway Cron Job (or equivalent) before the first cancellation's
 window elapses; a manual run is a fine stopgap until then.
 
-### Web dashboard has no real activation instructions — customer has no self-service way to learn their forwarding number
+### Web dashboard has no real activation instructions
 
-Discovered during mobile app Phase 2 backend work (docs/mobile-app/),
-while building the equivalent mobile screen. `upload.html`'s setup
-checklist shows only a bare manual toggle ("I've set up call
-forwarding") with no number, code, or instructions anywhere — and by
-deliberate Stage 2 design, the Twilio number itself is never sent to
-any client (`GET /dashboard-data`'s own comment: "twilioNumber
-deliberately not included — never sent to the browser"). Investigated
-directly: no automated channel communicates this number to a real
-customer today either — no welcome email, no SMS (`Resend_API_Key`
-exists but is confirmed unused anywhere in this codebase). The number
-is visible only to admin/support staff via `admin.html`'s household
-search, implying the only path today is an undocumented, manual,
-human-mediated one.
+`upload.html`'s setup checklist shows only a bare manual toggle ("I've set
+up call forwarding") with no number, code, or instructions anywhere, and
+by deliberate design the Twilio number itself is never sent to any client.
+No automated channel (email/SMS) communicates it either. The mobile app's
+`GET /api/v1/activation/instructions` solves this for its own onboarding
+flow; the web dashboard has no equivalent yet. Not fixed as part of mobile
+Phase 2, per explicit scope decision — a genuine pre-existing gap worth a
+real fix, web-side, before or shortly after launch.
 
-Net effect: **a real customer today has no self-service way to
-complete activation on the web dashboard at all.** The mobile app adds
-`GET /api/v1/activation/instructions` (routes/mobileApi.js,
-services/activationInstructions.js) to solve this for its own
-onboarding flow — a narrowly-scoped endpoint that generates the
-complete, ready-to-dial forwarding code server-side without exposing
-the raw number through any general-purpose endpoint. The web dashboard
-has no equivalent yet; it would need its own screen/copy consuming the
-same new endpoint (or an equivalent web route). Not fixed as part of
-mobile Phase 2, per explicit scope decision — recorded here as a
-genuine pre-existing gap worth a real fix, web-side, before or shortly
-after launch.
+### No automated test coverage for dashboard/call-logging changes
 
-### Stripe Customer Portal not yet built
-
-Manage-subscription, cancel, and reactivate all currently require manual
-support intervention. Plan exists — see
-`FINAL_ACCEPTANCE_REPORT.md` §3 and `POST_LAUNCH_ROADMAP.md`. Estimated
-~2–3 days.
-
-### No automated test coverage for today's dashboard/call-logging changes
-
-The new `/voice` trusted-call logging branch and the reshaped
-`/dashboard-data` response were verified live, end-to-end, against a real
-account — not by the automated suite (`npm test`). The existing suite
-still passes unchanged, but nothing in it exercises the new code paths.
-
-### Terms & Conditions need solicitor sign-off
-
-The strengthened Terms (`public/terms.html`) are a considered draft, not
-a solicitor-reviewed contract. Recommend UK consumer-law review before
-go-live, particularly §5 (Cancellation), §9 (Fair use and abuse), and §10
-(Refunds and statutory rights).
+The `/voice` trusted-call logging branch and the reshaped `/dashboard-data`
+response were verified live, end-to-end, against a real account — not by
+the automated suite. The existing suite still passes unchanged, but
+nothing in it exercises these specific code paths.
 
 ### service_role has no INSERT/UPDATE grant on public.user_roles
 
-Discovered while assigning the admin role for the new Operations
-Dashboard (Sprint 11): migration 002 grants `authenticated` a
-`select`-own policy on `user_roles`, but never grants `service_role`
-any write privilege on the table at all. This means the existing
-`setUserRole()` helper (`database/households.js`) has likely never
-actually worked from the app itself — any role assignment so far has
-been done directly via the SQL Editor (as `postgres`, which bypasses
-the missing grant). No in-app "make this user an admin/support" feature
-could work today without this being fixed first. Deliberately not
-fixed yet — needs its own reviewed migration (`grant insert, update on
-public.user_roles to service_role`, plus deciding whether an RLS write
-policy is also needed or whether service_role's usual bypass is
-sufficient), not a quick patch bundled into an unrelated sprint.
-
-### Registered office address is a placeholder
-
-`public/terms.html` §1 still reads
-`[REGISTERED OFFICE ADDRESS TO BE CONFIRMED]` pending a decision on
-whether to use a virtual business address. Must be filled in before
-launch — a UK consumer contract needs a real registered office stated.
-**This same address is also now needed for the Twilio Address object**
-above — resolving this one decision unblocks both.
-
-**Resolved, 2026-08-05.** `public/terms.html` §1 and `public/privacy.html`
-§1 now both state AFMD Ltd's registered office as 128 City Road, London,
-EC1V 2NX, United Kingdom, confirmed during the launch-readiness
-content audit that session. `services/launchReadiness.js` updated to
-match. This unblocks the "UK number purchase requires a registered
-Twilio Address" item above on the address-decision front — the
-remaining work there is purely operational (create the Twilio Address
-object and wire its SID through), not a further business decision.
-The same audit added a new `public/terms.html` §11 ("Money-back
-guarantee"), formalising the 30-day guarantee already shown in the
-mobile app's Subscribe/Confirmation screens as a distinct commercial
-commitment from AFMD Ltd, separate from the §10 statutory 14-day right
-— this still needs the solicitor review already flagged below, same as
-the rest of the document.
+Migration 002 grants `authenticated` a `select`-own policy on
+`user_roles`, but never grants `service_role` any write privilege on the
+table. The existing `setUserRole()` helper (`database/households.js`) has
+likely never actually worked from the app itself — any role assignment so
+far has been done directly via the SQL Editor (as `postgres`, which
+bypasses the missing grant). No in-app "make this user an admin/support"
+feature could work today without this being fixed first. Needs its own
+reviewed migration, not a quick patch.
 
 ## Severity 3 — cosmetic / optional
 
@@ -302,3 +294,8 @@ For completeness — investigated and found not to be problems:
   live schema (not just the migration file) before being relied on in
   the cleanup SQL, given this project has had schema drift before (the
   `contacts` table itself predates its migration).
+- **Migrations 021/022 and the 016/017 revert, on both staging and
+  production** — all confirmed correctly applied and enforced via live,
+  read-only checks on 2026-08-05 (see Reconciliation summary above).
+- **Stripe Customer Portal** — confirmed genuinely implemented and
+  functional in test mode, not merely planned (see Resolved, above).

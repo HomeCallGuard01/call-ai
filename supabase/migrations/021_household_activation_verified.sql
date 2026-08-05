@@ -9,7 +9,11 @@
 -- identifies: activation verification needs to check for a real routed
 -- call and remember that it happened.
 --
--- STATUS: DRAFT — NOT APPLIED
+-- STATUS: APPLIED — staging (tigwgmayeuisrxjjykqd), exact date not
+-- recorded; production (psbzynxplxfbyrbdidmn) 2026-08-02, see
+-- docs/releases/RELEASE_2026-08-02.md on main. Live re-verified against
+-- both projects 2026-08-05 — see docs/launch/KNOWN_ISSUES.md's
+-- reconciliation summary.
 
 begin;
 

@@ -368,16 +368,26 @@ async function getProvisioningStatusBreakdown() {
 // open 'blocker' makes the whole launch not-ready, regardless of how many
 // lower-severity items also remain — matching how docs/launch/KNOWN_ISSUES.md
 // itself is ordered (blockers first, everything else is "should fix").
+//
+// "open" means status !== "resolved" specifically — not e.g. !== "done",
+// which no item in services/launchReadiness.js has ever used, so every
+// item silently counted as open forever regardless of its real status
+// until this was fixed (caught during the 2026-08-05 KNOWN_ISSUES.md
+// reconciliation: the registered-office item was marked status: "resolved"
+// but the launch banner still read "Not ready", since a resolved blocker
+// was still counted as an open one here). "resolved_staging_only" and
+// "pending_production" deliberately still count as open — the item isn't
+// actually done until it's true for production/customers, not just staging.
 function computeReadinessSummary(items) {
-  const blockers = items.filter(i => i.severity === "blocker");
-  const openCount = items.filter(i => i.status !== "done").length;
+  const openItems = items.filter(i => i.status !== "resolved");
+  const blockers = openItems.filter(i => i.severity === "blocker");
 
-  const status = blockers.length > 0 ? "not_ready" : openCount > 0 ? "ready_with_open_items" : "ready";
+  const status = blockers.length > 0 ? "not_ready" : openItems.length > 0 ? "ready_with_open_items" : "ready";
 
   return {
     status,
     blockersCount: blockers.length,
-    openCount,
+    openCount: openItems.length,
     totalCount: items.length,
   };
 }
