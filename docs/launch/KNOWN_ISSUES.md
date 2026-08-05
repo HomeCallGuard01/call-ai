@@ -183,6 +183,56 @@ codebase's or this session's control. This is why the item is marked
 **Blocked** rather than **Pending production**: there is no further coding
 task that moves it forward.
 
+### Production email deliverability and sender configuration
+
+**Severity 1 — every account confirmation, password reset, and future
+transactional email depends on this working, for every customer.**
+Discovered 2026-08-05 investigating a real customer report (a genuine
+registration with `andrewdeane_uk@yahoo.co.uk` that never received a
+confirmation email — see `docs/mobile-app/CLAUDE_SESSION_HANDOVER.md` for
+the full investigation). The immediate cause of that specific report was
+an app-side bug (mobile registration didn't detect an already-confirmed
+account and left the customer waiting for an email Supabase correctly
+never sent) — fixed separately. But the investigation surfaced a second,
+independent, unfixed problem with the email channel itself:
+
+- **DNS evidence strongly suggests Supabase Auth is using its own default
+  built-in mailer, not a custom `@homecallguard.co.uk` sender.**
+  `homecallguard.co.uk`'s SPF record authorises only IONOS
+  (`v=spf1 include:_spf-eu.ionos.com ~all`) — no Resend, Supabase, or
+  SendGrid include. No DKIM record exists at any common selector checked
+  (`resend._domainkey`, `supabase._domainkey`, `mail._domainkey`,
+  `default._domainkey`). Supabase's default mailer is explicitly
+  low-volume and documented as not intended for production use.
+- **Live-confirmed 2026-08-05, during this fix's own staging
+  verification**: real `signUp()`/`resend()` calls against staging
+  started failing outright with `"email rate limit exceeded"` after only
+  a handful of test sends in the same session — including for a
+  genuinely brand-new signup, not just a resend. If this is the same
+  default mailer in front of production, real new customers can be
+  blocked from registering at all once that same low limit is
+  exhausted, not just denied a resend.
+- **DMARC is `p=none`** (monitoring only, not enforcing) — a separate
+  hardening gap, unrelated to the rate-limit finding but worth fixing in
+  the same pass.
+- Confirmation email template content (does it use `support@homecallguard.co.uk`,
+  AFMD Ltd, 128 City Road branding?) and the actual configured "from"
+  address live entirely in the Supabase Dashboard (Authentication →
+  Email Templates / SMTP Settings) — not in this codebase, and no
+  Supabase management/personal-access token exists in any env file here,
+  only data-plane service-role keys. **Not verifiable from the codebase
+  at all** — needs a direct Dashboard check.
+
+**Not fixed here, per instruction** — recorded as its own tracked
+blocker. Needs, in order: (1) direct Supabase Dashboard check of the
+current SMTP/sender configuration and email template content against the
+official branding (`support@homecallguard.co.uk`, AFMD Ltd, 128 City
+Road, London, EC1V 2NX), (2) a real custom SMTP provider (e.g. Resend)
+configured with matching SPF/DKIM records added to `homecallguard.co.uk`'s
+DNS and a DMARC policy tightened beyond `p=none`, (3) re-verification
+that new-signup and resend rate limits are adequate for production
+volume under the new provider.
+
 ## Deferred
 
 ### App Store / Google Play submission requirements

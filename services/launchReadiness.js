@@ -56,6 +56,13 @@ const ITEMS = [
     detail:
       "public/terms.html is a considered draft, not a solicitor-reviewed contract. Recommend UK consumer-law review before go-live, particularly §5 (Cancellation), §9 (Fair use and abuse), §10 (Refund policy and statutory cancellation rights), and the new §11 (Money-back guarantee) added in the 2026-08-05 launch-readiness audit.",
   },
+  {
+    title: "Production email deliverability and sender configuration",
+    severity: "blocker",
+    status: "blocked",
+    detail:
+      "Every account confirmation, password reset, and future transactional email depends on this. DNS evidence (homecallguard.co.uk's SPF authorises only IONOS; no DKIM record at any common selector) strongly suggests Supabase Auth is using its own low-volume default mailer, not a custom branded sender. Live-confirmed 2026-08-05: real signUp()/resend() calls against staging started failing with 'email rate limit exceeded' after a handful of test sends in one session — including for brand-new signups, not just resends. DMARC is p=none (monitoring only). Template content/branding and the actual configured sender live entirely in the Supabase Dashboard — not verifiable from this codebase (no management/personal-access token available). Needs a direct Dashboard check plus a real custom SMTP provider with matching SPF/DKIM before launch.",
+  },
 ];
 
 function getLaunchReadinessItems() {
