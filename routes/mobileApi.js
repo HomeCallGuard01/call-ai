@@ -18,7 +18,7 @@ const { getCallsToday, getRecentCalls, toClientCall } = require("../database/cal
 const { markActivationVerified } = require("../database/households");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
-const { handleMobileRegister, handleMobileResendConfirmation } = require("../services/mobileRegistration");
+const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
 const { normaliseNumber } = require("../services/phone");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 const { stripe } = require("../services/stripeClient");
@@ -216,10 +216,10 @@ router.post("/api/v1/billing/manage-membership", requireAuthApi, async (req, res
 // supabase.auth.signUp() call. Deliberately unauthenticated (no session
 // exists yet) and deliberately NOT given the service-role key itself —
 // findExistingAuthUser's admin lookup and the actual signUp()/resend()
-// calls all happen server-side, inside handleMobileRegister, using this
+// calls all happen server-side, inside handleRegisterRequest, using this
 // process's own supabaseAdmin/supabase clients. The mobile client only
 // ever sees the resulting { status } and never touches a service-role
-// key. See services/mobileRegistration.js for the full defect this
+// key. See services/registrationRequest.js for the full defect this
 // fixes and why "pending_confirmation" deliberately covers two different
 // underlying outcomes (new signup vs. resend to an existing unconfirmed
 // email) — that's the anti-enumeration design, not an oversight.
@@ -231,7 +231,7 @@ router.post("/api/v1/register", async (req, res) => {
   }
 
   try {
-    const result = await handleMobileRegister({ email, password, adminClient: supabaseAdmin, authClient: supabase });
+    const result = await handleRegisterRequest({ email, password, adminClient: supabaseAdmin, authClient: supabase });
 
     if (result.status === "error") {
       return res.status(400).json({ error: "failed" });
@@ -248,7 +248,7 @@ router.post("/api/v1/register", async (req, res) => {
 // screen's old direct supabase.auth.resend() call, which showed the same
 // "sent again" notice unconditionally, even for an email that was
 // already confirmed (nothing to resend, nothing actually sent). See
-// services/mobileRegistration.js.
+// services/registrationRequest.js.
 router.post("/api/v1/register/resend", async (req, res) => {
   const { email } = req.body;
 
@@ -257,7 +257,7 @@ router.post("/api/v1/register/resend", async (req, res) => {
   }
 
   try {
-    const result = await handleMobileResendConfirmation({ email, adminClient: supabaseAdmin, authClient: supabase });
+    const result = await handleResendConfirmationRequest({ email, adminClient: supabaseAdmin, authClient: supabase });
     res.json({ status: result.status });
   } catch (err) {
     console.error("MOBILE RESEND CONFIRMATION ERROR:", err.message);

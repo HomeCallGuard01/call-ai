@@ -11,7 +11,6 @@ import { TextField } from "../../components/TextField";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { registerAccount, ApiError } from "../../lib/api";
-import { planRegisterOutcome } from "../../lib/registrationOutcome";
 import { colors, spacing, typography } from "../../lib/theme";
 
 export default function Register() {
@@ -39,25 +38,21 @@ export default function Register() {
       // The decision of whether this is a genuinely new signup, a resend
       // to an existing unconfirmed email, or an existing confirmed
       // account is made server-side (routes/mobileApi.js,
-      // services/mobileRegistration.js), reusing the exact same logic
-      // the web app's /register route already uses
-      // (services/registrationFlow.js). This used to call
+      // services/registrationRequest.js), reusing the exact same logic
+      // the web app's /register route already uses. This used to call
       // supabase.auth.signUp() directly here and only check for an
       // error — but Supabase's signUp() returns success with no error
       // and sends no email at all when called for an already-registered,
       // already-confirmed account (deliberate anti-enumeration
       // behaviour), so that left the customer pushed to "check your
-      // email" waiting for something that was never sent. See
-      // lib/registrationOutcome.ts for what each possible status means.
+      // email" waiting for something that was never sent.
+      //
+      // Both possible outcomes (pending_confirmation / already_registered)
+      // land on the same confirm-email screen, which renders the right
+      // content for whichever status it's given — see
+      // lib/registrationOutcome.ts.
       const { status } = await registerAccount(email, password);
-      const outcome = planRegisterOutcome(status);
-
-      if (outcome.screen === "login") {
-        router.push({ pathname: "/(auth)/login", params: { notice: outcome.notice } });
-        return;
-      }
-
-      router.push({ pathname: "/(auth)/confirm-email", params: { email } });
+      router.push({ pathname: "/(auth)/confirm-email", params: { email, status } });
     } catch (err) {
       if (err instanceof ApiError && err.code === "invalid_input") {
         setError("Please enter a valid email and password.");

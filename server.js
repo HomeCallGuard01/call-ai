@@ -32,7 +32,7 @@ const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { getCallsToday, getRecentCalls, logCall, toClientCall } = require("./database/calls");
-const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
+const { handleRegisterRequest, handleResendConfirmationRequest } = require("./services/registrationRequest");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const { buildUserScopedClient } = require("./services/supabaseClients");
 const billingRoutes = require("./routes/billing");
@@ -646,54 +646,37 @@ app.post("/register", async (req, res) => {
   // signUp() a second time for an already-existing unconfirmed email
   // silently discards the newly submitted password (documented Supabase
   // behaviour, not something this app controls) — this routes around
-  // that instead of ever hitting it.
-  const existing = await findExistingAuthUser(email, { adminClient: supabaseAdmin });
-  const decision = decideRegistrationAction(existing);
-
-  if (decision.action === "resend") {
-    const { error: resendError } = await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: {
-        emailRedirectTo: `${APP_URL}/confirmed.html`,
-      },
-    });
-
-    if (resendError) {
-      console.error("SUPABASE RESEND (from /register) ERROR:", resendError.message);
-    }
-
-    return res.redirect("/register.html?state=pending_confirmation");
-  }
-
-  if (decision.action === "already_registered") {
-    // Already a real, confirmed account — never attempt another signup.
-    // This redirect reveals only that some account exists for this email
-    // (the same thing a normal failed-login attempt already implies),
-    // nothing more specific about the account itself.
-    return res.redirect("/login.html?state=already_registered");
-  }
-
-  const { data, error } = await supabase.auth.signUp({
+  // that instead of ever hitting it. Reuses the exact same decision
+  // logic the mobile app's /api/v1/register route uses
+  // (services/registrationRequest.js) — one set of rules, not two.
+  const result = await handleRegisterRequest({
     email,
     password,
-    options: {
-      emailRedirectTo: `${APP_URL}/confirmed.html`,
-    },
+    adminClient: supabaseAdmin,
+    authClient: supabase,
+    emailRedirectTo: `${APP_URL}/confirmed.html`,
   });
 
-  if (error) {
-    console.error("SUPABASE SIGNUP ERROR:", error.message);
+  if (result.status === "error") {
     return res.redirect(
       `/register.html?state=error&reason=failed&email=${encodeURIComponent(email)}`
     );
   }
 
+  if (result.status === "already_registered") {
+    // Already a real, confirmed account — never attempt another signup.
+    // Stays on register.html (not a redirect to login.html) so the
+    // customer sees the dedicated "This email may already be
+    // registered" panel there, with clear Sign in / Reset password
+    // actions, rather than being silently bounced to a different page.
+    return res.redirect(`/register.html?state=already_registered&email=${encodeURIComponent(email)}`);
+  }
+
   // Email confirmation is required on this project, so signUp() does not
   // return a session here — household/role creation happens on first
   // login instead (see /login below), once a real session exists.
-  if (!data.session) {
-    return res.redirect("/register.html?state=success");
+  if (!result.session) {
+    return res.redirect(`/register.html?state=pending_confirmation&email=${encodeURIComponent(email)}`);
   }
 
   // Only reachable if email confirmation is ever turned off: signUp()
@@ -702,10 +685,10 @@ app.post("/register", async (req, res) => {
   try {
     const userClient = buildUserScopedClient();
     await userClient.auth.setSession({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
+      access_token: result.session.access_token,
+      refresh_token: result.session.refresh_token,
     });
-    await ensureHouseholdAndRole(userClient, data.user.id, email, "[REGISTER]");
+    await ensureHouseholdAndRole(userClient, result.user.id, email, "[REGISTER]");
   } catch (err) {
     console.error("REGISTER HOUSEHOLD SETUP ERROR:", err.message);
     return res.redirect(
@@ -713,7 +696,7 @@ app.post("/register", async (req, res) => {
     );
   }
 
-  setSessionCookies(res, data.session);
+  setSessionCookies(res, result.session);
   return res.redirect("/dashboard");
 });
 
@@ -761,29 +744,48 @@ app.post("/login", async (req, res) => {
 });
 
 // AUTH: RESEND CONFIRMATION
-
+//
+// Shared by two different pages, distinguished by the hidden return_to
+// field each form submits — register.html's own resend button (a
+// customer who just registered), and login.html's (a customer who tried
+// to log in and was told to confirm their email first). Previously
+// called supabase.auth.resend() unconditionally and always redirected to
+// "?state=resent" regardless of whether Supabase actually sent anything —
+// the same false-success shape the mobile app's equivalent bug had. Now
+// reuses services/registrationRequest.js's real decision logic, so a
+// "sent again" claim is only ever shown when a resend genuinely
+// succeeded, and an already-confirmed account is told so directly
+// instead.
 app.post("/resend-confirmation", async (req, res) => {
-  const { email } = req.body;
+  const { email, return_to } = req.body;
+  const returnsToLogin = return_to === "login";
+  const returnPage = returnsToLogin ? "/login.html" : "/register.html";
 
-  if (email) {
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: {
-        emailRedirectTo: `${APP_URL}/confirmed.html`,
-      },
-    });
-
-    // Logged server-side only — never surfaced to the customer, whether
-    // it's a rate limit, an unknown address, or anything else. The
-    // response is identical either way so this never reveals whether an
-    // account exists for that email.
-    if (error) {
-      console.error("SUPABASE RESEND CONFIRMATION ERROR:", error.message);
-    }
+  if (!email) {
+    return res.redirect(`${returnPage}?state=${returnsToLogin ? "resent" : "pending_confirmation"}`);
   }
 
-  res.redirect("/login.html?state=resent");
+  const result = await handleResendConfirmationRequest({
+    email,
+    adminClient: supabaseAdmin,
+    authClient: supabase,
+    emailRedirectTo: `${APP_URL}/confirmed.html`,
+  });
+
+  if (result.status === "already_registered") {
+    return res.redirect(`${returnPage}?state=already_registered&email=${encodeURIComponent(email)}`);
+  }
+
+  // "resent" and "no_action" are deliberately shown identically — the
+  // existing notice text ("If that email is registered and unconfirmed,
+  // a new confirmation email has been sent.") is itself a conditional
+  // statement, honest either way, matching this codebase's established
+  // anti-enumeration wording pattern. register.html additionally flags
+  // resent_attempted so it can show that same notice inline.
+  if (returnsToLogin) {
+    return res.redirect("/login.html?state=resent");
+  }
+  return res.redirect(`/register.html?state=pending_confirmation&resent_attempted=1&email=${encodeURIComponent(email)}`);
 });
 
 // AUTH: LOGOUT

@@ -162,6 +162,22 @@
     color: #00ff99;
     border: 1px solid #00ff99;
     font-weight: bold;
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    box-sizing: border-box;
+  }
+
+  .notice-banner {
+    background: #0f2a1a;
+    border: 2px solid #00ff99;
+    color: #bbf7d0;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-top: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: left;
   }
 </style>
 </head>
@@ -177,18 +193,34 @@
   <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
   <div id="successPanel" class="success-panel" hidden>
-    <p>We’ve sent a confirmation email if this email address has a pending registration.</p>
+    <h2>Check your email or sign in</h2>
+    <p>If this is a new account, we’ve sent you a confirmation email.</p>
+    <p>If you already have a Home Call Guard account, sign in with your existing password or reset it if you’ve forgotten it.</p>
     <p class="spam-note">Can't find the email? Check your spam or junk folder.</p>
-    <p>If you’ve already registered but haven’t confirmed your email yet, please use the password you originally chose.</p>
-    <p class="spam-note">
-      If you’ve forgotten that password, you can
-      <a href="/forgot-password.html">reset it</a> after confirming your email.
-    </p>
+
+    <div id="resentNotice" class="notice-banner" role="status" hidden>
+      If that email is registered and unconfirmed, a new confirmation email has been sent.
+    </div>
+
+    <a href="/login.html" class="primary-button">Sign in</a>
 
     <form id="resendForm" action="/resend-confirmation" method="POST">
       <input type="hidden" id="resendEmail" name="email">
+      <input type="hidden" name="return_to" value="register">
       <button type="submit" class="secondary-button">Resend confirmation email</button>
     </form>
+
+    <div class="footer-link">
+      <a href="/forgot-password.html">Forgotten password?</a>
+    </div>
+  </div>
+
+  <div id="alreadyRegisteredPanel" class="success-panel" hidden>
+    <h2>This email may already be registered</h2>
+    <p>Try signing in with your existing password. The password you just entered has not replaced your existing password.</p>
+
+    <a href="/login.html" class="primary-button">Sign in</a>
+    <a href="/forgot-password.html" class="secondary-button">Reset password</a>
   </div>
 
   <form id="registerForm" action="/register" method="POST">
@@ -210,12 +242,14 @@
     <button type="submit" id="submitButton">Create Account</button>
   </form>
 
-  <!-- Deliberately always visible, regardless of whether the submitted
-       email was new or already registered — a duplicate-only or
-       conditionally-shown version of this would let anyone learn whether
-       an email has an account, defeating Supabase's own anti-enumeration
-       behaviour on signUp(). Showing it unconditionally on every page
-       load and after every outcome carries no signal at all. -->
+  <!-- Shown only on the blank registration form, before any submission —
+       hidden by showSuccess()/showAlreadyRegistered() (2026-08-05):
+       once an outcome is known, both panels already carry their own
+       complete Sign in / Reset password / Resend actions, so leaving
+       this visible too was pure duplication, not an anti-enumeration
+       requirement — both outcome panels offer an equivalent path either
+       way, so hiding this one reveals nothing about which outcome
+       occurred. -->
   <div class="footer-link" id="loginFooterLink">
     Already have an account?
     <a href="/login.html">Log in</a>
@@ -246,22 +280,45 @@
   // (an unconfirmed account already existed) — this is the fix for
   // definitively confirming account existence via response wording. See
   // the successPanel markup above for the actual neutral copy.
-  function showSuccess() {
-    var enteredEmail = document.getElementById("email").value;
-    document.getElementById("resendEmail").value = enteredEmail;
+  //
+  // Reads the email from the URL, not the form field: this page is
+  // reached via a real server redirect (a fresh page load), so the form
+  // field a customer typed into is already gone by the time this runs —
+  // server.js passes the email through as a query param specifically so
+  // the resend form below can still be pre-filled with it.
+  function showSuccess(enteredEmail, showResentNotice) {
+    if (enteredEmail) {
+      document.getElementById("resendEmail").value = enteredEmail;
+    }
     document.getElementById("registerForm").hidden = true;
-    // loginFooterLink is deliberately left visible here — see its own
-    // comment in the markup above.
+    // Hidden here (2026-08-05 revision): the panel now carries its own
+    // complete set of actions (Sign in / Resend / Forgotten password?),
+    // so the generic footer link was pure duplication, not an
+    // anti-enumeration necessity — both outcome panels already offer an
+    // equivalent Sign-in path, so hiding it here reveals nothing.
+    document.getElementById("loginFooterLink").hidden = true;
     document.getElementById("successPanel").hidden = false;
+    document.getElementById("resentNotice").hidden = !showResentNotice;
+  }
+
+  // Shown for an existing, already-confirmed account — never claims a
+  // confirmation email was sent, since none was.
+  function showAlreadyRegistered() {
+    document.getElementById("registerForm").hidden = true;
+    document.getElementById("loginFooterLink").hidden = true;
+    document.getElementById("alreadyRegisteredPanel").hidden = false;
   }
 
   var params = new URLSearchParams(window.location.search);
   var state = params.get("state");
   var reason = params.get("reason");
   var email = params.get("email");
+  var resentAttempted = params.get("resent_attempted") === "1";
 
   if (state === "success" || state === "pending_confirmation") {
-    showSuccess();
+    showSuccess(email, resentAttempted);
+  } else if (state === "already_registered") {
+    showAlreadyRegistered();
   } else if (state === "error") {
     showError(ERROR_MESSAGES[reason] || ERROR_MESSAGES.failed);
     if (email) {

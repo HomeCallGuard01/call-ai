@@ -1,43 +1,56 @@
-// A4 — Confirm your email. Per APP_VISUAL_SPECIFICATION.md: no forward
-// navigation, waits for the customer to confirm via the emailed link
-// (which deep-links back into the app — see app/reset-password.tsx for
-// the equivalent recovery-link pattern; confirmation uses Supabase's own
-// signup-verification redirect, resolved by onAuthStateChange in
-// AuthContext once the customer taps it, which then routes them forward
-// automatically via app/index.tsx the next time the app is foregrounded).
+// A4 — Registration outcome. Shown after every registration attempt,
+// rendering one of two states depending on what the backend actually
+// found (services/registrationRequest.js via lib/api.ts's
+// registerAccount/resendConfirmationEmail):
+//
+// - pending_confirmation (a genuinely new signup, or a resend to an
+//   existing unconfirmed email — deliberately identical, anti-
+//   enumeration): "Check your email or sign in". Every path off this
+//   screen (Sign in, Forgotten password?, Resend) is visible immediately
+//   — nobody is left here indefinitely waiting for an email that may
+//   never come.
+// - already_registered (an existing, CONFIRMED account): "This email may
+//   already be registered" — the one outcome where nothing was, or ever
+//   will be, sent, so this never claims otherwise.
+//
+// The "Resend confirmation email" button can itself transition the
+// screen from pending_confirmation to already_registered in place (if
+// the account turns out to already be confirmed) — it never shows a
+// success notice unless Supabase actually accepted a real resend.
 import { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { Link, useLocalSearchParams } from "expo-router";
+import { Link, router, useLocalSearchParams } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { resendConfirmationEmail } from "../../lib/api";
-import { planResendOutcome, type ResendOutcome } from "../../lib/registrationOutcome";
+import { outcomeContent, planResendEffect, type RegisterStatus } from "../../lib/registrationOutcome";
 import { colors, spacing, typography } from "../../lib/theme";
 
 export default function ConfirmEmail() {
-  const { email } = useLocalSearchParams<{ email: string }>();
-  const [outcome, setOutcome] = useState<ResendOutcome | null>(null);
+  const { email, status: initialStatus } = useLocalSearchParams<{ email: string; status?: RegisterStatus }>();
+  const [status, setStatus] = useState<RegisterStatus>(initialStatus === "already_registered" ? "already_registered" : "pending_confirmation");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
+
+  const content = outcomeContent(status);
+  const isPending = status === "pending_confirmation";
 
   async function handleResend() {
     setIsResending(true);
-    setOutcome(null);
+    setNotice(null);
+    setResendError(null);
     try {
-      // The decision of whether there's actually anything to resend (an
-      // existing, unconfirmed account) is made server-side — see
-      // services/mobileRegistration.js. This used to call
-      // supabase.auth.resend() directly and show the same "sent again"
-      // notice unconditionally, even when the account was already
-      // confirmed and nothing was sent at all.
-      const { status } = await resendConfirmationEmail(email);
-      setOutcome(planResendOutcome(status));
+      const { status: resendStatus } = await resendConfirmationEmail(email);
+      const effect = planResendEffect(resendStatus);
+      if (effect.kind === "switch_to_already_registered") {
+        setStatus("already_registered");
+      } else {
+        setNotice(effect.message);
+      }
     } catch {
-      setOutcome({
-        variant: "error",
-        message: "We couldn't process that just now. Please try again.",
-        showLoginGuidance: false,
-      });
+      setResendError("We couldn't process that just now. Please try again.");
     } finally {
       setIsResending(false);
     }
@@ -45,33 +58,40 @@ export default function ConfirmEmail() {
 
   return (
     <Screen>
-      <Text style={styles.title}>Check your email</Text>
-      <Text style={styles.body}>We've sent a confirmation link to {email}.</Text>
-      <Text style={styles.caption}>Can't find the email? Check your spam or junk folder.</Text>
-      <Text style={styles.caption}>
-        If you've already registered this email before, please use the password you originally chose.
-      </Text>
+      <Text style={styles.title} accessibilityRole="header">{content.title}</Text>
+      {content.paragraphs.map((paragraph, i) => (
+        <Text key={i} style={styles.body}>{paragraph}</Text>
+      ))}
+      {isPending && (
+        <Text style={styles.caption}>Can't find the email? Check your spam or junk folder.</Text>
+      )}
 
-      {outcome && <Banner variant={outcome.variant} message={outcome.message} />}
+      {notice && <Banner variant="notice" message={notice} />}
+      {resendError && <Banner variant="error" message={resendError} />}
 
-      <PrimaryButton
-        label="Resend confirmation email"
-        onPress={handleResend}
-        loading={isResending}
-        variant="secondary"
-      />
+      <PrimaryButton label="Sign in" onPress={() => router.push("/(auth)/login")} />
 
-      <View style={styles.footer}>
-        <Link href="/(auth)/login">
-          <Text style={styles.footerText}>Already confirmed? Log in</Text>
-        </Link>
-        <Link href="/(auth)/forgot-password">
-          <Text style={styles.footerText}>Forgot your password?</Text>
-        </Link>
-        <Link href="/(auth)/register">
-          <Text style={styles.footerText}>Wrong email address? Start again</Text>
-        </Link>
-      </View>
+      {isPending ? (
+        <>
+          <PrimaryButton
+            label="Resend confirmation email"
+            onPress={handleResend}
+            loading={isResending}
+            variant="secondary"
+          />
+          <View style={styles.footer}>
+            <Link href="/(auth)/forgot-password">
+              <Text style={styles.footerText}>Forgotten password?</Text>
+            </Link>
+          </View>
+        </>
+      ) : (
+        <PrimaryButton
+          label="Reset password"
+          onPress={() => router.push("/(auth)/forgot-password")}
+          variant="secondary"
+        />
+      )}
     </Screen>
   );
 }
@@ -90,6 +110,7 @@ const styles = StyleSheet.create({
   caption: {
     ...typography.caption,
     color: colors.textMuted,
+    marginTop: spacing.xs,
     marginBottom: spacing.lg,
   },
   footer: {
