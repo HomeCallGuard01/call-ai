@@ -233,6 +233,69 @@ DNS and a DMARC policy tightened beyond `p=none`, (3) re-verification
 that new-signup and resend rate limits are adequate for production
 volume under the new provider.
 
+**Correction, 2026-08-06 — the DNS-only inference above about
+production was wrong; corrected by directly checking the Supabase
+Dashboard rather than continuing to infer from DNS alone.**
+`home-call-guard` (production, `psbzynxplxfbyrbdidmn`) **already has
+custom SMTP enabled**, via Resend (`smtp.resend.com`), sender
+`Home Call Guard <support@mail.homecallguard.co.uk>` — a real,
+DKIM-verified sending subdomain (confirmed: a genuine
+`resend._domainkey.mail.homecallguard.co.uk` TXT record with a real
+public key exists, which only gets created once a domain is added and
+verified in a real Resend account). It was **staging**
+(`home-call-guard-staging`, `tigwgmayeuisrxjjykqd`) using the default
+mailer all along — confirmed directly in its own Dashboard, which
+displays Supabase's own warning: *"You're using the built-in email
+service. This service has rate limits and is not meant to be used for
+production apps."* This matches every "email rate limit exceeded" hit
+during this engagement's own staging testing — never a sign anything
+was broken, just staging's real, unconfigured state.
+
+Also investigated, per instruction, whether the visible sender could be
+`support@homecallguard.co.uk` (the root domain) instead of the
+`mail.` subdomain: **not possible without separately verifying the root
+domain in Resend**, per Resend's own documentation (*"After your domain
+is verified, you can send... using any email address at your domain"* —
+scoped to the exact domain added, not inherited from/to the parent; the
+same docs recommend subdomains specifically "to isolate your sending
+reputation"). Verifying the root domain would put transactional mail
+back on the same domain as the real IONOS-hosted `support@` mailbox —
+the exact mixing a subdomain avoids. Decision: reuse the existing,
+already-verified `mail.homecallguard.co.uk` — no new subdomain, no new
+DNS record of any kind.
+
+**Progress this pass, staging only, production untouched:**
+- Staging Auth → URL Configuration: Site URL was still the
+  default `http://localhost:3000` with zero Redirect URLs configured.
+  Fixed to `http://192.168.1.237:3099` (matching staging's real
+  `APP_URL`), with 5 real redirect URLs added
+  (`/confirmed.html`, `/login.html`, `/reset-password.html`, `/`, and
+  the mobile deep link `homecallguard://reset-password`).
+- All 5 Auth email templates (Confirm signup, Reset password, Change
+  email address, Invite user, Magic link or OTP) redesigned with real
+  Home Call Guard branding and pasted into **staging** — production's
+  templates are still Supabase's untouched defaults, deliberately, per
+  instruction to stay staging-only.
+- Staging SMTP: sender name/email, host, port, username entered
+  (`Home Call Guard <no-reply@mail.homecallguard.co.uk>`,
+  `smtp.resend.com`, `465`, `resend`) — **blocked on the SMTP
+  password/API key**, which this engagement's own safety rules prohibit
+  an AI assistant from ever entering into any field, even when supplied
+  directly. Needs the account owner to paste it into Authentication →
+  Emails → SMTP Settings on the staging project and click Save — the
+  one remaining manual step before staging SMTP is actually live.
+- No Reply-To field exists in Supabase's Auth SMTP settings (checked
+  directly, confirmed absent) — `Reply-To: support@homecallguard.co.uk`
+  as specified cannot be set there; would need a different mechanism
+  (e.g. configured at the Resend level, or omitted) if still wanted.
+- Real deliverability verification (registration/resend/reset, and the
+  provider matrix) is blocked on the SMTP password step above — nothing
+  fabricated in its place.
+- Safety checks re-verified directly after all of the above: production
+  Supabase Dashboard was only ever viewed, never saved; IONOS MX, root
+  SPF, and DMARC all re-checked via DNS and confirmed byte-for-byte
+  unchanged; no new subdomain or DNS record of any kind was created.
+
 ## Deferred
 
 ### App Store / Google Play submission requirements
