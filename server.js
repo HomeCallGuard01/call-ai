@@ -15,6 +15,7 @@ const { getContacts, insertContacts, updateContact, deleteContact } = require(".
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
+const { resolveForwardingDestination } = require("./services/callRouting");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
@@ -143,6 +144,31 @@ function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
 }
 
+// Shared by both the known-contact bypass (/voice) and the screened-safe
+// passthrough (/process) — the only two places a call is ever forwarded
+// on to a real person. Never dials a hardcoded/fallback number: a
+// household with no phone_number on file fails closed (a clear message,
+// then hangup) rather than silently routing to the wrong destination.
+function dialHouseholdOrFailClosed(twiml, household) {
+  const destination = resolveForwardingDestination(household);
+
+  if (destination.canForward) {
+    const dial = twiml.dial();
+    dial.number(destination.number);
+    return;
+  }
+
+  console.error(
+    "CALL ROUTING ERROR: no forwarding number on file for household",
+    household && household.id
+  );
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "We're sorry, this call cannot be connected right now. Please try again later."
+  );
+  twiml.hangup();
+}
+
 async function getCallsToday(householdId) {
   if (!supabaseAdmin) return [];
 
@@ -252,8 +278,7 @@ app.post("/voice", async (req, res) => {
       console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
     }
 
-    const dial = twiml.dial();
-    dial.number("+447715562700");
+    dialHouseholdOrFailClosed(twiml, household);
 
     return res.type("text/xml").send(twiml.toString());
   }
@@ -376,8 +401,7 @@ app.post("/process", async (req, res) => {
 
     twiml.pause({ length: 1 });
 
-    const dial = twiml.dial();
-    dial.number("+447715562700");
+    dialHouseholdOrFailClosed(twiml, household);
   }
 
   return res.type("text/xml").send(twiml.toString());
