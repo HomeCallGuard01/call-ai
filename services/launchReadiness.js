@@ -57,6 +57,13 @@ const ITEMS = [
       "public/terms.html is a considered draft, not a solicitor-reviewed contract. Recommend UK consumer-law review before go-live, particularly §5 (Cancellation), §9 (Fair use and abuse), §10 (Refund policy and statutory cancellation rights), and the new §11 (Money-back guarantee) added in the 2026-08-05 launch-readiness audit.",
   },
   {
+    title: "Web dashboard activation instructions",
+    severity: "blocker",
+    status: "resolved_staging_only",
+    detail:
+      "Resolved 2026-08-07 (commit c80c372, pushed to sandbox/mobile-app-v1, not merged to main): GET /activation-instructions added to server.js, reusing services/activationInstructions.js (the same module the mobile app already uses) — upload.html now shows a device/provider picker that generates a real forwarding code, closing the gap where a web customer could subscribe but never learn their protection number. The Twilio number itself is still never sent to the browser. Verified end-to-end against staging (register, confirm, login, real Stripe test-mode subscription, dashboard, instructions UI, forwarding code, activation completion); full automated suite passing. Recorded as resolved on staging only because it hasn't reached production (PR #2 remains unmerged) and real activation still can't be exercised with a genuinely provisioned number until the Twilio Address/Bundle item below is resolved.",
+  },
+  {
     title: "Production email deliverability and sender configuration",
     severity: "blocker",
     status: "blocked",

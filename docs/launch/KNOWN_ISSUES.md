@@ -1,6 +1,6 @@
 Document: Known Issues — Pre-Launch
-Version: 4.0
-Last Updated: 2026-08-05
+Version: 4.1
+Last Updated: 2026-08-07
 Status: Active — reconciled against live production and staging state
 Owner: Andrew Deane
 Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence
@@ -134,6 +134,27 @@ membership" tap → Stripe-hosted portal → return) hasn't been exercised in
 this pass (`docs/RC1_CHECKLIST.md`: "Account / billing-portal live flow —
 not tested this pass"), and live-mode Stripe Dashboard portal configuration
 hasn't been separately confirmed.
+
+### Web dashboard has no real activation instructions
+
+Resolved 2026-08-07 (`c80c372`, pushed to `sandbox/mobile-app-v1`, not
+merged to `main`). `GET /activation-instructions` added to `server.js` —
+an authenticated-web mirror of the mobile app's own
+`GET /api/v1/activation/instructions`, reusing the same
+`services/activationInstructions.js` with zero duplicated logic.
+`upload.html` gained a small, additive device/provider picker in the
+existing setup-progress card, gated by the same visibility rule already
+governing the "I've set up call forwarding" toggle. The Twilio number
+itself is still never sent to the browser — only the fully-formed dial
+code, exactly as the mobile route already did. Verified end-to-end against
+staging (real registration, real email confirmation, real login, a real
+Stripe test-mode subscription, and the new instructions UI generating a
+correct forwarding code, including the Virgin Media extra-zero and
+preliminary-150-call cases) — full walkthrough and evidence in
+`docs/mobile-app/CLAUDE_SESSION_HANDOVER.md`. Full automated suite (16
+files) passing. This was the only remaining code-side blocker preventing
+a web customer from completing activation; the Twilio Address/Bundle item
+above is now the sole remaining blocker to real activation.
 
 ### Mobile app staging validation
 
@@ -355,17 +376,6 @@ whose 30-day cancellation grace period has passed (see
 there is no cron/job runner configured in this project today. Needs a
 daily Railway Cron Job (or equivalent) before the first cancellation's
 window elapses; a manual run is a fine stopgap until then.
-
-### Web dashboard has no real activation instructions
-
-`upload.html`'s setup checklist shows only a bare manual toggle ("I've set
-up call forwarding") with no number, code, or instructions anywhere, and
-by deliberate design the Twilio number itself is never sent to any client.
-No automated channel (email/SMS) communicates it either. The mobile app's
-`GET /api/v1/activation/instructions` solves this for its own onboarding
-flow; the web dashboard has no equivalent yet. Not fixed as part of mobile
-Phase 2, per explicit scope decision — a genuine pre-existing gap worth a
-real fix, web-side, before or shortly after launch.
 
 ### No automated test coverage for dashboard/call-logging changes
 
