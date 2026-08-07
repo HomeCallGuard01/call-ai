@@ -386,6 +386,65 @@
     cursor: pointer;
   }
 
+  .activation-instructions {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #1e293b;
+  }
+
+  .activation-instructions h3 {
+    margin: 0 0 10px 0;
+    font-size: 15px;
+    color: #e2e8f0;
+  }
+
+  .activation-instructions label {
+    display: block;
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+  }
+
+  .activation-instructions select {
+    width: 100%;
+    max-width: 320px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: #e2e8f0;
+    font-size: 14px;
+    margin-bottom: 14px;
+  }
+
+  .activation-code-box {
+    background: #0b1220;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 4px;
+  }
+
+  .activation-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #22c55e;
+    letter-spacing: 0.02em;
+  }
+
+  .activation-explanation {
+    font-size: 13px;
+    color: #94a3b8;
+    margin: 8px 0 0 0;
+  }
+
+  .activation-preliminary-note {
+    font-size: 13px;
+    color: #fbbf24;
+    margin: 8px 0 0 0;
+  }
+
   .spinner {
     width: 32px;
     height: 32px;
@@ -973,6 +1032,39 @@
           <button type="button" class="checklist-action" id="callForwardingToggle">I've set up call forwarding</button>
         </li>
       </ul>
+
+      <div id="activationInstructions" class="activation-instructions" hidden>
+        <h3>Get your activation code</h3>
+
+        <label for="deviceTypeSelect">What are you forwarding calls from?</label>
+        <select id="deviceTypeSelect">
+          <option value="">Choose...</option>
+          <option value="iphone">iPhone</option>
+          <option value="android">Android phone</option>
+          <option value="landline">Landline</option>
+        </select>
+
+        <div id="landlineProviderRow" hidden>
+          <label for="landlineProviderSelect">Who is your landline provider?</label>
+          <select id="landlineProviderSelect">
+            <option value="">Choose...</option>
+            <option value="bt">BT</option>
+            <option value="sky">Sky</option>
+            <option value="virgin">Virgin Media</option>
+            <option value="talktalk">TalkTalk</option>
+            <option value="plusnet">Plusnet</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <p id="activationError" class="error-banner" role="alert" hidden></p>
+
+        <div id="activationResult" class="activation-code-box" hidden>
+          <div class="activation-code" id="activationCode"></div>
+          <p class="activation-explanation" id="activationExplanation"></p>
+          <p class="activation-preliminary-note" id="activationPreliminaryNote" hidden></p>
+        </div>
+      </div>
     </section>
 
     <h2 class="section-heading">
@@ -1344,6 +1436,15 @@
       toggle.hidden = !checklist.protectedNumberAssigned || checklist.callForwardingCompleted;
     }
 
+    // Same visibility rule as the toggle above: no point showing an
+    // activation code to forward calls to before a number actually
+    // exists, and no longer needed once the customer's confirmed
+    // forwarding is set up.
+    const instructions = document.getElementById("activationInstructions");
+    if (instructions) {
+      instructions.hidden = !checklist.protectedNumberAssigned || checklist.callForwardingCompleted;
+    }
+
     const progress = computeChecklistProgress(checklist);
     setText("checklistProgress", progress.completed + " of " + progress.total + " steps complete");
   }
@@ -1477,6 +1578,85 @@
     callForwardingToggleEl.addEventListener("click", function () {
       setCallForwardingCompleted(!getCallForwardingCompleted());
       renderChecklist(lastDashboardData);
+    });
+  }
+
+  // Activation instructions: reuses the same server-side
+  // buildActivationInstructions() logic already built and proven for the
+  // mobile app (services/activationInstructions.js) — this is the web
+  // app's only previously-missing piece: a way for the customer to
+  // actually learn their forwarding code. The bare Twilio number is never
+  // sent to the browser; only the fully-formed dial code is.
+  const deviceTypeSelectEl = document.getElementById("deviceTypeSelect");
+  const landlineProviderRowEl = document.getElementById("landlineProviderRow");
+  const landlineProviderSelectEl = document.getElementById("landlineProviderSelect");
+  const activationErrorEl = document.getElementById("activationError");
+  const activationResultEl = document.getElementById("activationResult");
+  const activationCodeEl = document.getElementById("activationCode");
+  const activationExplanationEl = document.getElementById("activationExplanation");
+  const activationPreliminaryNoteEl = document.getElementById("activationPreliminaryNote");
+
+  function hideActivationOutput() {
+    if (activationErrorEl) activationErrorEl.hidden = true;
+    if (activationResultEl) activationResultEl.hidden = true;
+  }
+
+  async function fetchActivationInstructions(deviceType, provider) {
+    hideActivationOutput();
+    try {
+      const params = new URLSearchParams({ deviceType: deviceType });
+      if (provider) params.set("provider", provider);
+      const res = await fetch("/activation-instructions?" + params.toString());
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (activationErrorEl) {
+          activationErrorEl.textContent = "We couldn't load your activation code just now. Please try again in a moment.";
+          activationErrorEl.hidden = false;
+        }
+        return;
+      }
+
+      if (activationCodeEl) activationCodeEl.textContent = data.code;
+      if (activationExplanationEl) activationExplanationEl.textContent = data.explanation || "";
+      if (activationPreliminaryNoteEl) {
+        activationPreliminaryNoteEl.hidden = !data.requiresPreliminaryCall;
+        activationPreliminaryNoteEl.textContent = data.preliminaryCallNote || "";
+      }
+      if (activationResultEl) activationResultEl.hidden = false;
+    } catch (err) {
+      if (activationErrorEl) {
+        activationErrorEl.textContent = "We couldn't load your activation code just now. Please try again in a moment.";
+        activationErrorEl.hidden = false;
+      }
+    }
+  }
+
+  if (deviceTypeSelectEl) {
+    deviceTypeSelectEl.addEventListener("change", function () {
+      const deviceType = deviceTypeSelectEl.value;
+      hideActivationOutput();
+
+      if (deviceType === "landline") {
+        if (landlineProviderRowEl) landlineProviderRowEl.hidden = false;
+        if (landlineProviderSelectEl) landlineProviderSelectEl.value = "";
+        return;
+      }
+
+      if (landlineProviderRowEl) landlineProviderRowEl.hidden = true;
+      if (deviceType) {
+        fetchActivationInstructions(deviceType);
+      }
+    });
+  }
+
+  if (landlineProviderSelectEl) {
+    landlineProviderSelectEl.addEventListener("change", function () {
+      const provider = landlineProviderSelectEl.value;
+      hideActivationOutput();
+      if (provider) {
+        fetchActivationInstructions("landline", provider);
+      }
     });
   }
 

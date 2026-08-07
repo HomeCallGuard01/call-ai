@@ -35,6 +35,7 @@ const { getCallsToday, getRecentCalls, logCall, toClientCall } = require("./data
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("./services/registrationRequest");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const { buildUserScopedClient } = require("./services/supabaseClients");
+const { DEVICE_TYPES, LANDLINE_PROVIDERS, buildActivationInstructions } = require("./services/activationInstructions");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const mobileApiRoutes = require("./routes/mobileApi");
@@ -437,6 +438,58 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
       manageable: !!(req.household.stripe_customer_id && subscription),
     },
   });
+});
+
+// GET /activation-instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other
+//
+// The web equivalent of the mobile app's GET /api/v1/activation/instructions
+// (routes/mobileApi.js) — same narrow exception to "the Twilio number is
+// never sent to any client", same reused services/activationInstructions.js
+// so the per-provider formatting/caveats live in exactly one place. Web
+// customers had no channel at all to learn their forwarding destination
+// (no email, no SMS, /dashboard-data deliberately omits twilioNumber) —
+// this route closes that gap for the existing web dashboard (upload.html)
+// without changing /dashboard-data or introducing any new business logic.
+app.get("/activation-instructions", requireAuth, requireEntitlement, (req, res) => {
+  const { deviceType, provider } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  if (!req.household.twilio_number) {
+    return res.status(409).json({ error: "not_provisioned" });
+  }
+
+  try {
+    const instructions = buildActivationInstructions({
+      twilioNumber: req.household.twilio_number,
+      deviceType,
+      provider,
+    });
+
+    res.json({
+      code: instructions.code,
+      cancelCode: instructions.cancelCode,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+      explanation: "This is Home Call Guard's protection number — you'll forward your calls to it now.",
+    });
+  } catch (err) {
+    console.error("WEB ACTIVATION INSTRUCTIONS ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
 });
 
 app.get("/logs", requireAuth, requireEntitlement, async (req, res) => {
