@@ -1,163 +1,23 @@
 const express = require("express");
-const { version: APP_VERSION } = require("../package.json");
 const { requireAuth } = require("../middleware/requireAuth");
 const { stripe } = require("../services/stripeClient");
 const { getHouseholdByAuthUserId } = require("../database/households");
 const {
-  setHouseholdStripeCustomerId,
   getHouseholdByStripeCustomerId,
   claimWebhookEvent,
   processWebhookEvent,
   getActiveEntitlement,
 } = require("../database/billing");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
+const {
+  hasQualifyingStripeSubscription,
+  findReusableOpenCheckoutSession,
+  isSessionPaidWithSubscription,
+  buildCheckoutSessionParams,
+  resolveStripeCustomerId,
+} = require("../services/checkoutSession");
 
 const router = express.Router();
-
-const QUALIFYING_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"]);
-
-// Pure so it's directly unit-testable without mocking Stripe or Express —
-// see tests/checkout-existing-subscription.test.mjs.
-//
-// past_due blocks a new Checkout Session here for a different reason than
-// it grants an entitlement in process_stripe_webhook_event (013/015): that
-// RPC's qualifying set is about whether app access continues during a
-// payment retry, a decision already made and untouched by this function.
-// This set is purely about not creating a second real Stripe subscription
-// while dunning/retries are still live on the first one — a past_due
-// subscription is still a real, active billing relationship, and starting
-// a second one alongside it risks a genuine double charge if both later
-// succeed. Normally getActiveEntitlement() above already redirects before
-// this runs (the entitlement created when the subscription first went
-// active isn't touched by a later past_due transition) — this exists for
-// the narrow window where that webhook hasn't been processed yet, exactly
-// the class of gap this whole check was added to close.
-//
-// unpaid remains deliberately excluded: it's Stripe's terminal
-// dunning-exhausted state, not an active retry in progress, and whether a
-// lapsed household should be allowed to start completely fresh is a product
-// decision this function does not make silently.
-function hasQualifyingStripeSubscription(subscriptions) {
-  return subscriptions.some((s) => QUALIFYING_SUBSCRIPTION_STATUSES.has(s.status));
-}
-
-// Pure so it's directly unit-testable without mocking Stripe — see
-// tests/checkout-existing-subscription.test.mjs.
-//
-// Closes the abandoned/still-open-checkout gap: a Checkout Session that's
-// been created but never paid has no Subscription object at all (Stripe
-// only creates one on successful payment), so hasQualifyingStripeSubscription
-// above cannot see it. Without this, a household that opened Checkout and
-// didn't finish — got distracted, closed the tab, thought it failed — then
-// tried again later would sail through both existing checks and get a
-// second, independent Checkout Session, the same shape of duplicate as the
-// 2026-07-18 incident, just relocated to before payment instead of after it.
-//
-// Only Stripe's own "open" status is treated as reusable — "complete" and
-// "expired" are both terminal and must never block a fresh attempt.
-function findReusableOpenCheckoutSession(sessions) {
-  return sessions.find((s) => s.status === "open") || null;
-}
-
-// Pure — see tests/checkout-existing-subscription.test.mjs. A session can be
-// "complete" (Checkout itself finished) without yet having a usable
-// subscription record on it (Stripe attaches the subscription synchronously
-// on payment, but this still guards the shape rather than assuming it).
-function isSessionPaidWithSubscription(session) {
-  return !!session && session.payment_status === "paid" && !!session.subscription;
-}
-
-// Shared Checkout Session creation params so every session this app ever
-// creates — fresh or reconciled-against-later — collects a billing address
-// and requires Terms of Service consent, and shows the same explicit
-// recurring-billing wording. Centralized so a future second call site can't
-// silently drift from this (see docs/PROJECT_STATUS.md, "payment-completion
-// flow rebuild").
-function buildCheckoutSessionParams({ customer, priceId, householdId, appUrl }) {
-  return {
-    mode: "subscription",
-    customer,
-    line_items: [{ price: priceId, quantity: 1 }],
-    client_reference_id: householdId,
-    metadata: buildStripeMetadata(householdId),
-    subscription_data: {
-      metadata: buildStripeMetadata(householdId),
-    },
-    billing_address_collection: "required",
-    // consent_collection: { terms_of_service: "required" } is NOT enabled
-    // yet — Stripe rejects it outright ("You cannot collect consent to
-    // your terms of service unless a URL is set in the Stripe Dashboard"),
-    // confirmed by attempting a real session creation. Requires setting a
-    // Terms of Service URL under Settings → Public business details in the
-    // Stripe Dashboard first (not settable via the API) — see
-    // docs/PROJECT_STATUS.md. Until then, the custom_text.submit message
-    // below is the only ToS/recurring-billing disclosure shown.
-    custom_text: {
-      submit: {
-        message:
-          "You'll be charged £4.99 today, then £4.99 every month until you cancel. By continuing, you agree to Home Call Guard's Terms and Conditions and Privacy Policy.",
-      },
-    },
-    success_url: `${appUrl}/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appUrl}/dashboard?checkout=cancelled`,
-  };
-}
-
-// Shared identifying metadata, applied consistently to the Customer, the
-// Checkout Session, and (via subscription_data.metadata) the Subscription —
-// Stripe does not propagate metadata between these automatically, and each
-// is inspectable independently in the dashboard / on its own webhook event
-// object, so each needs its own copy rather than relying on one to carry
-// the others. All values are strings, as Stripe metadata requires.
-// Deliberately no acquisition-source/marketing attribution fields yet —
-// that belongs to the future website/marketing attribution work, not here.
-function buildStripeMetadata(householdId) {
-  return {
-    household_id: String(householdId),
-    environment: process.env.NODE_ENV || "development",
-    app_version: APP_VERSION,
-    stripe_price_id: process.env.STRIPE_PRICE_ID || "unknown",
-  };
-}
-
-// A stripe_customer_id write lost the race in setHouseholdStripeCustomerId
-// (see below) if the RPC's specific "already has a different value" message
-// comes back — distinct from its "household does not exist" message, which
-// should surface as a real error instead of being silently recovered from.
-function isCustomerIdRaceRejection(err) {
-  return typeof err?.message === "string" && err.message.includes("already has stripe_customer_id");
-}
-
-// Resolves (creating if necessary) the Stripe Customer for a household,
-// handling the concurrent-first-checkout race: if two requests both see a
-// null stripe_customer_id and both create a Stripe Customer, only one write
-// can win the RPC's row lock (see set_household_stripe_customer_id's own
-// comment in supabase/migrations/013_stripe_billing_rpc_functions.sql).
-// The loser re-reads the now-set value and reuses it instead of failing —
-// the Stripe Customer it created is simply never used again.
-async function resolveStripeCustomerId(household, authUserId) {
-  if (household.stripe_customer_id) {
-    return household.stripe_customer_id;
-  }
-
-  const customer = await stripe.customers.create({
-    email: household.email,
-    metadata: buildStripeMetadata(household.id),
-  });
-
-  try {
-    await setHouseholdStripeCustomerId(household.id, customer.id);
-    return customer.id;
-  } catch (err) {
-    if (isCustomerIdRaceRejection(err)) {
-      const fresh = await getHouseholdByAuthUserId(authUserId);
-      if (fresh?.stripe_customer_id) {
-        return fresh.stripe_customer_id;
-      }
-    }
-    throw err;
-  }
-}
 
 // SUBSCRIBE (exception-list route: requires auth, deliberately NOT
 // requireEntitlement — an unsubscribed household must be able to reach
@@ -246,7 +106,8 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
         customer: stripeCustomerId,
         priceId: process.env.STRIPE_PRICE_ID,
         householdId: req.household.id,
-        appUrl: process.env.APP_URL,
+        successUrl: `${process.env.APP_URL}/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${process.env.APP_URL}/dashboard?checkout=cancelled`,
       }),
       { idempotencyKey }
     );
@@ -494,12 +355,5 @@ router.post(
   }
 );
 
-// Attached to the router (not a separate export) so server.js's existing
-// `require("./routes/billing")` usage — mounting the router directly — is
-// unaffected; tests reach it as `require("../routes/billing").hasQualifyingStripeSubscription`.
-router.hasQualifyingStripeSubscription = hasQualifyingStripeSubscription;
-router.findReusableOpenCheckoutSession = findReusableOpenCheckoutSession;
-router.isSessionPaidWithSubscription = isSessionPaidWithSubscription;
-router.buildCheckoutSessionParams = buildCheckoutSessionParams;
 
 module.exports = router;

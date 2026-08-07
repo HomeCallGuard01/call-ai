@@ -69,15 +69,11 @@ grant usage on schema public to anon, authenticated, service_role;
 grant usage on schema auth to service_role;
 grant select, insert, update, delete on auth.users to service_role;
 
--- public.contacts was created via the Supabase Table Editor, not a
--- tracked migration (see 009_service_role_minimum_app_privileges.sql's
--- own comment on this) — 003_add_household_id_ownership.sql alters it.
--- Stub just enough of it here for the migration chain to apply.
-create table public.contacts (
-  id uuid primary key default gen_random_uuid(),
-  household_id uuid,
-  created_at timestamptz not null default now()
-);
+-- public.contacts used to need a stub created here (it had no CREATE
+-- TABLE anywhere in this repo — see docs/engineering/
+-- MIGRATION_RECOVERY_PLAN.md). 000_baseline_contacts_table.sql now
+-- creates the real, authoritative table, so the migration chain itself
+-- provides it — no stub needed.
 `;
 
 // Plain SET (not SET LOCAL) is used deliberately here, not as a stylistic
@@ -124,16 +120,16 @@ async function main() {
   console.log('Bootstrapping auth/role shim...');
   await db.exec(BOOTSTRAP_SQL);
 
-  // 005_household_rls.sql is explicitly frozen in its own header ("STATUS:
-  // REVIEWED DRAFT — NOT APPLIED... Do not run against production until
-  // explicitly re-approved") and was superseded for contacts by
-  // 008_household_isolation_contacts.sql, which creates the same policy
-  // names. Applying both would collide, and 005 was never actually run
-  // against the real database, so skip it here to match reality.
-  const SKIP = new Set(['005_household_rls.sql']);
-
+  // 005_household_rls.sql used to need a name-based skip here (frozen,
+  // superseded for contacts by 008_household_isolation_contacts.sql —
+  // applying both collides on policy names). As of docs/engineering/
+  // MIGRATION_RECOVERY_PLAN.md it's been physically relocated to
+  // supabase/migrations/_superseded/, along with the 019 and 021 rollback
+  // scripts (supabase/migrations/_rollbacks/), so a plain readdir of this
+  // directory no longer sees any of them — no filename skip-list needed
+  // to match reality anymore.
   const files = (await readdir(migrationsDir))
-    .filter((f) => f.endsWith('.sql') && !SKIP.has(f))
+    .filter((f) => f.endsWith('.sql'))
     .sort();
 
   for (const file of files) {
@@ -663,6 +659,117 @@ async function main() {
     lifecycleRpcDeniedToAuthenticated = true;
   }
   assert(lifecycleRpcDeniedToAuthenticated, 'authenticated role cannot execute release_household_twilio_number_immediately directly');
+
+  console.log('\nRunning smoke checks on migration 021 (household activation verified)...\n');
+
+  await db.exec(`reset role;`);
+  const userId4 = '44444444-4444-4444-4444-444444444444';
+  await db.query(`insert into auth.users (id, email) values ($1, $2)`, [userId4, 'd@example.com']);
+  const { rows: [household4] } = await db.query(
+    `insert into public.households (auth_user_id, email) values ($1, $2) returning id`,
+    [userId4, 'd@example.com']
+  );
+  const householdId4 = household4.id;
+
+  await asServiceRole(db);
+
+  const { rows: [firstActivationMark] } = await db.query(
+    `select public.mark_household_activation_verified($1) as ts`,
+    [householdId4]
+  );
+  assert(!!firstActivationMark.ts, 'the first verification call sets activation_verified_at');
+
+  const { rows: [secondActivationMark] } = await db.query(
+    `select public.mark_household_activation_verified($1) as ts`,
+    [householdId4]
+  );
+  assert(
+    secondActivationMark.ts.getTime() === firstActivationMark.ts.getTime(),
+    'a second verification call is idempotent — returns the original timestamp, does not overwrite it with a later one'
+  );
+
+  let raisedForMissingHousehold = false;
+  try {
+    await db.query(
+      `select public.mark_household_activation_verified($1)`,
+      ['00000000-0000-0000-0000-000000000000']
+    );
+  } catch {
+    raisedForMissingHousehold = true;
+  }
+  assert(raisedForMissingHousehold, 'mark_household_activation_verified raises for a nonexistent household');
+
+  await asAuthUser(db, userId4, 'd@example.com');
+  let activationRpcDeniedToAuthenticated = false;
+  try {
+    await db.query(`select public.mark_household_activation_verified($1)`, [householdId4]);
+  } catch {
+    activationRpcDeniedToAuthenticated = true;
+  }
+  assert(activationRpcDeniedToAuthenticated, 'authenticated role cannot execute mark_household_activation_verified directly');
+
+  // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
+  //
+  // Discovers every SECURITY DEFINER function in public from pg_proc
+  // itself (prosecdef = true), not a hardcoded name list — a future
+  // migration that adds a new one is covered automatically, without this
+  // file needing an edit. Enforces the fail-closed convention migration
+  // 022 establishes: PUBLIC/anon/authenticated get nothing, service_role
+  // must be explicit, search_path must be pinned, owner must be the
+  // project's administrative role.
+  //
+  // Important limitation, stated plainly: PGlite never reproduces
+  // Supabase's platform default-privilege behavior (the actual root cause
+  // of the anon/authenticated exposure found on staging — see
+  // docs/engineering/MIGRATION_RECOVERY_PLAN.md) — there is no phantom
+  // default grant here to accidentally pass against. This check catches a
+  // *future migration* that forgets its own revoke/grant lines; it cannot
+  // catch a live Supabase project's default-ACL configuration diverging
+  // from what every migration assumes. That real-database check is
+  // scripts/verify-security-definer-grants.js, run against staging/
+  // production directly — this test and that script are deliberately
+  // complementary, not redundant.
+  console.log('\nChecking SECURITY DEFINER grant/search_path/owner policy...\n');
+  // information_schema.role_routine_grants only shows grants visible to
+  // the *current* role (as grantee, grantor, or a role it's a member of)
+  // — the preceding check left the session as `authenticated`, under
+  // which service_role's own grants are invisible, not absent. Reset to
+  // the full-visibility bootstrap role before reading grants for real.
+  await db.exec('reset role;');
+  const ADMIN_OWNER = 'postgres';
+  const { rows: secdefFns } = await db.query(`
+    select p.proname, pg_get_function_identity_arguments(p.oid) as args,
+           pg_get_userbyid(p.proowner) as owner, p.proconfig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prosecdef = true
+    order by p.proname;
+  `);
+  assert(secdefFns.length > 0, 'at least one SECURITY DEFINER function exists to check (sanity check on the check itself)');
+
+  for (const fn of secdefFns) {
+    const label = `${fn.proname}(${fn.args})`;
+
+    const { rows: grants } = await db.query(
+      `select grantee, privilege_type from information_schema.role_routine_grants
+       where routine_schema = 'public' and routine_name = $1`,
+      [fn.proname]
+    );
+    const grantees = new Set(grants.map((g) => g.grantee));
+
+    assert(!grantees.has('PUBLIC'), `${label}: PUBLIC has no EXECUTE`);
+    assert(!grantees.has('anon'), `${label}: anon has no EXECUTE`);
+    assert(!grantees.has('authenticated'), `${label}: authenticated has no EXECUTE`);
+    assert(grantees.has('service_role'), `${label}: service_role has EXECUTE`);
+
+    const searchPathEntry = (fn.proconfig || []).find((c) => c.startsWith('search_path='));
+    assert(
+      searchPathEntry === 'search_path=""' || searchPathEntry === "search_path=",
+      `${label}: search_path is safely fixed (empty), found: ${searchPathEntry ?? '<not set>'}`
+    );
+
+    assert(fn.owner === ADMIN_OWNER, `${label}: owner is the intended administrative role (${ADMIN_OWNER}), found: ${fn.owner}`);
+  }
 
   await db.close();
 

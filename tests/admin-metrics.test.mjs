@@ -118,6 +118,26 @@ check(
 
 check(computeReadinessSummary([]).status === 'ready', 'computeReadinessSummary: no items at all is ready');
 
+check(
+  computeReadinessSummary([{ severity: 'blocker', status: 'resolved' }]).status === 'ready',
+  'computeReadinessSummary: a resolved blocker no longer forces not_ready — this was the actual 2026-08-05 bug (severity alone was checked, never status)'
+);
+
+check(
+  computeReadinessSummary([{ severity: 'blocker', status: 'resolved' }, { severity: 'medium', status: 'pending' }]).status === 'ready_with_open_items',
+  'computeReadinessSummary: a resolved blocker alongside a genuinely open medium item is ready_with_open_items, not not_ready'
+);
+
+check(
+  computeReadinessSummary([{ severity: 'blocker', status: 'resolved_staging_only' }]).status === 'not_ready',
+  'computeReadinessSummary: resolved_staging_only is not the same as resolved — still counts as open, since it is not yet true for production/customers'
+);
+
+check(
+  computeReadinessSummary([{ severity: 'blocker', status: 'resolved' }]).blockersCount === 0,
+  'computeReadinessSummary: blockersCount excludes resolved blockers'
+);
+
 // --- mergeCustomerActivity ---
 
 const activity = mergeCustomerActivity(

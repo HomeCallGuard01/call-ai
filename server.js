@@ -1,4 +1,22 @@
-require("dotenv").config();
+// ENV_FILE selects exactly one environment file to load — set it to run
+// against a specific environment (e.g. ENV_FILE=.env.staging), or leave it
+// unset for plain default local development (loads .env as before). This
+// is deliberately an either/or, never both: server.js used to always also
+// load cwd's .env regardless of what was passed via `-r dotenv/config
+// dotenv_config_path=...`, which is how a real backend ended up silently
+// drawing its Stripe/Twilio/OpenAI config from the sandbox repo's default
+// .env — including a live-prefixed Stripe key — even when it had been
+// launched against a staging-only file that set none of those. See
+// services/serverConfig.js's validateStagingEnv() for the boot-time
+// safeguard this enables.
+const ENV_FILE = process.env.ENV_FILE;
+if (ENV_FILE) {
+  require("dotenv").config({ path: ENV_FILE });
+} else {
+  require("dotenv").config();
+}
+// Non-secret by design — the path only, never a value from the file.
+console.log(`[env] Loaded environment from: ${ENV_FILE || ".env (default, local development)"}`);
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -13,11 +31,18 @@ const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
-const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
+const { getCallsToday, getRecentCalls, logCall, toClientCall } = require("./database/calls");
+const { handleRegisterRequest, handleResendConfirmationRequest } = require("./services/registrationRequest");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
+const { buildUserScopedClient } = require("./services/supabaseClients");
+const { DEVICE_TYPES, LANDLINE_PROVIDERS, buildActivationInstructions } = require("./services/activationInstructions");
+const { resolveForwardingDestination } = require("./services/callRouting");
+const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
-const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
+const mobileApiRoutes = require("./routes/mobileApi");
+const { resolvePort, validateProductionEnv, validateStagingEnv } = require("./services/serverConfig");
+const { stripe } = require("./services/stripeClient");
 
 // Fail fast and clearly in production rather than starting in a silently
 // broken or insecure state (e.g. a missing STRIPE_WEBHOOK_SECRET would
@@ -31,6 +56,22 @@ if (process.env.NODE_ENV === "production") {
   if (problems.length > 0) {
     console.error("FATAL: invalid production configuration:");
     for (const problem of problems) {
+      console.error(` - ${problem}`);
+    }
+    process.exit(1);
+  }
+}
+
+// Same fail-fast principle, for an explicitly-selected non-production
+// environment (ENV_FILE set) — catches the exact gap that let this
+// backend silently draw Stripe config from the sandbox repo's default
+// .env instead of its intended staging-only file. Plain default local dev
+// (no ENV_FILE) is untouched by this check.
+if (ENV_FILE && process.env.NODE_ENV !== "production") {
+  const stagingProblems = validateStagingEnv(process.env);
+  if (stagingProblems.length > 0) {
+    console.error(`FATAL: invalid staging configuration (ENV_FILE=${ENV_FILE}):`);
+    for (const problem of stagingProblems) {
       console.error(` - ${problem}`);
     }
     process.exit(1);
@@ -98,6 +139,7 @@ app.use(express.static("public"));
 // urlencoded parser above, which already no-ops on non-form content types.
 app.use(billingRoutes);
 app.use(adminRoutes);
+app.use(mobileApiRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -135,85 +177,50 @@ if (!supabaseAdmin) {
   );
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Guarded the same way supabaseAdmin above and services/stripeClient.js's
+// stripe client already are: the SDK's own constructor throws synchronously
+// if apiKey is undefined, which previously crashed the entire process at
+// boot whenever OPENAI_API_KEY was unset — not just the AI-classification
+// feature that actually needs it. The one call site (below) already
+// try/catches and falls open to a "SAFE" result on any failure, so a null
+// client here degrades the same way a failed API call already did.
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+if (!openai) {
+  console.warn(
+    "OPENAI_API_KEY is not set — scam-call AI classification will fail open to SAFE until it is configured."
+  );
+}
 
 function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
 }
 
-async function getCallsToday(householdId) {
-  if (!supabaseAdmin) return [];
+// Shared by both the known-contact bypass (/voice) and the screened-safe
+// passthrough (/process) — the only two places a call is ever forwarded
+// on to a real person. Never dials a hardcoded/fallback number: a
+// household with no phone_number on file fails closed (a clear message,
+// then hangup) rather than silently routing to the wrong destination.
+function dialHouseholdOrFailClosed(twiml, household) {
+  const destination = resolveForwardingDestination(household);
 
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-
-  const { data, error } = await supabaseAdmin
-    .from("calls")
-    .select("*")
-    .eq("household_id", householdId)
-    .gte("created_at", startOfToday.toISOString());
-
-  if (error) {
-    console.error("SUPABASE CALLS READ ERROR:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-async function getRecentCalls(householdId, limit) {
-  if (!supabaseAdmin) return [];
-
-  const { data, error } = await supabaseAdmin
-    .from("calls")
-    .select("*")
-    .eq("household_id", householdId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error("SUPABASE CALLS READ ERROR:", error);
-    return [];
-  }
-
-  return data || [];
-}
-
-async function logCall({ callSid, number, status, result, aiModel, processingTimeMs, householdId }) {
-  if (!supabaseAdmin) {
-    console.error("SUPABASE CALL LOG ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
+  if (destination.canForward) {
+    const dial = twiml.dial();
+    dial.number(destination.number);
     return;
   }
 
-  const { error } = await supabaseAdmin
-    .from("calls")
-    .upsert(
-      {
-        call_sid: callSid,
-        number,
-        status,
-        result,
-        ai_model: aiModel,
-        processing_time_ms: processingTimeMs,
-        household_id: householdId,
-      },
-      { onConflict: "call_sid", ignoreDuplicates: true }
-    );
-
-  if (error) {
-    console.error("SUPABASE CALL LOG ERROR:", error);
-  }
-}
-
-function toClientCall(call) {
-  return {
-    number: call.number,
-    status: call.status,
-    result: call.result,
-    time: call.created_at,
-  };
+  console.error(
+    "CALL ROUTING ERROR: no forwarding number on file for household",
+    household && household.id
+  );
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "We're sorry, this call cannot be connected right now. Please try again later."
+  );
+  twiml.hangup();
 }
 
 // VOICE CALL ENTRY
@@ -252,8 +259,7 @@ app.post("/voice", async (req, res) => {
       console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
     }
 
-    const dial = twiml.dial();
-    dial.number("+447715562700");
+    dialHouseholdOrFailClosed(twiml, household);
 
     return res.type("text/xml").send(twiml.toString());
   }
@@ -320,7 +326,7 @@ app.post("/process", async (req, res) => {
   let result = "SAFE";
   let aiModel = null;
 
-  if (!isKeywordScam && speech.length > 5) {
+  if (openai && !isKeywordScam && speech.length > 5) {
     try {
       const aiResponse = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -376,8 +382,7 @@ app.post("/process", async (req, res) => {
 
     twiml.pause({ length: 1 });
 
-    const dial = twiml.dial();
-    dial.number("+447715562700");
+    dialHouseholdOrFailClosed(twiml, household);
   }
 
   return res.type("text/xml").send(twiml.toString());
@@ -458,6 +463,76 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
       manageable: !!(req.household.stripe_customer_id && subscription),
     },
   });
+});
+
+// GET /activation-instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other
+//
+// The web equivalent of the mobile app's GET /api/v1/activation/instructions
+// (routes/mobileApi.js) — same narrow exception to "the Twilio number is
+// never sent to any client", same reused services/activationInstructions.js
+// so the per-provider formatting/caveats live in exactly one place. Web
+// customers had no channel at all to learn their forwarding destination
+// (no email, no SMS, /dashboard-data deliberately omits twilioNumber) —
+// this route closes that gap for the existing web dashboard (upload.html)
+// without changing /dashboard-data or introducing any new business logic.
+app.get("/activation-instructions", requireAuth, requireEntitlement, (req, res) => {
+  const { deviceType, provider } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  if (!req.household.twilio_number) {
+    return res.status(409).json({ error: "not_provisioned" });
+  }
+
+  try {
+    const instructions = buildActivationInstructions({
+      twilioNumber: req.household.twilio_number,
+      deviceType,
+      provider,
+    });
+
+    res.json({
+      code: instructions.code,
+      cancelCode: instructions.cancelCode,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+      explanation: "This is Home Call Guard's protection number — you'll forward your calls to it now.",
+    });
+  } catch (err) {
+    console.error("WEB ACTIVATION INSTRUCTIONS ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /household/phone-number { number }
+//
+// The minimum write path for households.phone_number — the real
+// destination trusted/screened-safe calls are forwarded to
+// (services/callRouting.js). Added because nothing anywhere in this app
+// ever collected it (found while fixing the hardcoded forwarding-number
+// defect). req.household.id is resolved server-side by requireAuth, never
+// client-supplied, so this can only ever write the caller's own household.
+app.post("/household/phone-number", requireAuth, requireEntitlement, async (req, res) => {
+  const result = await setHouseholdPhoneNumber(req.household.id, req.body.number);
+
+  if (!result.ok) {
+    return res.status(result.error === "invalid_input" ? 400 : 500).json({ error: result.error });
+  }
+
+  res.json({ ok: true, number: result.number });
 });
 
 app.get("/logs", requireAuth, requireEntitlement, async (req, res) => {
@@ -641,17 +716,11 @@ app.delete("/contacts/:id", requireAuth, requireEntitlement, async (req, res) =>
 });
 
 // AUTH HELPERS
-
-// Builds a Supabase client scoped to one specific user's own session —
-// never the shared `supabase` instance above, and never the service-role
-// key. Used anywhere a request needs to act as that user under RLS.
-function buildUserScopedClient() {
-  return createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
+//
+// buildUserScopedClient is imported from services/supabaseClients.js
+// (shared with routes/mobileApi.js's /api/v1/me/bootstrap, which needs
+// the exact same "act as this one user under RLS" client) — see that
+// module for the implementation.
 
 // AUTH: REGISTER
 
@@ -673,54 +742,37 @@ app.post("/register", async (req, res) => {
   // signUp() a second time for an already-existing unconfirmed email
   // silently discards the newly submitted password (documented Supabase
   // behaviour, not something this app controls) — this routes around
-  // that instead of ever hitting it.
-  const existing = await findExistingAuthUser(email, { adminClient: supabaseAdmin });
-  const decision = decideRegistrationAction(existing);
-
-  if (decision.action === "resend") {
-    const { error: resendError } = await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: {
-        emailRedirectTo: `${APP_URL}/confirmed.html`,
-      },
-    });
-
-    if (resendError) {
-      console.error("SUPABASE RESEND (from /register) ERROR:", resendError.message);
-    }
-
-    return res.redirect("/register.html?state=pending_confirmation");
-  }
-
-  if (decision.action === "already_registered") {
-    // Already a real, confirmed account — never attempt another signup.
-    // This redirect reveals only that some account exists for this email
-    // (the same thing a normal failed-login attempt already implies),
-    // nothing more specific about the account itself.
-    return res.redirect("/login.html?state=already_registered");
-  }
-
-  const { data, error } = await supabase.auth.signUp({
+  // that instead of ever hitting it. Reuses the exact same decision
+  // logic the mobile app's /api/v1/register route uses
+  // (services/registrationRequest.js) — one set of rules, not two.
+  const result = await handleRegisterRequest({
     email,
     password,
-    options: {
-      emailRedirectTo: `${APP_URL}/confirmed.html`,
-    },
+    adminClient: supabaseAdmin,
+    authClient: supabase,
+    emailRedirectTo: `${APP_URL}/confirmed.html`,
   });
 
-  if (error) {
-    console.error("SUPABASE SIGNUP ERROR:", error.message);
+  if (result.status === "error") {
     return res.redirect(
       `/register.html?state=error&reason=failed&email=${encodeURIComponent(email)}`
     );
   }
 
+  if (result.status === "already_registered") {
+    // Already a real, confirmed account — never attempt another signup.
+    // Stays on register.html (not a redirect to login.html) so the
+    // customer sees the dedicated "This email may already be
+    // registered" panel there, with clear Sign in / Reset password
+    // actions, rather than being silently bounced to a different page.
+    return res.redirect(`/register.html?state=already_registered&email=${encodeURIComponent(email)}`);
+  }
+
   // Email confirmation is required on this project, so signUp() does not
   // return a session here — household/role creation happens on first
   // login instead (see /login below), once a real session exists.
-  if (!data.session) {
-    return res.redirect("/register.html?state=success");
+  if (!result.session) {
+    return res.redirect(`/register.html?state=pending_confirmation&email=${encodeURIComponent(email)}`);
   }
 
   // Only reachable if email confirmation is ever turned off: signUp()
@@ -729,10 +781,10 @@ app.post("/register", async (req, res) => {
   try {
     const userClient = buildUserScopedClient();
     await userClient.auth.setSession({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
+      access_token: result.session.access_token,
+      refresh_token: result.session.refresh_token,
     });
-    await ensureHouseholdAndRole(userClient, data.user.id, email, "[REGISTER]");
+    await ensureHouseholdAndRole(userClient, result.user.id, email, "[REGISTER]");
   } catch (err) {
     console.error("REGISTER HOUSEHOLD SETUP ERROR:", err.message);
     return res.redirect(
@@ -740,7 +792,7 @@ app.post("/register", async (req, res) => {
     );
   }
 
-  setSessionCookies(res, data.session);
+  setSessionCookies(res, result.session);
   return res.redirect("/dashboard");
 });
 
@@ -788,29 +840,48 @@ app.post("/login", async (req, res) => {
 });
 
 // AUTH: RESEND CONFIRMATION
-
+//
+// Shared by two different pages, distinguished by the hidden return_to
+// field each form submits — register.html's own resend button (a
+// customer who just registered), and login.html's (a customer who tried
+// to log in and was told to confirm their email first). Previously
+// called supabase.auth.resend() unconditionally and always redirected to
+// "?state=resent" regardless of whether Supabase actually sent anything —
+// the same false-success shape the mobile app's equivalent bug had. Now
+// reuses services/registrationRequest.js's real decision logic, so a
+// "sent again" claim is only ever shown when a resend genuinely
+// succeeded, and an already-confirmed account is told so directly
+// instead.
 app.post("/resend-confirmation", async (req, res) => {
-  const { email } = req.body;
+  const { email, return_to } = req.body;
+  const returnsToLogin = return_to === "login";
+  const returnPage = returnsToLogin ? "/login.html" : "/register.html";
 
-  if (email) {
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: {
-        emailRedirectTo: `${APP_URL}/confirmed.html`,
-      },
-    });
-
-    // Logged server-side only — never surfaced to the customer, whether
-    // it's a rate limit, an unknown address, or anything else. The
-    // response is identical either way so this never reveals whether an
-    // account exists for that email.
-    if (error) {
-      console.error("SUPABASE RESEND CONFIRMATION ERROR:", error.message);
-    }
+  if (!email) {
+    return res.redirect(`${returnPage}?state=${returnsToLogin ? "resent" : "pending_confirmation"}`);
   }
 
-  res.redirect("/login.html?state=resent");
+  const result = await handleResendConfirmationRequest({
+    email,
+    adminClient: supabaseAdmin,
+    authClient: supabase,
+    emailRedirectTo: `${APP_URL}/confirmed.html`,
+  });
+
+  if (result.status === "already_registered") {
+    return res.redirect(`${returnPage}?state=already_registered&email=${encodeURIComponent(email)}`);
+  }
+
+  // "resent" and "no_action" are deliberately shown identically — the
+  // existing notice text ("If that email is registered and unconfirmed,
+  // a new confirmation email has been sent.") is itself a conditional
+  // statement, honest either way, matching this codebase's established
+  // anti-enumeration wording pattern. register.html additionally flags
+  // resent_attempted so it can show that same notice inline.
+  if (returnsToLogin) {
+    return res.redirect("/login.html?state=resent");
+  }
+  return res.redirect(`/register.html?state=pending_confirmation&resent_attempted=1&email=${encodeURIComponent(email)}`);
 });
 
 // AUTH: LOGOUT
@@ -918,7 +989,35 @@ app.get("/dashboard", requireAuth, (req, res) => {
 });
 
 // START SERVER
+//
+// The staging safeguard above catches a wrong project ref or an obviously
+// live-prefixed key synchronously at boot from the key's shape alone. This
+// closes the gap prefix-matching can't: whether a syntactically
+// sk_test_-shaped key is actually in test mode right now is something
+// only Stripe's own account state can confirm, so ask it directly with a
+// read-only, no-side-effect call (balance.retrieve — no billing action)
+// before accepting traffic. Same gate as the sync check: only for an
+// explicitly-selected non-production environment.
+async function startServer() {
+  if (ENV_FILE && process.env.NODE_ENV !== "production" && stripe) {
+    try {
+      const balance = await stripe.balance.retrieve();
+      if (balance.livemode) {
+        console.error(
+          `FATAL: Stripe reports livemode=true for the key loaded from ENV_FILE=${ENV_FILE} — refusing to start a non-production process against live Stripe.`
+        );
+        process.exit(1);
+      }
+      console.log("[env] Stripe account confirmed test mode (livemode=false).");
+    } catch (err) {
+      console.error(`FATAL: could not verify the Stripe account's mode: ${err.message}`);
+      process.exit(1);
+    }
+  }
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer();

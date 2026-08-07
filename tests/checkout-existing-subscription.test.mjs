@@ -1,9 +1,12 @@
-// Unit tests for hasQualifyingStripeSubscription() in routes/billing.js —
-// the pre-Checkout-Session-creation guard added after the 2026-07-18
-// duplicate-subscription incident (see docs/releases/2026-07-18_RC1.md).
+// Unit tests for hasQualifyingStripeSubscription() and friends, in
+// services/checkoutSession.js — the pre-Checkout-Session-creation guard
+// added after the 2026-07-18 duplicate-subscription incident (see
+// docs/releases/2026-07-18_RC1.md). Extracted from routes/billing.js
+// during the mobile app Phase 2 work so both the web checkout route and
+// the new mobile checkout route share one implementation.
 //
 // Pure function, no Stripe API calls or network access involved. Loading
-// routes/billing.js does require real-looking env vars to exist (its
+// this module does require real-looking env vars to exist (its
 // transitive requires construct the Supabase and Stripe SDK clients at
 // module load time), so this loads the real .env the same way server.js
 // does — no live calls are made against either service by this test.
@@ -20,7 +23,7 @@ const {
   findReusableOpenCheckoutSession,
   isSessionPaidWithSubscription,
   buildCheckoutSessionParams,
-} = require('../routes/billing.js');
+} = require('../services/checkoutSession.js');
 
 let failures = 0;
 
@@ -137,7 +140,8 @@ const sessionParams = buildCheckoutSessionParams({
   customer: 'cus_test123',
   priceId: 'price_test456',
   householdId: 'household-789',
-  appUrl: 'https://www.homecallguard.co.uk',
+  successUrl: 'https://www.homecallguard.co.uk/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}',
+  cancelUrl: 'https://www.homecallguard.co.uk/dashboard?checkout=cancelled',
 });
 
 check(
