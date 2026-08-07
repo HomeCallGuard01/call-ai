@@ -33,6 +33,7 @@ const {
   LANDLINE_PROVIDERS,
   buildActivationInstructions,
 } = require("../services/activationInstructions");
+const { setHouseholdPhoneNumber } = require("../services/householdPhoneNumber");
 
 const router = express.Router();
 
@@ -432,6 +433,23 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
     console.error("MOBILE ACTIVATION INSTRUCTIONS ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
+});
+
+// POST /api/v1/household/phone-number { number }
+//
+// Mobile counterpart to the web /household/phone-number route — same
+// shared services/householdPhoneNumber.js, same validation, same
+// req.household.id resolved server-side by requireAuthApi. No mobile UI
+// screen calls this yet (the mobile setup wizard wasn't touched, per
+// scope); added for parity so the same fix isn't web-only.
+router.post("/api/v1/household/phone-number", requireAuthApi, requireEntitlement, async (req, res) => {
+  const result = await setHouseholdPhoneNumber(req.household.id, req.body.number);
+
+  if (!result.ok) {
+    return res.status(result.error === "invalid_input" ? 400 : 500).json({ error: result.error });
+  }
+
+  res.json({ ok: true, number: result.number });
 });
 
 // POST /api/v1/activation/verify

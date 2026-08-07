@@ -37,6 +37,7 @@ const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const { buildUserScopedClient } = require("./services/supabaseClients");
 const { DEVICE_TYPES, LANDLINE_PROVIDERS, buildActivationInstructions } = require("./services/activationInstructions");
 const { resolveForwardingDestination } = require("./services/callRouting");
+const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const mobileApiRoutes = require("./routes/mobileApi");
@@ -514,6 +515,24 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, (req, res) 
     console.error("WEB ACTIVATION INSTRUCTIONS ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
+});
+
+// POST /household/phone-number { number }
+//
+// The minimum write path for households.phone_number — the real
+// destination trusted/screened-safe calls are forwarded to
+// (services/callRouting.js). Added because nothing anywhere in this app
+// ever collected it (found while fixing the hardcoded forwarding-number
+// defect). req.household.id is resolved server-side by requireAuth, never
+// client-supplied, so this can only ever write the caller's own household.
+app.post("/household/phone-number", requireAuth, requireEntitlement, async (req, res) => {
+  const result = await setHouseholdPhoneNumber(req.household.id, req.body.number);
+
+  if (!result.ok) {
+    return res.status(result.error === "invalid_input" ? 400 : 500).json({ error: result.error });
+  }
+
+  res.json({ ok: true, number: result.number });
 });
 
 app.get("/logs", requireAuth, requireEntitlement, async (req, res) => {
