@@ -63,3 +63,21 @@ export function isProvisioningFailed(twilioProvisioningStatus: TwilioProvisionin
 export function shouldShowManualRetry(consecutivePollFailures: number): boolean {
   return consecutivePollFailures >= 2;
 }
+
+// A real iPhone test (2026-08-08) found that routing "failed" to an
+// entirely separate screen — same stage list gone, only a "Change
+// device" button left — was itself a dead end: the customer had no path
+// back to the dashboard and no idea whether to keep waiting. The fix is
+// one screen for both waiting and failed/slow: same truthful stage list
+// throughout (a failed Twilio provisioning attempt never marks the
+// blocked stage "done", so it stays visibly ⏳ either way — see
+// computeProvisioningStages, unchanged), with only the headline
+// explanation changing.
+export const PROVISIONING_EXPLANATION_NORMAL =
+  "You don't need to do anything. This normally takes a few moments and we'll continue automatically when it's ready.";
+export const PROVISIONING_EXPLANATION_SLOW_OR_FAILED =
+  "This is taking a little longer than usual. You can safely leave this screen — we'll continue setting up your protection.";
+
+export function provisioningExplanation(twilioProvisioningStatus: TwilioProvisioningStatus | null): string {
+  return twilioProvisioningStatus === "failed" ? PROVISIONING_EXPLANATION_SLOW_OR_FAILED : PROVISIONING_EXPLANATION_NORMAL;
+}

@@ -29,7 +29,12 @@ import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { fetchActivationInstructions, fetchDashboard, ApiError } from "../../lib/api";
 import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
-import { computeProvisioningStages, shouldAutoAdvance, isProvisioningFailed, shouldShowManualRetry } from "../../lib/provisioningStages";
+import {
+  computeProvisioningStages,
+  shouldAutoAdvance,
+  shouldShowManualRetry,
+  provisioningExplanation,
+} from "../../lib/provisioningStages";
 import type { ActivationInstructionsResponse, DeviceType, LandlineProvider, TwilioProvisioningStatus } from "../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
@@ -190,6 +195,7 @@ export default function Activate() {
       <Screen scroll={false}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Loading your activation code" />
+          <BackToDashboardLink />
         </View>
       </Screen>
     );
@@ -199,35 +205,23 @@ export default function Activate() {
     // provisioningStatus is null only for the brief instant before the
     // first poll resolves — treated the same as "pending" (in progress),
     // never as done, so the stage list never shows false confidence.
+    // One screen for both waiting and failed/slow (2026-08-08 fix): a
+    // real iPhone test found that routing "failed" to a separate screen
+    // — stage list gone, only "Change device" left — was itself a dead
+    // end, with no path back to the dashboard and no sense of whether to
+    // keep waiting. The stage list itself doesn't change for a failed
+    // status (computeProvisioningStages never marks the blocked stage
+    // "done" either way) — only the headline explanation adapts.
     const stages = computeProvisioningStages(provisioningStatus ?? "pending");
-    const failed = provisioningStatus !== null && isProvisioningFailed(provisioningStatus);
     const pollingBroken = shouldShowManualRetry(pollFailures);
-
-    if (failed) {
-      return (
-        <Screen>
-          <SetupProgress currentStep={3} />
-          <BackLink />
-          <Text style={styles.title} accessibilityRole="header">We're sorting out one part of your setup</Text>
-          <Text style={styles.explanation}>
-            Your subscription is active and nothing further is needed from you right now — our
-            team has been notified and is on it. If you'd like an update, contact us any time at
-            support@homecallguard.co.uk.
-          </Text>
-          <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
-        </Screen>
-      );
-    }
 
     return (
       <Screen>
         <SetupProgress currentStep={3} />
         <BackLink />
+        <BackToDashboardLink />
         <Text style={styles.title} accessibilityRole="header">Setting up your Home Call Guard protection</Text>
-        <Text style={styles.explanation}>
-          This normally takes a few minutes. You can leave this screen open — we'll update it
-          automatically.
-        </Text>
+        <Text style={styles.explanation}>{provisioningExplanation(provisioningStatus)}</Text>
 
         <View style={styles.stageList}>
           {stages.map(stage => (
@@ -255,6 +249,7 @@ export default function Activate() {
       <Screen>
         <SetupProgress currentStep={3} />
         <BackLink />
+        <BackToDashboardLink />
         <Banner variant="error" message={error || "Something went wrong."} />
         <PrimaryButton label="Try again" onPress={load} />
         <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
@@ -266,6 +261,7 @@ export default function Activate() {
     <Screen>
       <SetupProgress currentStep={3} />
       <BackLink />
+      <BackToDashboardLink />
       <Text style={styles.title} accessibilityRole="header">Turn on call forwarding</Text>
       <Text style={styles.explanation}>
         {canAutoDial
@@ -324,6 +320,22 @@ function BackLink() {
   );
 }
 
+// A real iPhone test (2026-08-08) found no way off this screen back to
+// the dashboard at all — "Change device" only returns to the device
+// picker, still mid-setup. Shown on every state of this screen (loading,
+// waiting/failed, error, ready) so the customer is never stuck here.
+function BackToDashboardLink() {
+  return (
+    <Pressable
+      onPress={() => router.replace("/(tabs)")}
+      accessibilityRole="button"
+      style={styles.dashboardLink}
+    >
+      <Text style={styles.dashboardLinkText}>Back to dashboard</Text>
+    </Pressable>
+  );
+}
+
 const STAGE_ICON: Record<string, string> = { done: "✓", in_progress: "⏳", pending: "○" };
 
 function ProvisioningStageRow({ label, state }: { label: string; state: "done" | "in_progress" | "pending" }) {
@@ -373,6 +385,17 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: "600",
     fontSize: 15,
+  },
+  dashboardLink: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: "center",
+    marginBottom: spacing.sm,
+  },
+  dashboardLinkText: {
+    color: colors.accent,
+    fontWeight: "600",
+    fontSize: 15,
+    textDecorationLine: "underline",
   },
   title: {
     ...typography.hero,
