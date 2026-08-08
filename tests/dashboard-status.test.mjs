@@ -49,15 +49,16 @@ const progressSource = extractBetween(html, 'computeChecklistProgress');
 const memberSinceSource = extractBetween(html, 'formatMemberSince');
 const describeCallSource = extractBetween(html, 'describeCall');
 const muteStatsSource = extractBetween(html, 'shouldMuteStatsGrid');
+const nextStepTargetSource = extractBetween(html, 'nextIncompleteStepTarget');
 
-if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource) {
+if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource || !nextStepTargetSource) {
   console.error('✗ could not find one or more expected TEST-EXTRACT markers in upload.html — test cannot run');
   failures++;
 } else {
   // Both functions are evaluated together, in the same combined source,
   // since computeSetupChecklist calls computeProtectionState internally
   // — matching how they actually run together in the real page.
-  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid };`;
+  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\n${nextStepTargetSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid, nextIncompleteStepTarget };`;
   const {
     computeProtectionState,
     computeSetupChecklist,
@@ -66,6 +67,7 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
     shouldMuteStatsGrid,
     formatMemberSince,
     describeCall,
+    nextIncompleteStepTarget,
   } = new Function(combinedSource)();
 
   // --- computeProtectionState ---
@@ -224,6 +226,44 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   check(
     shouldMuteStatsGrid({ twilioNumber: null, twilioProvisioningStatus: 'failed' }) === true,
     'shouldMuteStatsGrid: muted when provisioning has failed too'
+  );
+
+  // --- nextIncompleteStepTarget (real iPhone test, 2026-08-08: after
+  // saving the destination number, nothing guided the customer to the
+  // next step further down the page) ---
+
+  const fullChecklist = {
+    accountConfirmed: true,
+    subscriptionActive: true,
+    phoneNumberAdded: true,
+    contactsUploaded: true,
+    callForwardingCompleted: true,
+    protectedNumberAssigned: true,
+  };
+
+  check(
+    nextIncompleteStepTarget({ ...fullChecklist, contactsUploaded: false }, 'phoneNumberAdded') === 'trustedContactsSection',
+    'nextIncompleteStepTarget: after the destination number is saved, guides to Trusted contacts if not yet added'
+  );
+
+  check(
+    nextIncompleteStepTarget({ ...fullChecklist, callForwardingCompleted: false }, 'phoneNumberAdded') === 'setupChecklist',
+    'nextIncompleteStepTarget: if contacts are already added, skips straight past that step to the next incomplete one'
+  );
+
+  check(
+    nextIncompleteStepTarget({ ...fullChecklist, callForwardingCompleted: false }, 'contactsUploaded') === 'setupChecklist',
+    'nextIncompleteStepTarget: after trusted contacts are saved, guides back to the checklist/call-forwarding step'
+  );
+
+  check(
+    nextIncompleteStepTarget(fullChecklist, 'phoneNumberAdded') === null,
+    'nextIncompleteStepTarget: nothing to guide to once every later step is already complete'
+  );
+
+  check(
+    nextIncompleteStepTarget({ ...fullChecklist, protectedNumberAssigned: false }, 'callForwardingCompleted') === null,
+    'nextIncompleteStepTarget: never guides to protectedNumberAssigned — the system\'s own final confirmation, not a customer action'
   );
 }
 

@@ -23,7 +23,7 @@ export interface OutcomeContent {
 // path off this screen (Sign in / Forgotten password? / Resend) is
 // visible immediately, so nobody is left on it indefinitely.
 const PENDING_CONFIRMATION_CONTENT: OutcomeContent = {
-  title: "Check your email or sign in",
+  title: "Check your email to finish creating your account",
   paragraphs: [
     "If this is a new account, we've sent you a confirmation email.",
     "If you already have a Home Call Guard account, sign in with your existing password or reset it if you've forgotten it.",
@@ -37,7 +37,7 @@ const PENDING_CONFIRMATION_CONTENT: OutcomeContent = {
 // applied to that account — this is always true whenever this screen is
 // shown, since an already-confirmed account is never touched.
 const ALREADY_REGISTERED_CONTENT: OutcomeContent = {
-  title: "This email may already be registered",
+  title: "You may already have an account — sign in or reset your password",
   paragraphs: [
     "Try signing in with your existing password. The password you just entered has not replaced your existing password.",
   ],

@@ -139,7 +139,7 @@ async function run() {
   const loginHtml = readFileSync(path.join(__dirname, '..', 'public', 'login.html'), 'utf8');
 
   check(
-    registerHtml.includes('Check your email or sign in'),
+    registerHtml.includes('Check your email to finish creating your account'),
     'register.html uses the exact required title for the pending_confirmation outcome'
   );
   check(
@@ -148,7 +148,7 @@ async function run() {
     'register.html uses the exact required body text for the pending_confirmation outcome'
   );
   check(
-    registerHtml.includes('This email may already be registered'),
+    registerHtml.includes('You may already have an account — sign in or reset your password'),
     'register.html uses the exact required title for the already_registered outcome'
   );
   check(

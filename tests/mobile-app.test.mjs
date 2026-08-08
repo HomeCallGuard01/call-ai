@@ -37,6 +37,7 @@ import { shouldTriggerBootstrap } from '../mobile/lib/bootstrapTrigger.ts';
 import { resumeSetupAt, stepIndexForScreen, SETUP_STEPS } from '../mobile/lib/setupFlow.ts';
 import { canAutoOpenDialer, buildDialerUrl } from '../mobile/lib/dialerLink.ts';
 import { outcomeContent, planResendEffect } from '../mobile/lib/registrationOutcome.ts';
+import { computeProvisioningStages, shouldAutoAdvance, isProvisioningFailed, shouldShowManualRetry } from '../mobile/lib/provisioningStages.ts';
 
 let failures = 0;
 
@@ -347,7 +348,7 @@ function check(condition, message) {
   );
 
   check(
-    outcomeContent('pending_confirmation').title === 'Check your email or sign in',
+    outcomeContent('pending_confirmation').title === 'Check your email to finish creating your account',
     'outcomeContent: pending_confirmation (new account or resend to unconfirmed) uses the exact required title'
   );
   check(
@@ -358,7 +359,7 @@ function check(condition, message) {
     'outcomeContent: pending_confirmation uses the exact required body text, in order'
   );
   check(
-    outcomeContent('already_registered').title === 'This email may already be registered',
+    outcomeContent('already_registered').title === 'You may already have an account — sign in or reset your password',
     'outcomeContent: already_registered uses the exact required title — hedged, never a definitive claim the account exists'
   );
   check(
@@ -388,6 +389,50 @@ function check(condition, message) {
     planResendEffect('no_action').message === 'If that email is registered and unconfirmed, a new confirmation email has been sent.',
     'planResendEffect: no_action never claims success outright — the exact hedged wording already shipped on web'
   );
+}
+
+// --- B4 provisioning-wait screen: truthful stage-based progress (2026-08-08) ---
+// Replaces the old dead-end "Still setting up your line" / "Check again"
+// state, found broken in a real iPhone test — the customer had to
+// manually retry with no real progress shown.
+
+{
+  const pendingStages = computeProvisioningStages('pending');
+  check(
+    pendingStages.find(s => s.key === 'membership').state === 'done' &&
+      pendingStages.find(s => s.key === 'contacts').state === 'done',
+    'computeProvisioningStages: membership and trusted contacts are always shown done — both are guaranteed true by the time this screen is reachable'
+  );
+  check(
+    pendingStages.find(s => s.key === 'number').state === 'in_progress',
+    'computeProvisioningStages: while pending, "Getting your Home Call Guard number ready" is the in-progress stage'
+  );
+  check(
+    pendingStages.find(s => s.key === 'activationCode').state === 'pending',
+    'computeProvisioningStages: the activation code stage has not started until the number itself is ready'
+  );
+
+  const activeStages = computeProvisioningStages('active');
+  check(
+    activeStages.find(s => s.key === 'number').state === 'done',
+    'computeProvisioningStages: once the number is ready, that stage flips to done'
+  );
+  check(
+    activeStages.find(s => s.key === 'activationCode').state === 'in_progress',
+    'computeProvisioningStages: the activation code stage becomes in-progress the moment the number is ready — never skipped straight to done, since the real instructions call hasn\'t succeeded yet'
+  );
+
+  check(shouldAutoAdvance('active') === true, 'shouldAutoAdvance: true the moment the number is confirmed ready — this is what re-triggers the activation-instructions call with no tap needed');
+  check(shouldAutoAdvance('pending') === false, 'shouldAutoAdvance: false while genuinely still pending');
+  check(shouldAutoAdvance('failed') === false, 'shouldAutoAdvance: false on a genuine failure — never auto-retries into a call that will just fail again');
+
+  check(isProvisioningFailed('failed') === true, 'isProvisioningFailed: true only for a genuine terminal failure');
+  check(isProvisioningFailed('pending') === false, 'isProvisioningFailed: a normal pending state is never mistaken for a failure');
+  check(isProvisioningFailed('active') === false, 'isProvisioningFailed: an active/ready state is never mistaken for a failure');
+
+  check(shouldShowManualRetry(0) === false, 'shouldShowManualRetry: no manual retry while polling is working normally — this is the exact dead-end pattern being replaced, and it must not come back for the common case');
+  check(shouldShowManualRetry(1) === false, 'shouldShowManualRetry: a single poll failure (e.g. one dropped request) does not yet show a manual retry');
+  check(shouldShowManualRetry(2) === true, 'shouldShowManualRetry: repeated poll failures (polling itself broken, e.g. offline) do surface a manual retry — the one legitimate fallback case');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

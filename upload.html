@@ -488,6 +488,29 @@
     margin: 8px 0 0 0;
   }
 
+  /* Real iPhone testing (2026-08-08) found that after saving the
+     destination number, the next required step (Trusted contacts) was
+     further down the page with nothing indicating there was more to do.
+     This briefly highlights whichever section a customer is auto-scrolled
+     to next, so it's obvious that's the right place to look. */
+  .next-step-highlight {
+    animation: nextStepPulse 1.2s ease-out 2;
+    border-radius: 10px;
+  }
+
+  @keyframes nextStepPulse {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); }
+    100% { box-shadow: 0 0 0 14px rgba(34, 197, 94, 0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .next-step-highlight {
+      animation: none;
+      outline: 2px solid #22c55e;
+      outline-offset: 4px;
+    }
+  }
+
   .spinner {
     width: 32px;
     height: 32px;
@@ -1059,6 +1082,7 @@
         <div id="phoneNumberSavedState" hidden>
           <p class="phone-number-saved-note" role="status">✓ Your call destination number is saved</p>
           <button type="button" class="secondary-action-button" id="changePhoneNumberButton">Change number</button>
+          <button type="button" class="secondary-action-button" id="continueToContactsButton" hidden>Continue to trusted contacts →</button>
         </div>
 
         <div id="phoneNumberFormState">
@@ -1173,7 +1197,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="trustedContactsSection">
       <h2 class="section-heading">
         Trusted contacts
         <span class="help-hint" tabindex="0" aria-label="Calls from these numbers always get through straight away, with no checks." title="Calls from these numbers always get through straight away, with no checks.">?</span>
@@ -1539,8 +1563,92 @@
       phoneNumberFormStateEl.hidden = showSavedState;
     }
 
+    // A persistent, discoverable path to the next step alongside the
+    // auto-scroll above — in case the customer navigated away before it
+    // fired, or is revisiting this page mid-setup.
+    const continueToContactsButtonEl = document.getElementById("continueToContactsButton");
+    if (continueToContactsButtonEl) {
+      continueToContactsButtonEl.hidden = !(checklist.phoneNumberAdded && !checklist.contactsUploaded);
+    }
+
     const progress = computeChecklistProgress(checklist);
     setText("checklistProgress", progress.completed + " of " + progress.total + " steps complete");
+  }
+
+  // TEST-EXTRACT-START: nextIncompleteStepTarget
+  // Real iPhone testing (2026-08-08) found that after saving the
+  // destination number, the next required action (Trusted contacts) was
+  // further down the page with no indication to scroll — the customer
+  // had to discover it themselves. This decides where to guide them to
+  // next. Order matches computeSetupChecklist's own key order (the
+  // intended customer sequence); only steps with a visible, distinct
+  // on-page target to jump to are listed in NEXT_STEP_TARGET_ID —
+  // accountConfirmed/subscriptionActive are always true by the time this
+  // page can even show protected content, and protectedNumberAssigned is
+  // the system's own final confirmation, not a customer action to guide
+  // them to.
+  const CHECKLIST_STEP_ORDER = [
+    "accountConfirmed",
+    "subscriptionActive",
+    "phoneNumberAdded",
+    "contactsUploaded",
+    "callForwardingCompleted",
+    "protectedNumberAssigned",
+  ];
+  const NEXT_STEP_TARGET_ID = {
+    contactsUploaded: "trustedContactsSection",
+    callForwardingCompleted: "setupChecklist",
+  };
+
+  // Pure: given the current checklist state and the key that was just
+  // completed, returns the element id of the next incomplete step to
+  // guide the customer to, or null if there's nothing left to guide them
+  // to (either everything remaining has no on-page target, e.g. the
+  // system's own protectedNumberAssigned confirmation, or setup is fully
+  // complete).
+  function nextIncompleteStepTarget(checklist, justCompletedKey) {
+    const startAt = CHECKLIST_STEP_ORDER.indexOf(justCompletedKey) + 1;
+    for (let i = startAt; i < CHECKLIST_STEP_ORDER.length; i++) {
+      const key = CHECKLIST_STEP_ORDER[i];
+      if (checklist[key]) continue;
+      const targetId = NEXT_STEP_TARGET_ID[key];
+      if (targetId) return targetId;
+      return null;
+    }
+    return null;
+  }
+  // TEST-EXTRACT-END: nextIncompleteStepTarget
+
+  function highlightNextStep(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    // A smooth scrollIntoView silently never completes if the tab isn't
+    // the visible one at this exact instant (confirmed directly: Chrome
+    // pauses the scroll animation's rendering for a backgrounded tab,
+    // with no error and no fallback) — falls back to an instant jump so
+    // the customer still lands on the right section the moment they
+    // return to the tab, rather than being left scrolled nowhere.
+    el.scrollIntoView({ behavior: document.hidden ? "auto" : "smooth", block: "start" });
+    el.classList.remove("next-step-highlight");
+    // Force reflow so re-adding the class restarts the animation even if
+    // it's already present from a very recent previous call.
+    void el.offsetWidth;
+    el.classList.add("next-step-highlight");
+    window.setTimeout(function () {
+      el.classList.remove("next-step-highlight");
+    }, 2400);
+  }
+
+  // Call right after a specific checklist step is confirmed saved
+  // server-side (i.e. after loadDashboard() has already re-rendered the
+  // checklist) — finds the next incomplete step after the one just
+  // completed and scrolls/highlights it, so the customer is never left to
+  // discover the rest of the page on their own.
+  function guideToNextStep(justCompletedKey) {
+    if (!lastDashboardData) return;
+    const checklist = computeSetupChecklist(lastDashboardData, getCallForwardingCompleted());
+    const targetId = nextIncompleteStepTarget(checklist, justCompletedKey);
+    if (targetId) highlightNextStep(targetId);
   }
 
   function renderTrustedContacts(contacts) {
@@ -1765,6 +1873,7 @@
   const savePhoneNumberButtonEl = document.getElementById("savePhoneNumberButton");
   const phoneNumberErrorEl = document.getElementById("phoneNumberError");
   const changePhoneNumberButtonEl = document.getElementById("changePhoneNumberButton");
+  const continueToContactsButtonEl = document.getElementById("continueToContactsButton");
 
   // True only while the customer has explicitly asked to change an
   // already-saved number — overrides the server-driven saved/form toggle
@@ -1779,6 +1888,12 @@
       phoneNumberEditMode = true;
       renderChecklist(lastDashboardData);
       if (householdPhoneNumberInputEl) householdPhoneNumberInputEl.focus();
+    });
+  }
+
+  if (continueToContactsButtonEl) {
+    continueToContactsButtonEl.addEventListener("click", function () {
+      highlightNextStep("trustedContactsSection");
     });
   }
 
@@ -1817,7 +1932,8 @@
         // switches to the persistent "saved" view on its own.
         if (householdPhoneNumberInputEl) householdPhoneNumberInputEl.value = "";
         phoneNumberEditMode = false;
-        loadDashboard();
+        await loadDashboard();
+        guideToNextStep("phoneNumberAdded");
       } catch (err) {
         if (phoneNumberErrorEl) {
           phoneNumberErrorEl.textContent = "We couldn't save that just now. Please try again.";
@@ -2025,8 +2141,14 @@
           return;
         }
 
+        // Captured before resetContactForm() clears it — only a genuinely
+        // new contact should trigger the "move to the next step" guide;
+        // editing an existing one doesn't mean the contactsUploaded step
+        // was just completed.
+        const wasEdit = !!editingContactId;
         resetContactForm();
-        loadDashboard();
+        await loadDashboard();
+        if (!wasEdit) guideToNextStep("contactsUploaded");
       } catch (err) {
         if (addContactErrorEl) {
           addContactErrorEl.textContent = "Something went wrong. Please try again.";

@@ -20,16 +20,17 @@
 //   phone, check now," and the code stays visible/copyable throughout
 //   since referencing it from a second device is genuinely unavoidable.
 import { useEffect, useRef, useState } from "react";
-import { Text, View, StyleSheet, ActivityIndicator, AppState, Linking, Pressable } from "react-native";
+import { Text, View, StyleSheet, ActivityIndicator, AppState, Linking, Pressable, Animated } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
-import { fetchActivationInstructions, ApiError } from "../../lib/api";
+import { fetchActivationInstructions, fetchDashboard, ApiError } from "../../lib/api";
 import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
-import type { ActivationInstructionsResponse, DeviceType, LandlineProvider } from "../../lib/types";
+import { computeProvisioningStages, shouldAutoAdvance, isProvisioningFailed, shouldShowManualRetry } from "../../lib/provisioningStages";
+import type { ActivationInstructionsResponse, DeviceType, LandlineProvider, TwilioProvisioningStatus } from "../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 export default function Activate() {
@@ -40,6 +41,8 @@ export default function Activate() {
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [dialerError, setDialerError] = useState(false);
+  const [provisioningStatus, setProvisioningStatus] = useState<TwilioProvisioningStatus | null>(null);
+  const [pollFailures, setPollFailures] = useState(0);
 
   const canAutoDial = canAutoOpenDialer(params.deviceType);
 
@@ -110,6 +113,45 @@ export default function Activate() {
 
   useEffect(load, [params.deviceType, params.provider]);
 
+  // Real iPhone testing (2026-08-08) found the old "Still setting up your
+  // line" / "Check again" state a dead end — the customer had to manually
+  // retry with no real progress shown. While waiting on Twilio number
+  // provisioning, poll the dashboard (a genuinely separate, already-
+  // existing signal — protection.twilioProvisioningStatus — from the
+  // activation-instructions endpoint itself) so the stage list reflects
+  // real backend state, and re-run load() the moment the number is ready
+  // so the customer advances automatically, with no tap required.
+  useEffect(() => {
+    if (!notProvisioned) return;
+
+    let cancelled = false;
+    let consecutiveFailures = 0;
+
+    async function poll() {
+      try {
+        const dashboard = await fetchDashboard();
+        if (cancelled) return;
+        consecutiveFailures = 0;
+        setPollFailures(0);
+        setProvisioningStatus(dashboard.protection.twilioProvisioningStatus);
+        if (shouldAutoAdvance(dashboard.protection.twilioProvisioningStatus)) {
+          load();
+        }
+      } catch {
+        if (cancelled) return;
+        consecutiveFailures += 1;
+        setPollFailures(consecutiveFailures);
+      }
+    }
+
+    poll();
+    const interval = setInterval(poll, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [notProvisioned]);
+
   async function handleCopy() {
     if (!instructions) return;
     await Clipboard.setStringAsync(instructions.code);
@@ -154,16 +196,55 @@ export default function Activate() {
   }
 
   if (notProvisioned) {
+    // provisioningStatus is null only for the brief instant before the
+    // first poll resolves — treated the same as "pending" (in progress),
+    // never as done, so the stage list never shows false confidence.
+    const stages = computeProvisioningStages(provisioningStatus ?? "pending");
+    const failed = provisioningStatus !== null && isProvisioningFailed(provisioningStatus);
+    const pollingBroken = shouldShowManualRetry(pollFailures);
+
+    if (failed) {
+      return (
+        <Screen>
+          <SetupProgress currentStep={3} />
+          <BackLink />
+          <Text style={styles.title} accessibilityRole="header">We're sorting out one part of your setup</Text>
+          <Text style={styles.explanation}>
+            Your subscription is active and nothing further is needed from you right now — our
+            team has been notified and is on it. If you'd like an update, contact us any time at
+            support@homecallguard.co.uk.
+          </Text>
+          <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
+        </Screen>
+      );
+    }
+
     return (
       <Screen>
         <SetupProgress currentStep={3} />
         <BackLink />
-        <Text style={styles.title} accessibilityRole="header">Still setting up your line</Text>
+        <Text style={styles.title} accessibilityRole="header">Setting up your Home Call Guard protection</Text>
         <Text style={styles.explanation}>
-          We're finishing the setup on our side before we can show you an activation code. This
-          usually only takes a few minutes — please check back shortly.
+          This normally takes a few minutes. You can leave this screen open — we'll update it
+          automatically.
         </Text>
-        <PrimaryButton label="Check again" onPress={load} />
+
+        <View style={styles.stageList}>
+          {stages.map(stage => (
+            <ProvisioningStageRow key={stage.key} label={stage.label} state={stage.state} />
+          ))}
+        </View>
+
+        {pollingBroken && (
+          <>
+            <Banner
+              variant="error"
+              message="We're having trouble checking your setup progress. Check your connection and try again."
+            />
+            <PrimaryButton label="Check again" onPress={load} />
+          </>
+        )}
+
         <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
       </Screen>
     );
@@ -243,6 +324,40 @@ function BackLink() {
   );
 }
 
+const STAGE_ICON: Record<string, string> = { done: "✓", in_progress: "⏳", pending: "○" };
+
+function ProvisioningStageRow({ label, state }: { label: string; state: "done" | "in_progress" | "pending" }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (state !== "in_progress") return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.35, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [state, pulse]);
+
+  return (
+    <View style={styles.stageRow}>
+      <Animated.Text
+        style={[
+          styles.stageIcon,
+          state === "done" && styles.stageIconDone,
+          state === "in_progress" && { opacity: pulse },
+        ]}
+        accessibilityElementsHidden
+      >
+        {STAGE_ICON[state]}
+      </Animated.Text>
+      <Text style={[styles.stageLabel, state === "pending" && styles.stageLabelPending]}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   centered: {
     flex: 1,
@@ -268,6 +383,30 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textMuted,
     marginBottom: spacing.lg,
+  },
+  stageList: {
+    marginBottom: spacing.lg,
+  },
+  stageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+  },
+  stageIcon: {
+    width: 28,
+    fontSize: 17,
+    color: colors.textMuted,
+  },
+  stageIconDone: {
+    color: colors.accent,
+  },
+  stageLabel: {
+    ...typography.body,
+    color: colors.text,
+    flex: 1,
+  },
+  stageLabelPending: {
+    color: colors.textMuted,
   },
   codeBox: {
     minHeight: MIN_TOUCH_TARGET * 1.5,
