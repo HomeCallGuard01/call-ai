@@ -107,7 +107,7 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
 
   // --- computeSetupChecklist ---
 
-  const activeData = { twilioNumber: '+447700900123', twilioProvisioningStatus: 'active', contactsUploaded: 3 };
+  const activeData = { twilioNumber: '+447700900123', twilioProvisioningStatus: 'active', contactsUploaded: 3, phoneNumberAdded: true };
 
   const checklistAllDone = computeSetupChecklist(activeData, true);
   check(
@@ -115,16 +115,23 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
     'account confirmation and subscription-active are always true once dashboard data has loaded at all (both are preconditions for reaching this code)'
   );
   check(checklistAllDone.protectedNumberAssigned === true, 'protected number assigned reflects the active protection state');
+  check(checklistAllDone.phoneNumberAdded === true, 'phoneNumberAdded reflects the server-reported boolean when true — never the number itself');
   check(checklistAllDone.contactsUploaded === true, 'contacts uploaded is true once at least one contact exists');
   check(checklistAllDone.callForwardingCompleted === true, 'call forwarding reflects the self-reported flag when true');
 
   const checklistNothingDone = computeSetupChecklist(
-    { twilioNumber: null, twilioProvisioningStatus: 'pending', contactsUploaded: 0 },
+    { twilioNumber: null, twilioProvisioningStatus: 'pending', contactsUploaded: 0, phoneNumberAdded: false },
     false
   );
   check(checklistNothingDone.protectedNumberAssigned === false, 'protected number assigned is false while provisioning is still pending');
+  check(checklistNothingDone.phoneNumberAdded === false, 'phoneNumberAdded is false when the household has no destination number on file');
   check(checklistNothingDone.contactsUploaded === false, 'contacts uploaded is false with zero contacts');
   check(checklistNothingDone.callForwardingCompleted === false, 'call forwarding reflects the self-reported flag when false');
+
+  check(
+    computeSetupChecklist({ contactsUploaded: 0 }, false).phoneNumberAdded === false,
+    'phoneNumberAdded defaults to false when the server response omits the field entirely, never assumed true'
+  );
 
   const checklistFailedProvisioning = computeSetupChecklist(
     { twilioNumber: null, twilioProvisioningStatus: 'failed', contactsUploaded: 1 },

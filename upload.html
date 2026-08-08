@@ -1052,6 +1052,30 @@
     <section class="card">
       <h2>Your setup progress</h2>
       <p class="checklist-progress" id="checklistProgress"></p>
+      <div id="phoneNumberSection" class="phone-number-section">
+        <h3>What number should protected calls ring?</h3>
+        <p class="field-hint">Trusted callers and calls we confirm are safe will be connected to this number.</p>
+
+        <div id="phoneNumberSavedState" hidden>
+          <p class="phone-number-saved-note" role="status">✓ Your call destination number is saved</p>
+          <button type="button" class="secondary-action-button" id="changePhoneNumberButton">Change number</button>
+        </div>
+
+        <div id="phoneNumberFormState">
+          <label for="householdPhoneNumberInput">Your phone number</label>
+          <input
+            type="tel"
+            id="householdPhoneNumberInput"
+            placeholder="e.g. 07700 900123 or 0161 123 4567"
+            autocomplete="tel"
+          >
+
+          <p id="phoneNumberError" class="error-banner" role="alert" hidden></p>
+
+          <button type="button" class="secondary-action-button" id="savePhoneNumberButton">Save number</button>
+        </div>
+      </div>
+
       <ul class="checklist" id="setupChecklist">
         <li class="checklist-item" data-item="accountConfirmed">
           <span class="checklist-icon" aria-hidden="true">✓</span>
@@ -1061,9 +1085,9 @@
           <span class="checklist-icon" aria-hidden="true">✓</span>
           <span class="checklist-label">Subscription active</span>
         </li>
-        <li class="checklist-item" data-item="protectedNumberAssigned">
+        <li class="checklist-item" data-item="phoneNumberAdded">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Protection activated</span>
+          <span class="checklist-label">Add the number where safe calls should ring</span>
         </li>
         <li class="checklist-item" data-item="contactsUploaded">
           <span class="checklist-icon" aria-hidden="true">✓</span>
@@ -1074,25 +1098,11 @@
           <span class="checklist-label">Turn on call forwarding</span>
           <button type="button" class="checklist-action" id="callForwardingToggle">I've set up call forwarding</button>
         </li>
+        <li class="checklist-item" data-item="protectedNumberAssigned">
+          <span class="checklist-icon" aria-hidden="true">✓</span>
+          <span class="checklist-label">Protection active</span>
+        </li>
       </ul>
-
-      <div id="phoneNumberSection" class="phone-number-section">
-        <h3>What number should protected calls ring?</h3>
-        <p class="field-hint">Trusted callers and calls we confirm are safe will be connected to this number.</p>
-
-        <label for="householdPhoneNumberInput">Your phone number</label>
-        <input
-          type="tel"
-          id="householdPhoneNumberInput"
-          placeholder="e.g. 07700 900123 or 0161 123 4567"
-          autocomplete="tel"
-        >
-
-        <p id="phoneNumberError" class="error-banner" role="alert" hidden></p>
-        <p id="phoneNumberSavedNote" class="phone-number-saved-note" role="status" hidden>Saved.</p>
-
-        <button type="button" class="secondary-action-button" id="savePhoneNumberButton">Save number</button>
-      </div>
 
       <div id="activationInstructions" class="activation-instructions" hidden>
         <h3>Get your activation code</h3>
@@ -1348,14 +1358,23 @@
   // — which itself requires a confirmed account (requireAuth) and an
   // active entitlement (requireEntitlement, 402 otherwise). Listed
   // explicitly anyway so the checklist has one single, complete source
-  // rather than four computed items plus two silently-assumed ones.
+  // rather than five computed items plus two silently-assumed ones.
+  //
+  // Key order matches the intended customer sequence (also the actual
+  // <li> order in the HTML, which is what really drives what's shown):
+  // account -> subscription -> destination number -> trusted contacts ->
+  // call forwarding -> protection genuinely active. protectedNumberAssigned
+  // (Twilio provisioning) is deliberately last, not third as it was
+  // before this change — it's the system's own final confirmation, not a
+  // customer action partway through the sequence.
   function computeSetupChecklist(data, callForwardingCompleted) {
     return {
       accountConfirmed: true,
       subscriptionActive: true,
-      protectedNumberAssigned: computeProtectionState(data) === "active",
+      phoneNumberAdded: !!(data && data.phoneNumberAdded),
       contactsUploaded: !!(data && data.contactsUploaded > 0),
       callForwardingCompleted: !!callForwardingCompleted,
+      protectedNumberAssigned: computeProtectionState(data) === "active",
     };
   }
   // TEST-EXTRACT-END: computeSetupChecklist
@@ -1504,6 +1523,20 @@
     const instructions = document.getElementById("activationInstructions");
     if (instructions) {
       instructions.hidden = !checklist.protectedNumberAssigned || checklist.callForwardingCompleted;
+    }
+
+    // Persistent saved/form toggle for the destination number — never
+    // re-exposes the stored value (checklist.phoneNumberAdded is a
+    // boolean only), just confirms the step is done. phoneNumberEditMode
+    // (set by the "Change number" button, declared further down this
+    // script) overrides this on the customer's explicit request so a
+    // routine background refresh mid-edit doesn't hide the form again.
+    const phoneNumberSavedStateEl = document.getElementById("phoneNumberSavedState");
+    const phoneNumberFormStateEl = document.getElementById("phoneNumberFormState");
+    if (phoneNumberSavedStateEl && phoneNumberFormStateEl) {
+      const showSavedState = checklist.phoneNumberAdded && !phoneNumberEditMode;
+      phoneNumberSavedStateEl.hidden = !showSavedState;
+      phoneNumberFormStateEl.hidden = showSavedState;
     }
 
     const progress = computeChecklistProgress(checklist);
@@ -1731,12 +1764,27 @@
   const householdPhoneNumberInputEl = document.getElementById("householdPhoneNumberInput");
   const savePhoneNumberButtonEl = document.getElementById("savePhoneNumberButton");
   const phoneNumberErrorEl = document.getElementById("phoneNumberError");
-  const phoneNumberSavedNoteEl = document.getElementById("phoneNumberSavedNote");
+  const changePhoneNumberButtonEl = document.getElementById("changePhoneNumberButton");
+
+  // True only while the customer has explicitly asked to change an
+  // already-saved number — overrides the server-driven saved/form toggle
+  // in renderChecklist() so a routine background dashboard refresh mid-edit
+  // can't yank the form away underneath them. Reset the moment a save
+  // succeeds (loadDashboard() then re-derives the real state from the
+  // server) or the customer cancels.
+  let phoneNumberEditMode = false;
+
+  if (changePhoneNumberButtonEl) {
+    changePhoneNumberButtonEl.addEventListener("click", function () {
+      phoneNumberEditMode = true;
+      renderChecklist(lastDashboardData);
+      if (householdPhoneNumberInputEl) householdPhoneNumberInputEl.focus();
+    });
+  }
 
   if (savePhoneNumberButtonEl) {
     savePhoneNumberButtonEl.addEventListener("click", async function () {
       if (phoneNumberErrorEl) phoneNumberErrorEl.hidden = true;
-      if (phoneNumberSavedNoteEl) phoneNumberSavedNoteEl.hidden = true;
 
       const rawNumber = householdPhoneNumberInputEl ? householdPhoneNumberInputEl.value : "";
 
@@ -1762,8 +1810,14 @@
           return;
         }
 
+        // Never re-display the number that was just typed — the whole
+        // point of the saved-state view is to confirm the step is done
+        // without exposing the value. loadDashboard() re-fetches
+        // phoneNumberAdded from the server and renderChecklist() then
+        // switches to the persistent "saved" view on its own.
         if (householdPhoneNumberInputEl) householdPhoneNumberInputEl.value = "";
-        if (phoneNumberSavedNoteEl) phoneNumberSavedNoteEl.hidden = false;
+        phoneNumberEditMode = false;
+        loadDashboard();
       } catch (err) {
         if (phoneNumberErrorEl) {
           phoneNumberErrorEl.textContent = "We couldn't save that just now. Please try again.";
@@ -1814,13 +1868,27 @@
     });
   }
 
-  // Feature-detected per MDN's own recommended check. Only Android Chrome
-  // supports this today (confirmed against Chrome's developer docs) — iOS
-  // Safari does not enable it for real customers, so on every other
-  // browser this option simply never appears, rather than showing
-  // something broken or unavailable.
+  // TEST-EXTRACT-START: shouldShowPhoneContactPicker
+  // Pure decision, extracted so a regression test can assert it directly
+  // rather than only by inspecting page markup. Feature-detected per
+  // MDN's own recommended check ("contacts" in navigator) — matches
+  // Chrome's own developer docs for the Contact Picker API. iOS Safari
+  // does not implement this API at all (confirmed against MDN/caniuse,
+  // not assumed), so hasContactsApi is false there and this must return
+  // false — never true "just in case," since a true here directly
+  // controls whether a real customer is shown a control that would
+  // silently fail if tapped.
+  function shouldShowPhoneContactPicker(hasContactsApi) {
+    return !!hasContactsApi;
+  }
+  // TEST-EXTRACT-END: shouldShowPhoneContactPicker
+
+  // On every browser without the API, this option simply never appears,
+  // rather than showing something broken or unavailable — the element
+  // starts `hidden` in the markup itself (upload.html's own HTML, not
+  // JS), and only this one code path ever clears that attribute.
   const pickPhoneContactsOptionEl = document.getElementById("pickPhoneContactsOption");
-  if (pickPhoneContactsOptionEl && "contacts" in navigator) {
+  if (pickPhoneContactsOptionEl && shouldShowPhoneContactPicker("contacts" in navigator)) {
     pickPhoneContactsOptionEl.hidden = false;
   }
 

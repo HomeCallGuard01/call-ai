@@ -422,7 +422,11 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // getHouseholdByAuthUserId does a plain select("*"), so no extra
     // query is needed for the household's own provisioning state.
     // twilioNumber deliberately not included — never sent to the browser.
+    // phoneNumberAdded follows the same rule: a boolean only, never the
+    // stored value itself — enough for the dashboard to show a persistent
+    // "saved" state without exposing the number.
     twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
+    phoneNumberAdded: !!req.household.phone_number,
     contactsUploaded: contacts.length,
     // Full contact list (id, so Edit/Delete can target the right row,
     // plus name + number — never household_id) for the "Trusted contacts"

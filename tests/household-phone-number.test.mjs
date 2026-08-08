@@ -1,9 +1,22 @@
 // Unit tests for services/phone.js's normaliseUkPhoneToE164 and
-// services/householdPhoneNumber.js's setHouseholdPhoneNumber — the
-// minimum write path for households.phone_number added 2026-08-07 to
-// close the gap found while fixing the hardcoded call-forwarding
-// destination (services/callRouting.js): nothing anywhere in this app
-// had ever collected a household's real phone number.
+// normaliseNumber, plus services/householdPhoneNumber.js's
+// setHouseholdPhoneNumber — the minimum write path for
+// households.phone_number added 2026-08-07 to close the gap found while
+// fixing the hardcoded call-forwarding destination
+// (services/callRouting.js): nothing anywhere in this app had ever
+// collected a household's real phone number.
+//
+// The realistic-format block below (2026-08-08) makes permanent what was
+// first proved ad-hoc during a launch-readiness UX review: a customer
+// typing any common real-world UK format — spaces, hyphens, brackets, a
+// leading 0, +44, or 0044 — must work identically on BOTH real entry
+// points a customer ever uses:
+//   - normaliseUkPhoneToE164: the household's own forwarding/destination
+//     number (POST /household/phone-number)
+//   - normaliseNumber: a manually-added trusted contact's number
+//     (POST /contacts) — previously untested anywhere in this suite.
+// Neither customer is ever expected to understand E.164 or international
+// dialling format themselves.
 //
 // Uses a minimal fake admin client (a bare .rpc(name, args) capture, no
 // real network/Supabase) — matching this codebase's established pattern
@@ -22,7 +35,7 @@ const require = createRequire(import.meta.url);
 // via deps, so the real module-scope client this loads is never actually
 // used.
 require('dotenv').config();
-const { normaliseUkPhoneToE164 } = require('../services/phone.js');
+const { normaliseUkPhoneToE164, normaliseNumber } = require('../services/phone.js');
 const { setHouseholdPhoneNumber } = require('../services/householdPhoneNumber.js');
 
 let failures = 0;
@@ -44,6 +57,36 @@ check(normaliseUkPhoneToE164('+447700900123') === '+447700900123', 'accepts an a
 check(normaliseUkPhoneToE164('00447700900123') === '+447700900123', 'accepts the 00-prefixed international dialling format');
 check(normaliseUkPhoneToE164('+44 7700 900123') === '+447700900123', 'accepts +44 with spaces');
 check(normaliseUkPhoneToE164('(0161) 123-4567') === '+441611234567', 'accepts brackets and dashes, stripping them');
+
+// --- realistic customer-typed formats: destination number AND trusted contact ---
+//
+// The exact set of inputs a real customer was observed to plausibly type
+// (spaces, no spaces, hyphens, brackets, +44, 0044) — every one must
+// normalise identically on both real entry points.
+
+const REALISTIC_UK_FORMATS = [
+  '07700 900123',
+  '07700900123',
+  '07700-900-123',
+  '(07700) 900123',
+  '+44 7700 900123',
+  '+447700900123',
+  '0044 7700 900123',
+];
+
+for (const input of REALISTIC_UK_FORMATS) {
+  check(
+    normaliseUkPhoneToE164(input) === '+447700900123',
+    `destination number: "${input}" normalises to +447700900123, without the customer ever seeing E.164`
+  );
+}
+
+for (const input of REALISTIC_UK_FORMATS) {
+  check(
+    normaliseNumber(input) === '7700900123',
+    `trusted contact (POST /contacts): "${input}" normalises to the same 10-digit match key (7700900123)`
+  );
+}
 
 // --- normaliseUkPhoneToE164: rejects invalid input ---
 
