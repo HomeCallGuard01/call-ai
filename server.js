@@ -493,7 +493,19 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
 // ever collected it (found while fixing the hardcoded forwarding-number
 // defect). req.household.id is resolved server-side by requireAuth, never
 // client-supplied, so this can only ever write the caller's own household.
-app.post("/household/phone-number", requireAuth, requireEntitlement, async (req, res) => {
+//
+// express.json() is scoped to this one route (matching the existing
+// express.raw() precedent on the Stripe webhook route) rather than
+// registered globally: nothing else under server.js's own routes expects
+// a JSON body today (POST /contacts uses application/x-www-form-urlencoded,
+// parsed by the global bodyParser.urlencoded() below), so this is the
+// narrowest fix for the real bug — the client
+// (upload.html) has always sent Content-Type: application/json here, but
+// no JSON body parser covered this route, so req.body was always
+// undefined and req.body.number threw before ever reaching
+// setHouseholdPhoneNumber, surfacing as an uncaught 500 with no
+// application-level error logged.
+app.post("/household/phone-number", requireAuth, requireEntitlement, express.json(), async (req, res) => {
   const result = await setHouseholdPhoneNumber(req.household.id, req.body.number);
 
   if (!result.ok) {
