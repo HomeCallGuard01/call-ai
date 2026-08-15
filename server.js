@@ -160,8 +160,8 @@ function normaliseNumber(number) {
 // on to a real person. Never dials a hardcoded/fallback number: a
 // household with no phone_number on file fails closed (a clear message,
 // then hangup) rather than silently routing to the wrong destination.
-function dialHouseholdOrFailClosed(twiml, household) {
-  const destination = resolveForwardingDestination(household);
+function dialHouseholdOrFailClosed(twiml, household, forwardedFrom) {
+  const destination = resolveForwardingDestination(household, forwardedFrom);
 
   if (destination.canForward) {
     const dial = twiml.dial();
@@ -169,10 +169,17 @@ function dialHouseholdOrFailClosed(twiml, household) {
     return;
   }
 
-  console.error(
-    "CALL ROUTING ERROR: no forwarding number on file for household",
-    household && household.id
-  );
+  if (household && household.phone_number && forwardedFrom) {
+    console.error(
+      "CALL ROUTING ERROR: forwarding loop detected (ForwardedFrom matches the dial destination) — refusing to dial, household",
+      household.id
+    );
+  } else {
+    console.error(
+      "CALL ROUTING ERROR: no forwarding number on file for household",
+      household && household.id
+    );
+  }
   twiml.say(
     { voice: "Polly.Amy", language: "en-GB" },
     "We're sorry, this call cannot be connected right now. Please try again later."
@@ -210,10 +217,10 @@ function buildRedLineTerminateUrl(appUrl) {
   return appUrl + "/red-line-terminate";
 }
 
-function attachLiveMonitoring(twiml, { household, twilioNumber }) {
+function attachLiveMonitoring(twiml, { household, twilioNumber, forwardedFrom }) {
   if (!household) return;
 
-  const destination = resolveForwardingDestination(household);
+  const destination = resolveForwardingDestination(household, forwardedFrom);
 
   const start = twiml.start();
   const stream = start.stream({ url: buildMediaStreamUrl(APP_URL) });
@@ -369,6 +376,7 @@ app.post("/voice", async (req, res) => {
   const contacts = household ? await getContacts(household.id) : [];
   const caller = req.body.From;
   const callerNorm = normaliseNumber(caller);
+  const forwardedFrom = req.body.ForwardedFrom;
 
   const isKnown = contacts.some(
     c => c.number && normaliseNumber(c.number) === callerNorm
@@ -391,7 +399,7 @@ app.post("/voice", async (req, res) => {
       console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
     }
 
-    dialHouseholdOrFailClosed(twiml, household);
+    dialHouseholdOrFailClosed(twiml, household, forwardedFrom);
 
     return res.type("text/xml").send(twiml.toString());
   }
@@ -420,6 +428,7 @@ app.post("/process", async (req, res) => {
   const speech = req.body.SpeechResult || "";
   const from = req.body.From;
   const callSid = req.body.CallSid;
+  const forwardedFrom = req.body.ForwardedFrom;
 
   const household = await getHouseholdByTwilioNumber(req.body.To);
 
@@ -524,9 +533,9 @@ app.post("/process", async (req, res) => {
 
     twiml.pause({ length: 1 });
 
-    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To, forwardedFrom });
 
-    dialHouseholdOrFailClosed(twiml, household);
+    dialHouseholdOrFailClosed(twiml, household, forwardedFrom);
   }
 
   return res.type("text/xml").send(twiml.toString());
