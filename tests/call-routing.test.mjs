@@ -8,7 +8,7 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { resolveForwardingDestination } = require('../services/callRouting.js');
+const { resolveForwardingDestination, resolveCallDelivery } = require('../services/callRouting.js');
 
 let failures = 0;
 
@@ -135,6 +135,60 @@ const householdB = { id: 'household-b', phone_number: '+442222222222' };
   const household = { id: 'household-loop', phone_number: '+447715562700' };
   const result = resolveForwardingDestination(household, '07715 562700');
   check(result.canForward === false, 'forwardedFrom in a different but equivalent format still triggers the guard');
+}
+
+// --- resolveCallDelivery (2026-08-15, same-phone VoIP delivery) ---
+//
+// Feature-flagged decision between PSTN dial-back (today's production
+// behaviour, including the forwardedFrom loop guard) and Voice SDK
+// Client delivery (the actual same-phone fix — see
+// docs/operations/HANDOVER_2026-08-15.md SS12-18). clientDeliveryEnabled
+// is always passed explicitly here rather than mutating process.env, so
+// these checks are hermetic regardless of run order or the real
+// deployment's env configuration.
+
+{
+  const household = { id: 'household-a', phone_number: '+441111111111' };
+  const result = resolveCallDelivery(household, undefined, false);
+  check(result.mode === 'pstn', 'flag off: falls back to PSTN mode');
+  check(result.number === '+441111111111', 'flag off: PSTN mode resolves to the household\'s real number');
+}
+
+{
+  const household = { id: 'household-a', phone_number: '+441111111111' };
+  const result = resolveCallDelivery(household, undefined, true);
+  check(result.mode === 'client', 'flag on: uses client delivery instead of PSTN');
+  check(result.identity === 'household_household-a', 'flag on: identity matches buildVoiceClientIdentity — never the phone number');
+  check(!('number' in result), 'flag on: no phone number is present in a client-mode result');
+}
+
+{
+  // The whole point of client delivery: it must not be defeated by the
+  // exact condition that breaks PSTN delivery (the household's own
+  // number appearing as forwardedFrom, i.e. the real production
+  // incident). Client mode has no PSTN leg for the carrier to loop.
+  const household = { id: 'household-loop', phone_number: '+447715562700' };
+  const pstnResult = resolveCallDelivery(household, '+447715562700', false);
+  const clientResult = resolveCallDelivery(household, '+447715562700', true);
+  check(pstnResult.mode === 'fail-closed', 'flag off + forwarding-loop condition: still fails closed (unchanged today\'s behaviour)');
+  check(clientResult.mode === 'client', 'flag on + the exact same forwarding-loop condition: client delivery is unaffected, connects normally');
+}
+
+{
+  const result = resolveCallDelivery(null, undefined, true);
+  check(result.mode === 'fail-closed', 'flag on but household is null: fails closed rather than building an identity for nothing');
+}
+
+{
+  const result = resolveCallDelivery({ id: 'household-e', phone_number: null }, undefined, false);
+  check(result.mode === 'fail-closed', 'flag off, no phone_number on file: fails closed exactly as resolveForwardingDestination does');
+}
+
+{
+  // Two different households in client mode never collide.
+  const a = resolveCallDelivery({ id: 'household-a' }, undefined, true);
+  const b = resolveCallDelivery({ id: 'household-b' }, undefined, true);
+  check(a.identity !== b.identity, 'client mode: two different households get two different identities');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

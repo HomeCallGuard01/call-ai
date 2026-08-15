@@ -6,21 +6,52 @@
 //
 // Deliberately minimal for the same-phone proof-of-concept milestone:
 // register for incoming calls and auto-accept them so two-way audio can
-// be verified on a real device. No UI, no CallKit customisation, no
-// re-registration/refresh handling yet — see the TODOs below for what
-// "harden later" adds on top of this.
+// be verified on a real device. No UI, no CallKit customisation yet —
+// see the remaining TODO below for what "harden later" adds on top of
+// this.
 import { Voice, CallInvite, Call } from "@twilio/voice-react-native-sdk";
-import { Platform } from "react-native";
+import { Platform, AppState } from "react-native";
 import { fetchVoiceToken } from "./api";
 
 const voice = new Voice();
 
 let activeCall: Call | null = null;
 let registered = false;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-// TODO (harden later): re-fetch and re-register before ttlSeconds
-// elapses, rather than only once at app start — see
-// lib/api.ts's fetchVoiceToken comment.
+// Re-register well before the token actually expires, never at the exact
+// edge — a call arriving in the gap between expiry and a completed
+// refresh would simply never ring. 5 minutes of margin against a 1 hour
+// TTL (services/voiceAccessToken.js's DEFAULT_TTL_SECONDS) is generous
+// relative to how long a single register() round trip takes.
+const REFRESH_MARGIN_SECONDS = 300;
+
+function scheduleRefresh(ttlSeconds: number): void {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+  }
+
+  const delayMs = Math.max(ttlSeconds - REFRESH_MARGIN_SECONDS, 30) * 1000;
+
+  refreshTimer = setTimeout(() => {
+    registered = false;
+    registerForIncomingCalls().catch((err) => {
+      console.error("VOICE TOKEN REFRESH FAILED:", err);
+      // Retry sooner than a full cycle rather than silently going dark
+      // for up to an hour on a transient failure (network blip, backend
+      // briefly unavailable) — 60s matches this codebase's existing
+      // "caller retries with a fresh credential" pattern
+      // (middleware/requireAuthApi.js) rather than an unbounded loop.
+      refreshTimer = setTimeout(() => {
+        registered = false;
+        registerForIncomingCalls().catch((retryErr) =>
+          console.error("VOICE TOKEN REFRESH RETRY FAILED:", retryErr)
+        );
+      }, 60_000);
+    });
+  }, delayMs);
+}
+
 export async function registerForIncomingCalls(): Promise<void> {
   if (registered) {
     return;
@@ -36,10 +67,25 @@ export async function registerForIncomingCalls(): Promise<void> {
     await voice.initializePushRegistry();
   }
 
-  const { token } = await fetchVoiceToken();
+  const { token, ttlSeconds } = await fetchVoiceToken();
   await voice.register(token);
   registered = true;
+  scheduleRefresh(ttlSeconds);
 }
+
+// A backgrounded/suspended app's JS timers don't reliably fire on
+// schedule (iOS especially suspends JS execution entirely) — re-checking
+// on every foreground transition means a stale/near-expired token can't
+// silently sit unrefreshed through a long background period. Cheap no-op
+// when already registered and well within TTL (registerForIncomingCalls
+// only does real work when `registered` is false).
+AppState.addEventListener("change", (state) => {
+  if (state === "active" && !registered) {
+    registerForIncomingCalls().catch((err) => {
+      console.error("VOICE REGISTRATION ON FOREGROUND FAILED:", err);
+    });
+  }
+});
 
 // TODO (harden later): a real UI screen instead of auto-accept — the
 // milestone-1 proof only needs to prove two-way audio actually connects

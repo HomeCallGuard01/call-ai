@@ -15,7 +15,7 @@ const { getContacts, insertContacts, updateContact, deleteContact } = require(".
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
-const { resolveForwardingDestination } = require("./services/callRouting");
+const { resolveForwardingDestination, resolveCallDelivery } = require("./services/callRouting");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { wouldCreateForwardingLoop } = require("./services/phone");
 const {
@@ -29,6 +29,7 @@ const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/tran
 const { twilioRestClient } = require("./services/twilioClient");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
+const mobileVoiceRoutes = require("./routes/mobileVoice");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
 // Fail fast and clearly in production rather than starting in a silently
@@ -110,6 +111,7 @@ app.use(express.static("public"));
 // urlencoded parser above, which already no-ops on non-form content types.
 app.use(billingRoutes);
 app.use(adminRoutes);
+app.use(mobileVoiceRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -160,12 +162,26 @@ function normaliseNumber(number) {
 // on to a real person. Never dials a hardcoded/fallback number: a
 // household with no phone_number on file fails closed (a clear message,
 // then hangup) rather than silently routing to the wrong destination.
+//
+// Same-phone delivery (2026-08-15): resolveCallDelivery decides PSTN vs
+// Voice SDK Client — see its own comment in services/callRouting.js for
+// why this is feature-flagged and defaults to PSTN (today's production
+// behaviour, unproven-on-a-real-device path never engaged unless
+// explicitly enabled). The fail-closed message/logging is unchanged
+// either way — a customer with no working delivery mechanism gets the
+// same clear "can't connect" response regardless of which mode was
+// attempted.
 function dialHouseholdOrFailClosed(twiml, household, forwardedFrom) {
-  const destination = resolveForwardingDestination(household, forwardedFrom);
+  const delivery = resolveCallDelivery(household, forwardedFrom);
 
-  if (destination.canForward) {
+  if (delivery.mode === "client") {
+    twiml.dial().client(delivery.identity);
+    return;
+  }
+
+  if (delivery.mode === "pstn") {
     const dial = twiml.dial();
-    dial.number(destination.number);
+    dial.number(delivery.number);
     return;
   }
 
@@ -220,6 +236,13 @@ function buildRedLineTerminateUrl(appUrl) {
 function attachLiveMonitoring(twiml, { household, twilioNumber, forwardedFrom }) {
   if (!household) return;
 
+  // Deliberately resolveForwardingDestination, never resolveCallDelivery
+  // — this "toNumber" is the SMS warning destination
+  // (services/liveMonitoring/smsWarning.js), which always needs a real
+  // E.164 number to text. It must stay independent of whichever mode
+  // dialHouseholdOrFailClosed used to actually connect the voice leg
+  // (PSTN number vs Voice SDK Client identity) — an SMS can never be
+  // sent to a Client identity.
   const destination = resolveForwardingDestination(household, forwardedFrom);
 
   const start = twiml.start();
@@ -556,6 +579,38 @@ app.post("/red-line-terminate", (req, res) => {
     "This call has been identified as high risk and is being ended for the safety of the person you called."
   );
   twiml.hangup();
+  return res.type("text/xml").send(twiml.toString());
+});
+
+// VOICE SDK TWIML APP FALLBACK
+//
+// The mobile app's Voice SDK client never places outgoing calls in V1
+// (it only receives — see services/voiceAccessToken.js's comment on
+// outgoingApplicationSid), so this should never actually be invoked by a
+// real user action. It exists only because the TwiML Application
+// resource backing the mobile Access Token's VoiceGrant requires a
+// Voice URL to be a valid, reachable endpoint.
+app.post("/voice-sdk-outbound-not-supported", (req, res) => {
+  const twiml = new VoiceResponse();
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "Outgoing calls are not supported by this application."
+  );
+  twiml.hangup();
+  return res.type("text/xml").send(twiml.toString());
+});
+
+// Fetched once scripts/trigger-voice-sdk-test-call.js's REST-initiated
+// call is answered by the Voice SDK client — proves the call actually
+// connected and two-way audio is live, entirely independent of the real
+// /voice -> /process screening flow. Never reachable from a real phone
+// call; only ever invoked by that one manual test script.
+app.post("/voice-sdk-test-call-answered", (req, res) => {
+  const twiml = new VoiceResponse();
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "Test call connected successfully. Same phone delivery is working."
+  );
   return res.type("text/xml").send(twiml.toString());
 });
 
