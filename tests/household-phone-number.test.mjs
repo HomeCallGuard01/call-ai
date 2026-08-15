@@ -22,7 +22,7 @@ const require = createRequire(import.meta.url);
 // via deps, so the real module-scope client this loads is never actually
 // used.
 require('dotenv').config();
-const { normaliseUkPhoneToE164 } = require('../services/phone.js');
+const { normaliseUkPhoneToE164, wouldCreateForwardingLoop } = require('../services/phone.js');
 const { setHouseholdPhoneNumber } = require('../services/householdPhoneNumber.js');
 
 let failures = 0;
@@ -54,6 +54,48 @@ check(normaliseUkPhoneToE164('   ') === null, 'rejects a whitespace-only string'
 check(normaliseUkPhoneToE164('not a number') === null, 'rejects a string with no usable digits');
 check(normaliseUkPhoneToE164(null) === null, 'rejects null without throwing');
 check(normaliseUkPhoneToE164(undefined) === null, 'rejects undefined without throwing');
+
+// --- wouldCreateForwardingLoop: the real fail-safe found missing during a
+// real iPhone E2E test (2026-08-08/09) — a call to the customer's own
+// forwarded phone can never connect if that phone is also the destination
+// for safe/trusted calls. Compares via normaliseNumber, never raw string
+// equality, so equivalent real-world formats are correctly recognised as
+// the same number rather than slipping through a naive comparison. ---
+
+check(
+  wouldCreateForwardingLoop('+447715562700', '+447715562700') === true,
+  'wouldCreateForwardingLoop: identical E.164 numbers are blocked — this is the exact real incident (both +447715562700)'
+);
+
+const EQUIVALENT_FORMAT_PAIRS = [
+  ['07715 562700', '+447715562700'],
+  ['+44 7715 562700', '07715562700'],
+  ['(07715) 562-700', '447715562700'],
+  ['0044 7715 562 700', '7715562700'],
+];
+for (const [protectedNumber, destinationNumber] of EQUIVALENT_FORMAT_PAIRS) {
+  check(
+    wouldCreateForwardingLoop(protectedNumber, destinationNumber) === true,
+    `wouldCreateForwardingLoop: "${protectedNumber}" and "${destinationNumber}" are recognised as the same number despite different formatting — never a raw string comparison`
+  );
+}
+
+check(
+  wouldCreateForwardingLoop('+447715562700', '+447700900123') === false,
+  'wouldCreateForwardingLoop: genuinely different numbers are never blocked'
+);
+check(
+  wouldCreateForwardingLoop('', '') === false,
+  'wouldCreateForwardingLoop: two empty/unset numbers are never treated as a match — nothing to block yet'
+);
+check(
+  wouldCreateForwardingLoop(null, null) === false,
+  'wouldCreateForwardingLoop: null inputs never throw and are never treated as a match'
+);
+check(
+  wouldCreateForwardingLoop(undefined, '+447715562700') === false,
+  'wouldCreateForwardingLoop: a missing protected number is never treated as matching a real destination'
+);
 
 // --- setHouseholdPhoneNumber: validates before ever calling the RPC ---
 

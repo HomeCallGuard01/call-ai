@@ -429,6 +429,31 @@
     margin: 8px 0 0 0;
   }
 
+  .phone-number-section select {
+    width: 100%;
+    max-width: 320px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    background: #0b1220;
+    color: #e2e8f0;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+
+  .forwarding-code {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: #22c55e;
+    background: #0b1220;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 4px 0 10px 0;
+  }
+
   .spinner {
     width: 32px;
     height: 32px;
@@ -1006,6 +1031,10 @@
           <span class="checklist-icon" aria-hidden="true">✓</span>
           <span class="checklist-label">Protection activated</span>
         </li>
+        <li class="checklist-item" data-item="phoneNumberAdded">
+          <span class="checklist-icon" aria-hidden="true">✓</span>
+          <span class="checklist-label">Enter the phone number you want to protect</span>
+        </li>
         <li class="checklist-item" data-item="contactsUploaded">
           <span class="checklist-icon" aria-hidden="true">✓</span>
           <span class="checklist-label">Add trusted contacts</span>
@@ -1013,7 +1042,6 @@
         <li class="checklist-item" data-item="callForwardingCompleted">
           <span class="checklist-icon" aria-hidden="true">✓</span>
           <span class="checklist-label">Turn on call forwarding</span>
-          <button type="button" class="checklist-action" id="callForwardingToggle">I've set up call forwarding</button>
         </li>
       </ul>
 
@@ -1033,6 +1061,48 @@
         <p id="phoneNumberSavedNote" class="phone-number-saved-note" role="status" hidden>Saved.</p>
 
         <button type="button" class="secondary-action-button" id="savePhoneNumberButton">Save number</button>
+      </div>
+
+      <div id="callForwardingSection" class="phone-number-section" hidden>
+        <h3>Turn on call forwarding</h3>
+        <p class="field-hint">Forward the phone you want protected to Home Call Guard, so we can screen your calls. Tell us what you're forwarding from to get your exact code.</p>
+
+        <p id="callForwardingVerifiedNote" class="phone-number-saved-note" role="status" hidden>✓ Call forwarding verified — we've seen a call come through.</p>
+
+        <div id="callForwardingSetupForm">
+          <label for="deviceTypeSelect">What are you forwarding calls from?</label>
+          <select id="deviceTypeSelect">
+            <option value="">Choose one…</option>
+            <option value="iphone">iPhone</option>
+            <option value="android">Android phone</option>
+            <option value="landline">Home landline</option>
+          </select>
+
+          <div id="landlineProviderRow" hidden>
+            <label for="landlineProviderSelect">Who's your landline provider?</label>
+            <select id="landlineProviderSelect">
+              <option value="">Choose one…</option>
+              <option value="bt">BT</option>
+              <option value="sky">Sky</option>
+              <option value="virgin">Virgin Media</option>
+              <option value="talktalk">TalkTalk</option>
+              <option value="plusnet">Plusnet</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <p id="callForwardingError" class="error-banner" role="alert" hidden></p>
+          <button type="button" class="secondary-action-button" id="getForwardingCodeButton">Get my forwarding code</button>
+        </div>
+
+        <div id="callForwardingInstructions" hidden>
+          <p id="preliminaryCallNote" class="field-hint" hidden></p>
+          <p><strong>Dial this on the phone you're protecting:</strong><br><span id="forwardingCode" class="forwarding-code"></span></p>
+          <p class="field-hint">To turn call forwarding off again later, dial:<br><span id="forwardingCancelCode" class="forwarding-code"></span></p>
+          <p class="field-hint">Once you've dialled the code above, come back here and tap the button below.</p>
+          <button type="button" class="secondary-action-button" id="verifyForwardingButton">I've done this — check now</button>
+          <p id="verifyForwardingResult" class="field-hint" role="status" hidden></p>
+        </div>
       </div>
     </section>
 
@@ -1256,14 +1326,25 @@
   // — which itself requires a confirmed account (requireAuth) and an
   // active entitlement (requireEntitlement, 402 otherwise). Listed
   // explicitly anyway so the checklist has one single, complete source
-  // rather than four computed items plus two silently-assumed ones.
-  function computeSetupChecklist(data, callForwardingCompleted) {
+  // rather than five computed items plus two silently-assumed ones.
+  //
+  // Single parameter, deriving every item from genuine backend state —
+  // phoneNumberAdded and callForwardingCompleted both used to depend on
+  // client-only signals (a missing dashboard-data field, and a bare
+  // localStorage self-report respectively); both are now real server
+  // facts (households.phone_number / households.activation_verified_at,
+  // see server.js's /dashboard-data and /activation-verify) so this
+  // function — and therefore the "You're protected" claim derived from
+  // it in renderProtectionStatus — can never be satisfied by the
+  // customer alone clicking a checkbox.
+  function computeSetupChecklist(data) {
     return {
       accountConfirmed: true,
       subscriptionActive: true,
       protectedNumberAssigned: computeProtectionState(data) === "active",
+      phoneNumberAdded: !!(data && data.phoneNumberAdded),
       contactsUploaded: !!(data && data.contactsUploaded > 0),
-      callForwardingCompleted: !!callForwardingCompleted,
+      callForwardingCompleted: !!(data && data.activationVerifiedAt),
     };
   }
   // TEST-EXTRACT-END: computeSetupChecklist
@@ -1327,26 +1408,6 @@
     }).join("");
   }
 
-  const CALL_FORWARDING_STORAGE_KEY = "hcg_call_forwarding_completed";
-
-  function getCallForwardingCompleted() {
-    try {
-      return window.localStorage.getItem(CALL_FORWARDING_STORAGE_KEY) === "true";
-    } catch (err) {
-      // Private browsing / storage disabled — treat as not yet done
-      // rather than throwing and breaking the rest of the dashboard.
-      return false;
-    }
-  }
-
-  function setCallForwardingCompleted(value) {
-    try {
-      window.localStorage.setItem(CALL_FORWARDING_STORAGE_KEY, value ? "true" : "false");
-    } catch (err) {
-      // Same fallback as above — nothing further to do if storage isn't available.
-    }
-  }
-
   // Renders the protection sub-state (active/pending/failed) onto the
   // main status card — title, subtitle, shield colour (via
   // data-protection-state, styled in <style>). Deliberately separate from
@@ -1374,12 +1435,24 @@
       statsEmptyNote.hidden = !muteStats;
     }
 
-    if (state === "active") {
+    // "You're protected" must never show merely because Twilio
+    // provisioning succeeded, or because the customer clicked a
+    // self-report checkbox — it requires every genuinely-backend-tracked
+    // setup step (see computeSetupChecklist's own comment) to be true.
+    const checklist = computeSetupChecklist(data);
+    const allStepsComplete = Object.keys(checklist).every(function (k) {
+      return checklist[k];
+    });
+
+    if (state === "active" && allStepsComplete) {
       if (title) title.textContent = "You're protected";
       if (sub) sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
     } else if (state === "failed") {
       if (title) title.textContent = "We're sorting out one part of your setup";
       if (sub) sub.textContent = "Your subscription is active and nothing further is needed from you right now — our team has been notified and is on it. If you'd like an update, contact us any time at support@homecallguard.co.uk.";
+    } else if (state === "active") {
+      if (title) title.textContent = "Your membership is active — finish setting up your protection";
+      if (sub) sub.textContent = "A few steps are still needed from you below before calls to your phone are protected.";
     } else {
       if (title) title.textContent = "We're finishing setting up your protection";
       if (sub) sub.textContent = "Your subscription is active — this usually only takes a few minutes and happens automatically. This page updates automatically, so you'll see it here the moment your protection is ready.";
@@ -1387,7 +1460,7 @@
   }
 
   function renderChecklist(data) {
-    const checklist = computeSetupChecklist(data, getCallForwardingCompleted());
+    const checklist = computeSetupChecklist(data);
 
     Object.keys(checklist).forEach(function (key) {
       const item = document.querySelector('.checklist-item[data-item="' + key + '"]');
@@ -1396,13 +1469,27 @@
       }
     });
 
-    const toggle = document.getElementById("callForwardingToggle");
-    if (toggle) {
-      // Only relevant once there's a protected number to forward calls
-      // to, and no longer needed once the customer's confirmed it's
-      // done — the checklist's own checkmark communicates completion
-      // without an "Undo" affordance staying visible indefinitely.
-      toggle.hidden = !checklist.protectedNumberAssigned || checklist.callForwardingCompleted;
+    // Call-forwarding setup only makes sense once there's a protected
+    // Twilio number to forward calls to. Once activation is genuinely
+    // verified (checklist.callForwardingCompleted, backed by
+    // households.activation_verified_at — never a self-report), the
+    // setup form is replaced by a plain confirmation rather than staying
+    // visible with no further action needed.
+    const callForwardingSection = document.getElementById("callForwardingSection");
+    const callForwardingSetupForm = document.getElementById("callForwardingSetupForm");
+    const callForwardingVerifiedNote = document.getElementById("callForwardingVerifiedNote");
+    const callForwardingInstructions = document.getElementById("callForwardingInstructions");
+    if (callForwardingSection) {
+      callForwardingSection.hidden = !checklist.protectedNumberAssigned;
+    }
+    if (callForwardingSetupForm) {
+      callForwardingSetupForm.hidden = checklist.callForwardingCompleted;
+    }
+    if (callForwardingVerifiedNote) {
+      callForwardingVerifiedNote.hidden = !checklist.callForwardingCompleted;
+    }
+    if (callForwardingInstructions && checklist.callForwardingCompleted) {
+      callForwardingInstructions.hidden = true;
     }
 
     const progress = computeChecklistProgress(checklist);
@@ -1533,11 +1620,130 @@
     if (notManageableNoteEl) notManageableNoteEl.hidden = !!membership.manageable;
   }
 
-  const callForwardingToggleEl = document.getElementById("callForwardingToggle");
-  if (callForwardingToggleEl) {
-    callForwardingToggleEl.addEventListener("click", function () {
-      setCallForwardingCompleted(!getCallForwardingCompleted());
-      renderChecklist(lastDashboardData);
+  // Real call-forwarding setup: generates the exact dial code for the
+  // customer's own phone/provider from the real provisioned Twilio
+  // number (server-side only — the bare number is never sent to the
+  // browser, see /activation-instructions in server.js), then verifies
+  // activation against a genuine routed call rather than trusting a
+  // self-report (see /activation-verify and services/activationVerification.js).
+  const deviceTypeSelectEl = document.getElementById("deviceTypeSelect");
+  const landlineProviderRowEl = document.getElementById("landlineProviderRow");
+  const landlineProviderSelectEl = document.getElementById("landlineProviderSelect");
+  const getForwardingCodeButtonEl = document.getElementById("getForwardingCodeButton");
+  const callForwardingErrorEl = document.getElementById("callForwardingError");
+  const callForwardingInstructionsEl = document.getElementById("callForwardingInstructions");
+  const preliminaryCallNoteEl = document.getElementById("preliminaryCallNote");
+  const forwardingCodeEl = document.getElementById("forwardingCode");
+  const forwardingCancelCodeEl = document.getElementById("forwardingCancelCode");
+  const verifyForwardingButtonEl = document.getElementById("verifyForwardingButton");
+  const verifyForwardingResultEl = document.getElementById("verifyForwardingResult");
+
+  if (deviceTypeSelectEl) {
+    deviceTypeSelectEl.addEventListener("change", function () {
+      if (landlineProviderRowEl) {
+        landlineProviderRowEl.hidden = deviceTypeSelectEl.value !== "landline";
+      }
+    });
+  }
+
+  if (getForwardingCodeButtonEl) {
+    getForwardingCodeButtonEl.addEventListener("click", async function () {
+      if (callForwardingErrorEl) callForwardingErrorEl.hidden = true;
+
+      const deviceType = deviceTypeSelectEl ? deviceTypeSelectEl.value : "";
+      const provider = landlineProviderSelectEl ? landlineProviderSelectEl.value : "";
+
+      if (!deviceType) {
+        if (callForwardingErrorEl) {
+          callForwardingErrorEl.textContent = "Please choose what you're forwarding calls from.";
+          callForwardingErrorEl.hidden = false;
+        }
+        return;
+      }
+      if (deviceType === "landline" && !provider) {
+        if (callForwardingErrorEl) {
+          callForwardingErrorEl.textContent = "Please choose your landline provider.";
+          callForwardingErrorEl.hidden = false;
+        }
+        return;
+      }
+
+      getForwardingCodeButtonEl.disabled = true;
+      const originalLabel = getForwardingCodeButtonEl.textContent;
+      getForwardingCodeButtonEl.textContent = "Getting your code…";
+
+      try {
+        const params = new URLSearchParams({ deviceType: deviceType });
+        if (deviceType === "landline") params.set("provider", provider);
+
+        const res = await fetch("/activation-instructions?" + params.toString());
+
+        if (!res.ok) {
+          const body = await res.json().catch(function () { return {}; });
+          if (callForwardingErrorEl) {
+            callForwardingErrorEl.textContent = body.message || "We couldn't get your forwarding code just now. Please try again.";
+            callForwardingErrorEl.hidden = false;
+          }
+          return;
+        }
+
+        const instructions = await res.json();
+
+        if (forwardingCodeEl) forwardingCodeEl.textContent = instructions.code;
+        if (forwardingCancelCodeEl) forwardingCancelCodeEl.textContent = instructions.cancelCode;
+
+        if (preliminaryCallNoteEl) {
+          if (instructions.requiresPreliminaryCall) {
+            preliminaryCallNoteEl.textContent = instructions.preliminaryCallNote ||
+              ("Call " + instructions.preliminaryCallNumber + " first before dialling the code below.");
+            preliminaryCallNoteEl.hidden = false;
+          } else {
+            preliminaryCallNoteEl.hidden = true;
+          }
+        }
+
+        if (callForwardingInstructionsEl) callForwardingInstructionsEl.hidden = false;
+      } catch (err) {
+        if (callForwardingErrorEl) {
+          callForwardingErrorEl.textContent = "We couldn't get your forwarding code just now. Please try again.";
+          callForwardingErrorEl.hidden = false;
+        }
+      } finally {
+        getForwardingCodeButtonEl.disabled = false;
+        getForwardingCodeButtonEl.textContent = originalLabel;
+      }
+    });
+  }
+
+  if (verifyForwardingButtonEl) {
+    verifyForwardingButtonEl.addEventListener("click", async function () {
+      verifyForwardingButtonEl.disabled = true;
+      const originalLabel = verifyForwardingButtonEl.textContent;
+      verifyForwardingButtonEl.textContent = "Checking…";
+
+      try {
+        const res = await fetch("/activation-verify", { method: "POST" });
+        const body = await res.json();
+
+        if (verifyForwardingResultEl) {
+          verifyForwardingResultEl.hidden = false;
+          verifyForwardingResultEl.textContent = body.verified
+            ? "✓ Verified — we've seen a call come through from your forwarded number."
+            : "We haven't seen a call from your forwarded number yet. Dial the code above from the phone you're protecting, wait a few seconds, then tap this button again.";
+        }
+
+        if (body.verified) {
+          loadDashboard();
+        }
+      } catch (err) {
+        if (verifyForwardingResultEl) {
+          verifyForwardingResultEl.hidden = false;
+          verifyForwardingResultEl.textContent = "We couldn't check just now. Please try again.";
+        }
+      } finally {
+        verifyForwardingButtonEl.disabled = false;
+        verifyForwardingButtonEl.textContent = originalLabel;
+      }
     });
   }
 
@@ -1584,6 +1790,7 @@
 
         if (householdPhoneNumberInputEl) householdPhoneNumberInputEl.value = "";
         if (phoneNumberSavedNoteEl) phoneNumberSavedNoteEl.hidden = false;
+        loadDashboard();
       } catch (err) {
         if (phoneNumberErrorEl) {
           phoneNumberErrorEl.textContent = "We couldn't save that just now. Please try again.";

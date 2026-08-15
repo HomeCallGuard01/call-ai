@@ -35,4 +35,20 @@ function normaliseUkPhoneToE164(rawInput) {
   return `+44${national}`;
 }
 
-module.exports = { normaliseNumber, normaliseUkPhoneToE164 };
+// A real iPhone E2E test (2026-08-08/09) found that setting the
+// destination number to the same phone being forwarded creates an
+// inescapable carrier-level loop: unconditional call forwarding
+// redirects 100% of that number's incoming calls, including Home Call
+// Guard's own attempt to dial it back for a trusted/safe call — so the
+// customer's phone can never ring again once both match, regardless of
+// who's calling. Compares via normaliseNumber (never raw string
+// equality), so equivalent formats — 07715..., +447715..., spaces,
+// brackets — are correctly recognised as the same number. Two empty/
+// unset numbers are never treated as "the same" — nothing to block yet.
+function wouldCreateForwardingLoop(protectedNumber, destinationNumber) {
+  const a = normaliseNumber(protectedNumber);
+  const b = normaliseNumber(destinationNumber);
+  return !!a && !!b && a === b;
+}
+
+module.exports = { normaliseNumber, normaliseUkPhoneToE164, wouldCreateForwardingLoop };

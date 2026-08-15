@@ -10,13 +10,20 @@ const cookieParser = require("cookie-parser");
 const { createClient } = require("@supabase/supabase-js");
 const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
 const { requireEntitlement } = require("./middleware/requireEntitlement");
-const { getHouseholdByTwilioNumber } = require("./database/households");
+const { getHouseholdByTwilioNumber, markActivationVerified } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const { resolveForwardingDestination } = require("./services/callRouting");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
+const { wouldCreateForwardingLoop } = require("./services/phone");
+const {
+  DEVICE_TYPES,
+  LANDLINE_PROVIDERS,
+  buildActivationInstructions,
+} = require("./services/activationInstructions");
+const { isCallWithinVerificationWindow } = require("./services/activationVerification");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
@@ -437,12 +444,29 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     membershipStatus = "cancelled";
   }
 
+  // Genuine backend state, not a client-only assumption — the checklist/
+  // "You're protected" claim in upload.html is gated on both of these.
+  // phoneNumberAdded was previously entirely absent from this response
+  // (services/householdPhoneNumber.js could write households.phone_number
+  // but nothing ever read it back), so the web checklist could never
+  // correctly reflect it. activationVerifiedAt mirrors the mobile app's
+  // GET /api/v1/me/dashboard shape (routes/mobileApi.js) — set only by
+  // POST /activation-verify finding a real routed call, never by the
+  // customer alone.
+  const activationRecentlyConfirmedByACall = isCallWithinVerificationWindow(recentCalls[0]);
+
   res.json({
     // req.household already carries this — requireAuth's
     // getHouseholdByAuthUserId does a plain select("*"), so no extra
     // query is needed for the household's own provisioning state.
     // twilioNumber deliberately not included — never sent to the browser.
     twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
+    phoneNumberAdded: !!req.household.phone_number,
+    activationVerifiedAt: req.household.activation_verified_at || null,
+    // Surfaced so the UI can hint "we saw a call" even before the
+    // customer taps the verify button themselves — same field name/
+    // meaning as the mobile app's equivalent (routes/mobileApi.js).
+    recentUnconfirmedCallSeen: activationRecentlyConfirmedByACall && !req.household.activation_verified_at,
     contactsUploaded: contacts.length,
     // Full contact list (id, so Edit/Delete can target the right row,
     // plus name + number — never household_id) for the "Trusted contacts"
@@ -513,6 +537,103 @@ app.post("/household/phone-number", requireAuth, requireEntitlement, express.jso
   }
 
   res.json({ ok: true, number: result.number });
+});
+
+// GET /activation-instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other
+//
+// Web counterpart of the mobile app's GET /api/v1/activation/instructions
+// (routes/mobileApi.js) — same underlying services/activationInstructions.js,
+// ported rather than reimplemented so per-provider formatting/caveats
+// (Virgin's extra zero, Sky/Virgin's preliminary 150 call) stay in
+// exactly one place. Deliberately the one narrow exception to "the
+// Twilio number is never sent to any client" — this response never
+// includes the bare number itself, only the fully-formed, ready-to-dial
+// code. /dashboard-data is completely unchanged by this addition.
+app.get("/activation-instructions", requireAuth, requireEntitlement, async (req, res) => {
+  const { deviceType, provider, protectedNumber } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  // protectedNumber is optional — the web dashboard doesn't collect a
+  // distinct "which phone are you forwarding" value separately from
+  // households.phone_number today, matching the mobile route's own
+  // "only blocks when the risk is actually detectable" design (see
+  // wouldCreateForwardingLoop's own comment in services/phone.js).
+  if (
+    typeof protectedNumber === "string" &&
+    protectedNumber &&
+    wouldCreateForwardingLoop(protectedNumber, req.household.phone_number)
+  ) {
+    return res.status(400).json({
+      error: "forwarding_loop",
+      message:
+        "Choose a different number for safe calls to ring. If you forward this phone to Home Call Guard and we send safe calls back to the same phone, the calls will loop and your phone may not ring.",
+    });
+  }
+
+  if (!req.household.twilio_number) {
+    // Provisioning hasn't completed yet (or failed) — a real, honest
+    // state, never a bare error. Matches twilio_provisioning_status
+    // already surfaced on GET /dashboard-data.
+    return res.status(409).json({ error: "not_provisioned" });
+  }
+
+  try {
+    const instructions = buildActivationInstructions({
+      twilioNumber: req.household.twilio_number,
+      deviceType,
+      provider,
+    });
+
+    res.json({
+      code: instructions.code,
+      cancelCode: instructions.cancelCode,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+      explanation: "This is Home Call Guard's protection number — you'll forward your calls to it now.",
+    });
+  } catch (err) {
+    console.error("WEB ACTIVATION INSTRUCTIONS ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /activation-verify
+//
+// Web counterpart of the mobile app's POST /api/v1/activation/verify —
+// checks for a real routed call within the verification window and, if
+// found, persists activation_verified_at (idempotent, see migration 021
+// and markActivationVerified's own comment). This — not a client
+// checkbox — is what computeSetupChecklist/renderProtectionStatus in
+// upload.html require before "You're protected" can ever show.
+app.post("/activation-verify", requireAuth, async (req, res) => {
+  try {
+    const recentCalls = await getRecentCalls(req.household.id, 1);
+    const verified = isCallWithinVerificationWindow(recentCalls[0]);
+
+    if (!verified) {
+      return res.json({ verified: false });
+    }
+
+    const verifiedAt = await markActivationVerified(req.household.id);
+    res.json({ verified: true, verifiedAt });
+  } catch (err) {
+    console.error("WEB ACTIVATION VERIFY ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
 });
 
 app.get("/logs", requireAuth, requireEntitlement, async (req, res) => {

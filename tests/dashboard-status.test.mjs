@@ -8,8 +8,11 @@
 // library required:
 //   - computeProtectionState: active/pending/failed, derived only from
 //     twilioNumber + twilioProvisioningStatus.
-//   - computeSetupChecklist: the 5-item checklist, derived from the same
-//     dashboard data plus the self-reported call-forwarding flag.
+//   - computeSetupChecklist: the 6-item checklist, derived entirely from
+//     genuine backend dashboard data — phoneNumberAdded and
+//     callForwardingCompleted both come from real server-side facts
+//     (households.phone_number / households.activation_verified_at),
+//     never a client-only assumption or self-report.
 //
 // Run with: node tests/dashboard-status.test.mjs
 
@@ -107,28 +110,39 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
 
   // --- computeSetupChecklist ---
 
-  const activeData = { twilioNumber: '+447700900123', twilioProvisioningStatus: 'active', contactsUploaded: 3 };
+  const activeData = {
+    twilioNumber: '+447700900123',
+    twilioProvisioningStatus: 'active',
+    phoneNumberAdded: true,
+    contactsUploaded: 3,
+    activationVerifiedAt: '2026-08-15T12:00:00.000Z',
+  };
 
-  const checklistAllDone = computeSetupChecklist(activeData, true);
+  const checklistAllDone = computeSetupChecklist(activeData);
   check(
     checklistAllDone.accountConfirmed === true && checklistAllDone.subscriptionActive === true,
     'account confirmation and subscription-active are always true once dashboard data has loaded at all (both are preconditions for reaching this code)'
   );
   check(checklistAllDone.protectedNumberAssigned === true, 'protected number assigned reflects the active protection state');
+  check(checklistAllDone.phoneNumberAdded === true, 'phone number added reflects the real households.phone_number-backed server field when true');
   check(checklistAllDone.contactsUploaded === true, 'contacts uploaded is true once at least one contact exists');
-  check(checklistAllDone.callForwardingCompleted === true, 'call forwarding reflects the self-reported flag when true');
+  check(checklistAllDone.callForwardingCompleted === true, 'call forwarding reflects genuine activationVerifiedAt (real routed call), not a self-report, when set');
 
   const checklistNothingDone = computeSetupChecklist(
-    { twilioNumber: null, twilioProvisioningStatus: 'pending', contactsUploaded: 0 },
-    false
+    { twilioNumber: null, twilioProvisioningStatus: 'pending', phoneNumberAdded: false, contactsUploaded: 0, activationVerifiedAt: null }
   );
   check(checklistNothingDone.protectedNumberAssigned === false, 'protected number assigned is false while provisioning is still pending');
+  check(checklistNothingDone.phoneNumberAdded === false, 'phone number added is false when the household has no destination number on file');
   check(checklistNothingDone.contactsUploaded === false, 'contacts uploaded is false with zero contacts');
-  check(checklistNothingDone.callForwardingCompleted === false, 'call forwarding reflects the self-reported flag when false');
+  check(checklistNothingDone.callForwardingCompleted === false, 'call forwarding is false when activationVerifiedAt is null — never true from a self-report alone');
+
+  check(
+    computeSetupChecklist({ twilioNumber: '+447700900123', twilioProvisioningStatus: 'active', contactsUploaded: 3, activationVerifiedAt: '2026-08-15T12:00:00.000Z' }).phoneNumberAdded === false,
+    'phoneNumberAdded defaults to false when the server response omits the field entirely, never assumed true'
+  );
 
   const checklistFailedProvisioning = computeSetupChecklist(
-    { twilioNumber: null, twilioProvisioningStatus: 'failed', contactsUploaded: 1 },
-    false
+    { twilioNumber: null, twilioProvisioningStatus: 'failed', phoneNumberAdded: true, contactsUploaded: 1, activationVerifiedAt: null }
   );
   check(
     checklistFailedProvisioning.protectedNumberAssigned === false,
@@ -136,8 +150,12 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   );
 
   check(
-    computeSetupChecklist(null, false).protectedNumberAssigned === false,
+    computeSetupChecklist(null).protectedNumberAssigned === false,
     'a checklist computed against missing data never claims the number is assigned'
+  );
+  check(
+    computeSetupChecklist(null).phoneNumberAdded === false && computeSetupChecklist(null).callForwardingCompleted === false,
+    'a checklist computed against missing data never claims the phone number or call forwarding are done'
   );
 
   // --- shouldShowAdminButton ---
