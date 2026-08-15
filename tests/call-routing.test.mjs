@@ -93,5 +93,49 @@ const householdB = { id: 'household-b', phone_number: '+442222222222' };
   check(result.canForward === false, 'household itself is null: fails closed rather than throwing');
 }
 
+// --- forwarding-loop guard (2026-08-15) ---
+//
+// Closes the real production incident: household.phone_number is both
+// the customer's own number AND the number their carrier's unconditional
+// forwarding (*21*) sends to us — so dialling it back for a genuinely
+// screened-safe call gets carrier-intercepted right back to us, creating
+// a new inbound call that re-enters /voice and asks the caller their
+// reason again, forever. Twilio's ForwardedFrom is the direct evidence
+// this exact call arrived via that forward; the guard fires only then.
+
+{
+  const household = { id: 'household-loop', phone_number: '+447715562700' };
+  const result = resolveForwardingDestination(household, '+447715562700');
+  check(result.canForward === false, 'forwardedFrom matches phone_number: fails closed rather than re-dialling into the loop');
+  check(result.number === null, 'forwardedFrom matches phone_number: no destination number is produced');
+}
+
+{
+  // Same household, same real number — but this particular call did NOT
+  // arrive via a forward (no ForwardedFrom), so it is safe to connect.
+  // This is the ordinary case: a genuine external caller, screened SAFE,
+  // reaching the customer for the first time.
+  const household = { id: 'household-loop', phone_number: '+447715562700' };
+  const result = resolveForwardingDestination(household, undefined);
+  check(result.canForward === true, 'no forwardedFrom: an ordinary safe call still connects normally');
+  check(result.number === '+447715562700', 'no forwardedFrom: resolves to the household\'s real number');
+}
+
+{
+  // forwardedFrom present but from a DIFFERENT number than phone_number —
+  // e.g. forwarded from some other line entirely. Not the loop condition.
+  const household = { id: 'household-loop', phone_number: '+447715562700' };
+  const result = resolveForwardingDestination(household, '+449999999999');
+  check(result.canForward === true, 'forwardedFrom present but different from phone_number: still connects');
+}
+
+{
+  // Format variation (spaces, no +) must still be recognised as the same
+  // number — mirrors wouldCreateForwardingLoop's own normalisation tests.
+  const household = { id: 'household-loop', phone_number: '+447715562700' };
+  const result = resolveForwardingDestination(household, '07715 562700');
+  check(result.canForward === false, 'forwardedFrom in a different but equivalent format still triggers the guard');
+}
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;
