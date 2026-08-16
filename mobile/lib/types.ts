@@ -95,6 +95,18 @@ export interface ActivationInstructionsResponse {
   explanation: string;
 }
 
+// GET /api/v1/voice/token — a short-lived Twilio Access Token (VoiceGrant)
+// the app uses to register the Voice SDK client and receive an approved
+// call directly on this handset, bypassing PSTN entirely (see
+// docs/operations/HANDOVER_2026-08-15.md §12-13). Can also fail with 503
+// { error: "voice_not_configured" } if the backend's Twilio Voice SDK
+// credentials aren't set yet.
+export interface VoiceTokenResponse {
+  token: string;
+  identity: string;
+  ttlSeconds: number;
+}
+
 export interface ContactResponse {
   id: string;
   name: string;

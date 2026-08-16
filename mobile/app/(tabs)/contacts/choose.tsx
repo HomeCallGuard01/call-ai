@@ -3,15 +3,17 @@
 // choice screen lets the customer pick between importing from their phone
 // or typing details in by hand, and states plainly, up front, that Home
 // Call Guard never copies the full address book — only whichever
-// individual contacts they explicitly choose via the system picker later.
+// individual contacts they explicitly select on the next screen.
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../../components/Screen";
+import { BackLink } from "../../../components/BackLink";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
 export default function ChooseContactMethod() {
   return (
     <Screen>
+      <BackLink />
       <Text style={styles.title}>Add a trusted contact</Text>
       <Text style={styles.subtitle}>
         Trusted contacts are never screened — their calls always ring straight through.
@@ -19,7 +21,7 @@ export default function ChooseContactMethod() {
 
       <Option
         label="Add from my phone contacts"
-        description="Pick one or more contacts. Home Call Guard only ever sees the contacts you choose — never your full address book."
+        description="See your contacts, tick everyone you want, then save them all at once. Home Call Guard only ever sees the contacts you tick — never your full address book."
         onPress={() => router.push("/(tabs)/contacts/from-phone")}
       />
       <Option

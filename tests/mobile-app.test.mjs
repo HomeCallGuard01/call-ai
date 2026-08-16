@@ -32,6 +32,8 @@ import {
   looksLikePhoneNumber,
   contactsStillNeedingSave,
   describeSaveFailure,
+  buildSelectableContacts,
+  toggleContactSelection,
 } from '../mobile/lib/contactSelection.ts';
 import { shouldTriggerBootstrap } from '../mobile/lib/bootstrapTrigger.ts';
 import { resumeSetupAt, stepIndexForScreen, SETUP_STEPS } from '../mobile/lib/setupFlow.ts';
@@ -219,6 +221,73 @@ function check(condition, message) {
   check(looksLikePhoneNumber('12345') === false, 'looksLikePhoneNumber: rejects an obviously too-short number');
   check(looksLikePhoneNumber('not a number') === false, 'looksLikePhoneNumber: rejects letters with no real digits');
   check(looksLikePhoneNumber('') === false, 'looksLikePhoneNumber: rejects an empty string');
+}
+
+// --- Multi-select "Choose from my iPhone/Android contacts" (2026-08-08) ---
+
+{
+  const deviceContacts = [
+    { id: '1', name: 'Zoe Baker', phoneNumbers: [{ number: '07700900001' }] },
+    { id: '2', name: 'Amir Khan', phoneNumbers: [{ number: '07700900002' }, { number: '07700900003' }] },
+    { id: '3', name: 'No Number Nora', phoneNumbers: [] },
+    { id: '4', firstName: 'Beth', lastName: 'Chan', phoneNumbers: [{ number: '07700900004' }] },
+    { id: null, name: 'Missing Id', phoneNumbers: [{ number: '07700900005' }] },
+    { id: '6', name: '', phoneNumbers: [{ number: '07700900006' }] },
+  ];
+
+  const selectable = buildSelectableContacts(deviceContacts);
+
+  check(
+    selectable.length === 4,
+    'buildSelectableContacts: keeps only contacts with both a real id and at least one usable number (4 of 6 fixtures)'
+  );
+
+  check(
+    selectable.map(c => c.name).join(',') === 'Amir Khan,Beth Chan,Unnamed contact,Zoe Baker',
+    'buildSelectableContacts: sorts alphabetically by name'
+  );
+
+  check(
+    selectable.find(c => c.id === '6')?.name === 'Unnamed contact',
+    'buildSelectableContacts: a device contact with no usable name falls back to "Unnamed contact" rather than being dropped'
+  );
+
+  check(
+    selectable.find(c => c.id === '2')?.number === '07700900002',
+    'buildSelectableContacts: a contact with multiple numbers uses the first usable one for its list row'
+  );
+
+  check(
+    selectable.find(c => c.id === '4')?.name === 'Beth Chan',
+    'buildSelectableContacts: falls back to firstName + lastName when no display name is set'
+  );
+
+  check(
+    !selectable.some(c => c.id === '3'),
+    'buildSelectableContacts: excludes a contact with zero usable phone numbers'
+  );
+
+  check(
+    !selectable.some(c => c.number === '07700900005'),
+    'buildSelectableContacts: excludes a contact with no device-assigned id'
+  );
+
+  check(buildSelectableContacts(undefined).length === 0, 'buildSelectableContacts: undefined input is treated as an empty list, not a crash');
+  check(buildSelectableContacts(null).length === 0, 'buildSelectableContacts: null input is treated as an empty list, not a crash');
+  check(buildSelectableContacts([]).length === 0, 'buildSelectableContacts: a genuinely empty device address book produces an empty list');
+
+  check(
+    toggleContactSelection([], 'a').join(',') === 'a',
+    'toggleContactSelection: selecting an unselected id adds it'
+  );
+  check(
+    toggleContactSelection(['a'], 'b').join(',') === 'a,b',
+    'toggleContactSelection: selecting a second id keeps the first and appends the second'
+  );
+  check(
+    toggleContactSelection(['a', 'b'], 'a').join(',') === 'b',
+    'toggleContactSelection: selecting an already-selected id removes it (standard checklist toggle behaviour)'
+  );
 }
 
 // --- Batch contact save: per-contact outcomes (parallel save, task #40 hardening) ---

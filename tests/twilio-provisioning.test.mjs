@@ -141,7 +141,7 @@ check(
 // orchestrator's exact call sites: `client.incomingPhoneNumbers.create(...)`
 // and `client.incomingPhoneNumbers(sid).remove()`.
 function makeFakeTwilioClient({ available = [{ phoneNumber: '+447700900456' }], purchaseThrows = null } = {}) {
-  const calls = { list: 0, create: 0, remove: 0, lastCreateParams: null };
+  const calls = { list: 0, create: 0, remove: 0, lastCreateParams: null, lastListParams: null };
 
   const incomingPhoneNumbers = (sid) => ({
     remove: async () => {
@@ -159,7 +159,13 @@ function makeFakeTwilioClient({ available = [{ phoneNumber: '+447700900456' }], 
   return {
     calls,
     availablePhoneNumbers: () => ({
-      local: { list: async () => { calls.list++; return available; } },
+      local: {
+        list: async (params) => {
+          calls.list++;
+          calls.lastListParams = params;
+          return available;
+        },
+      },
     }),
     incomingPhoneNumbers,
   };
@@ -238,6 +244,10 @@ async function run() {
     check(
       !('bundleSid' in client.calls.lastCreateParams),
       'with no bundleSid configured, the real Twilio purchase call is sent without one — zero behaviour change from before this fix'
+    );
+    check(
+      client.calls.lastListParams.voiceEnabled === true && !('smsEnabled' in client.calls.lastListParams),
+      'the available-number search requires voiceEnabled only, back to .local — reverted 2026-08-16: a brief .mobile switch to fix a missing-SMS bug cost ~2.2x more per household for no benefit; SMS now comes from a separate shared number instead (see the architecture review), so per-household numbers go back to voice-only .local'
     );
   }
 

@@ -1,0 +1,44 @@
+# EAS Build archive ignore rules.
+# Mirrors .gitignore, EXCEPT google-services.json: that file must stay out
+# of git (secret-ish, gitignored) but still needs to reach the EAS Build
+# archive, since app.json's android.googleServicesFile points at it and
+# .gitignore-based exclusion otherwise silently drops it from the upload
+# (this broke the first development build — Android prebuild had no file
+# to consume). .easignore overrides .gitignore for EAS Build purposes only.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android

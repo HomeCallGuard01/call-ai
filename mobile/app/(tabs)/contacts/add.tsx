@@ -11,6 +11,7 @@ import { Screen } from "../../../components/Screen";
 import { TextField } from "../../../components/TextField";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
+import { BackLink } from "../../../components/BackLink";
 import { addContact, updateContact, ApiError } from "../../../lib/api";
 import { colors, spacing, typography } from "../../../lib/theme";
 
@@ -54,6 +55,7 @@ export default function AddOrEditContact() {
 
   return (
     <Screen>
+      <BackLink />
       <Text style={styles.title}>{isEditing ? "Edit contact" : "Add a trusted contact"}</Text>
 
       {error && <Banner variant="error" message={error} />}

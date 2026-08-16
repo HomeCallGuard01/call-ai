@@ -128,5 +128,27 @@ check(
   '"Check again" is only ever reachable behind the pollingBroken guard — never shown during normal provisioning, only when polling itself is failing'
 );
 
+// --- Fail-safe #1/#2 (2026-08-08/09): undo code shown, loop blocked before activation ---
+
+check(
+  source.includes('forwardingLoopError') && source.includes('err.code === "forwarding_loop"'),
+  'the screen handles a forwarding_loop ApiError from the backend as its own distinct state, not a generic error'
+);
+
+check(
+  source.includes('params.protectedNumber') && source.includes('fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber)'),
+  'the confirmed phone number from device-picker is actually sent to the backend for the loop check, not silently dropped'
+);
+
+check(
+  source.includes('UndoForwardingSection') && source.includes('instructions.cancelCode'),
+  'the real cancel code from the backend response is shown on the activation screen — never a hardcoded/invented universal code'
+);
+
+check(
+  source.includes('saveActivationDevice'),
+  'the activation screen persists which device/provider was used, so the cancel code stays reachable after setup (Account tab) rather than only existing on this one-time screen'
+);
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;

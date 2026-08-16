@@ -1,0 +1,21 @@
+diff --git a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
+index 782b76e..19724f3 100644
+--- a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
++++ b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
+@@ -170,7 +170,15 @@ class NotificationUtility {
+       .setCategory(Notification.CATEGORY_CALL)
+       .setAutoCancel(true)
+       .setContentIntent(piForegroundIntent)
+-      .setFullScreenIntent(piForegroundIntent, true)
++      // PATCHED (call-ai, 2026-08-16, staging/dev only — see mobile/patches/):
++      // removed .setFullScreenIntent(piForegroundIntent, true). Android was
++      // auto-launching this full-screen intent without any real user tap,
++      // which the app then treated as "notification tapped"
++      // (ACTION_FOREGROUND_AND_DEPRIORITIZE_INCOMING_CALL_NOTIFICATION),
++      // stopping the ringer (MediaPlayerManager.stop() in VoiceService's
++      // foregroundAndDeprioritizeIncomingCallNotification) before it could
++      // ever be heard. setContentIntent above is untouched, so manually
++      // tapping the notification still works normally.
+       .addPerson(incomingCaller)
+       .setStyle(NotificationCompat.CallStyle.forIncomingCall(
+         incomingCaller, piRejectIntent, piAcceptIntent))

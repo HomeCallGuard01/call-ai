@@ -31,13 +31,17 @@ const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber } = require("./database/households");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
-const { getCallsToday, getRecentCalls, logCall, toClientCall } = require("./database/calls");
+const { getCallsToday, getRecentCalls, logCall, recordMonitoringOutcome, toClientCall } = require("./database/calls");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("./services/registrationRequest");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const { buildUserScopedClient } = require("./services/supabaseClients");
 const { DEVICE_TYPES, LANDLINE_PROVIDERS, buildActivationInstructions } = require("./services/activationInstructions");
+const { wouldCreateForwardingLoop } = require("./services/phone");
 const { resolveForwardingDestination } = require("./services/callRouting");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
+const { attachMediaStreamServer } = require("./services/liveMonitoring/mediaStreamServer");
+const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/transcribeChunk");
+const { twilioRestClient } = require("./services/twilioClient");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const mobileApiRoutes = require("./routes/mobileApi");
@@ -223,6 +227,52 @@ function dialHouseholdOrFailClosed(twiml, household) {
   twiml.hangup();
 }
 
+// Restoring progressive monitoring (2026-08-11, selectively ported from
+// sandbox/v1.5-live-monitoring — see the reconciliation report for the
+// full file-by-file plan). Attaches a <Start><Stream> alongside an
+// already-decided connect, so a connected call is now also live-
+// monitored — never changes whether or how the call connects, purely
+// additive. Only ever called from /process's SAFE-connect branch for an
+// unknown caller — /voice's known-contact bypass never calls this, so a
+// trusted contact's call connects exactly as it always has: no
+// transcription, no SMS monitoring, protecting family conversations'
+// privacy and avoiding transcription cost on calls that were never in
+// question.
+//
+// Deliberately reuses the SAME resolveForwardingDestination(household)
+// this call is already being dialled through — never a second,
+// independently-sourced number. That's the exact class of bug this
+// integration was told not to bring back: the source branch had a
+// hardcoded dial target and a separately-sourced SMS number that could
+// silently disagree.
+function buildMediaStreamUrl(appUrl) {
+  return appUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:") + "/media-stream";
+}
+
+// Red-line termination (2026-08-15): the TwiML endpoint the live call is
+// redirected to when services/liveMonitoring/callTermination.js's first
+// two attempts succeed — plain http(s), not wss, since this is fetched
+// by Twilio's REST API as ordinary TwiML, not a media stream.
+function buildRedLineTerminateUrl(appUrl) {
+  return appUrl + "/red-line-terminate";
+}
+
+function attachLiveMonitoring(twiml, { household, twilioNumber }) {
+  if (!household) return;
+
+  const destination = resolveForwardingDestination(household);
+
+  const start = twiml.start();
+  const stream = start.stream({ url: buildMediaStreamUrl(APP_URL) });
+  stream.parameter({ name: "householdId", value: household.id });
+  if (destination.canForward) {
+    stream.parameter({ name: "toNumber", value: destination.number });
+  } else {
+    console.error("LIVE MONITORING: no valid destination — SMS warning will be skipped", household.id);
+  }
+  stream.parameter({ name: "protectedNumber", value: twilioNumber });
+}
+
 // VOICE CALL ENTRY
 
 app.post("/voice", async (req, res) => {
@@ -307,26 +357,20 @@ app.post("/process", async (req, res) => {
     return res.type("text/xml").send(twiml.toString());
   }
 
-  const lower = speech.toLowerCase();
-
-  const isKeywordScam =
-    lower.includes("bank") ||
-    lower.includes("account") ||
-    lower.includes("bitcoin") ||
-    lower.includes("amazon") ||
-    lower.includes("refund") ||
-    lower.includes("internet") ||
-    lower.includes("broadband") ||
-    lower.includes("bt") ||
-    lower.includes("sky") ||
-    lower.includes("urgent") ||
-    lower.includes("payment");
-
-  let isScam = isKeywordScam;
+  // Legacy keyword pre-filter — removed (Decision 012, restored
+  // 2026-08-11). A caller mentioning "bank", "Amazon", "BT", "Sky", etc.
+  // was instantly classified SCAM before the AI classifier — or live
+  // monitoring — ever ran. Confirmed live on this exact staging number
+  // this week: a real "bank" call resolved in ~127ms with ai_model: null,
+  // versus ~1800ms with ai_model: "gpt-4o-mini" for an ordinary call —
+  // proof the classifier never ran. Every unknown caller whose speech is
+  // long enough now reaches the GPT classifier unconditionally; identity
+  // alone is handled by the prompt below, not by blocking on keywords.
+  let isScam = false;
   let result = "SAFE";
   let aiModel = null;
 
-  if (openai && !isKeywordScam && speech.length > 5) {
+  if (openai && speech.length > 5) {
     try {
       const aiResponse = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -334,7 +378,15 @@ app.post("/process", async (req, res) => {
           {
             role: "system",
             content:
-              "Classify this call as SCAM or SAFE. Only respond SCAM or SAFE.",
+              "You are screening an incoming phone call for a household. " +
+              "Classify the call as SCAM only when the caller is attempting or clearly preparing to obtain something high risk, such as: " +
+              "passwords, PINs, one-time passcodes (OTPs), security verification codes, bank or payment card details, remote access to a device, " +
+              "transferring money, moving money to a different or \"safe\" account, purchasing gift cards, or sending cryptocurrency. " +
+              "Also classify as SCAM when the caller discourages the person from checking with anyone else — for example telling them to keep the call secret, not to tell family, not to contact their bank, or not to hang up. " +
+              "Do not classify a call as SCAM simply because the caller claims to represent a bank, Amazon, a delivery company, a government department, the police, HMRC, or any other organisation. " +
+              "Identity alone is not evidence of fraud — it is context, not guilt. " +
+              "If the caller is only identifying themselves, introducing the reason for the call, or requesting a normal conversation without any high-risk request or secrecy pressure, respond SAFE. " +
+              "Respond with exactly one word: SCAM or SAFE.",
           },
           {
             role: "user",
@@ -375,16 +427,76 @@ app.post("/process", async (req, res) => {
     );
     twiml.hangup();
   } else {
+    // Addressed to the CALLER, not the protected customer — a real audit
+    // this week found the previous wording ("Please be cautious when
+    // sharing personal information") was security advice meant for the
+    // household, played to whoever is calling in, including a caller who
+    // passed screening but turns out to be the scammer being warned about
+    // their own tactics. Neutral, gives no security advice either way.
+    // The actual protected-customer warning is delivered separately and
+    // privately, via SMS, by live monitoring below.
     twiml.say(
       { voice: "Polly.Amy", language: "en-GB" },
-      "This call is being connected via Home Call Guard. Please be cautious when sharing personal information."
+      "This call may be monitored by Home Call Guard for the safety of the person you're calling. Please continue normally."
     );
 
     twiml.pause({ length: 1 });
 
+    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+
     dialHouseholdOrFailClosed(twiml, household);
   }
 
+  return res.type("text/xml").send(twiml.toString());
+});
+
+// RED-LINE TERMINATION
+//
+// Fetched by Twilio's REST API (client.calls(sid).update({url, method}))
+// when services/liveMonitoring/callTermination.js's redirect attempt
+// runs — never called directly by a phone, so it needs no Gather/speech
+// handling of its own. Deliberately generic wording: no detail about
+// which specific behaviour triggered it, so a real caller doesn't get a
+// coaching signal on what to avoid saying next time.
+app.post("/red-line-terminate", (req, res) => {
+  const twiml = new VoiceResponse();
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "This call has been identified as high risk and is being ended for the safety of the person you called."
+  );
+  twiml.hangup();
+  return res.type("text/xml").send(twiml.toString());
+});
+
+// VOICE SDK TWIML APP FALLBACK
+//
+// The mobile app's Voice SDK client never places outgoing calls in V1
+// (it only receives — see services/voiceAccessToken.js's comment on
+// outgoingApplicationSid), so this should never actually be invoked by a
+// real user action. It exists only because the TwiML Application
+// resource backing the mobile Access Token's VoiceGrant requires a
+// Voice URL to be a valid, reachable endpoint.
+app.post("/voice-sdk-outbound-not-supported", (req, res) => {
+  const twiml = new VoiceResponse();
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "Outgoing calls are not supported by this application."
+  );
+  twiml.hangup();
+  return res.type("text/xml").send(twiml.toString());
+});
+
+// Fetched once scripts/trigger-voice-sdk-test-call.js's REST-initiated
+// call is answered by the Voice SDK client — proves the call actually
+// connected and two-way audio is live, entirely independent of the real
+// /voice -> /process screening flow. Never reachable from a real phone
+// call; only ever invoked by that one manual test script.
+app.post("/voice-sdk-test-call-answered", (req, res) => {
+  const twiml = new VoiceResponse();
+  twiml.say(
+    { voice: "Polly.Amy", language: "en-GB" },
+    "Test call connected successfully. Same phone delivery is working."
+  );
   return res.type("text/xml").send(twiml.toString());
 });
 
@@ -480,7 +592,7 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
 // this route closes that gap for the existing web dashboard (upload.html)
 // without changing /dashboard-data or introducing any new business logic.
 app.get("/activation-instructions", requireAuth, requireEntitlement, (req, res) => {
-  const { deviceType, provider } = req.query;
+  const { deviceType, provider, protectedNumber } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -493,6 +605,21 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, (req, res) 
     return res.status(400).json({
       error: "invalid_input",
       message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  // See routes/mobileApi.js's identical check for the full explanation —
+  // protectedNumber is optional so this never breaks an existing caller
+  // that doesn't send it, only blocks when the loop risk is detectable.
+  if (
+    typeof protectedNumber === "string" &&
+    protectedNumber &&
+    wouldCreateForwardingLoop(protectedNumber, req.household.phone_number)
+  ) {
+    return res.status(400).json({
+      error: "forwarding_loop",
+      message:
+        "Choose a different number for safe calls to ring. If you forward this phone to Home Call Guard and we send safe calls back to the same phone, the calls will loop and your phone may not ring.",
     });
   }
 
@@ -1019,8 +1146,25 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, () => {
+  const httpServer = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+  });
+
+  // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint
+  // Twilio's <Start><Stream> (attachLiveMonitoring, above) connects to.
+  // Attached to the same http.Server app.listen() returns — no second
+  // port, no second process. A missing OpenAI/Twilio client is handled
+  // the same fail-open way the rest of this file already treats them
+  // (transcription/SMS simply won't succeed; the call itself is
+  // completely unaffected either way, since <Start><Stream> is fire-and-
+  // forget relative to <Dial>).
+  attachMediaStreamServer(httpServer, {
+    transcribeClient: openai ? createOpenAiTranscribeClient(openai) : null,
+    smsClient: twilioRestClient,
+    fromNumber: null,
+    twilioRestClient,
+    redLineRedirectUrl: buildRedLineTerminateUrl(APP_URL),
+    recordOutcome: recordMonitoringOutcome,
   });
 }
 

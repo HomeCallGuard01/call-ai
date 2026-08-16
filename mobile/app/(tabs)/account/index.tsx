@@ -107,6 +107,7 @@ export default function Account() {
       </View>
 
       <Row label="Membership" onPress={() => router.push("/(tabs)/account/membership")} />
+      <Row label="Need to turn protection off?" onPress={() => router.push("/(tabs)/account/turn-off-protection")} />
       <Row label="Support" onPress={() => router.push("/(tabs)/account/support")} />
       <Row label="Legal" onPress={() => router.push("/(tabs)/account/legal")} />
       <Row label="Log out" onPress={handleLogout} destructive />

@@ -19,7 +19,7 @@ const { markActivationVerified } = require("../database/households");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
-const { normaliseNumber } = require("../services/phone");
+const { normaliseNumber, wouldCreateForwardingLoop } = require("../services/phone");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 const { stripe } = require("../services/stripeClient");
 const {
@@ -34,6 +34,7 @@ const {
   buildActivationInstructions,
 } = require("../services/activationInstructions");
 const { setHouseholdPhoneNumber } = require("../services/householdPhoneNumber");
+const { buildVoiceAccessToken } = require("../services/voiceAccessToken");
 
 const router = express.Router();
 
@@ -389,7 +390,7 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
 // preliminary 150 call — live in exactly one place, never duplicated in
 // client code).
 router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement, async (req, res) => {
-  const { deviceType, provider } = req.query;
+  const { deviceType, provider, protectedNumber } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -402,6 +403,25 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
     return res.status(400).json({
       error: "invalid_input",
       message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  // Real iPhone testing (2026-08-08/09) found that forwarding a phone to
+  // Home Call Guard and also setting that SAME phone as the destination
+  // for trusted/safe calls creates an inescapable loop — the phone can
+  // never ring again, for anyone, once both match. protectedNumber is
+  // optional (older/other callers of this route don't send it yet) so
+  // this only blocks when the risk is actually detectable, never breaks
+  // an existing caller that doesn't pass it.
+  if (
+    typeof protectedNumber === "string" &&
+    protectedNumber &&
+    wouldCreateForwardingLoop(protectedNumber, req.household.phone_number)
+  ) {
+    return res.status(400).json({
+      error: "forwarding_loop",
+      message:
+        "Choose a different number for safe calls to ring. If you forward this phone to Home Call Guard and we send safe calls back to the same phone, the calls will loop and your phone may not ring.",
     });
   }
 
@@ -450,6 +470,49 @@ router.post("/api/v1/household/phone-number", requireAuthApi, requireEntitlement
   }
 
   res.json({ ok: true, number: result.number });
+});
+
+// GET /api/v1/voice/token
+//
+// Issues a short-lived Twilio Access Token (VoiceGrant) so the app can
+// register the Voice SDK client and receive an approved call directly —
+// the same-phone delivery mechanism replacing PSTN dial-back
+// (docs/operations/HANDOVER_2026-08-15.md §12-13). requireEntitlement is
+// deliberately applied: an unsubscribed household has no calls to
+// receive this way, and issuing a live-callable identity to one would be
+// pure unnecessary exposure. Fails closed (503) if the four Twilio
+// credentials aren't configured, exactly like every other Twilio-backed
+// route in this file — never a partial/malformed token.
+router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req, res) => {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const apiKeySid = process.env.TWILIO_VOICE_API_KEY_SID;
+  const apiKeySecret = process.env.TWILIO_VOICE_API_KEY_SECRET;
+  const twimlAppSid = process.env.TWILIO_VOICE_TWIML_APP_SID;
+  // Optional — see services/voiceAccessToken.js's own comment on why a
+  // missing value degrades (registration still succeeds, incoming calls
+  // just can't be pushed) rather than failing closed like the four above.
+  const pushCredentialSid = process.env.TWILIO_VOICE_PUSH_CREDENTIAL_SID;
+
+  if (!accountSid || !apiKeySid || !apiKeySecret || !twimlAppSid) {
+    console.error("VOICE ACCESS TOKEN ERROR: Twilio Voice SDK credentials not configured");
+    return res.status(503).json({ error: "voice_not_configured" });
+  }
+
+  try {
+    const { token, identity, ttlSeconds } = buildVoiceAccessToken({
+      accountSid,
+      apiKeySid,
+      apiKeySecret,
+      twimlAppSid,
+      pushCredentialSid,
+      householdId: req.household.id,
+    });
+
+    res.json({ token, identity, ttlSeconds });
+  } catch (err) {
+    console.error("VOICE ACCESS TOKEN ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
 });
 
 // POST /api/v1/activation/verify

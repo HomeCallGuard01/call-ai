@@ -14,6 +14,7 @@ export default function AccountLayout() {
       <Stack.Screen name="membership" options={{ title: "Membership" }} />
       <Stack.Screen name="support" options={{ title: "Support" }} />
       <Stack.Screen name="legal" options={{ title: "Legal" }} />
+      <Stack.Screen name="turn-off-protection" options={{ title: "Turn Off Protection" }} />
     </Stack>
   );
 }

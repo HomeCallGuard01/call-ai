@@ -10,6 +10,9 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
 import { SetupProgress } from "../../components/SetupProgress";
+import { TextField } from "../../components/TextField";
+import { PrimaryButton } from "../../components/PrimaryButton";
+import { looksLikePhoneNumber } from "../../lib/contactSelection";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 import type { DeviceType, LandlineProvider } from "../../lib/types";
 
@@ -30,16 +33,67 @@ const LANDLINE_PROVIDERS: { provider: LandlineProvider; label: string }[] = [
 
 export default function DevicePicker() {
   const [deviceType, setDeviceType] = useState<DeviceType | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [numberError, setNumberError] = useState<string | null>(null);
 
   function selectDevice(type: DeviceType) {
     setDeviceType(type);
-    if (type !== "landline") {
-      router.push({ pathname: "/(setup)/activate", params: { deviceType: type } });
-    }
   }
 
   function selectProvider(provider: LandlineProvider) {
     router.push({ pathname: "/(setup)/activate", params: { deviceType: "landline", provider } });
+  }
+
+  // Real iPhone testing (2026-08-08/09) found that forwarding this phone
+  // to Home Call Guard and also setting it as the destination for safe
+  // calls creates an inescapable loop — the phone can never ring again,
+  // for anyone. Confirming the number here lets the backend check for
+  // exactly that before showing an activation code (see
+  // fetchActivationInstructions's protectedNumber and
+  // services/phone.js's wouldCreateForwardingLoop). Only asked for
+  // iPhone/Android, where this device's own line is what's being
+  // forwarded — a landline is always a physically separate line, so this
+  // specific risk doesn't apply there.
+  function confirmMobileNumber() {
+    const trimmed = phoneNumber.trim();
+    if (!looksLikePhoneNumber(trimmed)) {
+      setNumberError("Please enter a full UK phone number.");
+      return;
+    }
+    setNumberError(null);
+    router.push({
+      pathname: "/(setup)/activate",
+      params: { deviceType: deviceType!, protectedNumber: trimmed },
+    });
+  }
+
+  if (deviceType === "iphone" || deviceType === "android") {
+    return (
+      <Screen>
+        <SetupProgress currentStep={3} />
+        <Pressable onPress={() => setDeviceType(null)} accessibilityRole="button" style={styles.backLink}>
+          <Text style={styles.backLinkText}>‹ Back</Text>
+        </Pressable>
+        <Text style={styles.title} accessibilityRole="header">What's this phone's number?</Text>
+        <Text style={styles.subtitle}>
+          The number of the {deviceType === "iphone" ? "iPhone" : "Android phone"} you're about to forward to
+          Home Call Guard — we check it isn't the same number safe calls would be sent back to.
+        </Text>
+        <TextField
+          label="Phone number"
+          value={phoneNumber}
+          onChangeText={text => {
+            setPhoneNumber(text);
+            if (numberError) setNumberError(null);
+          }}
+          keyboardType="phone-pad"
+          textContentType="telephoneNumber"
+          autoComplete="tel"
+          error={numberError ?? undefined}
+        />
+        <PrimaryButton label="Continue" onPress={confirmMobileNumber} />
+      </Screen>
+    );
   }
 
   if (deviceType === "landline") {

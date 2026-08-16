@@ -1076,8 +1076,8 @@
       <h2>Your setup progress</h2>
       <p class="checklist-progress" id="checklistProgress"></p>
       <div id="phoneNumberSection" class="phone-number-section">
-        <h3>What number should protected calls ring?</h3>
-        <p class="field-hint">Trusted callers and calls we confirm are safe will be connected to this number.</p>
+        <h3>Enter the phone number you want to protect</h3>
+        <p class="field-hint">This is the number where you want to receive your calls.</p>
 
         <div id="phoneNumberSavedState" hidden>
           <p class="phone-number-saved-note" role="status">✓ Your call destination number is saved</p>
@@ -1111,7 +1111,7 @@
         </li>
         <li class="checklist-item" data-item="phoneNumberAdded">
           <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Add the number where safe calls should ring</span>
+          <span class="checklist-label">Add the phone number you want to protect</span>
         </li>
         <li class="checklist-item" data-item="contactsUploaded">
           <span class="checklist-icon" aria-hidden="true">✓</span>
@@ -1509,12 +1509,26 @@
       statsEmptyNote.hidden = !muteStats;
     }
 
-    if (state === "active") {
+    // "You're protected" must never be shown until every checklist step —
+    // including the customer's own actions (destination number, trusted
+    // contacts, call forwarding), not just system-side Twilio provisioning
+    // — is genuinely done. computeProtectionState alone (used for `state`)
+    // only reflects the system side, so it's not sufficient on its own to
+    // gate this specific claim.
+    const checklistForStatus = computeSetupChecklist(data, getCallForwardingCompleted());
+    const allStepsComplete = Object.keys(checklistForStatus).every(function (k) {
+      return checklistForStatus[k];
+    });
+
+    if (state === "active" && allStepsComplete) {
       if (title) title.textContent = "You're protected";
       if (sub) sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
     } else if (state === "failed") {
       if (title) title.textContent = "We're sorting out one part of your setup";
       if (sub) sub.textContent = "Your subscription is active and nothing further is needed from you right now — our team has been notified and is on it. If you'd like an update, contact us any time at support@homecallguard.co.uk.";
+    } else if (state === "active") {
+      if (title) title.textContent = "Your membership is active — finish setting up your protection";
+      if (sub) sub.textContent = "A few steps are still needed from you below before calls to your phone are protected.";
     } else {
       if (title) title.textContent = "We're finishing setting up your protection";
       if (sub) sub.textContent = "Your subscription is active — this usually only takes a few minutes and happens automatically. This page updates automatically, so you'll see it here the moment your protection is ready.";

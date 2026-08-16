@@ -97,6 +97,22 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
   }
 
   try {
+    // Reverted to .local, smsEnabled removed, 2026-08-16 (see the
+    // 2026-08-16 architecture review): a brief attempt to fix a missing-
+    // SMS bug by switching every household's number to .mobile was the
+    // wrong fix — UK .mobile numbers cost ~2.2x more per month than
+    // .local for zero benefit to this call-routing architecture, since
+    // the caller never sees this Twilio number either way (they only see
+    // the household's own real number, which is what's actually being
+    // forwarded from). SMS capability doesn't need to live on the
+    // per-household voice number: the plan is one shared, dedicated
+    // SMS-capable number for all warning texts, decoupled from any
+    // household's own voice number — that number hasn't been purchased
+    // yet (pending regulatory bundle approval and a separate cost
+    // sign-off), and the code to send from it instead of the household's
+    // own number hasn't been wired up yet either. Per-household numbers
+    // stay .local, voice-only, exactly as before this whole episode
+    // started.
     const available = await client.availablePhoneNumbers("GB").local.list({
       limit: 1,
       voiceEnabled: true,

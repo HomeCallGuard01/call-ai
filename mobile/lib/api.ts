@@ -17,6 +17,7 @@ import type {
   ApiErrorResponse,
   DeviceType,
   LandlineProvider,
+  VoiceTokenResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -174,6 +175,15 @@ export async function fetchDashboard(): Promise<DashboardResponse> {
   return parseJsonOrThrow<DashboardResponse>(response, true);
 }
 
+// GET /api/v1/voice/token — see lib/types.ts's VoiceTokenResponse comment.
+// Callers are responsible for re-fetching before ttlSeconds elapses (or
+// on a registration failure that looks like an expired token) — the
+// Voice SDK client itself does not auto-refresh.
+export async function fetchVoiceToken(): Promise<VoiceTokenResponse> {
+  const response = await authorizedFetch("/api/v1/voice/token");
+  return parseJsonOrThrow<VoiceTokenResponse>(response, true);
+}
+
 export async function verifyActivation(): Promise<ActivationVerifyResponse> {
   const response = await authorizedFetch("/api/v1/activation/verify", { method: "POST" });
   return parseJsonOrThrow<ActivationVerifyResponse>(response);
@@ -182,12 +192,19 @@ export async function verifyActivation(): Promise<ActivationVerifyResponse> {
 // Throws ApiError with code "not_provisioned" (409) if the household's
 // Twilio number isn't assigned yet — B4 should route back to a
 // "still setting up" state rather than show a broken screen in that case.
+// protectedNumber is optional: when passed (iPhone/Android setup, where
+// the customer confirms the number of the phone actually being
+// forwarded), the backend blocks with a "forwarding_loop" ApiError if it
+// matches the household's own destination number — see
+// routes/mobileApi.js and services/phone.js's wouldCreateForwardingLoop.
 export async function fetchActivationInstructions(
   deviceType: DeviceType,
-  provider?: LandlineProvider
+  provider?: LandlineProvider,
+  protectedNumber?: string
 ): Promise<ActivationInstructionsResponse> {
   const params = new URLSearchParams({ deviceType });
   if (provider) params.set("provider", provider);
+  if (protectedNumber) params.set("protectedNumber", protectedNumber);
 
   const response = await authorizedFetch(`/api/v1/activation/instructions?${params.toString()}`);
   return parseJsonOrThrow<ActivationInstructionsResponse>(response);

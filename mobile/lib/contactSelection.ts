@@ -88,3 +88,59 @@ export function describeSaveFailure(result: SaveResult): string {
   if (result.outcome === "invalid") return `${result.name} — that number doesn't look right`;
   return `${result.name} — couldn't be saved`;
 }
+
+// --- Multi-select "Choose from my iPhone/Android contacts" (2026-08-08) ---
+//
+// Replaces the earlier one-at-a-time presentContactPickerAsync() loop for
+// the *primary* iPhone/Android flow: after Contacts.requestPermissionsAsync()
+// + Contacts.getContactsAsync(), the raw device contact list is shaped by
+// buildSelectableContacts() into what this screen renders as an in-app,
+// on-device checklist — the customer ticks several people in one screen,
+// then Save sends only the ticked ones. The full device list this builds
+// from never leaves the device; only the subset a customer explicitly
+// selects (tracked by toggleContactSelection) is ever handed to addContact.
+
+export interface DeviceContact {
+  id?: string | null;
+  name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  phoneNumbers?: PickedPhoneNumber[] | null;
+}
+
+export interface SelectableContact {
+  id: string;
+  name: string;
+  number: string;
+}
+
+// A contact with more than one usable number uses the first one for its
+// list row here — asking "which number?" per row during a fast bulk
+// browse would defeat the point of a one-screen multi-select; a customer
+// who specifically needs a different one of several numbers can still
+// use "Enter manually". Contacts with zero usable numbers, or missing a
+// device-assigned id entirely, are left out rather than shown as an
+// unselectable dead row. Sorted by name so the list reads like a normal
+// contacts app, not device-insertion order.
+export function buildSelectableContacts(deviceContacts: DeviceContact[] | undefined | null): SelectableContact[] {
+  const withNumbers = (deviceContacts || [])
+    .map((c): SelectableContact | null => {
+      if (!c.id) return null;
+      const numbers = usableNumbers(c.phoneNumbers);
+      if (numbers.length === 0) return null;
+      const name =
+        (c.name && c.name.trim()) ||
+        [c.firstName, c.lastName].filter(Boolean).join(" ").trim() ||
+        "Unnamed contact";
+      return { id: c.id, name, number: numbers[0].number! };
+    })
+    .filter((c): c is SelectableContact => c !== null);
+
+  return withNumbers.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Pure toggle for a multi-select-by-id list — ticking an already-ticked
+// row removes it, matching standard checklist/checkbox behaviour.
+export function toggleContactSelection(selectedIds: string[], id: string): string[] {
+  return selectedIds.includes(id) ? selectedIds.filter(existing => existing !== id) : [...selectedIds, id];
+}

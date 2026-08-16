@@ -29,6 +29,7 @@ import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { fetchActivationInstructions, fetchDashboard, ApiError } from "../../lib/api";
 import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
+import { saveActivationDevice } from "../../lib/activationDeviceStorage";
 import {
   computeProvisioningStages,
   shouldAutoAdvance,
@@ -39,9 +40,10 @@ import type { ActivationInstructionsResponse, DeviceType, LandlineProvider, Twil
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 export default function Activate() {
-  const params = useLocalSearchParams<{ deviceType: DeviceType; provider?: LandlineProvider }>();
+  const params = useLocalSearchParams<{ deviceType: DeviceType; provider?: LandlineProvider; protectedNumber?: string }>();
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [forwardingLoopError, setForwardingLoopError] = useState<string | null>(null);
   const [notProvisioned, setNotProvisioned] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -84,14 +86,23 @@ export default function Activate() {
     const thisLoadId = ++loadId.current;
     setIsLoading(true);
     setError(null);
+    setForwardingLoopError(null);
     setNotProvisioned(false);
-    fetchActivationInstructions(params.deviceType, params.provider)
+    fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber)
       .then(result => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
         setInstructions(result);
+        // Best-effort, non-blocking — see lib/activationDeviceStorage.ts
+        // for why this exists: the cancel code otherwise has nowhere to
+        // live once this one-time setup screen is behind the customer.
+        saveActivationDevice({ deviceType: params.deviceType, provider: params.provider });
       })
       .catch(err => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
+        if (err instanceof ApiError && err.code === "forwarding_loop") {
+          setForwardingLoopError(err.message);
+          return;
+        }
         if (err instanceof ApiError && err.code === "not_provisioned") {
           // Still setting up server-side (the household's Twilio number
           // isn't assigned yet) — not an error, just not ready yet. This
@@ -116,7 +127,7 @@ export default function Activate() {
       });
   }
 
-  useEffect(load, [params.deviceType, params.provider]);
+  useEffect(load, [params.deviceType, params.provider, params.protectedNumber]);
 
   // Real iPhone testing (2026-08-08) found the old "Still setting up your
   // line" / "Check again" state a dead end — the customer had to manually
@@ -197,6 +208,19 @@ export default function Activate() {
           <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Loading your activation code" />
           <BackToDashboardLink />
         </View>
+      </Screen>
+    );
+  }
+
+  if (forwardingLoopError) {
+    return (
+      <Screen>
+        <SetupProgress currentStep={3} />
+        <BackLink />
+        <BackToDashboardLink />
+        <Text style={styles.title} accessibilityRole="header">Choose a different number</Text>
+        <Banner variant="error" message={forwardingLoopError} />
+        <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
       </Screen>
     );
   }
@@ -304,7 +328,46 @@ export default function Activate() {
       />
 
       <PrimaryButton label="Activate protection" onPress={handleActivate} />
+
+      {/* The carrier's own "Setting Activation Succeeded" confirmation is
+          outside this app entirely — dismissing it can land the customer
+          back in the iOS Phone app, not here, so the AppState listener
+          above (which auto-advances to /verify once they DO return) isn't
+          a guarantee. This is the explicit fallback so they're never
+          stuck on this screen unsure what to do next. */}
+      {canAutoDial && (
+        <Pressable
+          onPress={() => router.push("/(setup)/verify")}
+          accessibilityRole="button"
+          style={styles.manualVerifyLink}
+        >
+          <Text style={styles.manualVerifyLinkText}>Already done this? Check now</Text>
+        </Pressable>
+      )}
+
+      <UndoForwardingSection cancelCode={instructions.cancelCode} />
     </Screen>
+  );
+}
+
+// A real iPhone test (2026-08-08/09) found the customer had to already
+// know the carrier's own undo code themselves — it was computed
+// server-side (services/activationInstructions.js) but never shown
+// anywhere. Persistent (not dismissible) and always visible on this
+// screen, not conditional on anything, since a customer may need it the
+// moment forwarding is on, before activation is even verified. The
+// Account-tab copy of this (app/(tabs)/account/turn-off-protection.tsx)
+// is what keeps it reachable after setup is complete, once this
+// one-time setup screen is behind them.
+function UndoForwardingSection({ cancelCode }: { cancelCode: string }) {
+  return (
+    <View style={styles.undoSection}>
+      <Text style={styles.undoTitle}>Need to turn protection off?</Text>
+      <Text style={styles.undoBody}>
+        Dial <Text style={styles.undoCode}>{cancelCode}</Text> from this phone at any time — this returns your
+        phone to normal calling straight away.
+      </Text>
+    </View>
   );
 }
 
@@ -458,6 +521,40 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: "600",
     fontSize: 14,
+  },
+  manualVerifyLink: {
+    alignSelf: "center",
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.xs,
+  },
+  manualVerifyLinkText: {
+    color: colors.accent,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  undoSection: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  undoTitle: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: "600",
+    marginBottom: spacing.xs,
+  },
+  undoBody: {
+    ...typography.caption,
+    color: colors.textMuted,
+  },
+  undoCode: {
+    color: colors.accent,
+    fontWeight: "700",
   },
   steps: {
     gap: spacing.sm,
