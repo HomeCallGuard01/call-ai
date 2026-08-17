@@ -1,6 +1,6 @@
 Document: Known Issues — Pre-Launch
-Version: 3.3
-Last Updated: 2026-07-31
+Version: 3.4
+Last Updated: 2026-08-17
 Status: Active
 Owner: Andrew Deane
 Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence. Severity 1 grant issue found and resolved-on-staging during migration-recovery/staging work — see docs/engineering/MIGRATION_RECOVERY_PLAN.md. Production fix still pending as a separate controlled change.
@@ -13,6 +13,18 @@ Ordered by severity. Full evidence and reasoning for each is in
 `FINAL_ACCEPTANCE_REPORT.md`; this file is the short, scannable list.
 
 ## Resolved this sprint
+
+### ~~ICO registration~~ — confirmed complete (2026-08-17)
+
+AFMD Ltd's registration with the Information Commissioner's Office is
+now confirmed complete. Checked the public-facing site (`public/privacy.html`,
+`public/terms.html`) and all other public-facing pages for wording
+describing ICO registration as pending or not yet completed — found
+none; the only ICO reference on the site is the standard "you may
+complain to the ICO" regulator-contact boilerplate in `privacy.html`
+§11, which is correct as written and needed no change regardless of our
+own registration status. No documentation update was required beyond
+this entry.
 
 ### ~~No Twilio number is ever assigned to a new customer~~ — fixed, one configuration step remains
 
@@ -299,6 +311,77 @@ whether to use a virtual business address. Must be filled in before
 launch — a UK consumer contract needs a real registered office stated.
 **This same address is also now needed for the Twilio Address object**
 above — resolving this one decision unblocks both.
+
+### Forgot Password / reset-password deep link opens an invalid URL
+
+Found during Android same-phone Voice SDK testing (2026-08-16 — full
+detail in `docs/operations/HANDOVER_2026-08-15.md` §20.7). Opening the
+password-reset email anywhere other than the phone the app is installed
+on (e.g. Mail/Safari on a Mac) produces "Safari cannot open the page
+because the address is invalid" — very likely correct/expected behaviour
+for a custom URI scheme (`homecallguard://reset-password`) with no
+handler on that device, rather than a real redirect misconfiguration, but
+this was never conclusively confirmed either way: the reset flow was
+never completed by opening the email **on** the actual target device,
+and the Supabase staging project's Auth "Redirect URLs" allow-list was
+never directly inspected (no working `supabase` CLI/Management API
+access from the environment used that session). **Action needed before
+launch:** open a real reset email on the actual phone and confirm the
+deep link hands off to the app correctly; separately, inspect the
+Supabase dashboard's Auth URL configuration directly rather than
+inferring it from symptoms.
+
+### Android incoming call does not audibly ring
+
+Found and partially fixed during Android same-phone Voice SDK testing
+(2026-08-16 — full root-cause trail in
+`docs/operations/HANDOVER_2026-08-15.md` §20.6). FCM push delivery, the
+real Android incoming-call UI, manual answer, and connected two-way audio
+are all confirmed working, twice, on a physical device — but the phone
+does not audibly ring while the incoming-call screen is waiting to be
+answered. Not yet root-caused; a narrow `patch-package` fix already
+applied and committed (disabling the Voice SDK's full-screen-intent
+auto-launch, which was silencing the ringer via an unrelated auto-accept
+side effect) fixed a more serious defect (the call auto-accepting before
+a customer could see or hear it) but did **not** resolve the missing
+ringtone itself. **Do not describe Android same-phone calling as fully
+launch-ready until this is specifically re-tested and confirmed
+audible.**
+
+### Apple Developer Program enrollment blocked — Account Holder surname
+
+iOS build work cannot start until this clears (see the iOS pre-flight
+checklist, `docs/operations/HANDOVER_2026-08-15.md` §21, item 1).
+Enrollment is currently blocked pending correction of the Account
+Holder's surname on the Apple ID/Developer account. **Action needed:**
+correct the surname with Apple before attempting enrollment again; if
+enrolling as AFMD Ltd (organization) rather than an individual, also
+check the D-U-N-S number lookup first (`developer.apple.com/enroll/duns-lookup/`),
+since that can independently add lead time.
+
+## Business account audit checklist (pre-launch)
+
+Not yet performed as a deliberate, single pass — added here as a
+short, explicit checklist rather than assumed covered by any of the
+items above. For each account below, confirm: **legal/billing entity**
+(is it AFMD Ltd, or a personal account that should be migrated?),
+**payment method on file**, **invoice email address**, and **account
+owner** (whose login/2FA controls it). None of these have been
+deliberately re-confirmed in one pass; several were set up early in the
+project and may still reflect placeholder or personal details.
+
+- [ ] **Stripe** — legal/billing entity, payment method, invoice email, owner
+- [ ] **Twilio** — legal/billing entity, payment method, invoice email, owner
+  (note: the same Twilio account is shared across staging and production
+  configuration in this repo — there is no separate staging subaccount,
+  so this is a single audit, not two)
+- [ ] **OpenAI** — legal/billing entity, payment method, invoice email, owner
+- [ ] **Railway** — legal/billing entity, payment method, invoice email, owner
+- [ ] **Supabase** — legal/billing entity, payment method, invoice email, owner
+  (both the production project `psbzynxplxfbyrbdidmn` and staging project
+  `tigwgmayeuisrxjjykqd`)
+- [ ] **Resend** — legal/billing entity, payment method, invoice email, owner
+- [ ] **IONOS** — legal/billing entity, payment method, invoice email, owner
 
 ## Severity 3 — cosmetic / optional
 
