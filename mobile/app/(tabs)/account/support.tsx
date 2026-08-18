@@ -10,6 +10,7 @@
 // than a small chevron.
 import { useState } from "react";
 import { Text, View, Pressable, Linking, StyleSheet } from "react-native";
+import { router } from "expo-router";
 import { Screen } from "../../../components/Screen";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -40,6 +41,15 @@ export default function Support() {
 
   return (
     <Screen>
+      <Pressable
+        style={styles.contactRow}
+        onPress={() => router.push("/(tabs)/account/set-up-call-forwarding")}
+        accessibilityRole="button"
+      >
+        <Text style={styles.contactLabel}>Help</Text>
+        <Text style={styles.contactValue}>Set up call forwarding</Text>
+      </Pressable>
+
       <Pressable
         style={styles.contactRow}
         onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}

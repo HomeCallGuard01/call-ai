@@ -11,10 +11,20 @@ import { Banner } from "../../components/Banner";
 import { supabase } from "../../lib/supabase";
 import { colors, spacing, typography } from "../../lib/theme";
 
-// Must match app.json's "scheme" — this is the deep link Supabase will
-// redirect to after the customer taps the emailed recovery link,
-// landing on app/reset-password.tsx (A7).
-const RESET_PASSWORD_REDIRECT_URL = "homecallguard://reset-password";
+// Redirects to the same real HTTPS page the web app already uses
+// (public/reset-password.html, server.js's own resetPasswordForEmail
+// call), NOT the app's own homecallguard:// custom scheme directly.
+// A raw custom-scheme link opened anywhere other than this exact
+// installed app (Mail/Safari on a Mac, a different device, the app not
+// installed) produces "Safari cannot open the page because the address
+// is invalid" — a real customer-facing dead end found during physical
+// Android testing (docs/operations/HANDOVER_2026-08-15.md §20.7). This
+// HTTPS page always opens in any browser, on any device, and itself
+// attempts a silent handoff into the app on mobile — falling back to
+// completing the reset directly in the browser (already fully working)
+// if that handoff doesn't happen. See reset-password.html's own comment
+// for the handoff mechanism.
+const RESET_PASSWORD_REDIRECT_URL = `${process.env.EXPO_PUBLIC_API_BASE_URL}/reset-password.html`;
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
