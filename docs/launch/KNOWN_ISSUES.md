@@ -1,6 +1,6 @@
 Document: Known Issues — Pre-Launch
-Version: 3.4
-Last Updated: 2026-08-17
+Version: 3.5
+Last Updated: 2026-08-18
 Status: Active
 Owner: Andrew Deane
 Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence. Severity 1 grant issue found and resolved-on-staging during migration-recovery/staging work — see docs/engineering/MIGRATION_RECOVERY_PLAN.md. Production fix still pending as a separate controlled change.
@@ -101,6 +101,75 @@ re-running this same edge-case test on a recurring basis, not just a
 one-time verification after deployment). No Supabase support case
 number has been recorded in this repository yet — if one exists, it
 should be added here.
+
+### ~~Forgot Password / reset-password deep link opens an invalid URL~~ — code fix resolved and pushed (2026-08-18), physical-device re-test still pending
+
+Was Severity 2, found during Android same-phone Voice SDK testing
+(2026-08-16 — full original detail in
+`docs/operations/HANDOVER_2026-08-15.md` §20.7).
+
+**Previous symptom:** on the physical mobile device, tapping the
+password-reset email could produce "Safari cannot open the page because
+the address is invalid."
+
+**Root cause:** the mobile app used `homecallguard://reset-password`
+directly as Supabase's `redirectTo` for password-reset emails — the
+app's own custom URI scheme. That depends on the installed app/custom
+scheme being available and recognised on whichever device the email
+link is opened on; opening it anywhere else (e.g. Mail/Safari on a Mac,
+a different device, the app not installed) produces the invalid-address
+error. The web flow was never affected — it already used an HTTPS
+redirect (`public/reset-password.html`) and never depended on the
+custom scheme.
+
+**Fix:** the mobile app's `redirectTo` now points at that same
+`public/reset-password.html` HTTPS page instead of the raw custom
+scheme. That page attempts an app handoff first (a safe no-op
+everywhere the app isn't installed) and provides a working browser
+fallback for completing the password reset if the handoff doesn't
+happen.
+
+- Main commit: `58c1d54`
+- Mobile branch (`sandbox/mobile-app-v1`) commit: `3f8ba90`
+
+Automated/local verification passed: `tsc --noEmit` clean; local
+backend `POST /forgot-password` against the real staging test account
+returned successfully with no Supabase error logged; `reset-password.html`
+and its inline JS confirmed served and syntactically correct;
+`EXPO_PUBLIC_API_BASE_URL` interpolation confirmed to resolve to a
+valid URL for staging. **This resolves the code defect. A final
+physical-device regression test — opening a real reset email on an
+actual phone and confirming the full flow end to end — remains
+desirable before this is called fully launch-verified, and has not yet
+been performed.**
+
+### Help → "Set up call forwarding" added as first Help item — implemented (2026-08-18)
+
+Closes the open item logged in
+`docs/operations/HANDOVER_2026-08-15.md` §20.7 ("Help screen
+improvement requested, not yet implemented"), and separately addresses
+the related "obvious return path after the dialler opens" item from the
+same section.
+
+"Set up call forwarding" is now the first Help option in the mobile
+app, above "Email support". It reuses the existing
+`GET /api/v1/activation/instructions` endpoint and the persisted
+activation-device record (the same pattern already used by the Account
+tab's "Need to turn off protection?" screen) to display the customer's
+actual forwarding instructions/code — no new backend endpoint or second
+source of truth. Mobile (iPhone/Android) customers get a button that
+opens the Phone app with the code pre-filled; landline customers get
+plain written instructions. Every path ends with an explicit
+instruction telling the customer how to return to Home Call Guard
+afterwards.
+
+- Mobile branch (`sandbox/mobile-app-v1`) commit: `3f8ba90`
+
+Local/Expo verification passed: `tsc --noEmit` clean; the Expo web
+bundler (`expo start --web`) bundled the full route tree with no
+errors and served the new screen and its parent Help screen
+successfully. **A final physical-device regression test remains
+pending.**
 
 ## Severity 1 — resolved on staging, production fix still pending (found 2026-07-30)
 
@@ -311,25 +380,6 @@ whether to use a virtual business address. Must be filled in before
 launch — a UK consumer contract needs a real registered office stated.
 **This same address is also now needed for the Twilio Address object**
 above — resolving this one decision unblocks both.
-
-### Forgot Password / reset-password deep link opens an invalid URL
-
-Found during Android same-phone Voice SDK testing (2026-08-16 — full
-detail in `docs/operations/HANDOVER_2026-08-15.md` §20.7). Opening the
-password-reset email anywhere other than the phone the app is installed
-on (e.g. Mail/Safari on a Mac) produces "Safari cannot open the page
-because the address is invalid" — very likely correct/expected behaviour
-for a custom URI scheme (`homecallguard://reset-password`) with no
-handler on that device, rather than a real redirect misconfiguration, but
-this was never conclusively confirmed either way: the reset flow was
-never completed by opening the email **on** the actual target device,
-and the Supabase staging project's Auth "Redirect URLs" allow-list was
-never directly inspected (no working `supabase` CLI/Management API
-access from the environment used that session). **Action needed before
-launch:** open a real reset email on the actual phone and confirm the
-deep link hands off to the app correctly; separately, inspect the
-Supabase dashboard's Auth URL configuration directly rather than
-inferring it from symptoms.
 
 ### Android incoming call does not audibly ring
 
