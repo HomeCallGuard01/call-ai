@@ -5,15 +5,20 @@
 //
 //   - identity-only ("bank"/"HMRC"/"police", no risky ask) stays SAFE at
 //     the rule-scoring layer (the GPT-prompt layer itself can't be unit
-//     tested without a live API call — see server.js's /process handler
-//     for the exact prompt wording, and the honest caveat in the report)
+//     tested without a live API call — see server.js's now-dead/
+//     unreachable /process handler for the exact prompt wording, and the
+//     honest caveat in the report)
 //   - urgency + a credential/money ask together escalates past the
 //     LIVE_MONITORING_WARN_MIN threshold
 //   - the new secrecy/coaching signal escalates alone, and further in
 //     combination with a payment ask
 //   - trusted contacts structurally never enter monitoring at all
-//     (attachLiveMonitoring is only ever referenced from /process's
-//     SAFE-connect branch, never from /voice's known-contact bypass)
+//     (attachLiveMonitoring is never called from /voice's known-contact
+//     branch); an unknown caller's branch of the same /voice route does
+//     call it, immediately after the fixed monitoring announcement and
+//     before dialHouseholdOrFailClosed — pre-call speech screening
+//     (2026-08-2X) removed; the old /process Gather + OpenAI classifier
+//     is preserved as dead/unreachable rollback code, not deleted
 //   - a persistence failure in recordOutcome after the call has already
 //     ended never throws / never propagates
 //
@@ -110,9 +115,13 @@ async function run() {
     check(monitor.hasSentWarning() === true, 'secrecy combined with a money-move instruction triggers the SMS warning through the real monitor');
   }
 
-  // --- trusted callers structurally never enter monitoring: attachLiveMonitoring
-  // is only ever wired into /process's SAFE-connect branch, never into
-  // /voice's known-contact bypass branch ---
+  // --- trusted caller vs unknown caller: both branches now live inside
+  // /voice (pre-call screening removal, 2026-08-2X folded the
+  // unknown-caller path directly into /voice instead of a separate
+  // <Gather action="/process">), so a coarse whole-route substring check
+  // can no longer tell the two branches' behaviour apart — split /voice's
+  // source at its first early return (the end of the known-contact
+  // branch) and check each half independently. ---
   {
     const serverSrc = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
@@ -120,29 +129,77 @@ async function run() {
     const processRouteMatch = serverSrc.match(/app\.post\("\/process",[\s\S]*?\n\}\);/);
 
     check(Boolean(voiceRouteMatch), 'sanity check: the /voice route handler is found in server.js');
-    check(Boolean(processRouteMatch), 'sanity check: the /process route handler is found in server.js');
+    check(Boolean(processRouteMatch), 'sanity check: the dead/unreachable /process route handler is still present in server.js (rollback code, not deleted)');
 
-    if (voiceRouteMatch) {
-      check(
-        !voiceRouteMatch[0].includes('attachLiveMonitoring'),
-        '/voice (the known-contact bypass route) never calls attachLiveMonitoring — trusted callers are never streamed or transcribed'
-      );
-    }
+    const voiceSrc = voiceRouteMatch ? voiceRouteMatch[0] : '';
+    const EARLY_RETURN = 'return res.type("text/xml").send(twiml.toString());';
+    const firstReturnIdx = voiceSrc.indexOf(EARLY_RETURN);
+    check(firstReturnIdx !== -1, 'sanity check: /voice contains the known-contact branch\'s early return');
+
+    const knownContactBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(0, firstReturnIdx);
+    const unknownCallerBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(firstReturnIdx);
+
+    check(
+      !knownContactBranch.includes('attachLiveMonitoring'),
+      '/voice\'s known-contact branch never calls attachLiveMonitoring — trusted callers are never streamed or transcribed'
+    );
+    check(
+      unknownCallerBranch.includes('attachLiveMonitoring'),
+      '/voice\'s unknown-caller branch calls attachLiveMonitoring — live monitoring is the sole protection mechanism for an unknown caller now'
+    );
+
+    // --- unknown-caller branch no longer depends on speech gathering or
+    // /process at all ---
+    check(
+      !unknownCallerBranch.includes('state your reason for calling'),
+      'the active unknown-caller route no longer asks the caller to state their reason for calling'
+    );
+    check(
+      !/\.gather\(/.test(unknownCallerBranch),
+      'the active unknown-caller route contains no speech <Gather> at all'
+    );
+    check(
+      !/action:\s*["']\/process["']/.test(unknownCallerBranch),
+      'the active unknown-caller route never wires /process as a Gather action — no dependency on the old screening webhook (a plain-prose mention in an explanatory comment is fine and expected)'
+    );
+
+    // --- the new fixed announcement appears exactly as specified ---
+    check(
+      unknownCallerBranch.includes('"This number is monitored and protected by Home Call Guard."'),
+      'the unknown-caller branch says exactly "This number is monitored and protected by Home Call Guard."'
+    );
+
+    // --- ordering: announcement, then live monitoring starts, then the
+    // customer is dialled — live monitoring must begin before connect,
+    // not after ---
+    const sayIdx = unknownCallerBranch.indexOf('This number is monitored and protected by Home Call Guard.');
+    const monitorIdx = unknownCallerBranch.indexOf('attachLiveMonitoring(twiml');
+    const dialIdx = unknownCallerBranch.indexOf('dialHouseholdOrFailClosed(twiml');
+    check(sayIdx !== -1 && monitorIdx !== -1 && dialIdx !== -1, 'sanity check: announcement, attachLiveMonitoring, and dialHouseholdOrFailClosed are all present in the unknown-caller branch');
+    check(
+      sayIdx < monitorIdx && monitorIdx < dialIdx,
+      'order is preserved: announcement plays, then live monitoring starts, then the protected customer is dialled'
+    );
+
+    // --- /process itself is untouched dead code: still calls
+    // attachLiveMonitoring on its own SAFE-connect path, for rollback ---
     if (processRouteMatch) {
       check(
         processRouteMatch[0].includes('attachLiveMonitoring'),
-        '/process (the unknown-caller screening route) does call attachLiveMonitoring on its SAFE-connect path'
+        '/process (dead/unreachable, preserved for rollback) still calls attachLiveMonitoring on its own SAFE-connect path'
       );
     }
 
     const invocationSites = (serverSrc.match(/[^\w]attachLiveMonitoring\(twiml/g) || []).length;
-    // Exactly 1: the single call site in /process (the function's own
-    // definition line uses the same "attachLiveMonitoring(twiml" text but
-    // is excluded by requiring a non-word character — i.e. not "function "
-    // — immediately before it).
+    // Exactly 2 beyond the definition now: the live call site in /voice's
+    // unknown-caller branch, plus the dead/unreachable call site
+    // preserved in /process. (The function's own definition line uses
+    // the same "attachLiveMonitoring(twiml" text but is excluded by
+    // requiring a non-word character — i.e. not "function " — immediately
+    // before it.)
     const definitionSites = (serverSrc.match(/function attachLiveMonitoring\(twiml/g) || []).length;
     check(definitionSites === 1, 'attachLiveMonitoring has exactly one function definition in server.js');
-    check(invocationSites === definitionSites + 1, 'attachLiveMonitoring is invoked exactly once in server.js (in /process) beyond its own definition');
+    check(invocationSites === definitionSites + 2, 'attachLiveMonitoring is invoked exactly twice beyond its own definition: live in /voice, dead in /process');
   }
 
   // --- a persistence failure in recordOutcome, after the call has already

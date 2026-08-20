@@ -155,11 +155,14 @@ function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
 }
 
-// Shared by both the known-contact bypass (/voice) and the screened-safe
-// passthrough (/process) — the only two places a call is ever forwarded
-// on to a real person. Never dials a hardcoded/fallback number: a
-// household with no phone_number on file fails closed (a clear message,
-// then hangup) rather than silently routing to the wrong destination.
+// Shared by both /voice branches (known-contact bypass and, since the
+// pre-call screening removal below, the unknown-caller path too) — the
+// only place a call is ever forwarded on to a real person. /process (the
+// old Gather + OpenAI classifier) also still calls this, but is no
+// longer reachable from the active route — see its own comment. Never
+// dials a hardcoded/fallback number: a household with no phone_number on
+// file fails closed (a clear message, then hangup) rather than silently
+// routing to the wrong destination.
 function dialHouseholdOrFailClosed(twiml, household) {
   const destination = resolveForwardingDestination(household);
 
@@ -185,12 +188,18 @@ function dialHouseholdOrFailClosed(twiml, household) {
 // full file-by-file plan). Attaches a <Start><Stream> alongside an
 // already-decided connect, so a connected call is now also live-
 // monitored — never changes whether or how the call connects, purely
-// additive. Only ever called from /process's SAFE-connect branch for an
-// unknown caller — /voice's known-contact bypass never calls this, so a
-// trusted contact's call connects exactly as it always has: no
-// transcription, no SMS monitoring, protecting family conversations'
-// privacy and avoiding transcription cost on calls that were never in
-// question.
+// additive.
+//
+// Pre-call screening removal (2026-08-2X): now called directly from
+// /voice's unknown-caller branch, immediately after the announcement and
+// before dialHouseholdOrFailClosed — live monitoring is the sole
+// protection mechanism for an unknown caller now, there is no more
+// pre-connect SCAM/SAFE gate. /voice's known-contact bypass still never
+// calls this, so a trusted contact's call connects exactly as it always
+// has: no transcription, no SMS monitoring, protecting family
+// conversations' privacy and avoiding transcription cost on calls that
+// were never in question. /process (dead, unreachable) also still calls
+// this on its own SAFE-connect path, for rollback.
 //
 // Deliberately reuses the SAME resolveForwardingDestination(household)
 // this call is already being dialled through — never a second,
@@ -396,22 +405,66 @@ app.post("/voice", async (req, res) => {
     return res.type("text/xml").send(twiml.toString());
   }
 
-  const gather = twiml.gather({
-    input: "speech",
-    action: "/process",
-    method: "POST",
-    speechTimeout: "auto",
-  });
+  // Unknown caller — pre-call speech screening removed (2026-08-2X): the
+  // old <Gather input="speech" action="/process"> + "state your reason
+  // for calling" prompt is gone from the active route. The protection
+  // mechanism for an unknown caller is now the live in-call
+  // monitoring/risk-scoring system (attachLiveMonitoring, below) for the
+  // whole duration of the call, not a one-shot pre-connect classification
+  // of the caller's opening sentence. /process (the old Gather + OpenAI
+  // SCAM/SAFE classifier) is deliberately left fully intact and
+  // unreachable, not deleted — see its own comment — so reverting to
+  // pre-call screening is a one-line change (re-adding the <Gather>
+  // below) rather than requiring git history archaeology.
+  //
+  // result: "SAFE" here does NOT mean an AI classified this caller
+  // safe — no classification happens anymore. It's forced by the calls
+  // table's `result text not null check (result in ('SAFE', 'SCAM'))`
+  // constraint, which has no value for "unscreened, connected under live
+  // monitoring". SAFE is the least-misleading value available: it's true
+  // of the actual outcome (the call was connected, not blocked), even
+  // though it no longer means what it meant when this same value was
+  // written by the old classifier. aiModel: null makes "no AI model was
+  // involved" explicit on the same row. A schema change (e.g. a third
+  // result value, or a separate "screened" flag) would represent this
+  // more precisely, but is a bigger change than this fix calls for —
+  // flagged for a product/schema decision, not made implicitly here.
+  if (household) {
+    logCall({
+      callSid: req.body.CallSid,
+      number: caller,
+      status: "Unknown",
+      result: "SAFE",
+      aiModel: null,
+      processingTimeMs: 0,
+      householdId: household.id,
+    }).catch(err => console.error("CALL LOG FAILED:", err.message));
+  } else {
+    console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
+  }
 
-  gather.say(
+  twiml.say(
     { voice: "Polly.Amy", language: "en-GB" },
-    "This call is protected by Home Call Guard. Please briefly state your reason for calling."
+    "This number is monitored and protected by Home Call Guard."
   );
+
+  attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+
+  dialHouseholdOrFailClosed(twiml, household);
 
   return res.type("text/xml").send(twiml.toString());
 });
 
 // PROCESS UNKNOWN CALL
+//
+// DEAD/UNREACHABLE as of the 2026-08-2X pre-call screening removal —
+// /voice no longer contains a <Gather action="/process">, so Twilio
+// never POSTs here for a real call. Deliberately left fully intact
+// (route, OpenAI SCAM/SAFE classifier, everything) rather than deleted,
+// as the rollback path: reverting is re-adding the <Gather> in /voice's
+// unknown-caller branch, nothing here needs to change or be restored
+// from git history. Do not delete without an explicit decision to drop
+// pre-call screening permanently.
 
 app.post("/process", async (req, res) => {
   const twiml = new VoiceResponse();
