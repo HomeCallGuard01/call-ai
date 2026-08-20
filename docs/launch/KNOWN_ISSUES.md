@@ -1,6 +1,6 @@
 Document: Known Issues — Pre-Launch
-Version: 3.5
-Last Updated: 2026-08-18
+Version: 3.6
+Last Updated: 2026-08-20
 Status: Active
 Owner: Andrew Deane
 Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence. Severity 1 grant issue found and resolved-on-staging during migration-recovery/staging work — see docs/engineering/MIGRATION_RECOVERY_PLAN.md. Production fix still pending as a separate controlled change.
@@ -170,6 +170,83 @@ bundler (`expo start --web`) bundled the full route tree with no
 errors and served the new screen and its parent Help screen
 successfully. **A final physical-device regression test remains
 pending.**
+
+### ~~Android incoming call: silent ringtone, and the incoming-call screen wasn't persistently answerable~~ — RESOLVED, physical device verified (2026-08-20)
+
+Was Severity 2. Full root-cause trail and the reviewed native patch diff are
+in `docs/operations/HANDOVER_2026-08-15.md` §20.6. Two separate defects,
+found and fixed in sequence during renewed Android same-phone Voice SDK
+testing this session, both now verified end-to-end on the physical Moto E7
+with the exact built/installed APK confirmed by SHA-256 match between the
+EAS artifact and the binary pulled back off the device.
+
+**Defect 1 — silent ringtone.** Twilio's Android `AudioSwitch` library
+(`com.twilio:audioswitch` 1.2.2) defaults to Earpiece over Speakerphone
+when nothing is plugged in — confirmed directly against that library's
+source. The incoming-call ringtone plays through whichever device
+`AudioSwitch` currently has selected, so on a bare phone it played out of
+the earpiece: technically ringing, inaudible in normal use. Fixed
+JS-only, no native rebuild: `mobile/lib/voiceClient.ts` now explicitly
+selects the Speaker device (`voice.getAudioDevices()` /
+`AudioDevice.select()`) once, immediately after a successful
+`voice.register()`, well before any call can arrive.
+
+**Defect 2 — incoming-call UI not persistently answerable.** The
+2026-08-16 patch (below) had removed `.setFullScreenIntent()` entirely
+to fix a silent-auto-accept bug, but that also removed the only
+mechanism keeping the incoming-call notification visible/answerable for
+the whole ~55s ring window — without it, the notification is only ever
+shown as a normal heads-up banner, which Android's own SystemUI
+(`HeadsUpManagerPhone`) auto-collapses after ~5-6 seconds regardless of
+app. A slow-to-answer test exposed this directly: the box visibly
+disappeared and there was no obvious way to answer. Root cause of the
+*original* 2026-08-16 bug was re-examined and found to be narrower than
+first diagnosed: Android auto-launching a full-screen intent without a
+real tap is expected, correct behaviour on this Android 10 device, not a
+platform bug — the actual defect was the app's own code treating that
+auto-launch as equivalent to a genuine user tap, silently stopping the
+ringer either way. Fixed with a second, narrowly-scoped native patch:
+`setFullScreenIntent()` is restored, but now points at its own distinct
+action (`ACTION_FULL_SCREEN_INCOMING_CALL_DISPLAY`, new) that is
+deliberately never handled by `VoiceService.onStartCommand()` — so
+Android auto-launching the full-screen surface can no longer silence or
+deprioritize the ringer, while a genuine manual tap on the notification
+(unchanged action/path) still correctly does.
+
+**A separate, real crash was also found and fixed along the way** (not
+present in the final passing test, but real and reachable): an OEM
+duplicate `ACTION_ACCEPT_CALL` intent delivery (`VoiceActivityProxy`
+forwards any intent unconditionally, no de-duplication) could cause a
+second, illegitimate `.accept()` call on an already-consumed
+`CallInvite`; the resulting `onConnectFailure` callback then removed the
+shared `CallRecord` entirely, causing the genuine `onConnected` callback
+to crash with `NullPointerException` moments later
+(`CallListenerProxy.java`). This is a confirmed, still-open upstream SDK
+issue (`twilio/twilio-voice-react-native#581`), with a community fix
+(`#687`) Twilio closed without merging. Hardened with a narrow patch
+mirroring that community fix: `onConnectFailure`, `onRinging`,
+`onConnected`, `onReconnecting`, `onReconnected`, and `onDisconnected`
+in `CallListenerProxy.java` now null-check-and-return instead of
+crashing when their `CallRecord` lookup is empty.
+
+All three fixes ship as one combined `patch-package` patch against
+`@twilio/voice-react-native-sdk@2.0.0-preview.2`
+(`mobile/patches/@twilio+voice-react-native-sdk+2.0.0-preview.2.patch`)
+plus the one JS-only speaker-selection change — required a native
+rebuild (patch-package changes only take effect in a new EAS build).
+
+**Final physical-device verification (2026-08-20), one isolated staging
+call, `CA74f17126320559083c9e8a95cf00c41a`:**
+- FCM registration and `CallInvite` delivery confirmed (`incomingCall:` logged at ring start).
+- Audible ringtone confirmed (Speaker device selected before any call could arrive).
+- Incoming-call UI stayed visible/answerable for ~14.5 seconds before answer — comfortably past the ~5-6s heads-up-collapse window that broke the previous attempt.
+- Manual `acceptCall` logged exactly once — no duplicate accept.
+- `onConnected` logged cleanly — no `FATAL EXCEPTION`, no `NullPointerException`, no "no CallRecord found" warning anywhere in the capture.
+- Twilio's own call record: `status: "completed"`, 5s duration — not `no-answer`, not `failed`.
+
+**Do not** re-open this without re-verifying on a physical device — this
+status reflects a real answered call with connected audio, not a
+simulator or a partial/auto-accepted test.
 
 ## Severity 1 — resolved on staging, production fix still pending (found 2026-07-30)
 
@@ -380,23 +457,6 @@ whether to use a virtual business address. Must be filled in before
 launch — a UK consumer contract needs a real registered office stated.
 **This same address is also now needed for the Twilio Address object**
 above — resolving this one decision unblocks both.
-
-### Android incoming call does not audibly ring
-
-Found and partially fixed during Android same-phone Voice SDK testing
-(2026-08-16 — full root-cause trail in
-`docs/operations/HANDOVER_2026-08-15.md` §20.6). FCM push delivery, the
-real Android incoming-call UI, manual answer, and connected two-way audio
-are all confirmed working, twice, on a physical device — but the phone
-does not audibly ring while the incoming-call screen is waiting to be
-answered. Not yet root-caused; a narrow `patch-package` fix already
-applied and committed (disabling the Voice SDK's full-screen-intent
-auto-launch, which was silencing the ringer via an unrelated auto-accept
-side effect) fixed a more serious defect (the call auto-accepting before
-a customer could see or hear it) but did **not** resolve the missing
-ringtone itself. **Do not describe Android same-phone calling as fully
-launch-ready until this is specifically re-tested and confirmed
-audible.**
 
 ### Apple Developer Program enrollment blocked — Account Holder surname
 
