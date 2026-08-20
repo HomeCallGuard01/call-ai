@@ -9,7 +9,7 @@
 // be verified on a real device. No UI, no CallKit customisation yet —
 // see the remaining TODO below for what "harden later" adds on top of
 // this.
-import { Voice, CallInvite, Call } from "@twilio/voice-react-native-sdk";
+import { Voice, CallInvite, Call, AudioDevice } from "@twilio/voice-react-native-sdk";
 import { Platform, AppState } from "react-native";
 import { fetchVoiceToken } from "./api";
 
@@ -52,6 +52,45 @@ function scheduleRefresh(ttlSeconds: number): void {
   }, delayMs);
 }
 
+// Twilio's AudioSwitch (Android, com.twilio:audioswitch 1.2.2) defaults
+// to Earpiece over Speakerphone when nothing is plugged in — confirmed
+// directly against that library's source, defaultPreferredDeviceList is
+// [BluetoothHeadset, WiredHeadset, Earpiece, Speakerphone]. The incoming
+// -call ringtone (native MediaPlayerManager, USAGE_VOICE_COMMUNICATION)
+// plays through whatever device AudioSwitch currently has selected, so
+// on a bare phone it plays out of the earpiece: technically ringing,
+// inaudible in normal use. Explicitly selecting Speaker here — once,
+// right after register, well before any call can arrive — records it as
+// AudioSwitch's userSelectedDevice, which persists across
+// re-enumeration and is what VoiceService.incomingCall()'s
+// audioSwitch.activate() applies when the ring actually starts. Failures
+// are swallowed deliberately: this is a best-effort audibility
+// improvement, never something that should block registration or break
+// an otherwise-working call.
+async function selectSpeakerForRinging(): Promise<void> {
+  try {
+    const { audioDevices } = await voice.getAudioDevices();
+    const speaker = audioDevices.find((device) => device.type === AudioDevice.Type.Speaker);
+    if (!speaker) {
+      if (__DEV__) {
+        console.warn(
+          "VOICE DEBUG: no Speaker audio device found, available:",
+          audioDevices.map((device) => device.type)
+        );
+      }
+      return;
+    }
+    await speaker.select();
+    if (__DEV__) {
+      console.log("VOICE DEBUG: Speaker audio device selected for ringing");
+    }
+  } catch (err) {
+    if (__DEV__) {
+      console.warn("VOICE DEBUG: failed to select Speaker audio device:", err);
+    }
+  }
+}
+
 export async function registerForIncomingCalls(): Promise<void> {
   console.log("VOICE DEBUG: registerForIncomingCalls called, registered=", registered);
   if (registered) {
@@ -75,6 +114,7 @@ export async function registerForIncomingCalls(): Promise<void> {
   await voice.register(token);
   console.log("VOICE DEBUG: voice.register resolved");
   registered = true;
+  await selectSpeakerForRinging();
   scheduleRefresh(ttlSeconds);
 }
 

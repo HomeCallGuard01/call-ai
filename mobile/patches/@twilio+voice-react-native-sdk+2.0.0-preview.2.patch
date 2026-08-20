@@ -1,21 +1,148 @@
+diff --git a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/CallListenerProxy.java b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/CallListenerProxy.java
+index c88a234..fe7e111 100644
+--- a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/CallListenerProxy.java
++++ b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/CallListenerProxy.java
+@@ -57,7 +57,11 @@ class CallListenerProxy implements Call.Listener {
+     getAudioSwitchManager().getAudioSwitch().deactivate();
+ 
+     // find call record & remove
+-    CallRecord callRecord = Objects.requireNonNull(getCallRecordDatabase().remove(new CallRecord(uuid)));
++    CallRecord callRecord = getCallRecordDatabase().remove(new CallRecord(uuid));
++    if (null == callRecord) {
++      logger.warning("onConnectFailure: no CallRecord found for UUID " + uuid + " — ignoring stale/duplicate callback");
++      return;
++    }
+ 
+     // take down notification
+     getVoiceServiceApi().cancelActiveCallNotification(callRecord);
+@@ -75,7 +79,11 @@ class CallListenerProxy implements Call.Listener {
+     debug("onRinging");
+ 
+     // find call record
+-    CallRecord callRecord = Objects.requireNonNull(getCallRecordDatabase().get(new CallRecord(uuid)));
++    CallRecord callRecord = getCallRecordDatabase().get(new CallRecord(uuid));
++    if (null == callRecord) {
++      logger.warning("onRinging: no CallRecord found for UUID " + uuid + " — ignoring stale/duplicate callback");
++      return;
++    }
+     callRecord.setCall(call);
+ 
+     // create notification & sound
+@@ -96,7 +104,11 @@ class CallListenerProxy implements Call.Listener {
+     debug("onConnected");
+ 
+     // find call record
+-    CallRecord callRecord = Objects.requireNonNull(getCallRecordDatabase().get(new CallRecord(uuid)));
++    CallRecord callRecord = getCallRecordDatabase().get(new CallRecord(uuid));
++    if (null == callRecord) {
++      logger.warning("onConnected: no CallRecord found for UUID " + uuid + " — ignoring stale/duplicate callback");
++      return;
++    }
+     callRecord.setCall(call);
+     callRecord.setTimestamp(new Date());
+     getMediaPlayerManager().stop();
+@@ -113,7 +125,11 @@ class CallListenerProxy implements Call.Listener {
+     debug("onReconnecting");
+ 
+     // find & update call record
+-    CallRecord callRecord = Objects.requireNonNull(getCallRecordDatabase().get(new CallRecord(uuid)));
++    CallRecord callRecord = getCallRecordDatabase().get(new CallRecord(uuid));
++    if (null == callRecord) {
++      logger.warning("onReconnecting: no CallRecord found for UUID " + uuid + " — ignoring stale/duplicate callback");
++      return;
++    }
+ 
+     // notify JS layer
+     sendJSEvent(
+@@ -128,7 +144,11 @@ class CallListenerProxy implements Call.Listener {
+     debug("onReconnected");
+ 
+     // find & update call record
+-    CallRecord callRecord = Objects.requireNonNull(getCallRecordDatabase().get(new CallRecord(uuid)));
++    CallRecord callRecord = getCallRecordDatabase().get(new CallRecord(uuid));
++    if (null == callRecord) {
++      logger.warning("onReconnected: no CallRecord found for UUID " + uuid + " — ignoring stale/duplicate callback");
++      return;
++    }
+ 
+     // notify JS layer
+     sendJSEvent(
+@@ -142,7 +162,11 @@ class CallListenerProxy implements Call.Listener {
+     debug("onDisconnected");
+ 
+     // find & remove call record
+-    CallRecord callRecord = Objects.requireNonNull(getCallRecordDatabase().remove(new CallRecord(uuid)));
++    CallRecord callRecord = getCallRecordDatabase().remove(new CallRecord(uuid));
++    if (null == callRecord) {
++      logger.warning("onDisconnected: no CallRecord found for UUID " + uuid + " — ignoring stale/duplicate callback");
++      return;
++    }
+ 
+     // stop audio & cancel notification
+     getMediaPlayerManager().stop();
+diff --git a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/Constants.java b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/Constants.java
+index 6b9a9f0..23f44ba 100644
+--- a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/Constants.java
++++ b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/Constants.java
+@@ -14,6 +14,11 @@ class Constants {
+   public static final String ACTION_RAISE_OUTGOING_CALL_NOTIFICATION = "ACTION_RAISE_OUTGOING_CALL_NOTIFICATION";
+   public static final String ACTION_PUSH_APP_TO_FOREGROUND = "ACTION_PUSH_APP_TO_FOREGROUND";
+   public static final String ACTION_FOREGROUND_AND_DEPRIORITIZE_INCOMING_CALL_NOTIFICATION = "ACTION_FOREGROUND_AND_DEPRIORITIZE_INCOMING_CALL_NOTIFICATION";
++  // PATCHED (call-ai, 2026-08-20, staging/dev only — see mobile/patches/):
++  // distinct action for the full-screen intent's OS-auto-launched display,
++  // deliberately never handled by VoiceService.onStartCommand() (falls to
++  // its "Unknown notification, ignoring" default) — see NotificationUtility.
++  public static final String ACTION_FULL_SCREEN_INCOMING_CALL_DISPLAY = "ACTION_FULL_SCREEN_INCOMING_CALL_DISPLAY";
+   public static final String MSG_KEY_UUID = "UUID";
+   public static final String JS_EVENT_KEY_CALL_INFO = "call";
+   public static final String JS_EVENT_KEY_CALL_INVITE_INFO = "callInvite";
 diff --git a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
-index 782b76e..19724f3 100644
+index 782b76e..5f46bd9 100644
 --- a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
 +++ b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
-@@ -170,7 +170,15 @@ class NotificationUtility {
+@@ -151,6 +151,36 @@ class NotificationUtility {
+       callRecord.getUuid());
+     PendingIntent piForegroundIntent = constructPendingIntentForActivity(context, foregroundIntent);
+ 
++    // PATCHED (call-ai, 2026-08-20, staging/dev only — see mobile/patches/):
++    // a SEPARATE PendingIntent, distinct action, for the full-screen intent
++    // below — never ACTION_FOREGROUND_AND_DEPRIORITIZE_INCOMING_CALL_NOTIFICATION.
++    // The 2026-08-16 patch removed setFullScreenIntent() entirely because
++    // Android auto-launches it without any real user tap (expected/correct
++    // behaviour on this Android 10 device, not a platform bug), and the app
++    // was treating that auto-launch as if the user had tapped to open it —
++    // silently stopping the ringer and deprioritizing the notification
++    // (VoiceService.foregroundAndDeprioritizeIncomingCallNotification)
++    // before the ring could ever be heard. That fixed the silent-ringer
++    // symptom but reintroduced a different, worse regression: without a
++    // full-screen intent, this CallStyle notification is only ever shown as
++    // a normal heads-up banner, which Android's own SystemUI auto-collapses
++    // after ~5-6 seconds (HeadsUpManagerPhone) regardless of app — leaving
++    // no persistently visible way to answer for the rest of the ~55s ring
++    // window. ACTION_FULL_SCREEN_INCOMING_CALL_DISPLAY is deliberately not
++    // handled by VoiceService.onStartCommand() (falls through to its
++    // existing "Unknown notification, ignoring" default case) — so Android
++    // auto-launching this full-screen surface can no longer stop the
++    // ringer or deprioritize the notification. setContentIntent above
++    // (piForegroundIntent, unchanged) still uses the original deprioritize
++    // action, so a genuine manual tap on the notification still correctly
++    // stops the ringer and backgrounds the call UI, exactly as before.
++    Intent fullScreenIntent = constructMessage(
++      context,
++      Constants.ACTION_FULL_SCREEN_INCOMING_CALL_DISPLAY,
++      Objects.requireNonNull(VoiceApplicationProxy.getMainActivityClass()),
++      callRecord.getUuid());
++    PendingIntent piFullScreenIntent = constructPendingIntentForActivity(context, fullScreenIntent);
++
+     Intent rejectIntent = constructMessage(
+       context,
+       Constants.ACTION_REJECT_CALL,
+@@ -170,7 +200,7 @@ class NotificationUtility {
        .setCategory(Notification.CATEGORY_CALL)
        .setAutoCancel(true)
        .setContentIntent(piForegroundIntent)
 -      .setFullScreenIntent(piForegroundIntent, true)
-+      // PATCHED (call-ai, 2026-08-16, staging/dev only — see mobile/patches/):
-+      // removed .setFullScreenIntent(piForegroundIntent, true). Android was
-+      // auto-launching this full-screen intent without any real user tap,
-+      // which the app then treated as "notification tapped"
-+      // (ACTION_FOREGROUND_AND_DEPRIORITIZE_INCOMING_CALL_NOTIFICATION),
-+      // stopping the ringer (MediaPlayerManager.stop() in VoiceService's
-+      // foregroundAndDeprioritizeIncomingCallNotification) before it could
-+      // ever be heard. setContentIntent above is untouched, so manually
-+      // tapping the notification still works normally.
++      .setFullScreenIntent(piFullScreenIntent, true)
        .addPerson(incomingCaller)
        .setStyle(NotificationCompat.CallStyle.forIncomingCall(
          incomingCaller, piRejectIntent, piAcceptIntent))
