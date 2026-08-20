@@ -1,5 +1,5 @@
 Document: Known Issues — Pre-Launch
-Version: 3.6
+Version: 3.7
 Last Updated: 2026-08-20
 Status: Active
 Owner: Andrew Deane
@@ -248,6 +248,75 @@ call, `CA74f17126320559083c9e8a95cf00c41a`:**
 status reflects a real answered call with connected audio, not a
 simulator or a partial/auto-accepted test.
 
+### ~~Unknown-caller pre-call screening replaced with live in-call monitoring~~ — implemented and physically verified on staging (2026-08-20)
+
+**Product decision:** for a trusted/known contact, nothing changes — the
+existing bypass still connects the call immediately with no monitoring
+of any kind (unaffected by this change). For an unknown/non-contact
+caller, the previous pre-call interaction (`<Gather>`-collected speech,
+"please briefly state your reason for calling", then an OpenAI SCAM/SAFE
+classification of that one sentence before deciding whether to connect)
+is removed from the live route. It's replaced by one fixed announcement,
+then the call connects immediately — the protection mechanism for an
+unknown caller is now the live in-call monitoring/risk-scoring system,
+running for the whole duration of the call, not a one-shot pre-connect
+judgement of the caller's opening sentence.
+
+**Code:** `server.js`, commit `bc1f8d0` ("Simplify unknown-caller flow to
+live monitoring"). `/voice`'s unknown-caller branch now: logs the call →
+says exactly *"This number is monitored and protected by Home Call
+Guard."* → `attachLiveMonitoring(...)` → `dialHouseholdOrFailClosed(...)`.
+Full before/after trace, file-by-file, is in the commit itself and this
+session's own investigation; not repeated here.
+
+**`/process` (the old `<Gather>` + OpenAI classifier) is dormant, not
+deleted — rollback code only, not active.** `/voice` no longer contains
+a `<Gather action="/process">`, so Twilio never reaches it for a real
+call. Reverting is a one-line change (re-adding that `<Gather>`), not
+git archaeology. Confirmed by a structural test
+(`tests/live-monitoring-scenarios.test.mjs`) that parses `server.js`
+itself to assert exactly this — that test suite passes in full (717
+checks, 0 failures) as of this change.
+
+**Physically verified on the real staging number** (`+441302490922`),
+one real inbound PSTN call, call SID `CA54240a55f17fd50e8ddb03bb44827a91`,
+2026-08-20 21:02:38–21:02:57 UTC (19s), with the actual `bc1f8d0` code
+running (confirmed on disk and via the live process, not assumed):
+
+- The caller (Andrew Deane) personally heard the new announcement,
+  *"This number is monitored and protected by Home Call Guard."*, verbatim.
+- No `<Gather>`/speech collection and no `/process` round-trip occurred —
+  confirmed both statically (the live route contains neither) and
+  behaviourally (no `SpeechResult` callback anywhere in the call's
+  lifecycle).
+- Live monitoring started before/alongside the customer connection:
+  `media_stream_started` logged at 21:02:42.677, `attachLiveMonitoring`'s
+  `<Start><Stream>` executes (non-blocking) immediately after the
+  announcement and before `<Dial>`, per the code's own fixed order.
+- Media stream connected and transcribed live: 6 transcript chunks
+  logged (21:02:48.924–21:02:57.125), ordinary benign conversation.
+- The protected customer leg connected: Twilio's own child-call record
+  shows `+447769939682` dialled, `status: completed`, 12s duration.
+- Peak risk score: 0 (`peakRiskScore: 0` at `media_stream_stopped`).
+- No SMS warning sent (`warningSent: false`).
+- No system termination (`terminatedBySystem: false`) — nothing crossed
+  the red-line threshold, correctly, since the call was entirely benign.
+- Zero Twilio notifications/errors for this call SID
+  (`notifications.list()` returned empty) and zero backend/media-stream
+  errors in the log.
+- The call completed normally: parent call `status: "completed"`.
+
+(A first attempt at this same test, earlier the same day, failed with
+"Application error" — root-caused to a `502` from the local dev
+backend's ngrok tunnel, since the process behind it had been stopped for
+an unrelated reason; not a defect in this change, and resolved by
+restarting that process before the successful test above.)
+
+**Two items intentionally not resolved by this change, flagged
+separately below:** the `result: "SAFE"` data-model semantics for a
+newly-unscreened call, and the Privacy Policy's now-inaccurate
+description of pre-call classification (see Severity 2, below).
+
 ## Severity 1 — resolved on staging, production fix still pending (found 2026-07-30)
 
 ### Every SECURITY DEFINER RPC granted EXECUTE to anon/authenticated, not just service_role
@@ -432,6 +501,57 @@ The strengthened Terms (`public/terms.html`) are a considered draft, not
 a solicitor-reviewed contract. Recommend UK consumer-law review before
 go-live, particularly §5 (Cancellation), §9 (Fair use and abuse), and §10
 (Refunds and statutory rights).
+
+### New unscreened monitored calls log `result: "SAFE"` without any classification having occurred
+
+Introduced by the unknown-caller flow change above (`bc1f8d0`), and
+deliberately not fixed as part of it — flagged there, recorded properly
+here. The `calls` table's `result` column is
+`text not null check (result in ('SAFE', 'SCAM'))` — no third value
+exists for "unscreened, connected under live monitoring only". Every
+unknown call connected via the new route logs `result: "SAFE"` and
+`aiModel: null`. `SAFE` is true of the actual outcome (the call was
+connected, not blocked) but no longer means what it meant when the old
+classifier wrote that same value — it does **not** mean an AI judged the
+caller safe. `aiModel: null` makes "no AI model was involved" explicit
+on the same row, which is the most that's representable without a schema
+change. Downstream effect: the dashboard's `describeCall` "We blocked a
+suspected scam call" copy (for `result: "SCAM"`) becomes historical-only
+— no code path can produce a new `SCAM` row anymore, since live
+monitoring's `recordMonitoringOutcome` deliberately never writes
+`result` (only `risk_score`/`decision_reason`/`warning_sent`/
+`terminated_by_system`/`termination_reason`). Not fixed here — a real
+fix (a third `result` value such as `'UNSCREENED'`, or a separate
+boolean/text `screened` column) is a schema decision for product/
+engineering to make deliberately, not something to bolt on implicitly.
+
+### Privacy Policy describes an obsolete pre-call classification step, and doesn't describe live in-call monitoring at all
+
+Also surfaced by the unknown-caller flow change (`bc1f8d0`), not fixed as
+part of it. `public/privacy.html` §2 ("Call and screening records")
+currently states: *"Where our AI classification step is used, the
+caller's spoken words are converted to text and analysed at the time of
+the call to help classify it."* This describes exactly the `/process`
+mechanism that is no longer reachable from the live route (see above) —
+as written, it now describes a data-processing activity that doesn't
+happen, which is a real UK GDPR transparency-notice accuracy problem,
+not just stale copy.
+
+Separately, and more significant: **there is no existing disclosure
+anywhere in `privacy.html` or `terms.html` of the live in-call audio
+monitoring/transcription/risk-scoring** that already runs today for
+unknown callers (previously only SAFE-classified ones; now all of them,
+per the change above) — this is now the *sole* protection mechanism for
+an unknown caller, not an edge case. The new spoken announcement (*"This
+number is monitored and protected by Home Call Guard"*) is a good
+practice and, if anything, an improvement in disclosure timing over the
+old wording (it now precedes any monitoring, rather than following it) —
+but a brief on-call announcement alone is unlikely to fully satisfy
+written transparency-notice obligations on its own. Needs updated
+privacy-policy wording describing what actually happens now. Recommend
+routing through the same UK consumer-law/solicitor review as the Terms
+entry above, rather than drafting this wording unilaterally — flagging
+it as the next required launch change, not deciding the wording here.
 
 ### service_role has no INSERT/UPDATE grant on public.user_roles
 
