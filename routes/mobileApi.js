@@ -35,6 +35,7 @@ const {
 } = require("../services/activationInstructions");
 const { setHouseholdPhoneNumber } = require("../services/householdPhoneNumber");
 const { buildVoiceAccessToken } = require("../services/voiceAccessToken");
+const { resolvePushCredentialSid } = require("../services/voicePushCredential");
 
 const router = express.Router();
 
@@ -482,21 +483,35 @@ router.post("/api/v1/household/phone-number", requireAuthApi, requireEntitlement
 // receive this way, and issuing a live-callable identity to one would be
 // pure unnecessary exposure. Fails closed (503) if the four Twilio
 // credentials aren't configured, exactly like every other Twilio-backed
-// route in this file — never a partial/malformed token.
+// route in this file — never a partial/malformed token. Also fails
+// closed (400) if the caller's ?platform= query param is missing or
+// unrecognised — see resolvePushCredentialSid below.
 router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req, res) => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const apiKeySid = process.env.TWILIO_VOICE_API_KEY_SID;
   const apiKeySecret = process.env.TWILIO_VOICE_API_KEY_SECRET;
   const twimlAppSid = process.env.TWILIO_VOICE_TWIML_APP_SID;
-  // Optional — see services/voiceAccessToken.js's own comment on why a
-  // missing value degrades (registration still succeeds, incoming calls
-  // just can't be pushed) rather than failing closed like the four above.
-  const pushCredentialSid = process.env.TWILIO_VOICE_PUSH_CREDENTIAL_SID;
 
   if (!accountSid || !apiKeySid || !apiKeySecret || !twimlAppSid) {
     console.error("VOICE ACCESS TOKEN ERROR: Twilio Voice SDK credentials not configured");
     return res.status(503).json({ error: "voice_not_configured" });
   }
+
+  // Platform-specific push credential (2026-08-2X, iOS pre-flight):
+  // Android (FCM) and iOS (APN/VoIP) are different Twilio Push Credential
+  // resources — the client must say which platform it is. Fails closed
+  // (400) for an unsupported/missing platform rather than silently
+  // defaulting to either platform's credential — see
+  // services/voicePushCredential.js for why and its own tests.
+  const credentialResolution = resolvePushCredentialSid(req.query.platform, process.env);
+  if (!credentialResolution.ok) {
+    console.error("VOICE ACCESS TOKEN ERROR: missing or unsupported platform:", req.query.platform);
+    return res.status(400).json({ error: "unsupported_platform" });
+  }
+  // Optional — see services/voiceAccessToken.js's own comment on why a
+  // missing value degrades (registration still succeeds, incoming calls
+  // just can't be pushed) rather than failing closed like the four above.
+  const pushCredentialSid = credentialResolution.sid;
 
   try {
     const { token, identity, ttlSeconds } = buildVoiceAccessToken({

@@ -3,6 +3,7 @@
 // Bearer header — requireAuthApi.js verifies it server-side. Deliberately
 // not a generic "wrap every possible endpoint" client: only the specific
 // calls the V1 app actually makes, matching the Launch Feature Matrix.
+import { Platform } from "react-native";
 import { supabase } from "./supabase";
 import type {
   RegisterResponse,
@@ -179,8 +180,14 @@ export async function fetchDashboard(): Promise<DashboardResponse> {
 // Callers are responsible for re-fetching before ttlSeconds elapses (or
 // on a registration failure that looks like an expired token) — the
 // Voice SDK client itself does not auto-refresh.
+//
+// ?platform= is required (2026-08-2X, iOS pre-flight): the backend picks
+// an entirely different Twilio Push Credential for Android (FCM) vs iOS
+// (APN/VoIP) and fails closed (400) without a recognised value — see
+// routes/mobileApi.js's resolvePushCredentialSid. Platform.OS already
+// returns exactly "ios" or "android" on this app's two shipping targets.
 export async function fetchVoiceToken(): Promise<VoiceTokenResponse> {
-  const response = await authorizedFetch("/api/v1/voice/token");
+  const response = await authorizedFetch(`/api/v1/voice/token?platform=${Platform.OS}`);
   return parseJsonOrThrow<VoiceTokenResponse>(response, true);
 }
 
