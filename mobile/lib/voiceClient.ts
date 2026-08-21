@@ -114,7 +114,15 @@ export async function registerForIncomingCalls(): Promise<void> {
   await voice.register(token);
   console.log("VOICE DEBUG: voice.register resolved");
   registered = true;
-  await selectSpeakerForRinging();
+  if (Platform.OS === "android") {
+    // Android-only: see selectSpeakerForRinging's own comment for why —
+    // AudioSwitch's Earpiece-first default is an Android/AudioSwitch-
+    // specific behaviour with no CallKit equivalent. On iOS, incoming-call
+    // audio routing is owned entirely by CallKit; explicitly selecting a
+    // device here would be untested and could affect the connected call's
+    // routing too, not just the ring.
+    await selectSpeakerForRinging();
+  }
   scheduleRefresh(ttlSeconds);
 }
 
