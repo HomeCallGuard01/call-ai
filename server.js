@@ -1274,6 +1274,14 @@ app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
+// Clean, permanent URL for the Privacy Policy — same file express.static
+// already serves at /privacy.html, just without the extension, since App
+// Store Connect / Play Console listings reference a stable /privacy URL.
+// No wording change: this is the exact same public/privacy.html.
+app.get("/privacy", (req, res) => {
+  res.sendFile(__dirname + "/public/privacy.html");
+});
+
 // Auth only, deliberately not requireEntitlement — an unsubscribed
 // household must still be able to reach the dashboard shell to see the
 // "Get Protected Today" prompt and start Checkout from it. The page's own
