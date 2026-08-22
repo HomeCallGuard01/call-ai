@@ -652,6 +652,12 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // twilioNumber deliberately not included — never sent to the browser.
     twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
     phoneNumberAdded: !!req.household.phone_number,
+    // The household's own destination number, for the UI to show a
+    // persistent "safe calls ring X" confirmation instead of a
+    // permanently-blank input — this is the customer's own data, read
+    // back to their own authenticated session, not a third-party
+    // exposure. Distinct from twilioNumber above, which stays withheld.
+    phoneNumber: req.household.phone_number || null,
     activationVerifiedAt: req.household.activation_verified_at || null,
     // Surfaced so the UI can hint "we saw a call" even before the
     // customer taps the verify button themselves — same field name/

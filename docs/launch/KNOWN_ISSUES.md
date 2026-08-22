@@ -1,6 +1,6 @@
 Document: Known Issues — Pre-Launch
-Version: 3.7
-Last Updated: 2026-08-20
+Version: 3.8
+Last Updated: 2026-08-22
 Status: Active
 Owner: Andrew Deane
 Related Sprint(s): Launch Polish Sprint (post Sprint 9, unnumbered) — see FINAL_ACCEPTANCE_REPORT.md for full evidence. Severity 1 grant issue found and resolved-on-staging during migration-recovery/staging work — see docs/engineering/MIGRATION_RECOVERY_PLAN.md. Production fix still pending as a separate controlled change.
@@ -588,6 +588,19 @@ correct the surname with Apple before attempting enrollment again; if
 enrolling as AFMD Ltd (organization) rather than an individual, also
 check the D-U-N-S number lookup first (`developer.apple.com/enroll/duns-lookup/`),
 since that can independently add lead time.
+
+### ~~Password reveal control uses novelty emoji~~ — fixed
+
+Was present in `public/register.html`, `public/login.html`, and
+`public/reset-password.html`: each password field's visibility toggle
+rendered as an 👁 (eye) / 🙈 (monkey-covering-eyes) emoji pair. Replaced
+in all three files with a conventional inline eye / eye-slash SVG icon
+(no emoji), toggled via `btn.innerHTML` in place of the old
+`btn.textContent` swap — the existing `aria-label` toggle logic
+("Show password" / "Hide password", correctly dynamic already) was
+otherwise unchanged. The mobile app has no equivalent reveal control on
+any password field today; any one added later should follow this same
+icon convention.
 
 ## Business account audit checklist (pre-launch)
 

@@ -127,7 +127,7 @@ if (!statusSource) {
   check(confirming.confirmingSpinner === true, 'confirming: the spinner/progress indicator is shown');
 
   const success = elementsVisibility('success');
-  check(success.successActions === true, 'success: the "Continue to setup" action is shown');
+  check(success.successActions === true, 'success: the "Get Protected Now" action is shown');
   check(success.confirmingSpinner === false, 'success: the spinner is no longer shown once activation is confirmed');
   check(
     fakeDocument.elements.statusTitle.textContent === 'Payment successful',

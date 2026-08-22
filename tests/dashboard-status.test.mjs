@@ -52,15 +52,17 @@ const progressSource = extractBetween(html, 'computeChecklistProgress');
 const memberSinceSource = extractBetween(html, 'formatMemberSince');
 const describeCallSource = extractBetween(html, 'describeCall');
 const muteStatsSource = extractBetween(html, 'shouldMuteStatsGrid');
+const onboardingStepSource = extractBetween(html, 'computeOnboardingStep');
+const formatUkPhoneSource = extractBetween(html, 'formatUkPhoneForDisplay');
 
-if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource) {
+if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource || !onboardingStepSource || !formatUkPhoneSource) {
   console.error('✗ could not find one or more expected TEST-EXTRACT markers in upload.html — test cannot run');
   failures++;
 } else {
   // Both functions are evaluated together, in the same combined source,
   // since computeSetupChecklist calls computeProtectionState internally
   // — matching how they actually run together in the real page.
-  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid };`;
+  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\n${onboardingStepSource}\n${formatUkPhoneSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid, computeOnboardingStep, formatUkPhoneForDisplay };`;
   const {
     computeProtectionState,
     computeSetupChecklist,
@@ -69,6 +71,8 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
     shouldMuteStatsGrid,
     formatMemberSince,
     describeCall,
+    computeOnboardingStep,
+    formatUkPhoneForDisplay,
   } = new Function(combinedSource)();
 
   // --- computeProtectionState ---
@@ -235,6 +239,57 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   check(
     shouldMuteStatsGrid({ twilioNumber: null, twilioProvisioningStatus: 'failed' }) === true,
     'shouldMuteStatsGrid: muted when provisioning has failed too'
+  );
+
+  // --- computeOnboardingStep ---
+  // Replaces the old flat six-item checklist with exactly one current
+  // step — the fix for the launch-blocking defect where "Protection
+  // activated" showed as checked (protectedNumberAssigned, true the
+  // instant a Twilio number is purchased) directly alongside "Turn on
+  // call forwarding" still unchecked, on the very same screen.
+
+  check(
+    computeOnboardingStep({ phoneNumberAdded: false, twilioProvisioningStatus: 'pending', activationVerifiedAt: null }) === 'identify',
+    'computeOnboardingStep: no phone number on file yet is "identify", regardless of anything else'
+  );
+
+  check(
+    computeOnboardingStep({ phoneNumberAdded: true, twilioProvisioningStatus: 'pending', activationVerifiedAt: null }) === 'preparing',
+    'computeOnboardingStep: phone number saved but Twilio provisioning not yet active is "preparing" — never jumps straight to the activation code'
+  );
+
+  check(
+    computeOnboardingStep({ phoneNumberAdded: true, twilioProvisioningStatus: 'active', activationVerifiedAt: null }) === 'activate',
+    'computeOnboardingStep: number saved and provisioning active, but no verified call yet, is "activate"'
+  );
+
+  check(
+    computeOnboardingStep({ phoneNumberAdded: true, twilioProvisioningStatus: 'active', activationVerifiedAt: '2026-08-22T12:00:00.000Z' }) === 'active',
+    'computeOnboardingStep: only genuinely reaches "active" once activationVerifiedAt (a real routed call) is set'
+  );
+
+  check(
+    computeOnboardingStep({ phoneNumberAdded: true, twilioProvisioningStatus: 'active', activationVerifiedAt: '2026-08-22T12:00:00.000Z', contactsUploaded: 0 }) === 'active',
+    'computeOnboardingStep: reaches "active" regardless of contactsUploaded — trusted contacts must never block initial protection activation'
+  );
+
+  check(
+    computeOnboardingStep(null) === 'identify',
+    'computeOnboardingStep: missing data entirely defaults to the first step, never "active"'
+  );
+
+  // --- formatUkPhoneForDisplay ---
+
+  check(
+    formatUkPhoneForDisplay('+447715562700') === '07715 562700',
+    'formatUkPhoneForDisplay: formats a real E.164 UK number as a readable national-format group'
+  );
+
+  check(formatUkPhoneForDisplay(null) === '', 'formatUkPhoneForDisplay: empty string, not "null", for a missing number');
+  check(formatUkPhoneForDisplay('') === '', 'formatUkPhoneForDisplay: empty string in is empty string out');
+  check(
+    formatUkPhoneForDisplay('not-a-number') === 'not-a-number',
+    'formatUkPhoneForDisplay: falls back to the raw value rather than hiding an unexpected shape outright'
   );
 }
 

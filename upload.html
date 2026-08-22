@@ -956,6 +956,82 @@
       grid-template-columns: 1fr;
     }
   }
+
+  /* Compact-but-readable pass for phone widths — the shield icon and
+     heading were sized for a desktop card and forced excessive scrolling
+     on a real device (confirmed against real production screenshots at
+     390px wide). Font sizes are reduced, never below 18px on the
+     heading, so this stays compact without becoming hard to read for
+     the older, non-technical customers this product targets. */
+  @media (max-width: 480px) {
+    .status-card {
+      padding: 28px 18px;
+    }
+
+    .shield-icon {
+      width: 96px;
+      height: 96px;
+    }
+
+    .status-title {
+      font-size: 22px;
+      margin: 14px 0 8px;
+    }
+
+    .status-sub {
+      font-size: 15px;
+    }
+
+    .onboarding-card h2 {
+      font-size: 20px;
+    }
+  }
+
+  .onboarding-card {
+    text-align: center;
+  }
+
+  .onboarding-card .field-hint {
+    max-width: 440px;
+    margin: 0 auto 16px;
+  }
+
+  .onboarding-card form,
+  .onboarding-card #callForwardingSetupForm,
+  .onboarding-card #callForwardingInstructions,
+  .onboarding-card #phoneNumberConfirmed {
+    max-width: 360px;
+    margin: 0 auto;
+    text-align: left;
+  }
+
+  .activation-code-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .copy-code-button {
+    background: #14532d;
+    border: 1px solid #22c55e;
+    color: #bbf7d0;
+    padding: 10px 18px;
+    font-weight: 700;
+    font-size: 15px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .copy-code-button:hover {
+    background: #166534;
+  }
+
+  .copy-confirmation {
+    font-size: 13px;
+    color: #22c55e;
+    margin: 6px 0 0;
+  }
 </style>
 </head>
 
@@ -1006,7 +1082,7 @@
     </p>
 
     <div id="successActions" hidden>
-      <button type="button" id="continueToSetupButton">Continue to setup</button>
+      <button type="button" id="continueToSetupButton">Get Protected Now</button>
     </div>
 
     <div id="delayedActions" hidden>
@@ -1015,59 +1091,39 @@
   </section>
 
   <div id="protectedContent" hidden>
-    <section class="card">
-      <h2>Your setup progress</h2>
-      <p class="checklist-progress" id="checklistProgress"></p>
-      <ul class="checklist" id="setupChecklist">
-        <li class="checklist-item" data-item="accountConfirmed">
-          <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Account created</span>
-        </li>
-        <li class="checklist-item" data-item="subscriptionActive">
-          <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Subscription active</span>
-        </li>
-        <li class="checklist-item" data-item="protectedNumberAssigned">
-          <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Protection activated</span>
-        </li>
-        <li class="checklist-item" data-item="phoneNumberAdded">
-          <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Enter the phone number you want to protect</span>
-        </li>
-        <li class="checklist-item" data-item="contactsUploaded">
-          <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Add trusted contacts</span>
-        </li>
-        <li class="checklist-item" data-item="callForwardingCompleted">
-          <span class="checklist-icon" aria-hidden="true">✓</span>
-          <span class="checklist-label">Turn on call forwarding</span>
-        </li>
-      </ul>
+    <section class="card onboarding-card" id="onboardingCard">
 
-      <div id="phoneNumberSection" class="phone-number-section">
-        <h3>What number should protected calls ring?</h3>
-        <p class="field-hint">Trusted callers and calls we confirm are safe will be connected to this number.</p>
+      <div id="stepIdentify">
+        <h2>Who are we protecting?</h2>
+        <p class="field-hint">Tell us where safe, trusted calls should ring.</p>
 
-        <label for="householdPhoneNumberInput">Your phone number</label>
-        <input
-          type="tel"
-          id="householdPhoneNumberInput"
-          placeholder="e.g. 07700 900123 or 0161 123 4567"
-          autocomplete="tel"
-        >
+        <form id="phoneNumberForm">
+          <label for="householdPhoneNumberInput">Phone number</label>
+          <input
+            type="tel"
+            id="householdPhoneNumberInput"
+            placeholder="e.g. 07700 900123 or 0161 123 4567"
+            autocomplete="tel"
+          >
+          <p id="phoneNumberError" class="error-banner" role="alert" hidden></p>
+          <button type="submit" id="savePhoneNumberButton">Save number</button>
+        </form>
 
-        <p id="phoneNumberError" class="error-banner" role="alert" hidden></p>
-        <p id="phoneNumberSavedNote" class="phone-number-saved-note" role="status" hidden>Saved.</p>
-
-        <button type="button" class="secondary-action-button" id="savePhoneNumberButton">Save number</button>
+        <div id="phoneNumberConfirmed" hidden>
+          <p class="protected-number-label">Safe calls will ring:</p>
+          <p class="protected-number" id="protectedNumberDisplay"></p>
+          <button type="button" class="secondary-action-button" id="changePhoneNumberButton">Change</button>
+        </div>
       </div>
 
-      <div id="callForwardingSection" class="phone-number-section" hidden>
-        <h3>Turn on call forwarding</h3>
-        <p class="field-hint">Forward the phone you want protected to Home Call Guard, so we can screen your calls. Tell us what you're forwarding from to get your exact code.</p>
+      <div id="stepPreparing" hidden>
+        <h2>Setting up your protection…</h2>
+        <p class="field-hint">This usually only takes a few seconds. This page updates automatically.</p>
+      </div>
 
-        <p id="callForwardingVerifiedNote" class="phone-number-saved-note" role="status" hidden>✓ Call forwarding verified — we've seen a call come through.</p>
+      <div id="stepActivate" hidden>
+        <h2>Turn on protection</h2>
+        <p class="field-hint">Tell us what you're forwarding calls from to get your activation code.</p>
 
         <div id="callForwardingSetupForm">
           <label for="deviceTypeSelect">What are you forwarding calls from?</label>
@@ -1092,18 +1148,33 @@
           </div>
 
           <p id="callForwardingError" class="error-banner" role="alert" hidden></p>
-          <button type="button" class="secondary-action-button" id="getForwardingCodeButton">Get my forwarding code</button>
+          <button type="button" id="getForwardingCodeButton">Get my activation code</button>
         </div>
 
         <div id="callForwardingInstructions" hidden>
           <p id="preliminaryCallNote" class="field-hint" hidden></p>
-          <p><strong>Dial this on the phone you're protecting:</strong><br><span id="forwardingCode" class="forwarding-code"></span></p>
-          <p class="field-hint">To turn call forwarding off again later, dial:<br><span id="forwardingCancelCode" class="forwarding-code"></span></p>
-          <p class="field-hint">Once you've dialled the code above, come back here and tap the button below.</p>
-          <button type="button" class="secondary-action-button" id="verifyForwardingButton">I've done this — check now</button>
+          <p>On the phone you want Home Call Guard to protect, open the Phone keypad and enter the code below exactly as shown, then press Call.</p>
+          <div class="activation-code-row">
+            <span id="forwardingCode" class="forwarding-code"></span>
+            <button type="button" class="copy-code-button" id="copyCodeButton" hidden>Copy code</button>
+          </div>
+          <p id="copyCodeConfirmation" class="copy-confirmation" role="status" hidden>Copied.</p>
+          <p class="field-hint">This does not change your phone number — it only turns on call protection.</p>
+          <p class="field-hint">To turn protection off again later, dial:<br><span id="forwardingCancelCode" class="forwarding-code"></span></p>
+          <p class="field-hint">Once you've entered the code and pressed Call, tap the button below.</p>
+          <button type="button" id="verifyForwardingButton">I've done this — check now</button>
           <p id="verifyForwardingResult" class="field-hint" role="status" hidden></p>
         </div>
+
+        <p class="field-hint"><button type="button" class="secondary-action-button change-number-link" id="changeNumberFromActivateButton">Change where safe calls ring</button></p>
       </div>
+
+      <div id="stepActive" hidden>
+        <h2>✓ Protection active</h2>
+        <p class="field-hint">Calls to your phone are being checked for you.</p>
+        <p class="field-hint"><button type="button" class="secondary-action-button change-number-link" id="changeNumberFromActiveButton">Change where safe calls ring</button></p>
+      </div>
+
     </section>
 
     <h2 class="section-heading">
@@ -1357,6 +1428,45 @@
   }
   // TEST-EXTRACT-END: computeChecklistProgress
 
+  // TEST-EXTRACT-START: computeOnboardingStep
+  // Single source of truth for which one onboarding card is shown post-
+  // payment — replaces the old flat six-item checklist (which showed
+  // every step at once, including a "Protection activated" item that
+  // really only meant "a number was purchased," visibly contradicting
+  // the still-incomplete steps beside it). Only one step is ever true at
+  // a time, and "active" requires the same genuine backend fact
+  // (activationVerifiedAt) computeSetupChecklist already required for
+  // callForwardingCompleted — this never invents a new, looser
+  // definition of "protected." "preparing" covers the rare moment a
+  // customer has entered their number before Twilio provisioning (which
+  // normally completes within seconds of the webhook) has finished —
+  // there is deliberately no activation code shown before there's a
+  // number to embed in one.
+  function computeOnboardingStep(data) {
+    const checklist = computeSetupChecklist(data);
+    if (!checklist.phoneNumberAdded) return "identify";
+    if (!checklist.protectedNumberAssigned) return "preparing";
+    if (!checklist.callForwardingCompleted) return "activate";
+    return "active";
+  }
+  // TEST-EXTRACT-END: computeOnboardingStep
+
+  // TEST-EXTRACT-START: formatUkPhoneForDisplay
+  // Plain E.164 (+447700900123) is never shown to a customer — this is
+  // display-only formatting of the household's own number, read back
+  // from /dashboard-data's phoneNumber field (added specifically so the
+  // "safe calls ring X" confirmation is never blank — see server.js's
+  // /dashboard-data). Falls back to the raw value for anything that
+  // doesn't match the expected UK shape rather than hiding it outright.
+  function formatUkPhoneForDisplay(e164) {
+    if (!e164) return "";
+    const match = /^\+44(\d{10})$/.exec(e164);
+    if (!match) return e164;
+    const national = "0" + match[1];
+    return national.slice(0, 5) + " " + national.slice(5);
+  }
+  // TEST-EXTRACT-END: formatUkPhoneForDisplay
+
   // TEST-EXTRACT-START: formatMemberSince
   // Plain "Month Year" — never a raw ISO timestamp, and never invents a
   // date when none is available.
@@ -1437,12 +1547,13 @@
 
     // "You're protected" must never show merely because Twilio
     // provisioning succeeded, or because the customer clicked a
-    // self-report checkbox — it requires every genuinely-backend-tracked
-    // setup step (see computeSetupChecklist's own comment) to be true.
-    const checklist = computeSetupChecklist(data);
-    const allStepsComplete = Object.keys(checklist).every(function (k) {
-      return checklist[k];
-    });
+    // self-report checkbox — it requires computeOnboardingStep to have
+    // reached "active", which itself requires activationVerifiedAt (a
+    // real routed call), never a self-report. Deliberately not gated on
+    // contactsUploaded — trusted contacts is an encouraged follow-up, not
+    // a requirement for protection to genuinely be active (see
+    // computeOnboardingStep's own comment).
+    const allStepsComplete = computeOnboardingStep(data) === "active";
 
     if (state === "active" && allStepsComplete) {
       if (title) title.textContent = "You're protected";
@@ -1459,41 +1570,55 @@
     }
   }
 
-  function renderChecklist(data) {
-    const checklist = computeSetupChecklist(data);
+  // True only while the customer has explicitly chosen to change their
+  // already-saved number from a later step (see changeNumberFromActivate/
+  // ActiveButton below) — an explicit action, never a silent overwrite.
+  // Does not affect activationVerifiedAt/callForwardingCompleted: the
+  // physical call-forwarding dial on the protected phone doesn't need
+  // redoing just because the *destination* for safe calls changed.
+  let editingPhoneNumber = false;
 
-    Object.keys(checklist).forEach(function (key) {
-      const item = document.querySelector('.checklist-item[data-item="' + key + '"]');
-      if (item) {
-        item.dataset.done = checklist[key] ? "true" : "false";
-      }
+  // Shows exactly one of the four onboarding cards (computeOnboardingStep
+  // is the single source of truth for which one), instead of the old
+  // approach of showing every section at once with a checklist trying to
+  // describe which parts were "done." Only stepIdentify has real
+  // customer-entered state to restore (the saved phone number); the
+  // other three are stateless views driven entirely by which step is
+  // current.
+  function renderOnboardingStep(data) {
+    const step = editingPhoneNumber ? "identify" : computeOnboardingStep(data);
+
+    ["stepIdentify", "stepPreparing", "stepActivate", "stepActive"].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.hidden = (id !== "step" + step.charAt(0).toUpperCase() + step.slice(1));
     });
 
-    // Call-forwarding setup only makes sense once there's a protected
-    // Twilio number to forward calls to. Once activation is genuinely
-    // verified (checklist.callForwardingCompleted, backed by
-    // households.activation_verified_at — never a self-report), the
-    // setup form is replaced by a plain confirmation rather than staying
-    // visible with no further action needed.
-    const callForwardingSection = document.getElementById("callForwardingSection");
-    const callForwardingSetupForm = document.getElementById("callForwardingSetupForm");
-    const callForwardingVerifiedNote = document.getElementById("callForwardingVerifiedNote");
-    const callForwardingInstructions = document.getElementById("callForwardingInstructions");
-    if (callForwardingSection) {
-      callForwardingSection.hidden = !checklist.protectedNumberAssigned;
+    if (step === "identify") {
+      renderPhoneNumberDisplay(data);
     }
-    if (callForwardingSetupForm) {
-      callForwardingSetupForm.hidden = checklist.callForwardingCompleted;
-    }
-    if (callForwardingVerifiedNote) {
-      callForwardingVerifiedNote.hidden = !checklist.callForwardingCompleted;
-    }
-    if (callForwardingInstructions && checklist.callForwardingCompleted) {
-      callForwardingInstructions.hidden = true;
-    }
+  }
 
-    const progress = computeChecklistProgress(checklist);
-    setText("checklistProgress", progress.completed + " of " + progress.total + " steps complete");
+  // Persistent "safe calls will ring X" confirmation once a number is on
+  // file — replaces the old behaviour of blanking the input back to
+  // empty on every successful save with only a small transient "Saved."
+  // note and nothing shown on any later page load (the box would render
+  // blank forever, since /dashboard-data never used to return the real
+  // value at all). data.phoneNumber is the household's own number, read
+  // back to their own authenticated session — see server.js's
+  // /dashboard-data comment.
+  function renderPhoneNumberDisplay(data) {
+    const form = document.getElementById("phoneNumberForm");
+    const confirmed = document.getElementById("phoneNumberConfirmed");
+    const display = document.getElementById("protectedNumberDisplay");
+
+    const hasNumber = !!(data && data.phoneNumber);
+    const showForm = editingPhoneNumber || !hasNumber;
+
+    if (form) form.hidden = !showForm;
+    if (confirmed) confirmed.hidden = showForm;
+    if (display && hasNumber) {
+      display.textContent = formatUkPhoneForDisplay(data.phoneNumber);
+    }
   }
 
   function renderTrustedContacts(contacts) {
@@ -1574,7 +1699,11 @@
     if (!membership) return;
 
     if (protectionNoteEl) {
-      protectionNoteEl.textContent = computeProtectionState(data) === "active"
+      // Same fix as the main status card and the old checklist: this
+      // must never claim protection is active from provisioning alone
+      // (computeProtectionState), only once computeOnboardingStep has
+      // genuinely reached "active" (activationVerifiedAt set).
+      protectionNoteEl.textContent = computeOnboardingStep(data) === "active"
         ? "Your protection is active."
         : "Your protection is being set up.";
     }
@@ -1637,6 +1766,24 @@
   const forwardingCancelCodeEl = document.getElementById("forwardingCancelCode");
   const verifyForwardingButtonEl = document.getElementById("verifyForwardingButton");
   const verifyForwardingResultEl = document.getElementById("verifyForwardingResult");
+  const copyCodeButtonEl = document.getElementById("copyCodeButton");
+  const copyCodeConfirmationEl = document.getElementById("copyCodeConfirmation");
+
+  // Feature-detected (navigator.clipboard is unavailable on some older/
+  // non-HTTPS contexts) — the button itself stays hidden rather than
+  // shown-but-broken when unsupported (see where it's revealed above,
+  // alongside the code itself being populated).
+  if (copyCodeButtonEl) {
+    copyCodeButtonEl.addEventListener("click", async function () {
+      try {
+        await navigator.clipboard.writeText(forwardingCodeEl ? forwardingCodeEl.textContent : "");
+        if (copyCodeConfirmationEl) copyCodeConfirmationEl.hidden = false;
+      } catch (err) {
+        // Clipboard permission denied or unavailable — the code is still
+        // visible on-screen to read and enter manually either way.
+      }
+    });
+  }
 
   if (deviceTypeSelectEl) {
     deviceTypeSelectEl.addEventListener("change", function () {
@@ -1681,7 +1828,7 @@
         if (!res.ok) {
           const body = await res.json().catch(function () { return {}; });
           if (callForwardingErrorEl) {
-            callForwardingErrorEl.textContent = body.message || "We couldn't get your forwarding code just now. Please try again.";
+            callForwardingErrorEl.textContent = body.message || "We couldn't get your activation code just now. Please try again.";
             callForwardingErrorEl.hidden = false;
           }
           return;
@@ -1691,6 +1838,8 @@
 
         if (forwardingCodeEl) forwardingCodeEl.textContent = instructions.code;
         if (forwardingCancelCodeEl) forwardingCancelCodeEl.textContent = instructions.cancelCode;
+        if (copyCodeButtonEl) copyCodeButtonEl.hidden = !navigator.clipboard;
+        if (copyCodeConfirmationEl) copyCodeConfirmationEl.hidden = true;
 
         if (preliminaryCallNoteEl) {
           if (instructions.requiresPreliminaryCall) {
@@ -1705,7 +1854,7 @@
         if (callForwardingInstructionsEl) callForwardingInstructionsEl.hidden = false;
       } catch (err) {
         if (callForwardingErrorEl) {
-          callForwardingErrorEl.textContent = "We couldn't get your forwarding code just now. Please try again.";
+          callForwardingErrorEl.textContent = "We couldn't get your activation code just now. Please try again.";
           callForwardingErrorEl.hidden = false;
         }
       } finally {
@@ -1728,8 +1877,8 @@
         if (verifyForwardingResultEl) {
           verifyForwardingResultEl.hidden = false;
           verifyForwardingResultEl.textContent = body.verified
-            ? "✓ Verified — we've seen a call come through from your forwarded number."
-            : "We haven't seen a call from your forwarded number yet. Dial the code above from the phone you're protecting, wait a few seconds, then tap this button again.";
+            ? "✓ Verified — we've seen a call come through, so protection is now on."
+            : "We're checking for a call through your new protection — we haven't seen one yet. If you've just entered the code, wait a few seconds and tap this button again.";
         }
 
         if (body.verified) {
@@ -1748,60 +1897,91 @@
   }
 
   // Household phone number — the real destination trusted/screened-safe
-  // calls are forwarded to (services/callRouting.js). The input is never
-  // pre-filled from a fetched value: /dashboard-data deliberately never
-  // returns phone_number (same "don't expose it unnecessarily" rule
-  // twilioNumber already follows), so this is write-only from the
-  // browser's point of view — matching the requirement not to surface
-  // the stored number elsewhere.
+  // calls are forwarded to (services/callRouting.js). Unlike the old
+  // write-only design, /dashboard-data now returns the real saved value
+  // (see server.js) so this can show a persistent "Safe calls will ring
+  // X" confirmation instead of leaving the box blank forever — see
+  // renderPhoneNumberDisplay. A real <form> (not a bare input + button
+  // click handler) so pressing Enter behaves exactly like tapping Save.
   const householdPhoneNumberInputEl = document.getElementById("householdPhoneNumberInput");
+  const phoneNumberFormEl = document.getElementById("phoneNumberForm");
   const savePhoneNumberButtonEl = document.getElementById("savePhoneNumberButton");
   const phoneNumberErrorEl = document.getElementById("phoneNumberError");
-  const phoneNumberSavedNoteEl = document.getElementById("phoneNumberSavedNote");
+  const changePhoneNumberButtonEl = document.getElementById("changePhoneNumberButton");
+  const changeNumberFromActivateButtonEl = document.getElementById("changeNumberFromActivateButton");
+  const changeNumberFromActiveButtonEl = document.getElementById("changeNumberFromActiveButton");
 
-  if (savePhoneNumberButtonEl) {
-    savePhoneNumberButtonEl.addEventListener("click", async function () {
-      if (phoneNumberErrorEl) phoneNumberErrorEl.hidden = true;
-      if (phoneNumberSavedNoteEl) phoneNumberSavedNoteEl.hidden = true;
+  async function savePhoneNumber(rawNumber) {
+    if (phoneNumberErrorEl) phoneNumberErrorEl.hidden = true;
 
-      const rawNumber = householdPhoneNumberInputEl ? householdPhoneNumberInputEl.value : "";
+    savePhoneNumberButtonEl.disabled = true;
+    const originalLabel = savePhoneNumberButtonEl.textContent;
+    savePhoneNumberButtonEl.textContent = "Saving…";
 
-      savePhoneNumberButtonEl.disabled = true;
-      const originalLabel = savePhoneNumberButtonEl.textContent;
-      savePhoneNumberButtonEl.textContent = "Saving…";
+    try {
+      const res = await fetch("/household/phone-number", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ number: rawNumber }),
+      });
 
-      try {
-        const res = await fetch("/household/phone-number", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ number: rawNumber }),
-        });
-
-        if (!res.ok) {
-          if (phoneNumberErrorEl) {
-            phoneNumberErrorEl.textContent =
-              res.status === 400
-                ? "That doesn't look like a valid UK phone number. Please check it and try again."
-                : "We couldn't save that just now. Please try again.";
-            phoneNumberErrorEl.hidden = false;
-          }
-          return;
-        }
-
-        if (householdPhoneNumberInputEl) householdPhoneNumberInputEl.value = "";
-        if (phoneNumberSavedNoteEl) phoneNumberSavedNoteEl.hidden = false;
-        loadDashboard();
-      } catch (err) {
+      if (!res.ok) {
         if (phoneNumberErrorEl) {
-          phoneNumberErrorEl.textContent = "We couldn't save that just now. Please try again.";
+          phoneNumberErrorEl.textContent =
+            res.status === 400
+              ? "That doesn't look like a valid UK phone number. Please check it and try again."
+              : "We couldn't save that just now. Please try again.";
           phoneNumberErrorEl.hidden = false;
         }
-      } finally {
-        savePhoneNumberButtonEl.disabled = false;
-        savePhoneNumberButtonEl.textContent = originalLabel;
+        return;
       }
+
+      editingPhoneNumber = false;
+      loadDashboard();
+    } catch (err) {
+      if (phoneNumberErrorEl) {
+        phoneNumberErrorEl.textContent = "We couldn't save that just now. Please try again.";
+        phoneNumberErrorEl.hidden = false;
+      }
+    } finally {
+      savePhoneNumberButtonEl.disabled = false;
+      savePhoneNumberButtonEl.textContent = originalLabel;
+    }
+  }
+
+  if (phoneNumberFormEl) {
+    phoneNumberFormEl.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const rawNumber = householdPhoneNumberInputEl ? householdPhoneNumberInputEl.value : "";
+
+      // Explicit confirmation before silently replacing an already-saved
+      // number — one membership protects one configured line, and
+      // changing it is a deliberate action, never an accidental
+      // overwrite. Only asked when a number is genuinely already on
+      // file (lastDashboardData reflects the real saved state).
+      if (lastDashboardData && lastDashboardData.phoneNumber) {
+        const confirmed = window.confirm(
+          "This will update the number where safe calls ring, replacing the one currently saved. Continue?"
+        );
+        if (!confirmed) return;
+      }
+
+      savePhoneNumber(rawNumber);
     });
   }
+
+  function startEditingPhoneNumber() {
+    editingPhoneNumber = true;
+    if (householdPhoneNumberInputEl && lastDashboardData && lastDashboardData.phoneNumber) {
+      householdPhoneNumberInputEl.value = formatUkPhoneForDisplay(lastDashboardData.phoneNumber);
+    }
+    renderOnboardingStep(lastDashboardData);
+    if (householdPhoneNumberInputEl) householdPhoneNumberInputEl.focus();
+  }
+
+  [changePhoneNumberButtonEl, changeNumberFromActivateButtonEl, changeNumberFromActiveButtonEl].forEach(function (btn) {
+    if (btn) btn.addEventListener("click", startEditingPhoneNumber);
+  });
 
   // "Upload contacts" opens a native <dialog> — showModal()/close() give
   // focus-trapping, a backdrop and Escape-to-close for free, so there's no
@@ -2072,7 +2252,7 @@
       sub.textContent = "This usually takes a few seconds. Please don't close this page.";
     } else if (state === "success") {
       title.textContent = "Payment successful";
-      sub.textContent = "Your Home Call Guard subscription is active and your protection is now enabled.";
+      sub.textContent = "Your Home Call Guard membership is now active. Next, let's get your protection turned on.";
     } else if (state === "activation_delayed") {
       title.textContent = "Activation is taking longer than expected";
       sub.textContent = "We received your payment but activation is taking longer than expected. Please refresh in a moment or contact support.";
@@ -2299,7 +2479,7 @@
       setText("statContactsUploaded", data.contactsUploaded);
 
       renderActivity(data.recentCalls);
-      renderChecklist(data);
+      renderOnboardingStep(data);
       renderTrustedContacts(data.contacts);
       renderAccountDetails(data.account);
       renderMembership(data);
