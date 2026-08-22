@@ -59,7 +59,7 @@ here describes a feature that doesn't exist yet.
 
 **Support URL**: https://homecallguard.co.uk (or a dedicated /support page if preferred)
 **Marketing URL**: https://homecallguard.co.uk
-**Privacy Policy URL**: https://homecallguard.co.uk/privacy.html
+**Privacy Policy URL**: https://homecallguard.co.uk/privacy
 
 **Category**: Primary — Utilities. Secondary — Lifestyle.
 
@@ -79,7 +79,7 @@ here describes a feature that doesn't exist yet.
 **Category**: Communication (or Tools)
 
 **Contact email**: support@homecallguard.co.uk
-**Privacy Policy URL**: https://homecallguard.co.uk/privacy.html
+**Privacy Policy URL**: https://homecallguard.co.uk/privacy
 
 **Data safety section** (Play Console's own questionnaire — summary of what to declare, based on actual behaviour, not assumed):
 - Contacts: collected (name + phone number only, for the contacts a customer explicitly syncs or adds), used for app functionality, not shared with third parties, user can request deletion.
