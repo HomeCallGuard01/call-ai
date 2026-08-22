@@ -24,4 +24,19 @@ if (!supabaseAdmin) {
   );
 }
 
-module.exports = { supabase, supabaseAdmin };
+// Builds a Supabase client scoped to one specific user's own session —
+// never the shared `supabase` instance above, and never the service-role
+// key. Used anywhere a request needs to act as that user under RLS (the
+// web app's own /register, /login, /reset-password-complete, and now
+// the mobile app's /api/v1/me/bootstrap — see routes/mobileApi.js).
+// Extracted here (moved out of server.js, which had its own identical
+// copy) so it has exactly one implementation shared by both.
+function buildUserScopedClient() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+
+module.exports = { supabase, supabaseAdmin, buildUserScopedClient };

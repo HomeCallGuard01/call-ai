@@ -29,6 +29,7 @@ const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/tran
 const { twilioRestClient } = require("./services/twilioClient");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
+const mobileApiRoutes = require("./routes/mobileApi");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
 // Fail fast and clearly in production rather than starting in a silently
@@ -110,6 +111,7 @@ app.use(express.static("public"));
 // urlencoded parser above, which already no-ops on non-form content types.
 app.use(billingRoutes);
 app.use(adminRoutes);
+app.use(mobileApiRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 

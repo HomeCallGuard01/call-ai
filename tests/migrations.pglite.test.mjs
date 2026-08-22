@@ -288,7 +288,7 @@ async function main() {
       'active', new Date().toISOString(), false, tEarly,
     ]
   );
-  assert(staleResult.result === 'processed', 'ordering: a stale event still returns processed, not failed — nothing went wrong, it was correctly evaluated');
+  assert(staleResult.result === 'ignored_stale', 'ordering: a stale event returns ignored_stale (migrations/027), distinguishable from a genuine apply — nothing went wrong, it was correctly evaluated and its subscription.status must not be acted on');
 
   const { rows: [subAfterStale] } = await db.query(
     `select status from public.subscriptions where stripe_subscription_id = $1`,
