@@ -8,7 +8,7 @@ module.exports = {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     ios: {
-      supportsTablet: true,
+      supportsTablet: false,
       bundleIdentifier: "co.uk.homecallguard.app",
       infoPlist: {
         NSMicrophoneUsageDescription:
@@ -33,7 +33,16 @@ module.exports = {
       // to a local path to the downloaded file. Locally (expo start/prebuild),
       // that var is unset, so it falls back to the gitignored local file.
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? "./google-services.json",
-      permissions: ["android.permission.READ_CONTACTS", "android.permission.WRITE_CONTACTS"],
+      permissions: ["android.permission.READ_CONTACTS"],
+      // WRITE_CONTACTS is added unconditionally by the expo-contacts plugin
+      // (it has no opt-out), and SYSTEM_ALERT_WINDOW is part of Expo's own
+      // default base manifest template. HCG only reads contacts — never
+      // writes to the device address book — and never draws overlays, so
+      // both are unused and blocked here.
+      blockedPermissions: [
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+      ],
     },
     web: {
       favicon: "./assets/favicon.png",
