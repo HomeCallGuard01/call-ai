@@ -300,6 +300,128 @@ async function updateTwilioNumberForEntitlementChange(household, isEntitled, dep
   return { action: "none" };
 }
 
+// Mirrors process_stripe_webhook_event's own v_qualifies check
+// (supabase/migrations/019_subscription_event_ordering_guard.sql) —
+// deliberately the same three literal strings, since this is the
+// webhook's *immediate* provisioning signal, derived directly from the
+// Stripe subscription event already in hand rather than a second,
+// independent source of truth that could disagree with the one the RPC
+// just used to write the entitlement row.
+const QUALIFYING_SUBSCRIPTION_STATUSES = new Set(["trialing", "active", "past_due"]);
+
+// Pure — see tests/webhook-provisioning-decision.test.mjs.
+function isQualifyingSubscriptionStatus(status) {
+  return QUALIFYING_SUBSCRIPTION_STATUSES.has(status);
+}
+
+// Orchestrates the webhook's immediate provisioning decision once
+// routes/billing.js has confirmed a Stripe subscription event was
+// durably processed (subscriptions/entitlements already written by the
+// RPC). Takes the event's own subscriptionStatus directly — never a
+// fresh getActiveEntitlement() re-read — because that re-read used to
+// run immediately after the same request's own RPC call had just
+// inserted the entitlement row, racing the entitlement's own
+// database-generated `starts_at` (default now()) against this Node
+// process's clock. Any clock skew or propagation delay could make the
+// re-read transiently see "not entitled" for an entitlement just
+// written a few lines above, silently resolving to
+// updateTwilioNumberForEntitlementChange(household, false) —
+// { action: "none" } — with no number ever provisioned and no error
+// anywhere (confirmed live: household
+// 816b3f10-217a-43f2-b242-e3f8ba44fd95's subscription/entitlement
+// synced correctly on 2026-08-22 but twilio_number stayed null,
+// attempts stayed 0). The entitlements table remains the real source of
+// truth for every other read (requireEntitlement, dashboard, etc.) —
+// this is the one call site, right after a webhook that just told us
+// definitively what changed, where re-deriving the same fact from a
+// timestamp-sensitive read was actively the wrong source to use.
+//
+// Never throws — mirrors updateTwilioNumberForEntitlementChange's own
+// "provisioning failure must never affect the webhook's own success"
+// contract. deps flow straight through to
+// updateTwilioNumberForEntitlementChange/ensureTwilioNumberProvisioned,
+// so a test can inject a fake Twilio client/household-lookup all the
+// way down without ever calling the real Twilio API.
+async function handleWebhookProvisioningDecision(
+  { householdId, eventType, subscriptionStatus, stripeCustomerId },
+  deps = {}
+) {
+  const {
+    getHouseholdByStripeCustomerId,
+    updateForEntitlementChange = updateTwilioNumberForEntitlementChange,
+    logDecision = (...args) => console.log(...args),
+    logSkip = (...args) => console.error(...args),
+  } = deps;
+
+  const intendedEnabled = isQualifyingSubscriptionStatus(subscriptionStatus);
+
+  logDecision(
+    "WEBHOOK PROVISIONING DECISION:",
+    JSON.stringify({ householdId, eventType, subscriptionStatus, intendedEnabled })
+  );
+
+  if (!householdId) {
+    logSkip("WEBHOOK PROVISIONING SKIPPED: no household_id resolved for event", eventType);
+    return { action: "skipped", reason: "no_household_id" };
+  }
+
+  const household = await getHouseholdByStripeCustomerId(stripeCustomerId);
+
+  if (!household) {
+    logSkip(
+      "WEBHOOK PROVISIONING SKIPPED: no household row found for customer",
+      stripeCustomerId,
+      "resolved household_id",
+      householdId
+    );
+    return { action: "skipped", reason: "no_household_row" };
+  }
+
+  const result = await updateForEntitlementChange(household, intendedEnabled, deps);
+  logDecision("WEBHOOK PROVISIONING RESULT:", JSON.stringify({ householdId, ...result }));
+  return result;
+}
+
+// Gates handleWebhookProvisioningDecision on whether
+// process_stripe_webhook_event (database/billing.js's processWebhookEvent)
+// actually applied this specific event, or discarded it as stale/
+// out-of-order (supabase/migrations/019_subscription_event_ordering_guard.sql,
+// supabase/migrations/027_stale_webhook_event_result.sql). Both outcomes
+// used to return the identical string 'processed', which is exactly why
+// handleWebhookProvisioningDecision alone isn't safe to call on every
+// "processed" webhook: a stale event that the ordering guard correctly
+// ignored still carries its OWN (possibly outdated) subscription.status,
+// and acting on it here would risk the exact out-of-order provisioning/
+// deprovisioning flip the guard exists to prevent — e.g. an old
+// "canceled" event arriving late after a newer "active" reactivation was
+// already applied must not deprovision the number the accepted newer
+// event just re-enabled, and vice versa. This is the single call site
+// routes/billing.js's webhook handler uses; only 'processed' ever reaches
+// handleWebhookProvisioningDecision, 'ignored_stale' is a deliberate,
+// logged no-op, and anything else (e.g. 'failed') is also a no-op here
+// (routes/billing.js handles 'failed' itself, via its own 500 response).
+async function handleProcessedWebhookEvent(processWebhookEventResult, decisionInput, deps = {}) {
+  const { logSkip = (...args) => console.error(...args) } = deps;
+
+  if (processWebhookEventResult === "ignored_stale") {
+    logSkip(
+      "WEBHOOK PROVISIONING SKIPPED: event superseded by a newer one already applied (stale/out-of-order) — not acting on its subscription status",
+      JSON.stringify({
+        householdId: decisionInput.householdId,
+        eventType: decisionInput.eventType,
+        subscriptionStatus: decisionInput.subscriptionStatus,
+      })
+    );
+    return { action: "skipped", reason: "stale_event" };
+  }
+
+  if (processWebhookEventResult !== "processed") {
+    return { action: "skipped", reason: "not_processed" };
+  }
+
+  return handleWebhookProvisioningDecision(decisionInput, deps);
+}
+
 module.exports = {
   shouldAttemptProvisioning,
   pickAvailableNumber,
@@ -310,4 +432,7 @@ module.exports = {
   releaseExpiredTwilioNumber,
   releaseTwilioNumberImmediately,
   updateTwilioNumberForEntitlementChange,
+  isQualifyingSubscriptionStatus,
+  handleWebhookProvisioningDecision,
+  handleProcessedWebhookEvent,
 };

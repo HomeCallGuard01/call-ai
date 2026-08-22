@@ -8,7 +8,10 @@ const {
   processWebhookEvent,
   getActiveEntitlement,
 } = require("../database/billing");
-const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
+const {
+  updateTwilioNumberForEntitlementChange,
+  handleProcessedWebhookEvent,
+} = require("../services/twilioProvisioning");
 const {
   hasQualifyingStripeSubscription,
   findReusableOpenCheckoutSession,
@@ -322,24 +325,44 @@ router.post(
         stripeEventCreated: new Date(event.created * 1000).toISOString(),
       });
 
-      if (result === "processed") {
+      if (result === "processed" || result === "ignored_stale") {
         // Provisioning/release failure must never affect the webhook's
-        // own success — updateTwilioNumberForEntitlementChange never
-        // throws and always resolves, recording its own failure/retry
-        // state independently of the subscription/entitlement this event
-        // just changed. Covers both directions: activation (provision a
+        // own success — handleProcessedWebhookEvent never throws and
+        // always resolves, recording its own failure/retry state
+        // independently of the subscription/entitlement this event just
+        // changed. Covers both directions: activation (provision a
         // number, or cancel a pending release if reactivating before its
         // deadline) and genuine termination (start the grace-period
         // clock on an existing number) — see migrations/017's header for
         // why cancellation gets a grace period rather than an immediate
         // release.
-        if (householdId) {
-          const entitlement = await getActiveEntitlement(householdId);
-          const household = await getHouseholdByStripeCustomerId(stripeCustomerId);
-          if (household) {
-            await updateTwilioNumberForEntitlementChange(household, !!entitlement);
-          }
-        }
+        //
+        // Deliberately derives intent from THIS event's own
+        // subscription.status (2026-08-22 fix) rather than a fresh
+        // getActiveEntitlement() re-read — see
+        // services/twilioProvisioning.js's handleWebhookProvisioningDecision
+        // for the full race-condition history this replaces (confirmed
+        // live: household 816b3f10-217a-43f2-b242-e3f8ba44fd95's
+        // subscription/entitlement synced correctly on 2026-08-22 but
+        // twilio_number stayed null, attempts stayed 0, with no error
+        // anywhere).
+        //
+        // 'ignored_stale' (migrations/027) is passed through deliberately,
+        // not filtered out here — handleProcessedWebhookEvent is the one
+        // place that decides a stale/out-of-order event must not act on
+        // its own subscription.status at all, so a late-arriving older
+        // event can never override the state an already-accepted newer
+        // event just established.
+        await handleProcessedWebhookEvent(
+          result,
+          {
+            householdId,
+            eventType: event.type,
+            subscriptionStatus: subscription.status,
+            stripeCustomerId,
+          },
+          { getHouseholdByStripeCustomerId }
+        );
         return res.sendStatus(200);
       }
 
