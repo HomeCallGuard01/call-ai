@@ -113,6 +113,17 @@ export interface ContactResponse {
   number: string;
 }
 
+// POST /api/v1/contacts/sync — added/skippedDuplicates are provided
+// separately from `message` so the UI can rely on the exact server-
+// composed wording ("N contacts synced." / "N new contacts added. M
+// were already synced." / "Your contacts are already up to date.")
+// without re-deriving pluralisation itself.
+export interface SyncContactsResponse {
+  added: number;
+  skippedDuplicates: number;
+  message: string;
+}
+
 export interface ApiErrorResponse {
   error: string;
   message?: string;

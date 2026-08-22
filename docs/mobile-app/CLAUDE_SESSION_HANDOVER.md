@@ -264,6 +264,64 @@ new automated tests added — see §9 outstanding work).
 - Registered office: **128 City Road, London, EC1V 2NX, United Kingdom**
 - Website: **https://homecallguard.co.uk**
 
+## 12. "Sync all contacts" (iOS + Android, 2026-08-22) — implemented, iOS physically verified
+
+**STATUS UPDATE (2026-08-22, later same day):** implemented (bulk
+`POST /api/v1/contacts/sync`, `mobile/app/(tabs)/contacts/from-phone.tsx`
+rewritten as a one-tap sync) and physically tested on a real iPhone —
+**PASSED**: full address book sync, repeat-sync idempotency, and the
+iOS Limited Access flow (detection, "Allow full contact access" → iOS
+Settings, "Choose more contacts individually", "Continue with just my
+selected contacts", auto-recheck on returning from Settings) all
+confirmed working on-device. No further iOS contacts changes planned.
+Android preview build separately fixed same day (missing
+`GOOGLE_SERVICES_JSON` EAS file secret for the `preview` environment —
+see build history) and rebuilding.
+
+Original request (below) kept for the full design rationale.
+
+**What**: a one-tap "Sync all contacts" bulk-import action in
+`(setup)/contacts.tsx`, alongside the existing "Select contacts" (native
+single-contact picker) and "Add manually" options — not a replacement for
+either. Clear permission/consent prompt before any bulk address-book
+access. Normalise and dedupe numbers on import. Synced numbers become
+trusted contacts exactly like today's manually-picked ones — calls from
+them ring through unmonitored, which is also the business case: fewer
+unknown-caller calls means lower live-monitoring/transcription/Twilio
+cost per household, in addition to faster onboarding for anyone with a
+large contact list.
+
+**iOS + Android only** — landline setup is explicitly excluded, since
+Home Call Guard has no way to access a landline customer's address book
+at all. Landline customers keep adding trusted contacts manually via
+their account/dashboard, unchanged.
+
+**Why not a quick add-on**: today's picker (`Contacts.presentContactPickerAsync()`)
+is a system UI that never grants the app contacts permission at all — see
+the standing comment at the top of `mobile/app/(setup)/contacts.tsx`
+("no bulk address-book access ever granted"). A real bulk sync needs
+`Contacts.getContactsAsync()`, which is a materially different, broader
+permission grant. That means, at minimum:
+- Updated `NSContactsUsageDescription` (iOS) / contacts-permission copy
+  (Android) reflecting "we import your whole contact list," not today's
+  implied one-at-a-time framing.
+- A Privacy Policy update stating plainly that contact data leaves the
+  device and is stored server-side for every imported contact, not just
+  ones explicitly hand-picked — a materially different privacy posture
+  from today's model.
+- Likely a new shared bulk-import backend endpoint (e.g.
+  `POST /api/v1/contacts/bulk`) rather than looping today's single
+  `POST /api/v1/contacts` hundreds of times per sync — one entitlement
+  check and one DB round trip instead of hundreds, with a structured
+  per-item success/failure result reusing the same outcome-handling
+  pattern already in `mobile/app/(tabs)/contacts/from-phone.tsx`.
+
+None of that is same-day work — assessed twice now (2026-08-21 and
+2026-08-22) and both times judged out of scope for a quick add-on. Worth
+scoping as real, separately-reviewed work: permission copy, Privacy
+Policy revision, and the new bulk endpoint, before any implementation
+starts on either platform.
+
 ---
 
 ## Recommended opening prompt for the next Claude conversation

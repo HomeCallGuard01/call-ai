@@ -49,17 +49,27 @@ check(
 
 const fromPhoneSource = readFileSync(path.join(contactsDir, 'from-phone.tsx'), 'utf8');
 check(
-  fromPhoneSource.includes('import { BackLink }') && backLinkCount(fromPhoneSource) === 3,
-  `from-phone.tsx renders BackLink in all three of its states (intro, denied, list) — found ${backLinkCount(fromPhoneSource)}`
+  fromPhoneSource.includes('import { BackLink }') && backLinkCount(fromPhoneSource) === 4,
+  `from-phone.tsx renders BackLink in all four of its states (intro/syncing, denied, limited, result) — found ${backLinkCount(fromPhoneSource)}`
 );
 
-// The multi-select "list" state is the one explicitly reported stuck with
-// only the iOS swipe gesture to escape — confirm it specifically, not
-// just the intro screen before contacts are even loaded.
-const listStateSource = fromPhoneSource.slice(fromPhoneSource.indexOf('// screenState === "list"'));
+// The sync-result state is the one explicitly reported stuck with only
+// the iOS swipe gesture to escape (in its earlier tick-list form) —
+// confirm it specifically, not just the intro screen before syncing.
+const resultStateSource = fromPhoneSource.slice(fromPhoneSource.indexOf('// screenState === "result"'));
 check(
-  listStateSource.includes('<BackLink />'),
-  'from-phone.tsx: the "Choose your trusted contacts" list screen specifically (not just the intro) has BackLink'
+  resultStateSource.includes('<BackLink />'),
+  'from-phone.tsx: the sync-result screen specifically (not just the intro) has BackLink'
+);
+
+// The Limited Access explanation screen (2026-08-2X fix) is a real,
+// separate dead-end risk of its own — a customer who lands here (e.g.
+// via Settings and back) must always have a way out besides the OS
+// swipe gesture.
+const limitedStateSource = fromPhoneSource.slice(fromPhoneSource.indexOf('if (screenState === "limited")'));
+check(
+  limitedStateSource.includes('<BackLink />'),
+  'from-phone.tsx: the Limited Access explanation screen specifically has BackLink'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

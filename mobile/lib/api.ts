@@ -19,6 +19,7 @@ import type {
   DeviceType,
   LandlineProvider,
   VoiceTokenResponse,
+  SyncContactsResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -223,6 +224,19 @@ export async function addContact(name: string, number: string): Promise<ContactR
     body: JSON.stringify({ name, number }),
   });
   return parseJsonOrThrow<ContactResponse>(response);
+}
+
+// POST /api/v1/contacts/sync — one request for the whole device contact
+// list (or whatever subset iOS/Android has authorised), instead of one
+// addContact() call per contact. Server-side dedup means calling this
+// repeatedly with the same contacts is always safe — see
+// routes/mobileApi.js's own comment for the full rationale.
+export async function syncContacts(contacts: { name: string; number: string }[]): Promise<SyncContactsResponse> {
+  const response = await authorizedFetch("/api/v1/contacts/sync", {
+    method: "POST",
+    body: JSON.stringify({ contacts }),
+  });
+  return parseJsonOrThrow<SyncContactsResponse>(response);
 }
 
 export async function updateContact(id: string, name: string, number: string): Promise<ContactResponse> {

@@ -214,10 +214,10 @@ export default function SetupContacts() {
       <View style={styles.container}>
         <SetupProgress currentStep={2} />
 
-        <Text style={styles.title} accessibilityRole="header">Who should always get through?</Text>
+        <Text style={styles.title} accessibilityRole="header">Choose your trusted contacts</Text>
         <Text style={styles.subtitle}>
-          Add family and friends here — their calls will always ring straight through, never screened.
-          We only ever see the specific people you choose, never your full address book.
+          Sync the contacts you already know. Calls from these contacts will ring through normally and will
+          not be monitored by Home Call Guard.
         </Text>
 
         {error && <Banner variant="error" message={error} />}

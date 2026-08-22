@@ -20,6 +20,7 @@ const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
 const { normaliseNumber, wouldCreateForwardingLoop } = require("../services/phone");
+const { MAX_SYNC_CONTACTS, buildSyncPlan, buildSyncResultMessage } = require("../services/contactsSync");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 const { stripe } = require("../services/stripeClient");
 const {
@@ -53,7 +54,14 @@ const MOBILE_PORTAL_RETURN_URL = "homecallguard://account/membership";
 // JSON parser mounted ahead of it would silently consume that raw body
 // and break signature verification. Scoping here means mount order
 // elsewhere in server.js can never introduce that hazard.
-router.use(express.json());
+//
+// limit raised from Express's 100kb default (2026-08-2X, contacts sync):
+// POST /api/v1/contacts/sync sends a customer's whole device contact
+// list (up to MAX_SYNC_CONTACTS) in one request — a real ~2,000-contact
+// household easily exceeds 100kb as JSON. Every other route on this
+// router sends bodies far smaller than either limit, so this is a strict
+// widening, not a behaviour change for anything else here.
+router.use(express.json({ limit: "2mb" }));
 
 // A real native iOS/Android app is never subject to CORS at all — it's a
 // browser-only enforcement mechanism — so this was never required for
@@ -620,6 +628,55 @@ router.delete("/api/v1/contacts/:id", requireAuthApi, requireEntitlement, async 
     res.json({ ok: true });
   } catch (err) {
     console.error("MOBILE DELETE CONTACT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /api/v1/contacts/sync — bulk import (2026-08-2X, "Sync contacts").
+//
+// One request handles the customer's whole device address book (or
+// whatever subset iOS's Limited Access / Android's granted permission
+// authorises), instead of the mobile client making one
+// POST /api/v1/contacts call per contact. Mirrors server.js's existing
+// /upload-contacts exactly (same dedup approach, same normaliseNumber):
+// read the household's existing contacts once, dedupe in memory against
+// both the household's existing contacts and duplicates within the same
+// batch, bulk-insert only the genuinely new ones in a single
+// insertContacts() call — safe to re-run any number of times, since
+// every already-known number is skipped, never re-inserted.
+//
+// Deliberately does not delete or update anything: a contact that's
+// vanished from the phone, or whose name changed there, is left exactly
+// as it is in Home Call Guard — V1 syncs additions only, by design (see
+// docs/mobile-app/CLAUDE_SESSION_HANDOVER.md).
+//
+// The actual dedup/message logic lives in services/contactsSync.js as
+// plain, dependency-free functions (tests/contacts-sync.test.mjs) — this
+// route is deliberately thin, matching every other route in this file.
+router.post("/api/v1/contacts/sync", requireAuthApi, requireEntitlement, async (req, res) => {
+  try {
+    const rawContacts = Array.isArray(req.body.contacts) ? req.body.contacts : null;
+
+    if (!rawContacts) {
+      return res.status(400).json({ error: "invalid_input", message: "contacts must be an array." });
+    }
+
+    if (rawContacts.length > MAX_SYNC_CONTACTS) {
+      return res.status(400).json({
+        error: "too_many_contacts",
+        message: `That's more contacts than Home Call Guard can sync at once (max ${MAX_SYNC_CONTACTS}).`,
+      });
+    }
+
+    const existing = await getContacts(req.household.id);
+    const { toInsert, skippedDuplicates } = buildSyncPlan(rawContacts, existing);
+    const savedContacts = toInsert.length > 0 ? await insertContacts(req.household.id, toInsert) : [];
+    const added = savedContacts.length;
+    const message = buildSyncResultMessage(added, skippedDuplicates);
+
+    res.json({ added, skippedDuplicates, message });
+  } catch (err) {
+    console.error("MOBILE CONTACTS SYNC ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });

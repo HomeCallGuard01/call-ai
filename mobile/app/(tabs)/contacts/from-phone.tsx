@@ -1,63 +1,107 @@
-// "Add from my phone contacts" — multi-select rewrite (2026-08-08).
+// "Sync contacts" (2026-08-2X rewrite) — replaces the earlier tick-list
+// screen (customer manually selected each person, one at a time) with a
+// single one-tap bulk sync: every contact the OS has authorised Home
+// Call Guard to see is imported and saved as a trusted contact in one
+// request, via POST /api/v1/contacts/sync (routes/mobileApi.js). No
+// hundreds of individual addContact() calls — the backend does the
+// dedup, this screen just shows progress and the result.
 //
-// The previous version used Contacts.presentContactPickerAsync(), Expo's
-// single-contact native picker, repeated once per person — real, but
-// required reopening the system picker for every single contact, which a
-// real customer test found too slow/repetitive for adding several
-// trusted people at once.
+// Re-running sync is always safe: the backend skips any number already
+// known, so nothing is ever duplicated. Sync only ever adds — a contact
+// that's since vanished from the phone, or whose name changed there, is
+// deliberately left exactly as it is in Home Call Guard (V1 does not
+// sync removals or name changes; see
+// docs/mobile-app/CLAUDE_SESSION_HANDOVER.md).
 //
-// This version instead: requests full contacts permission
-// (Contacts.requestPermissionsAsync()), reads the device address book
-// once (Contacts.getContactsAsync()), and renders our own in-app,
-// on-device checklist (mobile/lib/contactSelection.ts's
-// buildSelectableContacts/toggleContactSelection) so the customer can
-// tick several people in one screen before saving.
+// Privacy, concretely, not just as a claim: the device contact list this
+// screen reads is only ever used to build the sync request itself — it
+// is never rendered or held beyond that. Only name + phone number is
+// sent, never any other address-book field.
 //
-// Privacy, concretely, not just as a claim: the fetched list is held only
-// in this screen's local component state — it is never sent anywhere.
-// Only the contacts the customer explicitly ticks are ever transmitted,
-// via the exact same addContact() calls the manual-entry and (removed)
-// single-pick flows already used. The explanatory copy below is shown
-// BEFORE the OS permission prompt is ever triggered, matching what
-// Apple's own permission-priming guidance recommends and what was
-// explicitly required for this change.
-//
-// On iOS 18+, Contacts.requestPermissionsAsync() may itself offer the
+// On iOS 14+, Contacts.requestPermissionsAsync() may itself offer the
 // customer "Limited Access" (Apple's own contact-selection UI, outside
 // this app's control) instead of full access — confirmed directly
 // against the installed expo-contacts type definitions
 // (ContactsPermissionResponse.accessPrivileges: 'all' | 'limited' |
-// 'none'). Either way, Contacts.getContactsAsync() can only ever return
-// what the OS actually granted — this app has no way to see more, on any
-// iOS version.
-import { useState } from "react";
-import { View, Text, Pressable, StyleSheet, TextInput, FlatList, ActivityIndicator } from "react-native";
+// 'none'). Real customer test (2026-08-2X): syncing under Limited Access
+// silently imported only the handful of already-selected contacts and
+// reported a misleadingly generic "synced" message, with no indication
+// the rest of the address book was never seen at all. Limited Access now
+// stops before syncing (the "limited" screen state below) instead of
+// silently proceeding — there is no in-app API on any iOS version that
+// upgrades Limited to Full Access; Settings is Apple's only route
+// (confirmed against expo-contacts' own docs: presentAccessPickerAsync()
+// only changes which contacts are in the Limited set, it cannot grant
+// Full Access). Android's contacts permission is strictly all-or-nothing
+// (no OS concept of "limited" there), so isLimited simply never becomes
+// true on Android, and this entire flow is structurally inert there.
+import { useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Linking, AppState } from "react-native";
 import { router } from "expo-router";
 import * as Contacts from "expo-contacts";
 import { Screen } from "../../../components/Screen";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
 import { BackLink } from "../../../components/BackLink";
-import { addContact, ApiError } from "../../../lib/api";
-import { buildSelectableContacts, toggleContactSelection, type SelectableContact } from "../../../lib/contactSelection";
+import { syncContacts } from "../../../lib/api";
+import { buildSelectableContacts } from "../../../lib/contactSelection";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
-type ScreenState = "intro" | "loading" | "denied" | "list";
+type ScreenState = "intro" | "syncing" | "denied" | "limited" | "result";
 
 export default function AddFromPhoneContacts() {
   const [screenState, setScreenState] = useState<ScreenState>("intro");
-  const [contacts, setContacts] = useState<SelectableContact[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+  // iOS 14+ only ("Limited Access") — the customer granted access to some,
+  // not all, of their contacts. getContactsAsync() can only ever return
+  // that limited set (see the file header comment). Always 'all' or
+  // 'none' on Android; this simply never becomes true there.
+  const [isLimited, setIsLimited] = useState(false);
+
+  // Set the moment Settings is opened, so the AppState listener below
+  // knows a return-to-foreground is actually "back from Settings", not
+  // just an unrelated app switch — same pattern as
+  // app/(setup)/activate.tsx's dialerOpened.
+  const settingsOpened = useRef(false);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", nextState => {
+      if (nextState === "active" && settingsOpened.current) {
+        settingsOpened.current = false;
+        recheckAfterSettings();
+      }
+    });
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reads the device address book and sends it to the bulk sync endpoint.
+  // Assumes permission has already been confirmed granted by the caller —
+  // never requests permission itself.
+  async function loadAndSync() {
+    try {
+      const { data } = await Contacts.getContactsAsync({
+        fields: [Contacts.Fields.PhoneNumbers],
+        sort: Contacts.SortTypes.FirstName,
+      });
+      const selectable = buildSelectableContacts(data);
+      const result = await syncContacts(selectable.map(c => ({ name: c.name, number: c.number })));
+      setResultMessage(result.message);
+      setScreenState("result");
+    } catch {
+      setError("We couldn't sync your contacts just now. Please try again, or enter the contact manually.");
+      setScreenState("intro");
+    }
+  }
 
   // Point-of-use only — never requested at app launch, never before the
   // customer has both seen the explanation above and actively tapped to
-  // continue.
-  async function requestAccessAndLoad() {
+  // continue. Limited Access stops here — see the "limited" screen state
+  // below — rather than silently syncing only the already-selected subset.
+  async function requestAndSync() {
     setError(null);
-    setScreenState("loading");
+    setScreenState("syncing");
 
     let permission: Contacts.ContactsPermissionResponse;
     try {
@@ -73,84 +117,112 @@ export default function AddFromPhoneContacts() {
       return;
     }
 
-    try {
-      const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers],
-        sort: Contacts.SortTypes.FirstName,
-      });
-      setContacts(buildSelectableContacts(data));
-      setScreenState("list");
-    } catch {
-      setError("We couldn't load your contacts just now. Please try again, or enter the contact manually.");
-      setScreenState("intro");
+    const limited = permission.accessPrivileges === "limited";
+    setIsLimited(limited);
+
+    if (limited) {
+      setScreenState("limited");
+      return;
     }
+
+    await loadAndSync();
   }
 
-  function toggleSelected(id: string) {
-    setSelectedIds(prev => toggleContactSelection(prev, id));
+  // Primary action on the "limited" screen — Settings is Apple's only
+  // supported route from Limited to Full Access (see file header comment
+  // for why there is no in-app API for this on any iOS version).
+  function handleOpenSettings() {
+    settingsOpened.current = true;
+    Linking.openSettings();
   }
 
-  async function handleSaveSelected() {
+  // Fires when the app returns to the foreground after handleOpenSettings
+  // specifically (never for an unrelated backgrounding). If the customer
+  // switched to Full Access, proceed straight to a normal full sync with
+  // no extra tap; if still Limited (they left it as-is, or just looked),
+  // stay on the same clear explanation rather than guessing.
+  async function recheckAfterSettings() {
     setError(null);
-    setIsSaving(true);
-
-    const toSave = contacts.filter(c => selectedIds.includes(c.id));
-    const failures: string[] = [];
-
-    for (const contact of toSave) {
-      try {
-        await addContact(contact.name, contact.number);
-      } catch (err) {
-        if (err instanceof ApiError && err.code === "duplicate") {
-          failures.push(`${contact.name} — already in your trusted contacts`);
-        } else if (err instanceof ApiError && err.code === "invalid_input") {
-          failures.push(`${contact.name} — not a valid UK phone number`);
-        } else {
-          failures.push(`${contact.name} — couldn't be saved`);
-        }
+    try {
+      const permission = await Contacts.getPermissionsAsync();
+      if (permission.status !== "granted") {
+        setScreenState("denied");
+        return;
       }
+      const stillLimited = permission.accessPrivileges === "limited";
+      setIsLimited(stillLimited);
+      if (stillLimited) {
+        setScreenState("limited");
+      } else {
+        setScreenState("syncing");
+        await loadAndSync();
+      }
+    } catch {
+      setScreenState("limited");
     }
-
-    setIsSaving(false);
-
-    if (failures.length === 0) {
-      router.back();
-      router.back(); // also skip past the choice screen, back to the list
-      return;
-    }
-
-    if (failures.length === toSave.length) {
-      setError(`Nothing was saved:\n${failures.join("\n")}`);
-      return;
-    }
-
-    // Partial success: leave the customer able to see and retry exactly
-    // what didn't work, without losing their place in the list.
-    setError(`Some contacts couldn't be saved:\n${failures.join("\n")}`);
   }
 
-  const visibleContacts = query.trim()
-    ? contacts.filter(c => c.name.toLowerCase().includes(query.trim().toLowerCase()))
-    : contacts;
+  // Secondary action — presentAccessPickerAsync() re-presents Apple's own
+  // contact-selection UI (iOS 18+ only; rejects immediately on older iOS
+  // and on Android, per expo-contacts' docs) so the customer can add
+  // specific individuals to the Limited set without leaving the app. This
+  // can never grant Full Access (that's Settings-only, see above) — it
+  // only changes which contacts are shared, so syncing immediately
+  // afterwards is the sensible next step: the customer just finished
+  // choosing exactly who to include.
+  async function handleChooseMoreIndividually() {
+    try {
+      await Contacts.presentAccessPickerAsync();
+    } catch {
+      // iOS below 18, or non-iOS — no in-app picker available here.
+      // Stay on the "limited" screen; Settings remains the only route.
+      return;
+    }
 
-  if (screenState === "intro" || screenState === "loading") {
+    setError(null);
+    setScreenState("syncing");
+    try {
+      const permission = await Contacts.getPermissionsAsync();
+      setIsLimited(permission.accessPrivileges === "limited");
+    } catch {
+      // Non-fatal — proceed to sync with whatever isLimited was already.
+    }
+    await loadAndSync();
+  }
+
+  // Tertiary action — an explicit, deliberate choice to proceed with
+  // exactly what's already shared, no OS interaction at all. This is the
+  // one path a customer who genuinely prefers Limited Access takes.
+  async function handleContinueWithSelected() {
+    setError(null);
+    setScreenState("syncing");
+    await loadAndSync();
+  }
+
+  function handleDone() {
+    router.back();
+    router.back(); // also skip past the choice screen, back to the list
+  }
+
+  if (screenState === "intro" || screenState === "syncing") {
     return (
       <Screen scroll={false}>
         <View style={styles.container}>
           <BackLink />
-          <Text style={styles.title}>Add from your contacts</Text>
+          <Text style={styles.title}>Sync your contacts</Text>
           <Text style={styles.subtitle}>
-            Home Call Guard will show your phone's contact list so you can pick several trusted people at once.
-            Your contacts stay on this device — we only save the people you tick below, never your full address
-            book.
+            Home Call Guard imports the contacts your phone allows it to see and saves them as trusted
+            contacts — their calls will always ring straight through, never screened. You can sync again any
+            time to pick up new contacts; nothing is ever duplicated, and nothing is removed just because it's
+            no longer on your phone.
           </Text>
 
           {error && <Banner variant="error" message={error} />}
 
-          {screenState === "loading" ? (
+          {screenState === "syncing" ? (
             <ActivityIndicator color={colors.accent} size="large" style={styles.loadingSpinner} />
           ) : (
-            <PrimaryButton label="Choose from my contacts" onPress={requestAccessAndLoad} />
+            <PrimaryButton label="Sync contacts" onPress={requestAndSync} />
           )}
 
           <Pressable
@@ -170,7 +242,7 @@ export default function AddFromPhoneContacts() {
       <Screen scroll={false}>
         <View style={styles.container}>
           <BackLink />
-          <Text style={styles.title}>Add from your contacts</Text>
+          <Text style={styles.title}>Sync your contacts</Text>
           <Banner
             variant="error"
             message="Home Call Guard needs permission to open your contacts. You can still add contacts manually."
@@ -181,69 +253,69 @@ export default function AddFromPhoneContacts() {
     );
   }
 
-  // screenState === "list"
+  if (screenState === "limited") {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.container}>
+          <BackLink />
+          <Text style={styles.title}>Full access needed to sync everyone</Text>
+          <Text style={styles.subtitle}>
+            Home Call Guard currently only has access to the contacts you've already selected on this
+            iPhone — not your whole address book. Allow full access to sync everyone, or continue with
+            just what's already shared.
+          </Text>
+
+          {error && <Banner variant="error" message={error} />}
+
+          <PrimaryButton label="Allow full contact access" onPress={handleOpenSettings} />
+
+          <Pressable onPress={handleChooseMoreIndividually} accessibilityRole="button" style={styles.limitedAccessLink}>
+            <Text style={styles.limitedAccessLinkText}>Choose more contacts individually</Text>
+          </Pressable>
+
+          <Pressable onPress={handleContinueWithSelected} accessibilityRole="button" style={styles.limitedAccessLink}>
+            <Text style={styles.limitedAccessLinkText}>Continue with just my selected contacts</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.replace("/(tabs)/contacts/add")}
+            accessibilityRole="button"
+            style={styles.manualLink}
+          >
+            <Text style={styles.manualLinkText}>Enter a contact manually instead</Text>
+          </Pressable>
+        </View>
+      </Screen>
+    );
+  }
+
+  // screenState === "result"
   return (
     <Screen scroll={false}>
       <View style={styles.container}>
         <BackLink />
-        <Text style={styles.title}>Choose your trusted contacts</Text>
-        <Text style={styles.subtitle}>Tick everyone you'd like to add, then save them all at once.</Text>
+        <Text style={styles.title}>Sync your contacts</Text>
+        <Text style={styles.resultMessage}>{resultMessage}</Text>
+
+        {isLimited && (
+          <Pressable onPress={handleChooseMoreIndividually} accessibilityRole="button" style={styles.limitedAccessLink}>
+            <Text style={styles.limitedAccessLinkText}>
+              Only some contacts are shared with Home Call Guard — tap to add more from your phone
+            </Text>
+          </Pressable>
+        )}
 
         {error && <Banner variant="error" message={error} />}
 
-        {contacts.length > 0 && (
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search your contacts"
-            placeholderTextColor={colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        )}
-
-        {contacts.length === 0 ? (
-          <Text style={styles.emptyText}>No contacts with a phone number were found on this device.</Text>
-        ) : (
-          <FlatList
-            data={visibleContacts}
-            keyExtractor={item => item.id}
-            style={styles.list}
-            renderItem={({ item }) => {
-              const isSelected = selectedIds.includes(item.id);
-              return (
-                <Pressable
-                  onPress={() => toggleSelected(item.id)}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isSelected }}
-                  accessibilityLabel={`${item.name}, ${item.number}`}
-                  style={({ pressed }) => [styles.row, isSelected && styles.rowSelected, pressed && styles.rowPressed]}
-                >
-                  <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
-                    {isSelected && <Text style={styles.checkboxMark}>✓</Text>}
-                  </View>
-                  <View style={styles.rowText}>
-                    <Text style={styles.rowName}>{item.name}</Text>
-                    <Text style={styles.rowNumber}>{item.number}</Text>
-                  </View>
-                </Pressable>
-              );
-            }}
-            ListEmptyComponent={<Text style={styles.emptyText}>No contacts match your search.</Text>}
-          />
-        )}
-
         <View style={styles.footer}>
-          {isSaving ? (
-            <ActivityIndicator color={colors.accent} size="large" />
-          ) : (
-            <PrimaryButton
-              label={selectedIds.length === 0 ? "Save" : `Save ${selectedIds.length} contact${selectedIds.length === 1 ? "" : "s"}`}
-              onPress={handleSaveSelected}
-              disabled={selectedIds.length === 0}
-            />
-          )}
+          <PrimaryButton label="Done" onPress={handleDone} />
+          <Pressable
+            onPress={() => router.replace("/(tabs)/contacts/add")}
+            accessibilityRole="button"
+            style={styles.manualLink}
+          >
+            <Text style={styles.manualLinkText}>Enter a contact manually instead</Text>
+          </Pressable>
         </View>
       </View>
     </Screen>
@@ -277,73 +349,25 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: "600",
   },
-  searchInput: {
+  limitedAccessLink: {
     minHeight: MIN_TOUCH_TARGET,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: spacing.md,
-    color: colors.text,
-    backgroundColor: colors.card,
-    marginBottom: spacing.md,
-  },
-  list: {
-    flexGrow: 1,
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.textMuted,
-    paddingVertical: spacing.lg,
-    textAlign: "center",
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.card,
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  rowSelected: {
-    borderColor: colors.accent,
-  },
-  rowPressed: {
-    opacity: 0.85,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: "center",
     justifyContent: "center",
-    marginRight: spacing.md,
-  },
-  checkboxChecked: {
+    borderWidth: 1,
     borderColor: colors.accent,
-    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.md,
   },
-  checkboxMark: {
-    color: colors.background,
-    fontWeight: "700",
+  limitedAccessLinkText: {
+    color: colors.accent,
+    fontWeight: "600",
     fontSize: 14,
   },
-  rowText: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-  },
-  rowName: {
+  resultMessage: {
     ...typography.body,
     color: colors.text,
     fontWeight: "600",
-  },
-  rowNumber: {
-    ...typography.caption,
-    color: colors.textMuted,
+    marginBottom: spacing.lg,
   },
   footer: {
     paddingTop: spacing.sm,

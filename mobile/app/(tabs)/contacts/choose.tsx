@@ -1,9 +1,8 @@
 // New first step for adding a trusted contact (Priority 4 fix). Previously
 // "Add contact" opened manual entry directly with no other option; this
-// choice screen lets the customer pick between importing from their phone
-// or typing details in by hand, and states plainly, up front, that Home
-// Call Guard never copies the full address book — only whichever
-// individual contacts they explicitly select on the next screen.
+// choice screen lets the customer pick between syncing from their phone
+// (mobile/app/(tabs)/contacts/from-phone.tsx — imports everyone the OS
+// has authorised, in one request) or typing details in by hand.
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../../components/Screen";
@@ -20,8 +19,8 @@ export default function ChooseContactMethod() {
       </Text>
 
       <Option
-        label="Add from my phone contacts"
-        description="See your contacts, tick everyone you want, then save them all at once. Home Call Guard only ever sees the contacts you tick — never your full address book."
+        label="Sync contacts"
+        description="Import everyone your phone allows Home Call Guard to see, saved as trusted contacts in one go. Safe to run again any time — nothing is ever duplicated."
         onPress={() => router.push("/(tabs)/contacts/from-phone")}
       />
       <Option
