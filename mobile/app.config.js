@@ -14,9 +14,10 @@ module.exports = {
         NSMicrophoneUsageDescription:
           "Home Call Guard needs microphone access so an approved call can connect with two-way audio, the same as any normal phone call.",
         UIBackgroundModes: ["audio", "voip"],
+        ITSAppUsesNonExemptEncryption: false,
       },
       entitlements: {
-        "aps-environment": "development",
+        "aps-environment": "production",
       },
     },
     android: {
@@ -42,10 +43,27 @@ module.exports = {
       "expo-secure-store",
       "expo-web-browser",
       [
+        "expo-splash-screen",
+        {
+          // assets/splash-icon.png is a light-coloured mark on a fully
+          // transparent background (confirmed by sampling its pixels —
+          // center ~(221,221,225), corners (0,0,0,0) alpha) — designed for
+          // a dark backdrop, not the light backgroundColor used for the
+          // Android adaptive icon below. backgroundColor here is
+          // lib/theme.ts's own colors.background, the same dark background
+          // already used everywhere in the app's actual UI, so the splash
+          // screen matches the first real frame instead of flashing.
+          image: "./assets/splash-icon.png",
+          imageWidth: 200,
+          resizeMode: "contain",
+          backgroundColor: "#0b1220",
+        },
+      ],
+      [
         "expo-contacts",
         {
           contactsPermission:
-            "Home Call Guard only reads the specific contact you choose to add as a trusted contact — never your full address book.",
+            "Home Call Guard uses your contacts so you can choose trusted callers. Only the contacts you choose to add are saved to Home Call Guard.",
         },
       ],
     ],
