@@ -17,21 +17,14 @@ module.exports = {
         ITSAppUsesNonExemptEncryption: false,
       },
       entitlements: {
-        // Apple ties aps-environment to provisioning profile type: only a
-        // Development-signed build (EAS's "development" profile —
-        // developmentClient: true) can carry "development"; an Ad Hoc or
-        // App Store profile (every other build profile here) must stay
-        // "production" or the archive/signing step itself is invalid. The
-        // only iOS Twilio Voice Push Credential that currently exists is
-        // sandbox-mode (HomeCallGuard-iOS-VoIP-Sandbox-2026-08-21), which
-        // needs the development entitlement to receive pushes — so the
-        // "development" build profile is the one used for physical-device
-        // Voice SDK testing (its EAS environment now points at the same
-        // ngrok-tunnelled staging backend "preview" uses). A production-mode
-        // credential doesn't exist yet, so "production" keeps the real
-        // entitlement it'll need at launch.
-        "aps-environment":
-          process.env.EAS_BUILD_PROFILE === "development" ? "development" : "production",
+        // Twilio's iOS Voice Push Credential is now production-mode
+        // (HomeCallGuard-iOS-VoIP-Production-2026-08-23, CR543d63fd2c9e72b0a6e7bb91aa0566c2,
+        // certificate-based, matching the real VoIP Services cert/key pair) —
+        // every build profile here (Ad Hoc or App Store) is production-signed,
+        // so a single unconditional "production" entitlement is now correct
+        // everywhere. The earlier sandbox-credential experiment (dev-profile
+        // conditional) is obsolete now that a real production credential exists.
+        "aps-environment": "production",
       },
     },
     android: {
