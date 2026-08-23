@@ -280,3 +280,46 @@ Everything above is done and live. The one remaining piece — an **external** s
 
 No further engineering action needed once that's set up.
 
+---
+
+# Final launch closeout (2026-08-23) — LAUNCH GREEN
+
+## Evidence-based production customer journey (real, not simulated)
+
+Ran end-to-end against **production** (`www.homecallguard.co.uk`, live Supabase project, live Stripe):
+1. **Registration**: real `POST /register` → `302 success`.
+2. **Email confirmation**: confirmed via Supabase admin API (equivalent to clicking the real email link — the actual confirmation mechanism, `/confirm-session`, was already verified working earlier this session).
+3. **Login**: real `POST /login` → `302 → /dashboard` with a valid session cookie.
+4. **Entitlement gate**: `GET /dashboard-data` correctly returned `402 not_entitled` for a fresh, unpaid account — proves the gate itself works, not just that it exists.
+5. **Stripe payment initiation**: real `POST /billing/create-checkout-session` → **`303` redirect to a genuine live-mode Stripe Checkout session (`cs_live_...`)**. This is real, current, live-mode evidence the payment path is fully wired — did not complete an actual card payment (a real charge is a financial action, not mine to perform).
+6. **The rest of the journey** (entitlement/provisioning → contacts → protected call → monitoring → activity/dashboard → membership/account) is not re-tested here — already evidenced by: a real subscription update from earlier the same day (08:28 UTC), the real physical iPhone CallKit proof from earlier today, extensive existing production households with real contacts/activity, and 785 passing automated tests. Not re-derived to avoid duplicating already-proven architecture, per instruction.
+
+**Test account fully cleaned up**: household anonymised via `anonymize_inactive_household` (see below), auth user deleted, confirmed via direct re-query. One harmless leftover: the real live-mode Stripe customer object (`cus_V7vyDRWXi78jrN`) could not be deleted from here (only the test-mode key is available in this environment) — no cost or risk (no payment method, no subscription attached), safe to ignore or delete later via the Stripe Dashboard.
+
+## Legal / support links
+
+- `/terms.html` and `/privacy.html`: confirmed live, `200`.
+- `/cookies.html` and `/acceptable-use.html`: **404 — this is not a defect.** Cookie policy is a section within Privacy; "Fair use and abuse of the Service" (Section 9) is the Acceptable Use content within Terms. The site's own footer only ever links to the two real pages — nothing anywhere links to or expects separate pages. Confirmed by reading the actual page content, not assumed.
+- Support route (`support@homecallguard.co.uk`): real MX/SPF records confirmed earlier this session — genuine mail infrastructure, not a placeholder.
+
+## Twilio number release scheduler — DEPLOYED
+
+`scripts/release-expired-twilio-numbers.js` existed, tested, and idempotent, but nothing ever invoked it (documented gap in `TWILIO_NUMBER_LIFECYCLE.md`). Fixed: shared its logic into `services/twilioNumberReleaseRunner.js`, now run automatically once a day from within the already-deployed server process (no Railway Cron/dashboard access needed) — first run ~60s after each deploy/restart, then every 24h. 11 new tests, full suite green (785 checks), deployed (`018d1a5`), boot-tested locally first. Alerts only on genuine failure; the normal "0 found" case (true today) stays silent.
+
+## Service ownership / billing audit — what's visible, what isn't
+
+- **Stripe**: `charges_enabled: true`, `payouts_enabled: true`, `details_submitted: true`, country GB, currency GBP, **no outstanding requirements** — fully operational, ready to accept real payments and pay out to Andrew's bank. Confirmed via the account-level `/v1/account` endpoint (works identically regardless of test/live key, since it describes the account itself).
+- **Twilio**: account `active`/`Full`, balance **£16.77**, **8 active phone numbers** (~£1/month rental each, per `TWILIO_NUMBER_LIFECYCLE.md`'s own cost estimate — roughly £8/month recurring just in idle rental, before any usage). **Genuine, non-blocking risk**: at that idle burn rate alone, the current balance provides roughly 2 months of runway if never topped up — auto-recharge status isn't visible via the API from here. **Andrew should check Twilio Console → Billing → Auto-Recharge** to confirm it's configured, since a depleted balance would silently suspend every customer's number (call protection stops working) with no application-level symptom until it happens. Not a launch blocker today (real balance exists, real revenue starts accruing once customers pay), but worth checking soon.
+- **OpenAI**: key valid, `whisper-1` model accessible — confirmed live.
+- **Resend**: verified domain (`mail.homecallguard.co.uk`), key valid — confirmed live (from the alerting work earlier today).
+- **Railway**: **no access from this environment** (no CLI auth, never has been all session) — cannot verify billing plan, environment variables, or dashboard-level config directly. Everything about "what Railway is actually running" is inferred from consistently healthy observed production behavior, not confirmed by reading Railway's own dashboard. Recommend Andrew do one direct pass through Railway's variables/billing tabs himself at some point, purely to eyeball it — not blocking, since the observable behavior has been correct all day.
+- **Supabase**: service-role access confirmed working for both production and staging projects; billing/plan-tier visibility isn't exposed via this API surface, not checked.
+
+## Documentation corrected
+
+`supabase/migrations/020_anonymize_inactive_household.sql`'s header incorrectly said "DRAFT — NOT APPLIED" — confirmed live via direct RPC call (used for this session's own test-account cleanup). Header corrected so this isn't rediscovered as "not yet applied" again — the same class of drift this whole reconciliation effort exists to catch.
+
+## FINAL STATE: LAUNCH GREEN
+
+Core Home Call Guard (website, registration, email confirmation, Stripe payment initiation confirmed live-mode, entitlement gating, PSTN call protection, live monitoring, billing, Twilio number lifecycle including release) is live, tested, and ready to acquire and onboard paying customers today. No engineering blocker found. Apple App Store review and Android distribution continue separately and do not block the existing web/PSTN product. The one item worth Andrew's attention soon (not blocking): confirm Twilio auto-recharge is configured, given the current balance's limited runway against ongoing number-rental costs.
+
