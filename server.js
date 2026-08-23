@@ -20,6 +20,8 @@ const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { sendCriticalAlert } = require("./services/alerting");
 const { checkSupabaseHealth } = require("./services/healthCheck");
+const { releaseExpiredTwilioNumber } = require("./services/twilioProvisioning");
+const { runExpiredTwilioNumberRelease } = require("./services/twilioNumberReleaseRunner");
 const { wouldCreateForwardingLoop } = require("./services/phone");
 const {
   DEVICE_TYPES,
@@ -1495,6 +1497,53 @@ app.use((err, req, res, next) => {
 const httpServer = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// Twilio number release scheduler (2026-08-23) — closes the gap
+// documented in docs/launch/TWILIO_NUMBER_LIFECYCLE.md: the release
+// script (scripts/release-expired-twilio-numbers.js) existed and was
+// tested, but nothing ever actually invoked it. Rather than requiring
+// Railway dashboard access to configure a separate Cron Job (not
+// available from this environment), this runs the exact same shared
+// logic in-process, once a day, in the same long-running server that's
+// already deployed — zero new infrastructure. Safe to also run the
+// standalone script manually or via an external scheduler at the same
+// time: every real release still goes through the atomic, row-locked
+// RPC (services/twilioProvisioning.js), so this can never double-release
+// a number no matter how many times or how many ways it runs.
+//
+// Runs once shortly after startup (so a long-idle deploy doesn't wait a
+// full day for its first pass), then every 24h. Only alerts on a genuine
+// failure (the listing query itself failing, or an individual release
+// erroring) — "0 found" is the normal, expected, silent case; this must
+// never become a daily "nothing to report" email.
+const TWILIO_RELEASE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const TWILIO_RELEASE_FIRST_RUN_DELAY_MS = 60 * 1000;
+
+async function runTwilioNumberReleaseCheck() {
+  if (!supabaseAdmin) return;
+
+  try {
+    const result = await runExpiredTwilioNumberRelease({ supabaseAdmin, releaseExpiredTwilioNumber });
+    if (result.found > 0) {
+      console.log(`TWILIO RELEASE SCHEDULER: found ${result.found}, released ${result.released}, skipped ${result.skipped}`);
+    }
+    if (result.errors.length > 0) {
+      sendCriticalAlert(
+        "twilio_number_release_failed",
+        `${result.errors.length} household(s) failed Twilio number release`,
+        { errors: result.errors }
+      ).catch(() => {});
+    }
+  } catch (err) {
+    console.error("TWILIO RELEASE SCHEDULER FAILED:", err.message);
+    sendCriticalAlert("twilio_number_release_scheduler_failed", `Twilio number release check failed: ${err.message}`, {}).catch(() => {});
+  }
+}
+
+setTimeout(() => {
+  runTwilioNumberReleaseCheck();
+  setInterval(runTwilioNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
+}, TWILIO_RELEASE_FIRST_RUN_DELAY_MS);
 
 // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint
 // Twilio's <Start><Stream> (attachLiveMonitoring, above) connects to.
