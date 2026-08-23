@@ -44,7 +44,7 @@ This account (`households.id = ccae29b4-bbf1-4469-837d-1b81236e9f01`) already ca
 >
 > **Regional scope**: Home Call Guard currently serves **UK customers only** — phone-forwarding setup instructions are specific to UK mobile networks and UK landline providers (BT, Sky, Virgin, etc.), and the provisioned numbers are UK numbers. There is no regional variation within the app itself to account for; it is a single-region (UK) product at this stage, with no other market currently supported.
 >
-> **Devices/OS tested**: [Andrew — please confirm the exact iPhone model + iOS version used for the attached recording, and the Android model/OS version already used for earlier physical testing (a Motorola Moto E7 was used for the Android Voice SDK proof); I don't have reliable access to your device's exact model/OS string from here.]
+> **Devices/OS tested**: iPhone 15 (iOS version — see Settings → General → About, still to be filled in below), Motorola Moto E7 (Android).
 >
 > **Setup/access instructions for the reviewer**:
 > 1. Install the build and open the app.
@@ -78,6 +78,6 @@ Keep it under ~3 minutes; Apple's reviewers skim, and a shorter, confident, real
 
 # 5. Still needed from Andrew before this can be finalized/submitted
 
-1. Exact iPhone model + iOS version (and Android model/OS version) for the "Devices/OS tested" line.
+1. Exact iOS version string (iPhone 15 and Android Moto E7 models now confirmed) — check Settings → General → About on the test iPhone and fill in above.
 2. The physical-device screen recording itself, once the CallKit reception work in progress completes.
 3. A decision on whether to pre-configure the reviewer account with a synthetic completed activation (so it shows "Protected" with a real-looking activity history instead of "Setting up") — recommended, but not done yet since it wasn't explicitly requested; flagging rather than acting on it.
