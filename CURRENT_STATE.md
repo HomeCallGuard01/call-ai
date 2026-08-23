@@ -196,6 +196,37 @@ Core Home Call Guard (website, PSTN call protection, live monitoring, billing) i
 
 ## Deferred to post-launch (explicitly, not silently dropped)
 
-- **Native app Home screen visual redesign** (task tracked) — requires rebuilding/reinstalling the mobile app, which risks disturbing the just-proven-working Voice/CallKit build. Not touched. Real, known issue — schedule immediately after launch.
+- **Native app Home screen visual redesign** — done, merged (`sandbox/mobile-app-v1` `a49dca3`), ships as the next mobile release once Apple approves the current build.
 - **Branded Supabase confirmation email** — template drafted and ready (`docs/launch/SUPABASE_CONFIRMATION_EMAIL_TEMPLATE.md`), needs Andrew to paste it into the Supabase Dashboard (no Management API access to do this directly). Zero risk to the critical path either way.
+
+---
+
+# Launch Operations review (2026-08-23, evidence-based, read-only)
+
+Covers production monitoring/alerts, support route, first-customer journey, business/service account readiness, automated health monitoring, and operational risk — all checked directly against the live system, not re-derived from memory.
+
+## Working / confirmed today
+
+- **Support route is real infrastructure, not a placeholder**: `support@homecallguard.co.uk` has live MX records (`mx00.ionos.co.uk`, `mx01.ionos.co.uk`) and an SPF record — mail genuinely routes somewhere. Whether anyone is actively monitoring that inbox is a process question for Andrew, not something checkable from here.
+- **Business/service account readiness — the "Twilio Address" blocker flagged in `KNOWN_ISSUES.md` is actually resolved**: 4 validated UK Twilio Address objects exist on the account (confirmed live via Twilio's API), meaning new UK number purchases for new customers are not blocked. This document should stop citing that as an open risk.
+- **Registered company details are real and present** in the public Terms/Privacy pages: AFMD Ltd, company number `07075723`, registered office 128 City Road, London EC1V 2NX — matches what Apple/Stripe/banking would expect to see cross-referenced.
+- **Live Stripe webhook is genuinely functioning right now**: most recent production `subscriptions` row update is from **today**, 2026-08-23 08:28 UTC (`c4609f47-...` → `active`) — real, current evidence the live-mode webhook path works, even though the live Stripe key itself isn't accessible from here to inspect its configured URL directly.
+- **Admin dashboard exists** (`/admin`, `requireAuth` + `requireAdmin`, overview + search APIs) as a real, already-built manual-inspection tool — currently uncommitted/unstaged per its own standing approval gate, not to be conflated with "shipped," but available to Andrew locally today if he needs to look something up.
+- Pricing is consistent everywhere it's quoted: £4.99/month (web checkout copy, mobile dashboard API, Stripe Checkout price).
+
+## Real operational risks — not previously surfaced this clearly
+
+1. **No monitoring/alerting tool is configured anywhere** (confirmed absent: no Sentry/Bugsnag/Datadog/等 in `package.json`, no dedicated health-check route, no Railway config file in the repo). Every failure — webhook errors, payment errors, Twilio provisioning failures — is only visible as a `console.error` line in Railway's raw logs. **Nothing currently pages anyone if production breaks.** This is the single biggest operational gap for launch: a silent failure (e.g. Stripe webhook starts erroring) could go unnoticed until a customer complains.
+2. **No scheduled job actually performs Twilio number release** after the 30-day cancellation grace period — `twilio_number_pending_release_at` gets set, but nothing reads it and calls the release RPC. **Currently zero production households are actually in this pending state** (confirmed live), so this isn't costing money today, but it's a latent gap: if/when customers start cancelling at volume, released numbers will simply never actually get released (recurring Twilio line-rental cost with no automatic remediation) unless someone remembers to check manually.
+3. **Railway's actual environment variables (the real live Stripe key, production Twilio number fully cross-checked, etc.) have never been directly inspected from here** — no Railway CLI auth available this session. Everything about "what production is actually running" is inferred from its observable behavior (which today is all healthy), not from reading Railway's dashboard directly. Worth Andrew doing one pass through Railway's variables tab himself at some point, just to eyeball it.
+
+## Facts for the marketing/customer-acquisition stream (technical, verified, non-duplicative of that work)
+
+- **Production URL**: https://www.homecallguard.co.uk
+- **Company**: AFMD Ltd (trading as Home Call Guard), company number 07075723, registered office 128 City Road, London EC1V 2NX
+- **Price**: £4.99/month, one plan, no tiers currently
+- **Real, physically-proven core value prop**: an unknown caller is answered and monitored in real time (Whisper transcription + rule-based scam-pattern scoring); a call matching known scam patterns (bank impersonation, "family member in trouble," requests to move money or share one-time codes) is interrupted before harm; trusted contacts always ring straight through, never monitored.
+- **Platform status**: iOS app built and submitted to Apple App Review (Guideline 2.1 resubmission in progress); Android not yet built for store submission. Website/web app is the primary live channel today.
+- **Regional scope**: UK only, by design (UK phone-forwarding mechanics, UK Twilio numbers).
+- Screenshots available: `docs/screenshots/mobile-rc1/` (earlier RC1 set) and today's three Home-screen redesign captures (paths given to Andrew directly in-conversation).
 
