@@ -29,12 +29,24 @@ async function verifyBearerToken(req) {
   const [scheme, token] = authHeader.split(" ");
 
   if (scheme !== "Bearer" || !token) {
+    // TEMPORARY diagnostic (2026-08-23 physical device verification) —
+    // remove once resolved.
+    console.log("AUTH DEBUG: no bearer token on request to", req.path, "header present:", !!authHeader);
     return null;
   }
 
   const { data: userData, error } = await supabase.auth.getUser(token);
 
   if (error || !userData?.user) {
+    // TEMPORARY diagnostic (2026-08-23 physical device verification) —
+    // remove once resolved. Never logs the token itself.
+    console.log(
+      "AUTH DEBUG: token present but rejected for",
+      req.path,
+      "error:",
+      error?.message,
+      error?.status
+    );
     return null;
   }
 

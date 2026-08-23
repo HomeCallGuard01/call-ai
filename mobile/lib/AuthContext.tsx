@@ -21,6 +21,37 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue>({ session: null, isLoading: true });
 
+// TEMPORARY diagnostic (2026-08-23 physical device verification) — decodes
+// just the JWT header (never the payload/signature) to report which
+// signing key a given session's access_token actually carries, since a
+// real device's persisted-session/stale-key behaviour can't otherwise be
+// observed remotely. Remove once resolved.
+function decodedKid(accessToken: string | undefined): string {
+  if (!accessToken) return "none";
+  try {
+    const headerB64 = accessToken.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = headerB64 + "=".repeat((4 - (headerB64.length % 4)) % 4);
+    const header = JSON.parse(globalThis.atob(padded));
+    return header.kid || "no-kid";
+  } catch {
+    return "decode-failed";
+  }
+}
+
+function authBeacon(stage: string, detail?: string): void {
+  try {
+    const base = process.env.EXPO_PUBLIC_API_BASE_URL;
+    if (!base) return;
+    fetch(`${base}/debug/voice-beacon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage: `auth:${stage}`, detail }),
+    }).catch(() => {});
+  } catch {
+    // never let diagnostics break real auth handling
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,11 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
+      authBeacon("initial-getSession", decodedKid(data.session?.access_token));
       setSession(data.session);
       setIsLoading(false);
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, newSession) => {
+      authBeacon(`onAuthStateChange:${event}`, decodedKid(newSession?.access_token));
       setSession(newSession);
 
       // The comment this function opens with has always described this
