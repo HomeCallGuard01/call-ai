@@ -17,7 +17,18 @@ module.exports = {
         ITSAppUsesNonExemptEncryption: false,
       },
       entitlements: {
-        "aps-environment": "production",
+        // EAS sets EAS_BUILD_PROFILE during `eas build`. "preview" is the
+        // profile with a working non-production backend wired up (EAS
+        // "preview" environment: EXPO_PUBLIC_API_BASE_URL points at the
+        // ngrok tunnel onto the local staging server, staging Supabase
+        // project) — it's the one used for physical-device Voice SDK
+        // testing, and the only iOS Twilio Voice Push Credential that
+        // currently exists is sandbox-mode
+        // (HomeCallGuard-iOS-VoIP-Sandbox-2026-08-21). A production-mode
+        // credential doesn't exist yet, so the "production" profile keeps
+        // the real production entitlement it'll need at launch.
+        "aps-environment":
+          process.env.EAS_BUILD_PROFILE === "preview" ? "development" : "production",
       },
     },
     android: {
