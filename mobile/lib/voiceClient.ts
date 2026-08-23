@@ -91,28 +91,63 @@ async function selectSpeakerForRinging(): Promise<void> {
   }
 }
 
+// TEMPORARY diagnostic beacon (2026-08-23 physical iOS Voice SDK
+// verification pass) — reports registration progress to the backend
+// since iOS redacts on-device console output by default and there is no
+// other way to observe a release-mode build's progress remotely. Never
+// blocks or throws; remove once CallKit reception is confirmed working.
+function beacon(stage: string, detail?: string): void {
+  try {
+    const base = process.env.EXPO_PUBLIC_API_BASE_URL;
+    if (!base) return;
+    fetch(`${base}/debug/voice-beacon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, detail, platform: Platform.OS }),
+    }).catch(() => {});
+  } catch {
+    // never let diagnostics break the real registration flow
+  }
+}
+
 export async function registerForIncomingCalls(): Promise<void> {
   console.log("VOICE DEBUG: registerForIncomingCalls called, registered=", registered);
+  beacon("start");
   if (registered) {
     console.log("VOICE DEBUG: already registered, skipping");
+    beacon("already-registered");
     return;
   }
 
-  if (Platform.OS === "ios") {
-    // Delegates PushKit device-token handling and incoming-push wake-up
-    // to the SDK itself, rather than requiring us to write a native
-    // PushKit delegate module — the SDK is "tightly integrated with the
-    // iOS CallKit framework" per Twilio's own getting-started-ios.md, and
-    // this is the one call needed to opt into that integration from the
-    // JS side.
-    await voice.initializePushRegistry();
-  }
+  let ttlSeconds: number;
+  try {
+    if (Platform.OS === "ios") {
+      // Delegates PushKit device-token handling and incoming-push wake-up
+      // to the SDK itself, rather than requiring us to write a native
+      // PushKit delegate module — the SDK is "tightly integrated with the
+      // iOS CallKit framework" per Twilio's own getting-started-ios.md, and
+      // this is the one call needed to opt into that integration from the
+      // JS side.
+      beacon("pushRegistry-start");
+      await voice.initializePushRegistry();
+      beacon("pushRegistry-done");
+    }
 
-  console.log("VOICE DEBUG: about to fetchVoiceToken");
-  const { token, ttlSeconds } = await fetchVoiceToken();
-  console.log("VOICE DEBUG: fetchVoiceToken resolved, about to voice.register");
-  await voice.register(token);
-  console.log("VOICE DEBUG: voice.register resolved");
+    console.log("VOICE DEBUG: about to fetchVoiceToken");
+    beacon("tokenFetch-start");
+    const tokenResult = await fetchVoiceToken();
+    ttlSeconds = tokenResult.ttlSeconds;
+    const { token } = tokenResult;
+    beacon("tokenFetch-done");
+    console.log("VOICE DEBUG: fetchVoiceToken resolved, about to voice.register");
+    beacon("voiceRegister-start");
+    await voice.register(token);
+    beacon("voiceRegister-done");
+    console.log("VOICE DEBUG: voice.register resolved");
+  } catch (err) {
+    beacon("error", err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+    throw err;
+  }
   registered = true;
   if (Platform.OS === "android") {
     // Android-only: see selectSpeakerForRinging's own comment for why —
