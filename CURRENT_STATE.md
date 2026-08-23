@@ -346,3 +346,94 @@ Target state: **Home Call Guard** = product/trading brand, **AFMD Limited** = le
 
 **No service was found definitively RED** (i.e., confirmed-wrong/personal billing) — every AMBER above is "cannot verify from this environment," not "verified incorrect." All are genuine gaps in what's checkable via API/CLI from here, not evidence of a real problem — Andrew's own direct dashboard check is the only way to close each one out.
 
+---
+
+# AFMD billing audit — CLOSED OUT (2026-08-23, Andrew-confirmed)
+
+Every AMBER above has now been personally checked and corrected by Andrew. Recorded here as authoritative per his direct report — not re-derived, since dashboard billing/payment-method screens aren't independently checkable from this environment:
+
+| Service | Status |
+|---|---|
+| **Twilio** | 🟢 GREEN — AFMD card ending 2950, Auto-Recharge ON (already confirmed earlier same day). |
+| **Stripe** | 🟢 GREEN — corrected/sorted by Andrew. |
+| **Railway** | 🟢 GREEN — corrected/sorted by Andrew. |
+| **Supabase** | 🟢 GREEN — AFMD card ending 2950. |
+| **OpenAI** | 🟢 GREEN — AFMD card ending 2950. |
+| **IONOS** | 🟢 GREEN — corrected to business payment. |
+| **Resend** | 🟢 GREEN — no card currently required (no paid plan in use). |
+| **Expo/EAS** | 🟢 GREEN (current) — free plan, no payment method needed yet; AFMD card to be attached when the account is eventually upgraded off the free build quota. |
+
+**All business-account/payment-source audit items are now closed.** No outstanding billing-ownership risk.
+
+## Stale Stripe test-mode subscription cleanup (2026-08-23, autonomous)
+
+Verified the four refunded £4.99 test payments cannot recharge anything: their Stripe subscriptions were not the ones still active — a separate, unrelated set of 10 stale **test-mode** Stripe subscriptions (`sk_test_...` key, zero real money ever at risk) was found active from earlier test rounds. Cross-referenced every one's `customer` ID against both the production (`psbzynxplxfbyrbdidmn`) and staging (`tigwgmayeuisrxjjykqd`) Supabase projects and against Twilio's real 8-number inventory to classify each before acting:
+
+- **4 canceled** (`DELETE /v1/subscriptions/{id}`, test mode, zero financial impact) — each had either a real, still-costing Twilio number attached or no household at all:
+  - `sub_1U27DkEopg3VmrHsv4OouKPc` → production household `33f44ce3-...` (`romanhcg2010@gmail.com`), real number `+441164931446`.
+  - `sub_1Tx5oVEopg3VmrHs7MvWjGW1` → production household `0830a77b-...` (`andydeane@protonmail.com`), real number `+442475427958`.
+  - `sub_1U4da1Eopg3VmrHsgv6CDY4F` → staging household `ec61d2e1-...` (`andydeane@protonmail.com`), real number `+441163602233`.
+  - `sub_1TvK9YEopg3VmrHsphwBw9mR` → no household on either project, fully orphaned, cancellation alone was sufficient.
+- **For the 3 with real numbers attached**, full cleanup was completed, not just cancellation: (1) released the real Twilio resource directly via `DELETE /IncomingPhoneNumbers/{sid}.json` — cancelling in Stripe alone does not release a Twilio number; (2) rather than hand-editing `entitlements` directly (no established write path for that table — see 020's own comment on `households`), found the real `customer.subscription.deleted` event Stripe generated for each cancellation via `/v1/events` and **replayed it through the actual production code path** (`claimWebhookEvent` + `processWebhookEvent` from `database/billing.js`, the exact functions `routes/billing.js`'s webhook handler calls) — so the entitlement was expired the same way a live webhook delivery would do it, not through a bespoke shortcut; (3) called the existing `release_household_twilio_number_immediately` RPC to clear the household's own `twilio_number` DB field (the Twilio-side release doesn't touch our DB); (4) anonymized the household via `anonymize_inactive_household` (020) once both hard-refusal conditions — live number, active entitlement — were genuinely satisfied rather than bypassed. All three independently re-verified afterwards (`email` → `anonymized-<id>@deleted.homecallguard.internal`, `twilio_number`/`phone_number`/`stripe_customer_id` → null, `status` → `cancelled`).
+- **Explicitly left untouched**: the two households behind today's physically-proven CallKit test (`7b164a55-...` / `ad_74uk@yahoo.co.uk` / `+441302490922`, and `816b3f10-...` / `andrewdeane_uk@yahoo.co.uk`) — re-verified still `active` with their numbers intact after the cleanup; two more staging test households with real-looking-but-fabricated Twilio numbers (`+442012345678`, `+442079460123` — not present in Twilio's real inventory, never actually purchased) — no real cost, left alone; two staging households from disposable e2e test runs with no Twilio number at all — no real cost, left alone.
+- **Net effect**: 3 real Twilio numbers released (saving ~£3/month idle rental), 3 stale households fully anonymized, 1 orphaned subscription cancelled, zero real financial transactions of any kind, and the two live CallKit-proof accounts and all genuinely-in-use production households untouched.
+
+## Twilio Auth Token rotation — prepared, NOT executed (deliberately)
+
+Following up on the earlier self-disclosed incident (Auth Token briefly visible in a tool result). Confirmed via Twilio's own docs that zero-downtime rotation is a real, supported feature: create a **secondary Auth Token** (`POST https://accounts.twilio.com/v1/AuthTokens/Secondary`) — both tokens are valid simultaneously — update every consumer to use it, then **promote** it (`POST https://accounts.twilio.com/v1/AuthTokens/Promote`, which deletes the old primary, i.e. retires the exposed one).
+
+**Why this was not carried out autonomously**: the middle step ("update every production secret") means Railway's `TWILIO_AUTH_TOKEN` environment variable — and this session has never had Railway CLI or dashboard access, all engagement long (confirmed repeatedly, not re-derived). That gap alone blocks full completion regardless of anything else, so per this run's own instruction ("if any irreversible account action genuinely requires Andrew... do not risk the working production service"), no Twilio-side change was made — the current, working Auth Token remains untouched and production is unaffected.
+
+Separately: creating the secondary token myself would mean the live secret value passes through this session's tool output again — exactly the failure mode from the earlier incident. Since Andrew has direct Console access and the whole action takes under a minute, it's cleaner and safer for him to do the create-and-copy step himself rather than have me generate/handle the secret. See the Monday handover report for the exact one-action sequence.
+
+## Final Phase 1 verification pass (2026-08-23, non-destructive)
+
+- `/health`: `200`, `{"status":"ok",...,"checks":{"supabase":"ok"}}` — confirmed live via direct request.
+- Twilio number release scheduler: confirmed still wired into `server.js` (`runTwilioNumberReleaseCheck`, first run 60s after boot then every 24h, alerts only on genuine failure) — no redeploy needed, nothing regressed.
+- Support email infrastructure: MX (`mx00`/`mx01.ionos.co.uk`) and SPF (`v=spf1 include:_spf-eu.ionos.com ~all`) both confirmed live via DNS lookup.
+- Full automated regression suite: **785/785 checks passed, exit code 0** — every migration, billing/webhook, provisioning, live-monitoring (transcription, risk scoring, red-line termination, SMS warnings), alerting, health-check, and release-runner test green. No regressions from tonight's cleanup work.
+
+**PHASE 1: COMPLETE. Production frozen, no feature work or refactoring performed — only the test-data cleanup and verification described above.**
+
+---
+
+# FIRST CUSTOMER OPERATIONS (2026-08-23) — reviewed end-to-end, low-risk fixes applied
+
+Reviewed the actual, deployed customer journey by reading the real served files/routes (not assumptions): `public/index.html` (landing), `public/register.html`, `public/confirmed.html`, `public/login.html`/`forgot-password.html`/`reset-password.html`, `upload.html` (the real dashboard — **`GET /dashboard` serves `upload.html` at the repo root, not `public/dashboard.html`**; see note below), `GET /activation-instructions` (`server.js:844`, logic in `services/activationInstructions.js`), `routes/billing.js`'s checkout/portal/reconcile routes, and the trusted-contacts CSV template.
+
+## Journey, step by step (what's actually live)
+
+1. **Signup** (`register.html` → `POST /register`) — email/password only, clear validation, deliberately identical success copy for a genuinely-new signup vs. a duplicate attempt (anti-account-enumeration, intentional). Fine.
+2. **Email confirmation** (`confirmed.html`) — confirms the account is active; login continues to the dashboard.
+3. **£4.99 payment** (`POST /billing/create-checkout-session`, `routes/billing.js:169`) — well-guarded: blocks double-subscribing, reuses an open Checkout session, real idempotency key, redirects to Stripe Checkout. Solid.
+4. **Provisioning** — a Twilio number is assigned server-side on qualifying subscription status; customer never has to do anything for this step.
+5. **Trusted contacts** — CSV upload matches the on-page instructions; simple, works as described.
+6. **"Protected telephone call" setup** (`GET /activation-instructions`) — **this is the one step that actually requires the customer to do something technical**: dial a call-forwarding code (e.g. `*21*0xxxxxxxxxxx#`) on their own handset so unknown calls reach Home Call Guard at all. Sky/Virgin landline customers must first call 150 to add "Call Divert," which **may add ~£2.50/month** to their phone bill — a real, provider-charged cost, not a Home Call Guard fee.
+7. **Monitoring** — live call screening, progressive/red-line risk detection, SMS warnings — all covered by the 785-check regression suite, no issues found in this review.
+8. **Dashboard/activity** (`upload.html`) — shows recent calls, membership status, trusted contacts, account details, FAQ, support email. Onboarding steps shown one at a time; never falsely claims "protected" before a real routed call is verified. Good design already in place.
+9. **Membership/cancellation** (`POST /billing/manage-membership`) — redirects to Stripe's hosted Billing Portal (the *only* place a subscription can actually be cancelled or a card updated — correct, minimal-surface-area design, nothing to fix architecturally).
+10. **Support** — `support@homecallguard.co.uk` genuinely visible on the landing page, dashboard, and footer everywhere; real MX/SPF confirmed live (Phase 1).
+
+## Genuine confusion points found — fixed (copy-only, zero architecture risk)
+
+- **Undisclosed setup step and undisclosed extra cost.** Nothing on the landing page or pricing section warned a first-time customer that (a) a manual call-forwarding step is required after paying, or (b) Sky/Virgin customers may be charged an extra ~£2.50/month by their own phone provider for it. **Fixed**: added a new FAQ entry to `public/index.html` ("What do I need to do after I subscribe?") disclosing both, placed in the existing FAQ list, no design/layout changes.
+- **"Manage Membership" gave no indication it leaves the site.** For a scam-screening product marketed to scam-wary customers, an unexplained redirect to an unfamiliar external payment page is a real, avoidable moment of alarm. **Fixed**: added one line of copy under the button in `upload.html` ("This takes you to Stripe, our secure payment provider, where you can update your card details or cancel your subscription.").
+- Both changes are pure static-copy additions (no JS, no routes, no schema touched); full regression suite re-run afterward: **785/785 checks still passing, exit code 0**.
+
+## Identified, deliberately NOT changed (cosmetic or requires a judgment call beyond "genuine defect, low-risk fix")
+
+- `confirmed.html`'s "your account is now active" wording could arguably be read as implying protection is already on — but the very next screen (dashboard) clearly shows the payment paywall before anything else, so this is a minor sequencing nuance, not a dead-end or wrong information. Left as-is.
+- `register.html`'s identical new-vs-duplicate-signup copy is a deliberate security tradeoff (anti-enumeration) already made and documented in this codebase — changing it is a security-posture decision, not a copy fix, so left untouched.
+- `public/dashboard.html` is a **stale, never-served dev stub** (found during this review — `GET /dashboard` actually serves `/upload.html` at the repo root, confirmed at `server.js:1469`). It is dead code, not reachable by any customer, so it's not a live defect — flagged here so it isn't mistaken for the real dashboard again, but not deleted (out of scope for a freeze night; harmless as-is).
+- `reset-password.html` silently attempts a `homecallguard://` app-scheme handoff before falling back to the web form — harmless no-op if no app is installed, but no companion app is ever mentioned in customer copy (deliberately — index.html's own FAQ says "No app to learn"). Not a customer-facing issue since it fails silently and invisibly to a web fallback; left as-is.
+
+## Customer-acquisition attribution — no existing mechanism found; recommendation only (per instruction, not built)
+
+Checked thoroughly: `POST /register` (`server.js:1126`) captures only `email`/`password` — no UTM parameters, referrer, or campaign field anywhere in the request, in `households`' schema, or in any migration. The only `source` column that exists (`entitlements.source`, migration 011) records *how the entitlement was granted* (`'stripe'` etc.), unrelated to marketing attribution. **No existing mechanism to wire up.**
+
+Building real attribution (a `households.acquisition_source` column + capturing `?utm_source=` on landing and threading it through registration, or adding a client-side analytics script) is new architecture and also raises a genuine privacy-policy question — `privacy.html` would need checking/updating if any tracking script were added, which is a legal/policy judgment call, not an autonomous copy fix. Per this run's own instruction ("if proper attribution requires new architecture, document the recommendation rather than delaying launch"), this is **documented only**:
+
+**Recommendation for zero-engineering attribution starting Monday**: since HCG expects its first 10 customers from a handful of known channels (Age UK, a community group, local press, word-of-mouth), Andrew can distinguish sources today with no code changes at all — give each channel its own distinct, memorable link (e.g. a free redirect/short-link service he controls, one per channel, all pointing at the same `homecallguard.co.uk`), and simply note the date/time of each outreach event (the Age UK talk, the press piece going live) against new-signup timestamps visible in Supabase. This costs nothing, ships today, and is sufficient at 10-customer scale. Proper UTM capture + a `households` column is a reasonable small follow-up once volume justifies the engineering and the privacy-policy question has been considered — not before.
+
+**PHASE 2: COMPLETE.**
+
