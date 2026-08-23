@@ -321,5 +321,28 @@ Ran end-to-end against **production** (`www.homecallguard.co.uk`, live Supabase 
 
 ## FINAL STATE: LAUNCH GREEN
 
-Core Home Call Guard (website, registration, email confirmation, Stripe payment initiation confirmed live-mode, entitlement gating, PSTN call protection, live monitoring, billing, Twilio number lifecycle including release) is live, tested, and ready to acquire and onboard paying customers today. No engineering blocker found. Apple App Store review and Android distribution continue separately and do not block the existing web/PSTN product. The one item worth Andrew's attention soon (not blocking): confirm Twilio auto-recharge is configured, given the current balance's limited runway against ongoing number-rental costs.
+Core Home Call Guard (website, registration, email confirmation, Stripe payment initiation confirmed live-mode, entitlement gating, PSTN call protection, live monitoring, billing, Twilio number lifecycle including release) is live, tested, and ready to acquire and onboard paying customers today. No engineering blocker found. Apple App Store review and Android distribution continue separately and do not block the existing web/PSTN product.
+
+**Twilio auto-recharge: RESOLVED same day.** Andrew confirmed Auto-Recharge ON, trigger £10 → restore to £35, primary payment method switched to the AFMD business card ending 2950. Twilio is GREEN.
+
+**Incident note (self-disclosed)**: while checking for an auto-recharge API, one debug query printed the account's live Auth Token in plaintext in tool output (never in chat text, but visible in that turn's tool result). Flagged to Andrew immediately; he was advised to consider rotating it (Twilio Console → Account → API keys & tokens) — his call, not done automatically since rotating would break every current integration until updated everywhere. Lesson applied to every check since: extract only specific named fields from API responses, never print/dump full response bodies that could contain credentials.
+
+---
+
+# Business-account / payment-source audit (2026-08-23)
+
+Target state: **Home Call Guard** = product/trading brand, **AFMD Limited** = legal/contracting entity, AFMD business card = operating costs, AFMD business bank account = Stripe/customer revenue. Classified using only API/configuration evidence actually obtained — no dashboard access assumed, no secrets printed.
+
+| Service | Status | Evidence / what's needed |
+|---|---|---|
+| **Twilio** | 🟢 **GREEN** | Auto-Recharge on (£10 trigger → £35 restore), AFMD business card ending 2950 as primary payment method — confirmed directly by Andrew. |
+| **Stripe** | 🟡 **AMBER** | Account-level checks confirm `charges_enabled`/`payouts_enabled`/`details_submitted` all `true`, `business_type: company`, dashboard `display_name: "Home Call Guard"` — operationally sound. But `business_profile.name`, `company.name`, and `business_profile.support_email` are all blank (should say "AFMD Limited" and a real support address), and the payout bank account destination isn't visible from here (0 external accounts returned — likely a test-key-only visibility limit, not necessarily a real gap). **Andrew: Stripe Dashboard → Settings → Business details** — confirm legal name is "AFMD Limited"; **Settings → Payouts / Bank accounts** — confirm the payout destination is the AFMD business bank account, not a personal one. |
+| **OpenAI** | 🟡 **AMBER** | API key valid, `whisper-1` accessible — no organization/billing info exposed via any header or endpoint this key can reach. **Andrew: platform.openai.com → Settings → Billing** — confirm the payment method on file is the AFMD business card, and that the organization name reflects AFMD/Home Call Guard, not a personal account. |
+| **Railway** | 🟡 **AMBER** | No CLI/API access from this environment all session (no token available) — genuinely unverifiable from here. **Andrew: Railway Dashboard → Project Settings → Billing / Usage** — confirm the payment method is the AFMD business card. |
+| **Supabase** | 🟡 **AMBER** | `service_role` keys work for both projects (data-plane access only) — no Management API personal-access-token available, so organization/billing is not visible from here. **Andrew: supabase.com dashboard → Organization Settings → Billing** — confirm payment method and organization name. |
+| **Resend** | 🟡 **AMBER** | Domain `mail.homecallguard.co.uk` verified, API keys sensibly named ("Home Call Guard Staging SMTP", "Onboarding") — correctly branded, but billing/payment method isn't exposed via Resend's API at all. **Andrew: resend.com dashboard → Settings → Billing** — confirm payment method. |
+| **Expo/EAS** | 🟡 **AMBER** | Account name is correctly `homecallguard`, but logged in as Andrew's **personal** email (`andrewdeane_uk@yahoo.co.uk`), and currently on the **free plan** (confirmed by today's "used its iOS builds from the Free plan" quota message) — no payment method attached at all yet. **Andrew: expo.dev/accounts/homecallguard/settings/billing** — when upgrading (likely needed soon given the exhausted free build quota), attach the AFMD business card, not a personal one. |
+| **IONOS (domain/email)** | 🟡 **AMBER** | MX/SPF records confirmed live and correctly routing mail (from the earlier operations review) — no API access exists to check the IONOS account itself, and UK `.co.uk` WHOIS is privacy-redacted by Nominet by default (normal, not a red flag, tells us nothing either way). **Andrew: IONOS account panel → Billing/Payment methods** — confirm the domain/email hosting is billed to the AFMD business card. |
+
+**No service was found definitively RED** (i.e., confirmed-wrong/personal billing) — every AMBER above is "cannot verify from this environment," not "verified incorrect." All are genuine gaps in what's checkable via API/CLI from here, not evidence of a real problem — Andrew's own direct dashboard check is the only way to close each one out.
 
