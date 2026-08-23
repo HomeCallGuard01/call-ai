@@ -1104,16 +1104,6 @@ app.post("/reset-password-complete", async (req, res) => {
   return res.json({ ok: true });
 });
 
-// TEMPORARY diagnostic beacon (2026-08-23 physical iOS Voice SDK
-// verification pass) — unauthenticated on purpose, so a client-side
-// failure before a valid session/token exists is still observable.
-// Remove once CallKit reception is confirmed working. Never logs
-// anything beyond a stage label and an optional error string.
-app.post("/debug/voice-beacon", express.json(), (req, res) => {
-  console.log("VOICE BEACON:", req.body && req.body.stage, req.body && req.body.detail);
-  res.json({ ok: true });
-});
-
 // PAGES
 
 app.get("/", (req, res) => {
