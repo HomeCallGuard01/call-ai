@@ -230,3 +230,53 @@ Covers production monitoring/alerts, support route, first-customer journey, busi
 - **Regional scope**: UK only, by design (UK phone-forwarding mechanics, UK Twilio numbers).
 - Screenshots available: `docs/screenshots/mobile-rc1/` (earlier RC1 set) and today's three Home-screen redesign captures (paths given to Andrew directly in-conversation).
 
+---
+
+# Production monitoring/alerting (2026-08-23) — DEPLOYED
+
+Deliberately minimal — one health endpoint, one alert function, one destination, rate-limited. Not an observability platform. Commit `e2b6951`, verified live in production.
+
+## What is monitored
+
+- **Uptime**: `GET https://www.homecallguard.co.uk/health` — confirmed live, returns `{"status":"ok","timestamp":...,"checks":{"supabase":"ok"}}`. Always `200` if the Node process responds at all (that alone is the real uptime signal); includes a bounded (2s timeout) Supabase connectivity check in the JSON body for diagnostics only — a slow-but-working dependency can never flip this to "unavailable." Uses the service-role client specifically (the anon client would always show RLS-denied "error" regardless of real health — caught and fixed before deploying).
+- **Critical application failures**, each firing a rate-limited alert email via `services/alerting.js`:
+  - Uncaught exceptions / unhandled promise rejections (process-level; Node's existing crash-then-restart behaviour is unchanged, this only adds an alert first)
+  - Any otherwise-unhandled error on any Express route, via a new global error-handling middleware (this is what covers `/voice`, which has no route-local try/catch of its own)
+  - Stripe webhook processing failures (both the "processing failed" and the handler-exception paths)
+  - Twilio number provisioning failures
+  - Live-monitoring/transcription pipeline errors (`media_stream_pipeline_error`)
+  - Approved-call delivery failures (no forwarding destination on file; Client-only dial not answered — this second path is currently dormant since the tightened `self_protecting` routing isn't live yet, but is instrumented now for when it is)
+
+## Where alerts go
+
+`support@homecallguard.co.uk`, sent from `alerts@mail.homecallguard.co.uk` via Resend's API (verified domain, confirmed live via a real API call — no SDK dependency, a single HTTPS POST). Resend was already fully configured (verified domain existed) but had never been wired into any code path before today.
+
+## Rate limiting / deduplication
+
+Per failure `type` (e.g. `stripe_webhook_processing_failed`, `twilio_provisioning_failed`), in-memory, 30-minute suppression window — the first occurrence of a given type sends immediately, repeats of the *same type* within 30 minutes are silently suppressed (still logged via `console.error`, just not re-emailed). Different failure types are independent — a Stripe failure and a Twilio failure at the same moment both alert. State is per-process, so it resets on every deploy/restart (acceptable: worst case is one extra email right after a deploy, never silence).
+
+## Fail-open guarantee
+
+`sendCriticalAlert` never throws (verified by test: a `post()` that throws, and the real code path with no `Resend_API_Key` configured, both resolve `false` rather than propagating). Every call site fires-and-forget (`.catch(() => {})`), so a broken alert can never affect a real call, payment, or provisioning attempt. Alert bodies contain only IDs (household ID, call SID, Stripe event ID/type), HTTP status/error messages, and timestamps — never passwords, API keys, full transcripts, or phone numbers.
+
+## Tests
+
+`tests/alerting.test.mjs` (9 checks: dedup/rate-limiting, per-type independence, fail-open on a throwing post(), fail-open on missing API key, no sensitive strings in the payload) and `tests/health-check.test.mjs` (7 checks: ok/error/timeout/throwing-client cases, and that a hung dependency resolves at the timeout bound rather than hanging). Full regression suite: 774 checks, exit 0, on the exact commit deployed.
+
+## Deliberately NOT monitored yet
+
+- **External uptime checking** — needs an owner-only signup, see below. Until that's done, the `/health` endpoint exists and works but nothing is actually polling it from outside.
+- Ordinary per-request 4xx responses, routine validation errors, individual failed login attempts — none of this pages anyone, by design; only genuinely launch-critical failure categories do.
+- Railway's own infrastructure-level metrics (CPU/memory/disk) — not wired to anything; would need Railway's own alerting or a paid tier, out of scope for "minimal."
+- No dashboard/UI for alert history — email is the only channel. If more alerts arrive than expected, the 30-minute-per-type suppression is the only throttle; there's no weekly digest or trend view.
+
+## The one external action needed (owner-only)
+
+Everything above is done and live. The one remaining piece — an **external** service that checks `/health` from outside our own infrastructure (necessary specifically because our own alerting can't fire if the whole server is down) — requires an account signup, which only Andrew can do:
+
+1. Sign up free at **UptimeRobot** (uptimerobot.com) — the simplest, most widely-used free option (50 monitors, 5-minute checks, built-in email alerting, no card required).
+2. Add a new **HTTP(s)** monitor: URL `https://www.homecallguard.co.uk/health`, interval 5 minutes.
+3. Set the alert contact to an email he checks (`support@homecallguard.co.uk` or personal) — UptimeRobot emails independently the moment it gets a non-200 or a timeout, which is exactly "alert Andrew if production is unavailable or repeatedly returning 5xx."
+
+No further engineering action needed once that's set up.
+
