@@ -27,6 +27,11 @@ export const spacing = {
 };
 
 export const typography = {
+  // Reserved for the single dominant "You're protected" headline (Home
+  // screen redesign, 2026-08-23) — deliberately larger than `hero`, which
+  // stays as-is for every other screen's title so this remains a
+  // one-off, not a general size bump.
+  giant: { fontSize: 32, fontWeight: "800" as const },
   hero: { fontSize: 28, fontWeight: "700" as const },
   title: { fontSize: 22, fontWeight: "700" as const },
   body: { fontSize: 16, fontWeight: "400" as const },
