@@ -13,4 +13,30 @@ function resolveForwardingDestination(household) {
   return { canForward: false, number: null };
 }
 
-module.exports = { resolveForwardingDestination };
+// Pure decision, directly unit-testable without Twilio/Express — the
+// "impossible by construction" claim (migration 028, 2026-08-23) lives
+// here: for a self_protecting household, no plan this function can ever
+// return includes a PSTN number, full stop. That's not a runtime check
+// that could be wrong under some untested condition; it's a fact about
+// which branch of this function's control flow even has access to
+// `resolveForwardingDestination`'s result at all — the self_protecting
+// branch returns before that call ever happens.
+//
+// clientIdentity is passed in (not built here) so this stays free of any
+// dependency on services/voiceAccessToken.js's identity format — the
+// caller (server.js) is the one place that format is decided.
+function decideCallDeliveryPlan(household, clientIdentity) {
+  if (household && household.self_protecting) {
+    return { mode: "client-only", clientIdentity };
+  }
+
+  const destination = resolveForwardingDestination(household);
+
+  if (destination.canForward) {
+    return { mode: "client-and-number", clientIdentity, number: destination.number };
+  }
+
+  return { mode: "fail-closed" };
+}
+
+module.exports = { resolveForwardingDestination, decideCallDeliveryPlan };

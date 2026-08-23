@@ -1123,9 +1123,22 @@
 
       <div id="stepActivate" hidden>
         <h2>Turn on protection</h2>
-        <p class="field-hint">Tell us what you're forwarding calls from to get your activation code.</p>
+
+        <div id="activateMobileFlow" hidden>
+          <p class="field-hint">
+            Tap Get Protected Now. Your phone will show a call confirmation — press <strong>Call</strong>.
+            You may then briefly see a message like "Setting Activation Succeeded" with a Dismiss
+            button — tapping Dismiss is fine, it does not undo your protection.
+          </p>
+          <p id="mobileActivateError" class="error-banner" role="alert" hidden></p>
+          <button type="button" id="getProtectedNowButton">Get Protected Now</button>
+          <p id="mobileActivateWaiting" class="field-hint" role="status" hidden>Checking whether protection turned on…</p>
+          <p id="mobileActivateResult" class="field-hint" role="status" hidden></p>
+          <p class="field-hint"><button type="button" class="secondary-action-button" id="useManualActivationButton">This isn't the phone I'm protecting</button></p>
+        </div>
 
         <div id="callForwardingSetupForm">
+          <p class="field-hint">Tell us what you're forwarding calls from to get your activation code.</p>
           <label for="deviceTypeSelect">What are you forwarding calls from?</label>
           <select id="deviceTypeSelect">
             <option value="">Choose one…</option>
@@ -1596,6 +1609,45 @@
     if (step === "identify") {
       renderPhoneNumberDisplay(data);
     }
+    if (step === "activate") {
+      renderActivateStep();
+    }
+  }
+
+  // TEST-EXTRACT-START: detectMobileDeviceType
+  // Real-device-verified 23 Aug 2026 (see docs/mobile-app/APP_DECISION_003):
+  // the customer completing onboarding IS the phone being protected in the
+  // common case, so the device type doesn't need to be asked — it can be
+  // read from the browser they're already using. Returns null for anything
+  // that isn't recognisably an iPhone or Android device (desktop, or a
+  // genuinely unknown UA), which is the one case the manual/landline-style
+  // picker is still shown for, matching "safe fallback, not the primary UX."
+  function detectMobileDeviceType(userAgent) {
+    const ua = userAgent || "";
+    if (/iPhone|iPad|iPod/.test(ua)) return "iphone";
+    if (/Android/.test(ua)) return "android";
+    return null;
+  }
+  // TEST-EXTRACT-END: detectMobileDeviceType
+
+  // Set true only if the customer explicitly says "this isn't the phone
+  // I'm protecting" — otherwise a detected iPhone/Android always gets the
+  // one-tap flow, never the manual picker, matching "no visible code by
+  // default" for the common case.
+  let forceManualActivation = false;
+
+  function renderActivateStep() {
+    const detected = detectMobileDeviceType(navigator.userAgent);
+    const showMobileFlow = !!detected && !forceManualActivation;
+
+    const mobileFlow = document.getElementById("activateMobileFlow");
+    const manualForm = document.getElementById("callForwardingSetupForm");
+    if (mobileFlow) mobileFlow.hidden = !showMobileFlow;
+    if (manualForm) manualForm.hidden = showMobileFlow;
+
+    if (showMobileFlow) {
+      detectedMobileDeviceType = detected;
+    }
   }
 
   // Persistent "safe calls will ring X" confirmation once a number is on
@@ -1895,6 +1947,109 @@
       }
     });
   }
+
+  // One-tap mobile activation — real-device-verified 23 Aug 2026 (see
+  // docs/mobile-app/APP_DECISION_003). Same mechanism as the mobile app's
+  // mobile/lib/dialerLink.ts (af8d3ba): tel: + code with every # percent-
+  // encoded, * left literal. The code itself still passes through this
+  // page's JS (it has to, to build the URL) but is never rendered as
+  // visible text or handled by the customer — no Copy button, no MMI
+  // terminology, matching the "customer never sees the forwarding number"
+  // requirement for the common iPhone/Android case.
+  let detectedMobileDeviceType = null;
+  let dialerOpened = false;
+  let verifyRetryCount = 0;
+  const MAX_VERIFY_RETRIES = 5;
+  const VERIFY_RETRY_MS = 3000;
+
+  const getProtectedNowButtonEl = document.getElementById("getProtectedNowButton");
+  const mobileActivateErrorEl = document.getElementById("mobileActivateError");
+  const mobileActivateWaitingEl = document.getElementById("mobileActivateWaiting");
+  const mobileActivateResultEl = document.getElementById("mobileActivateResult");
+  const useManualActivationButtonEl = document.getElementById("useManualActivationButton");
+
+  if (useManualActivationButtonEl) {
+    useManualActivationButtonEl.addEventListener("click", function () {
+      forceManualActivation = true;
+      renderActivateStep();
+    });
+  }
+
+  if (getProtectedNowButtonEl) {
+    getProtectedNowButtonEl.addEventListener("click", async function () {
+      if (mobileActivateErrorEl) mobileActivateErrorEl.hidden = true;
+      if (mobileActivateResultEl) mobileActivateResultEl.hidden = true;
+      if (!detectedMobileDeviceType) return;
+
+      getProtectedNowButtonEl.disabled = true;
+      try {
+        const params = new URLSearchParams({ deviceType: detectedMobileDeviceType });
+        const res = await fetch("/activation-instructions?" + params.toString());
+
+        if (!res.ok) {
+          if (mobileActivateErrorEl) {
+            mobileActivateErrorEl.textContent = "We couldn't start activation just now. Please try again, or use manual entry below.";
+            mobileActivateErrorEl.hidden = false;
+          }
+          return;
+        }
+
+        const instructions = await res.json();
+        const url = "tel:" + instructions.code.replace(/#/g, "%23");
+        verifyRetryCount = 0;
+        dialerOpened = true;
+        window.location.href = url;
+      } catch (err) {
+        if (mobileActivateErrorEl) {
+          mobileActivateErrorEl.textContent = "We couldn't start activation just now. Please try again, or use manual entry below.";
+          mobileActivateErrorEl.hidden = false;
+        }
+      } finally {
+        getProtectedNowButtonEl.disabled = false;
+      }
+    });
+  }
+
+  // Detects the customer returning from the Phone app — Page Visibility
+  // API is the web equivalent of the mobile app's AppState listener
+  // (af8d3ba). dialerOpened guards against firing on an unrelated tab
+  // switch/backgrounding that has nothing to do with this flow.
+  async function checkActivationAfterMobileReturn() {
+    if (mobileActivateWaitingEl) mobileActivateWaitingEl.hidden = false;
+    if (mobileActivateResultEl) mobileActivateResultEl.hidden = true;
+
+    try {
+      const res = await fetch("/activation-verify", { method: "POST" });
+      const body = await res.json();
+
+      if (body.verified) {
+        if (mobileActivateWaitingEl) mobileActivateWaitingEl.hidden = true;
+        loadDashboard();
+        return;
+      }
+    } catch (err) {
+      // Swallow — treated the same as "not verified yet" below, retried
+      // on the same bounded schedule rather than surfaced as an error.
+    }
+
+    verifyRetryCount += 1;
+    if (verifyRetryCount < MAX_VERIFY_RETRIES) {
+      setTimeout(checkActivationAfterMobileReturn, VERIFY_RETRY_MS);
+    } else {
+      if (mobileActivateWaitingEl) mobileActivateWaitingEl.hidden = true;
+      if (mobileActivateResultEl) {
+        mobileActivateResultEl.hidden = false;
+        mobileActivateResultEl.textContent = "We haven't seen your call come through yet. If you pressed Call, this can take a few more seconds — tap Get Protected Now again to keep checking.";
+      }
+    }
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && dialerOpened) {
+      dialerOpened = false;
+      checkActivationAfterMobileReturn();
+    }
+  });
 
   // Household phone number — the real destination trusted/screened-safe
   // calls are forwarded to (services/callRouting.js). Unlike the old

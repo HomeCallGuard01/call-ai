@@ -15,7 +15,8 @@ const { getContacts, insertContacts, updateContact, deleteContact } = require(".
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
-const { resolveForwardingDestination } = require("./services/callRouting");
+const { resolveForwardingDestination, decideCallDeliveryPlan } = require("./services/callRouting");
+const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { wouldCreateForwardingLoop } = require("./services/phone");
 const {
@@ -165,12 +166,31 @@ function normaliseNumber(number) {
 // dials a hardcoded/fallback number: a household with no phone_number on
 // file fails closed (a clear message, then hangup) rather than silently
 // routing to the wrong destination.
+// self_protecting (migration 028, 2026-08-23): households.phone_number is,
+// for the single-phone customer this product is primarily built for, the
+// exact same number that's carrier-forwarded to Home Call Guard — dialling
+// it back over PSTN is intercepted by the customer's own still-active
+// forward and re-enters /voice as a brand-new call, an infinite loop
+// (reproduced for real 2026-08-15, confirmed still live and unguarded in
+// production 2026-08-23: Twilio's ForwardedFrom is absent on this carrier
+// path, so no runtime check can ever catch this reliably). The actual
+// decision of which delivery mode applies lives in the pure, unit-tested
+// decideCallDeliveryPlan (services/callRouting.js) — this function only
+// ever translates that decision into TwiML, never re-derives it.
 function dialHouseholdOrFailClosed(twiml, household) {
-  const destination = resolveForwardingDestination(household);
+  const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
+  const plan = decideCallDeliveryPlan(household, clientIdentity);
 
-  if (destination.canForward) {
+  if (plan.mode === "client-only") {
+    const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20 });
+    dial.client(plan.clientIdentity);
+    return;
+  }
+
+  if (plan.mode === "client-and-number") {
     const dial = twiml.dial();
-    dial.number(destination.number);
+    dial.client(plan.clientIdentity);
+    dial.number(plan.number);
     return;
   }
 
@@ -601,6 +621,39 @@ app.post("/red-line-terminate", (req, res) => {
     { voice: "Polly.Amy", language: "en-GB" },
     "This call has been identified as high risk and is being ended for the safety of the person you called."
   );
+  twiml.hangup();
+  return res.type("text/xml").send(twiml.toString());
+});
+
+// CALL DELIVERY FAILED (self_protecting households only)
+//
+// The action callback for a self_protecting household's Client-only
+// <Dial> (dialHouseholdOrFailClosed). Twilio POSTs here once that Dial
+// leg ends, regardless of outcome, with DialCallStatus describing what
+// happened. A normally connected-then-ended call is left alone — this
+// message only plays when the Client genuinely never answered (app not
+// installed, not registered, or timed out). Deliberately never falls
+// through to a PSTN dial-back to household.phone_number — that's the
+// exact known-forwarded number this whole design exists to never dial.
+// Logging distinctly (not just reusing dialHouseholdOrFailClosed's own
+// console.error) so "approved call, app unreachable" is identifiable on
+// its own — a real customer-notification gap (voicemail/SMS) flagged for
+// later, not built here today.
+app.post("/call-delivery-failed", (req, res) => {
+  const twiml = new VoiceResponse();
+  const dialCallStatus = req.body.DialCallStatus;
+
+  if (dialCallStatus !== "completed") {
+    console.error("CALL DELIVERY FAILED: self_protecting household's Client did not answer", {
+      dialCallStatus,
+      callSid: req.body.CallSid,
+    });
+    twiml.say(
+      { voice: "Polly.Amy", language: "en-GB" },
+      "We're sorry, this call cannot be connected right now. Please try again later."
+    );
+  }
+
   twiml.hangup();
   return res.type("text/xml").send(twiml.toString());
 });
@@ -1157,6 +1210,51 @@ app.post("/login", async (req, res) => {
   console.log("[LOGIN] Redirect dashboard");
   setSessionCookies(res, data.session);
   return res.redirect("/dashboard");
+});
+
+// CONFIRM SESSION — lets email confirmation resume straight into the
+// dashboard instead of forcing the customer to re-enter their email and
+// password. Supabase's own confirmation redirect (emailRedirectTo, set
+// to /confirmed.html) hands the browser a real, usable session as a URL
+// *fragment* (#access_token=...&refresh_token=...) — fragments never
+// reach the server, but public/confirmed.html's own script reads it
+// client-side and POSTs it here. Same session-establishment shape as
+// /login (verify, bootstrap household/role, set cookies) — this is not a
+// new/weaker auth path, it's the exact tokens Supabase's own confirmation
+// flow already issued, just not discarded before they could be used.
+app.post("/confirm-session", express.json(), async (req, res) => {
+  const { access_token, refresh_token } = req.body || {};
+
+  if (!access_token || !refresh_token) {
+    return res.status(400).json({ error: "invalid_input" });
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(access_token);
+
+  if (userError || !userData?.user) {
+    return res.status(401).json({ error: "invalid_session" });
+  }
+
+  try {
+    const userClient = buildUserScopedClient();
+    await userClient.auth.setSession({ access_token, refresh_token });
+    await ensureHouseholdAndRole(userClient, userData.user.id, userData.user.email, "[CONFIRM]");
+  } catch (err) {
+    console.error("CONFIRM SESSION HOUSEHOLD SETUP ERROR:", err.message);
+    return res.status(500).json({ error: "setup_failed" });
+  }
+
+  // expires_in isn't always present on every Supabase confirmation
+  // redirect shape — default to the standard 1 hour access-token TTL
+  // rather than fail the whole continuation over a missing field
+  // setSessionCookies doesn't strictly need at call time.
+  setSessionCookies(res, {
+    access_token,
+    refresh_token,
+    expires_in: Number(req.body.expires_in) || 3600,
+  });
+
+  return res.json({ ok: true });
 });
 
 // AUTH: RESEND CONFIRMATION

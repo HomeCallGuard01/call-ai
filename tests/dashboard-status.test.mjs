@@ -53,16 +53,17 @@ const memberSinceSource = extractBetween(html, 'formatMemberSince');
 const describeCallSource = extractBetween(html, 'describeCall');
 const muteStatsSource = extractBetween(html, 'shouldMuteStatsGrid');
 const onboardingStepSource = extractBetween(html, 'computeOnboardingStep');
+const detectDeviceSource = extractBetween(html, 'detectMobileDeviceType');
 const formatUkPhoneSource = extractBetween(html, 'formatUkPhoneForDisplay');
 
-if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource || !onboardingStepSource || !formatUkPhoneSource) {
+if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource || !onboardingStepSource || !formatUkPhoneSource || !detectDeviceSource) {
   console.error('✗ could not find one or more expected TEST-EXTRACT markers in upload.html — test cannot run');
   failures++;
 } else {
   // Both functions are evaluated together, in the same combined source,
   // since computeSetupChecklist calls computeProtectionState internally
   // — matching how they actually run together in the real page.
-  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\n${onboardingStepSource}\n${formatUkPhoneSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid, computeOnboardingStep, formatUkPhoneForDisplay };`;
+  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\n${onboardingStepSource}\n${formatUkPhoneSource}\n${detectDeviceSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid, computeOnboardingStep, formatUkPhoneForDisplay, detectMobileDeviceType };`;
   const {
     computeProtectionState,
     computeSetupChecklist,
@@ -73,6 +74,7 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
     describeCall,
     computeOnboardingStep,
     formatUkPhoneForDisplay,
+    detectMobileDeviceType,
   } = new Function(combinedSource)();
 
   // --- computeProtectionState ---
@@ -290,6 +292,36 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
   check(
     formatUkPhoneForDisplay('not-a-number') === 'not-a-number',
     'formatUkPhoneForDisplay: falls back to the raw value rather than hiding an unexpected shape outright'
+  );
+
+  // --- detectMobileDeviceType ---
+  // Real-device-verified 23 Aug 2026 (docs/mobile-app/APP_DECISION_003):
+  // detecting the device from the browser's own UA is what lets the
+  // one-tap flow skip asking "what phone are you on" for the common case.
+
+  check(
+    detectMobileDeviceType('Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15') === 'iphone',
+    'detectMobileDeviceType: a real iPhone Safari UA is detected as iphone'
+  );
+  check(
+    detectMobileDeviceType('Mozilla/5.0 (iPad; CPU OS 18_5 like Mac OS X) AppleWebKit/605.1.15') === 'iphone',
+    'detectMobileDeviceType: iPad is treated the same as iphone (same tel: mechanism, same carrier codes)'
+  );
+  check(
+    detectMobileDeviceType('Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/128.0') === 'android',
+    'detectMobileDeviceType: a real Android Chrome UA is detected as android'
+  );
+  check(
+    detectMobileDeviceType('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15') === null,
+    'detectMobileDeviceType: a desktop UA returns null — falls back to the manual picker rather than guessing'
+  );
+  check(
+    detectMobileDeviceType('') === null,
+    'detectMobileDeviceType: an empty/missing UA returns null rather than throwing'
+  );
+  check(
+    detectMobileDeviceType(undefined) === null,
+    'detectMobileDeviceType: undefined is handled the same as an empty string'
   );
 }
 

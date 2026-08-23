@@ -72,16 +72,54 @@
 
 <img src="/logo.png" style="height:130px; margin-bottom:10px;">
 
-<h1>Account confirmed</h1>
+<h1 id="heading">Account confirmed</h1>
 
 <div class="box">
-  <p>Your email address has been confirmed and your account is now active.</p>
-  <a class="primary-button" href="/login.html">Log In</a>
+  <p id="message">Your email address has been confirmed and your account is now active.</p>
+  <a class="primary-button" id="loginLink" href="/login.html">Log In</a>
 </div>
 
 <div class="legal-links">
   <a href="/terms.html">Terms and Conditions</a> · <a href="/privacy.html">Privacy Policy</a>
 </div>
+
+<script>
+  // Supabase's confirmation redirect appends the real session as a URL
+  // fragment (#access_token=...&refresh_token=...) — never sent to the
+  // server, but readable here. If present and valid, this continues
+  // straight into the dashboard instead of asking for the password
+  // again. Any failure (no fragment at all, expired/invalid tokens, a
+  // network error) falls back to the plain "Log In" link already in the
+  // page — never a dead end.
+  (function () {
+    var hash = window.location.hash ? window.location.hash.slice(1) : "";
+    if (!hash) return;
+
+    var params = new URLSearchParams(hash);
+    var accessToken = params.get("access_token");
+    var refreshToken = params.get("refresh_token");
+    var expiresIn = params.get("expires_in");
+
+    if (!accessToken || !refreshToken) return;
+
+    document.getElementById("message").textContent = "Taking you to your dashboard…";
+    document.getElementById("loginLink").hidden = true;
+
+    fetch("/confirm-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, expires_in: expiresIn }),
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("confirm-session failed");
+        window.location.href = "/dashboard";
+      })
+      .catch(function () {
+        document.getElementById("message").textContent = "Your email address has been confirmed and your account is now active.";
+        document.getElementById("loginLink").hidden = false;
+      });
+  })();
+</script>
 
 </body>
 </html>
