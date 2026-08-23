@@ -19,6 +19,27 @@ let activeCall: Call | null = null;
 let registered = false;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Guards against two concurrent registration attempts — proven necessary
+// 2026-08-23 on a real device: the (tabs) layout's session-gated effect
+// and this file's own AppState "active" listener (below) both call
+// registerForIncomingCalls() independently, and both only checked the
+// `registered` boolean, which stays false until the WHOLE async flow
+// completes. On a cold launch both fire within the same tick, both pass
+// the `if (registered) return` check, and both proceed to call
+// voice.register() — resulting in two live Voice SDK registrations for
+// the same identity, which is what caused a single Twilio call to
+// present two separate CallKit incoming-call screens (confirmed via
+// physical-device testing: one Twilio call leg, two CallKit UIs,
+// answering either failed). This promise makes a second overlapping call
+// await the first attempt's outcome instead of starting its own.
+let inFlightRegistration: Promise<void> | null = null;
+
+// Defense in depth alongside the in-flight guard above: even if the SDK
+// itself were ever asked to register twice in the future, a single
+// underlying Twilio call should never be presented to CallKit more than
+// once on this device. Tracks call SIDs already seen this session.
+const seenCallSids = new Set<string>();
+
 // Re-register well before the token actually expires, never at the exact
 // edge — a call arriving in the gap between expiry and a completed
 // refresh would simply never ring. 5 minutes of margin against a 1 hour
@@ -119,6 +140,19 @@ export async function registerForIncomingCalls(accessToken?: string): Promise<vo
     return;
   }
 
+  if (inFlightRegistration) {
+    console.log("VOICE DEBUG: registration already in flight, awaiting it instead of starting another");
+    beacon("awaiting-in-flight");
+    return inFlightRegistration;
+  }
+
+  inFlightRegistration = performRegistration(accessToken).finally(() => {
+    inFlightRegistration = null;
+  });
+  return inFlightRegistration;
+}
+
+async function performRegistration(accessToken?: string): Promise<void> {
   let ttlSeconds: number;
   try {
     if (Platform.OS === "ios") {
@@ -190,7 +224,27 @@ AppState.addEventListener("change", (state) => {
 // natively, no JS call needed. Revert to a real in-app UI later
 // (original TODO) once this is proven, not to this auto-accept shortcut.
 voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
-  console.log("Voice SDK: CallInvite received", callInvite.getCallSid());
+  const callSid = callInvite.getCallSid();
+
+  // Defense in depth (2026-08-23, see inFlightRegistration's own comment
+  // for the actual root cause this was found alongside): one underlying
+  // Twilio call must only ever be presented to CallKit once on this
+  // device. If two invites for the same call SID ever arrive — from a
+  // duplicate registration this guard didn't prevent, or a genuine
+  // duplicate/retried VoIP push — reject the second instead of letting a
+  // second incoming-call UI appear for a call the customer is already
+  // being shown.
+  if (seenCallSids.has(callSid)) {
+    console.warn("VOICE DEBUG: duplicate CallInvite for already-seen callSid, rejecting", callSid);
+    beacon("duplicate-call-invite-rejected", callSid);
+    callInvite.reject().catch((err) => {
+      console.error("VOICE DEBUG: failed to reject duplicate CallInvite", err);
+    });
+    return;
+  }
+  seenCallSids.add(callSid);
+
+  console.log("Voice SDK: CallInvite received", callSid);
 });
 
 voice.on(Voice.Event.Registered, () => {
