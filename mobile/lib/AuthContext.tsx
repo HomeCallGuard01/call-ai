@@ -38,6 +38,23 @@ function decodedKid(accessToken: string | undefined): string {
   }
 }
 
+// iat/exp (numeric timestamps only, never sub/email/role) prove whether a
+// token was actually just minted or is a stale one being replayed — the
+// missing piece to distinguish "server issuing an old key" from "device
+// replaying an old token" regardless of what event name fired.
+function decodedAge(accessToken: string | undefined): string {
+  if (!accessToken) return "none";
+  try {
+    const payloadB64 = accessToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payloadB64 + "=".repeat((4 - (payloadB64.length % 4)) % 4);
+    const payload = JSON.parse(globalThis.atob(padded));
+    const nowSec = Math.floor(Date.now() / 1000);
+    return `iat=${payload.iat} (${nowSec - payload.iat}s ago) exp=${payload.exp}`;
+  } catch {
+    return "decode-failed";
+  }
+}
+
 function authBeacon(stage: string, detail?: string): void {
   try {
     const base = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -65,13 +82,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      authBeacon("initial-getSession", decodedKid(data.session?.access_token));
+      authBeacon(
+        "initial-getSession",
+        `${decodedKid(data.session?.access_token)} | ${decodedAge(data.session?.access_token)}`
+      );
       setSession(data.session);
       setIsLoading(false);
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, newSession) => {
-      authBeacon(`onAuthStateChange:${event}`, decodedKid(newSession?.access_token));
+      authBeacon(
+        `onAuthStateChange:${event}`,
+        `${decodedKid(newSession?.access_token)} | ${decodedAge(newSession?.access_token)}`
+      );
       setSession(newSession);
 
       // The comment this function opens with has always described this
