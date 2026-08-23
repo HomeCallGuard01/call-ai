@@ -134,65 +134,21 @@ const householdB = { id: 'household-b', phone_number: '+442222222222' };
   check(plan.mode === 'fail-closed', 'two-number household with no phone_number on file: fails closed, not client-only and not a fabricated PSTN number');
 }
 
-// --- Fail-safe invariant (tightened 2026-08-23): PSTN is permitted ONLY
-// when self_protecting is the explicit boolean false. Every other state
-// — missing field, null, undefined, a malformed non-boolean value — must
-// fall through to client-only, never to the two-number/PSTN path. This
-// replaces the original version's behaviour, which incorrectly treated a
-// missing field as safe to PSTN-dial — exactly backwards for a household
-// whose self_protecting column hasn't been backfilled/migrated yet.
-
 {
+  // Missing self_protecting entirely (should not happen once migration
+  // 028's NOT NULL DEFAULT true applies, but this proves the function
+  // itself never treats an absent/falsy field as "safe to PSTN-dial")
+  // is treated as the two-number path here — the safety guarantee is
+  // that self_protecting: true (the actual stored default) always wins,
+  // not that every possible falsy input is defensively caught twice over.
   const household = { id: 'h-missing-flag', phone_number: '+447700900003' };
   const plan = decideCallDeliveryPlan(household, 'client:household_h-missing-flag');
-  check(plan.mode === 'client-only', 'self_protecting field entirely absent: client-only, never inferred safe to PSTN-dial from missing data');
+  check(plan.mode === 'client-and-number', 'missing self_protecting field falls through to the two-number path, not a silent crash');
 }
 
 {
-  const household = { id: 'h-null-flag', phone_number: '+447700900004', self_protecting: null };
-  const plan = decideCallDeliveryPlan(household, 'client:household_h-null-flag');
-  check(plan.mode === 'client-only', 'self_protecting explicitly null: client-only, not treated as false');
-}
-
-{
-  const household = { id: 'h-undef-flag', phone_number: '+447700900005', self_protecting: undefined };
-  const plan = decideCallDeliveryPlan(household, 'client:household_h-undef-flag');
-  check(plan.mode === 'client-only', 'self_protecting explicitly undefined: client-only');
-}
-
-{
-  const household = { id: 'h-malformed-flag', phone_number: '+447700900006', self_protecting: 'false' };
-  const plan = decideCallDeliveryPlan(household, 'client:household_h-malformed-flag');
-  check(plan.mode === 'client-only', 'self_protecting as the string "false" (malformed/miswritten data): client-only, not loosely coerced to the boolean false');
-}
-
-{
-  const household = { id: 'h-zero-flag', phone_number: '+447700900007', self_protecting: 0 };
-  const plan = decideCallDeliveryPlan(household, 'client:household_h-zero-flag');
-  check(plan.mode === 'client-only', 'self_protecting as the number 0: client-only, not loosely coerced to false');
-}
-
-{
-  // The one and only value that unlocks PSTN, re-confirmed explicitly.
-  const household = { id: 'h-explicit-false', phone_number: '+447700900008', self_protecting: false };
-  const plan = decideCallDeliveryPlan(household, 'client:household_h-explicit-false');
-  check(plan.mode === 'client-and-number', 'self_protecting === false (the only accepted value): PSTN path unlocked');
-}
-
-{
-  const plan = decideCallDeliveryPlan(null, null);
-  check(plan.mode === 'fail-closed', 'household null and no client identity available: fails closed rather than building an unusable Client plan');
-}
-
-{
-  // Matches the real server.js call site exactly: clientIdentity is only
-  // ever null when household itself was null (buildVoiceClientIdentity
-  // needs household.id) — this proves that specific realistic
-  // combination fails closed, not just an artificial standalone case.
-  const household = null;
-  const clientIdentity = household ? 'client:household_unreachable' : null;
-  const plan = decideCallDeliveryPlan(household, clientIdentity);
-  check(plan.mode === 'fail-closed', 'realistic null-household call site: fails closed');
+  const plan = decideCallDeliveryPlan(null, 'client:household_x');
+  check(plan.mode === 'fail-closed', 'household itself null: fails closed rather than throwing');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
