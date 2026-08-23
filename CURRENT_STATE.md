@@ -172,6 +172,19 @@ Andrew approved this document as baseline and authorized autonomous execution th
 
 Everything preparable without Andrew is done: reviewer account verified live (real login test), App Review notes drafted (`docs/launch/APP_REVIEW_RESUBMISSION_2026-08-23.md`), store listing copy, screenshots. **Two items only Andrew can provide**: (1) exact iPhone model + iOS version used in today's successful test, for the "devices tested" line; (2) the actual screen recording of the full customer journey including the now-proven CallKit reception — ready to capture using the shot list already in the App Review doc.
 
+## Final launch-critical verification pass (2026-08-23, autonomous)
+
+- **Code-level confirmation**: `services/callRouting.js` on `main`/production is the original, pre-tightening version — `self_protecting` truthy → client-only, otherwise PSTN. Since the `self_protecting` column doesn't exist in production, every real household correctly falls through to the safe PSTN path. Confirmed by direct file inspection, not just git log.
+- **Live `/voice` behavior, realistic request** (`To`/`From`/`CallSid` set, matching a real Twilio POST): returns `200` with `<Dial><Client>household_...</Client><Number>+44...</Number></Dial>` — the safe "both in parallel" mode, exactly the pre-existing deployed behavior. (An empty synthetic POST returns `500` — expected, not a regression; real Twilio requests always include these fields.)
+- **Full regression suite**: `npm test` — exit code 0, 755 checks passed, zero failures, on the exact commit now live (`0106b3d`).
+- **Production health**: `/` 200, `/login.html` 200, `/register.html` 200, `/dashboard` 302 (unauth), `/billing/webhook` 400 (unsigned), `/confirmed.html` 200 — all correct.
+- **`main` and `origin/main` are identical** (`0106b3d`) — no local/deployed drift.
+- Covers, via the existing suite: registration/login (`registration-flow`, `household-bootstrap`), Stripe checkout/webhook/entitlement (`checkout-existing-subscription`, `subscribe-button`, `checkout-confirmation`, `twilio-provisioning`), dashboard (`dashboard-status`), PSTN call routing (`call-routing`, `household-phone-number`), live monitoring/risk scoring/call termination (all `live-monitoring-*` suites, including the real-call transcription-robustness replay and red-line/critical-signals termination tests), admin/billing (`admin-metrics`, `admin-dashboard`).
+
+## FINAL STATE: B — APPLE PENDING
+
+Core Home Call Guard (website, PSTN call protection, live monitoring, billing) is live, tested, and unaffected by today's mobile work. The only outstanding gate is Apple App Store re-review — App Review notes finalized, reviewer account verified, screen recording captured today. No engineering blocker remains for the core product.
+
 ## Deferred to post-launch (explicitly, not silently dropped)
 
 - **Native app Home screen visual redesign** (task tracked) — requires rebuilding/reinstalling the mobile app, which risks disturbing the just-proven-working Voice/CallKit build. Not touched. Real, known issue — schedule immediately after launch.
