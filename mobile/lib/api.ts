@@ -187,8 +187,24 @@ export async function fetchDashboard(): Promise<DashboardResponse> {
 // (APN/VoIP) and fails closed (400) without a recognised value — see
 // routes/mobileApi.js's resolvePushCredentialSid. Platform.OS already
 // returns exactly "ios" or "android" on this app's two shipping targets.
-export async function fetchVoiceToken(): Promise<VoiceTokenResponse> {
-  const response = await authorizedFetch(`/api/v1/voice/token?platform=${Platform.OS}`);
+// accessToken is optional and, when passed, used directly instead of
+// authorizedFetch's own supabase.auth.getSession() call — fixed
+// 2026-08-23 (real-device diagnostic beacon evidence): getSession()
+// returned null even when lib/AuthContext.tsx's own session state was
+// definitely already populated and passed the caller's own truthiness
+// check moments earlier, indicating a client-internal timing issue with
+// this supabase-js version on this RN/Hermes/SecureStore combination, not
+// just a one-off mount race. Registration is the one call site that
+// already has a known-good session object in hand (via useAuth()) right
+// before calling this, so it's passed straight through rather than
+// re-derived. Same fallback path (throws "unauthenticated") is kept for
+// any other caller that doesn't have one to pass.
+export async function fetchVoiceToken(accessToken?: string): Promise<VoiceTokenResponse> {
+  const response = accessToken
+    ? await fetch(`${API_BASE_URL}/api/v1/voice/token?platform=${Platform.OS}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      })
+    : await authorizedFetch(`/api/v1/voice/token?platform=${Platform.OS}`);
   return parseJsonOrThrow<VoiceTokenResponse>(response, true);
 }
 

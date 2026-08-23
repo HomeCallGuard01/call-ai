@@ -110,7 +110,7 @@ function beacon(stage: string, detail?: string): void {
   }
 }
 
-export async function registerForIncomingCalls(): Promise<void> {
+export async function registerForIncomingCalls(accessToken?: string): Promise<void> {
   console.log("VOICE DEBUG: registerForIncomingCalls called, registered=", registered);
   beacon("start");
   if (registered) {
@@ -135,7 +135,7 @@ export async function registerForIncomingCalls(): Promise<void> {
 
     console.log("VOICE DEBUG: about to fetchVoiceToken");
     beacon("tokenFetch-start");
-    const tokenResult = await fetchVoiceToken();
+    const tokenResult = await fetchVoiceToken(accessToken);
     ttlSeconds = tokenResult.ttlSeconds;
     const { token } = tokenResult;
     beacon("tokenFetch-done");

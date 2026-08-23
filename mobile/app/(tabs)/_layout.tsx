@@ -21,23 +21,23 @@ export default function TabsLayout() {
   // Same-phone delivery milestone (docs/operations/HANDOVER_2026-08-15.md
   // §12-13): registers this device to receive an approved call directly,
   // bypassing PSTN. Fixed 2026-08-23 (real-device diagnostic beacon
-  // evidence): firing this unconditionally on mount raced Supabase's own
-  // session hydration on a fresh login/cold launch — authorizedFetch's
-  // getSession() call inside fetchVoiceToken() would sometimes still see
-  // no session even though (tabs) had already mounted, so registration
-  // failed with "unauthenticated" and (per the old TODO here) never
-  // retried. Now gated on the same `session` this app already treats as
-  // the single source of truth (lib/AuthContext.tsx), re-firing whenever
-  // it transitions from absent to present, with one bounded retry if it
-  // still fails — a real transient (network blip, cold-start timing)
-  // shouldn't permanently leave a household unable to receive calls.
+  // evidence, two rounds): firing this unconditionally on mount raced
+  // Supabase's own session hydration — gating on `session` (round 1)
+  // wasn't sufficient by itself, because a fresh authorizedFetch()-internal
+  // supabase.auth.getSession() call was still sometimes returning null even
+  // after this `session` was already non-null (a client-internal timing
+  // issue with this supabase-js version, not just a mount-order race).
+  // Round 2: pass this exact, already-known-good session's access_token
+  // straight through instead of letting registerForIncomingCalls() re-derive
+  // it via a second getSession() call — see lib/api.ts's fetchVoiceToken.
+  // Retains the bounded retry from round 1 for genuine transient failures.
   useEffect(() => {
     if (!session) return;
 
     let cancelled = false;
 
     function attempt(isRetry: boolean): void {
-      registerForIncomingCalls().catch((err) => {
+      registerForIncomingCalls(session!.access_token).catch((err) => {
         console.error("VOICE REGISTRATION FAILED:", err);
         if (!isRetry && !cancelled) {
           setTimeout(() => {
