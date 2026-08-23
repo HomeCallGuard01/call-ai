@@ -185,6 +185,13 @@ Everything preparable without Andrew is done: reviewer account verified live (re
 
 Core Home Call Guard (website, PSTN call protection, live monitoring, billing) is live, tested, and unaffected by today's mobile work. The only outstanding gate is Apple App Store re-review — App Review notes finalized, reviewer account verified, screen recording captured today. No engineering blocker remains for the core product.
 
+## Home screen redesign (post-launch, 2026-08-23) — code done, build blocked on EAS quota
+
+- Presentation-layer-only redesign on branch `redesign/home-screen-2026-08-23` (sandbox worktree), commit `0ddd82f`: real brand shield (cropped from `public/logo.png`, the same mark the website uses) as the dominant hero element, single large "You're protected"/"Setting up"/etc. headline, plain-English reassurance copy, real-data stat cards (calls checked, scams stopped), trusted-contacts summary, recent-activity preview — all reading from the exact same `DashboardResponse` the previous version already fetched, no invented data, no new backend calls.
+- **Voice SDK, auth, and call-routing code completely untouched** — confirmed via `git status`: only `mobile/app/(tabs)/index.tsx`, `mobile/lib/theme.ts`, and one new asset (`mobile/assets/shield-mark.png`) changed. `tsc --noEmit` clean.
+- **The exact Apple-submitted build's commit is tagged and preserved**: `apple-submission-2026-08-23` → `90a9124` (mobile app code identical to the last physically-proven CallKit build, `c5f6a4b`). Untouched, reproducible.
+- **Blocked on EAS build quota, not code**: `eas build` failed with "This account has used its iOS builds from the Free plan this month" — resets 2026-09-01. This is a genuine external/billing constraint, not an engineering issue. Options: wait for reset, or Andrew upgrades the Expo/EAS plan (financial decision, not mine to make). No workaround attempted.
+
 ## Deferred to post-launch (explicitly, not silently dropped)
 
 - **Native app Home screen visual redesign** (task tracked) — requires rebuilding/reinstalling the mobile app, which risks disturbing the just-proven-working Voice/CallKit build. Not touched. Real, known issue — schedule immediately after launch.
