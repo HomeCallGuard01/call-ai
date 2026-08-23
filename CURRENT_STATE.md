@@ -161,3 +161,19 @@ Andrew approved this document as baseline and authorized autonomous execution th
 
 **Do not re-touch**: Voice SDK registration, JWT/session handling, APNs/push credentials, or the CallKit answer path. All physically proven working as of this test. Freeze this path.
 
+## Final production configuration verification (2026-08-23, read-only checks)
+
+- **Twilio account**: `status: active`, `type: Full` — confirmed live.
+- **Supabase production** (`psbzynxplxfbyrbdidmn`): reachable, `service_role` key valid.
+- **Stripe**: local `.env`'s `STRIPE_SECRET_KEY` is a **test-mode key** (`sk_test_...`) — this tells us nothing about Railway's actual configured key, which must be different (production has processed real historical subscriptions). **Railway's actual environment variables have never been directly inspected from here** (no Railway CLI auth) — this remains explicitly UNKNOWN, not assumed fine, consistent with this document's earlier caveat on `.env` vs Railway parity.
+- **Production health**: `/` → 200, `/dashboard` → 302 (unauth redirect, correct), `/billing/webhook` → 400 (unsigned, correct) — all consistent with a healthy, unchanged deployment after the routing revert.
+
+## Apple App Store submission — status
+
+Everything preparable without Andrew is done: reviewer account verified live (real login test), App Review notes drafted (`docs/launch/APP_REVIEW_RESUBMISSION_2026-08-23.md`), store listing copy, screenshots. **Two items only Andrew can provide**: (1) exact iPhone model + iOS version used in today's successful test, for the "devices tested" line; (2) the actual screen recording of the full customer journey including the now-proven CallKit reception — ready to capture using the shot list already in the App Review doc.
+
+## Deferred to post-launch (explicitly, not silently dropped)
+
+- **Native app Home screen visual redesign** (task tracked) — requires rebuilding/reinstalling the mobile app, which risks disturbing the just-proven-working Voice/CallKit build. Not touched. Real, known issue — schedule immediately after launch.
+- **Branded Supabase confirmation email** — template drafted and ready (`docs/launch/SUPABASE_CONFIRMATION_EMAIL_TEMPLATE.md`), needs Andrew to paste it into the Supabase Dashboard (no Management API access to do this directly). Zero risk to the critical path either way.
+
