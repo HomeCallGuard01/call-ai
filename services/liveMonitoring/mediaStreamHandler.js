@@ -16,6 +16,7 @@ const { createWindowBuffer } = require('./audioWindow');
 const { transcribeChunk } = require('./transcribeChunk');
 const { createCallMonitor } = require('./riskMonitor');
 const { logEvent } = require('./structuredLog');
+const { sendCriticalAlert } = require('../alerting');
 
 /**
  * @param {object} deps
@@ -90,8 +91,15 @@ function createMediaStreamHandler({ transcribeClient, smsClient, fromNumber, twi
         .catch(err => {
           // Belt-and-braces: transcribeChunk already never throws, but a
           // failure anywhere in this pipeline must never propagate up to
-          // the WebSocket connection or the live call.
+          // the WebSocket connection or the live call. Alerted (rate-
+          // limited by type, see services/alerting.js) since a run of
+          // these across calls in a short window usually means the
+          // whole transcription/scoring pipeline is broken (e.g. OpenAI
+          // down), not one bad audio frame.
           logEvent('media_stream_pipeline_error', { streamSid: message.streamSid, error: err.message });
+          sendCriticalAlert('live_monitoring_pipeline_error', `Live-monitoring pipeline error: ${err.message}`, {
+            streamSid: message.streamSid,
+          }).catch(() => {});
         });
     }
 

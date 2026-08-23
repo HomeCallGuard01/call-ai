@@ -10,6 +10,7 @@ const {
   processWebhookEvent,
   getActiveEntitlement,
 } = require("../database/billing");
+const { sendCriticalAlert } = require("../services/alerting");
 const {
   updateTwilioNumberForEntitlementChange,
   handleProcessedWebhookEvent,
@@ -508,9 +509,17 @@ router.post(
       // itself — a non-2xx here just lets Stripe's own retry schedule (in
       // addition to this table's own stale-claim recovery) try again.
       console.error("WEBHOOK EVENT PROCESSING FAILED:", event.id, event.type);
+      sendCriticalAlert("stripe_webhook_processing_failed", `Stripe webhook event ${event.type} failed to process`, {
+        stripeEventId: event.id,
+        eventType: event.type,
+      }).catch(() => {});
       return res.status(500).send("processing failed");
     } catch (err) {
       console.error("WEBHOOK HANDLER ERROR:", err.message);
+      sendCriticalAlert("stripe_webhook_handler_error", `Stripe webhook handler threw: ${err.message}`, {
+        stripeEventId: event?.id,
+        eventType: event?.type,
+      }).catch(() => {});
       return res.status(500).send("internal error");
     }
   }

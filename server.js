@@ -18,6 +18,8 @@ const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const { resolveForwardingDestination, decideCallDeliveryPlan } = require("./services/callRouting");
 const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
+const { sendCriticalAlert } = require("./services/alerting");
+const { checkSupabaseHealth } = require("./services/healthCheck");
 const { wouldCreateForwardingLoop } = require("./services/phone");
 const {
   DEVICE_TYPES,
@@ -50,6 +52,35 @@ if (process.env.NODE_ENV === "production") {
     process.exit(1);
   }
 }
+
+// Process-level safety net (2026-08-23) — catches what Express's own
+// error handling never sees: a synchronous throw or rejected promise
+// outside any request's lifecycle. Node's own default behaviour for an
+// uncaught exception is to crash the process (which Railway then
+// restarts) — that resilience story is deliberately left unchanged here;
+// this only adds a best-effort alert email before the same exit(1)
+// Node would perform anyway. A short timeout bounds how long the alert
+// attempt can delay that exit.
+function alertThenExit(type, message, context) {
+  const timer = setTimeout(() => process.exit(1), 3000);
+  sendCriticalAlert(type, message, context)
+    .catch(() => {})
+    .finally(() => {
+      clearTimeout(timer);
+      process.exit(1);
+    });
+}
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+  alertThenExit("uncaught_exception", err.message, { stack: (err.stack || "").split("\n").slice(0, 3).join(" | ") });
+});
+
+process.on("unhandledRejection", (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  console.error("UNHANDLED REJECTION:", reason);
+  alertThenExit("unhandled_rejection", message, {});
+});
 
 const app = express();
 const MAX_CONTACTS_FILE_BYTES = 512 * 1024; // 512KB — far more than any real household contact list needs
@@ -198,6 +229,11 @@ function dialHouseholdOrFailClosed(twiml, household) {
     "CALL ROUTING ERROR: no forwarding number on file for household",
     household && household.id
   );
+  sendCriticalAlert(
+    "approved_call_delivery_failed",
+    "An approved call could not be delivered — no forwarding destination on file",
+    { householdId: household && household.id }
+  ).catch(() => {});
   twiml.say(
     { voice: "Polly.Amy", language: "en-GB" },
     "We're sorry, this call cannot be connected right now. Please try again later."
@@ -648,6 +684,11 @@ app.post("/call-delivery-failed", (req, res) => {
       dialCallStatus,
       callSid: req.body.CallSid,
     });
+    sendCriticalAlert(
+      "approved_call_delivery_failed",
+      `An approved call could not be delivered — Client did not answer (${dialCallStatus})`,
+      { dialCallStatus, callSid: req.body.CallSid }
+    ).catch(() => {});
     twiml.say(
       { voice: "Polly.Amy", language: "en-GB" },
       "We're sorry, this call cannot be connected right now. Please try again later."
@@ -1378,6 +1419,38 @@ app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
+// Uptime endpoint (2026-08-23) — deliberately always 200 if this handler
+// runs at all, since that alone proves the Node process is alive and
+// responsive, which is the actual thing an external uptime monitor
+// should page on. The Supabase check (services/healthCheck.js) is
+// diagnostic-only, bounded so a slow (not down) dependency can never
+// make this endpoint itself time out or look like an outage —
+// "transient third-party latency" must never flip production to
+// "unavailable" here. A real Supabase outage still shows up in the JSON
+// body (checks.supabase), just doesn't change the HTTP status — that
+// distinction (dependency degraded vs. this service is down) is exactly
+// what keeps this from becoming a second, noisier uptime signal.
+const SUPABASE_HEALTH_CHECK_TIMEOUT_MS = 2000;
+
+app.get("/health", async (req, res) => {
+  // supabaseAdmin (service role), not the anon-scoped `supabase` client:
+  // RLS would otherwise deny this query unconditionally, making the
+  // check always report "error" regardless of real connectivity — not a
+  // useful signal. Falls back to "unknown" only if the admin client
+  // itself was never configured (matches this file's own existing
+  // supabaseAdmin-missing pattern elsewhere), which is not expected in
+  // production.
+  const supabaseStatus = supabaseAdmin
+    ? await checkSupabaseHealth(supabaseAdmin, SUPABASE_HEALTH_CHECK_TIMEOUT_MS)
+    : "unknown";
+
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    checks: { supabase: supabaseStatus },
+  });
+});
+
 // Clean, permanent URL for the Privacy Policy — same file express.static
 // already serves at /privacy.html, just without the extension, since App
 // Store Connect / Play Console listings reference a stable /privacy URL.
@@ -1393,6 +1466,28 @@ app.get("/privacy", (req, res) => {
 // whether the protected view or the subscribe prompt renders.
 app.get("/dashboard", requireAuth, (req, res) => {
   res.sendFile(__dirname + "/upload.html");
+});
+
+// GLOBAL ERROR HANDLER (2026-08-23) — Express's own default error handler
+// (which runs if no error-handling middleware exists at all) just sends
+// a generic 500 page and logs nothing anywhere Andrew would see it. This
+// covers any otherwise-unhandled error from any route — most notably
+// /voice, which has no route-local try/catch of its own — with a
+// best-effort alert email, then falls back to the same plain 500
+// response Express would have sent anyway. Must be registered after
+// every other route/middleware (Express error handlers are matched by
+// having 4 parameters, and only ever run for errors passed to them).
+app.use((err, req, res, next) => {
+  console.error("UNHANDLED ROUTE ERROR:", req.method, req.path, err.message);
+
+  const alertType = req.path === "/voice" ? "voice_processing_failure" : "unhandled_server_error";
+  sendCriticalAlert(alertType, `Unhandled error on ${req.method} ${req.path}: ${err.message}`, {
+    method: req.method,
+    path: req.path,
+  }).catch(() => {});
+
+  if (res.headersSent) return next(err);
+  res.status(500).send("Internal Server Error");
 });
 
 // START SERVER

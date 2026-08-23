@@ -7,6 +7,7 @@ const {
   releaseHouseholdTwilioNumber,
   releaseHouseholdTwilioNumberImmediately,
 } = require("../database/households");
+const { sendCriticalAlert } = require("./alerting");
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
@@ -133,6 +134,9 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     return { attempted: true, success: true, twilioNumber: purchased.phoneNumber };
   } catch (err) {
     console.error("TWILIO PROVISIONING FAILED:", household.id, err.message);
+    sendCriticalAlert("twilio_provisioning_failed", `Twilio number provisioning failed: ${err.message}`, {
+      householdId: household.id,
+    }).catch(() => {});
     await recordFailure(household.id, err.message).catch(recordErr =>
       console.error("TWILIO PROVISIONING FAILURE-RECORD ERROR:", recordErr.message)
     );
