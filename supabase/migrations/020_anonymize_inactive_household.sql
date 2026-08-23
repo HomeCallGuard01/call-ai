@@ -1,7 +1,12 @@
 -- Household anonymisation for inactive test/cleanup accounts
 --
--- STATUS: DRAFT — NOT APPLIED — proposed for review, not yet run against
--- any real database.
+-- STATUS: APPLIED — confirmed live in production 2026-08-23 (header was
+-- stale; the RPC was already live and functioning, confirmed via a
+-- direct call: public.anonymize_inactive_household correctly raised
+-- "household ... does not exist" for a bogus UUID, then successfully
+-- anonymised a real test household created during that day's launch
+-- closeout verification). Corrected here so this is never rediscovered
+-- as "not yet applied" again.
 --
 -- Purpose: the earlier test-data cleanup round (real customer deletion,
 -- Phase 1/2) established that `households` cannot be truly DELETEd
