@@ -453,3 +453,5 @@ Full read-only audit of this development Mac, requested separately from the laun
 
 A recurring lightweight security check (OS updates, `.env` permissions, listening ports, LaunchAgents diff) was recommended to Andrew as a short monthly routine — see the full report for the exact commands.
 
+**Update**: Andrew explicitly authorised killing the exposed process (`kill 91639`) directly in-session. Done and verified — port 8931 confirmed no longer listening. The RED finding is resolved; everything else in the AMBER list above still stands as recommended-but-not-urgent follow-up.
+
