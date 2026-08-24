@@ -435,5 +435,21 @@ Building real attribution (a `households.acquisition_source` column + capturing 
 
 **Recommendation for zero-engineering attribution starting Monday**: since HCG expects its first 10 customers from a handful of known channels (Age UK, a community group, local press, word-of-mouth), Andrew can distinguish sources today with no code changes at all — give each channel its own distinct, memorable link (e.g. a free redirect/short-link service he controls, one per channel, all pointing at the same `homecallguard.co.uk`), and simply note the date/time of each outreach event (the Age UK talk, the press piece going live) against new-signup timestamps visible in Supabase. This costs nothing, ships today, and is sufficient at 10-customer scale. Proper UTM capture + a `households` column is a reasonable small follow-up once volume justifies the engineering and the privacy-policy question has been considered — not before.
 
-**PHASE 2: COMPLETE.**
+**PHASE 2: COMPLETE.** Committed (`2ba0e50`) and pushed to `origin/main` — deliberately narrow: only the 4 files this session actually edited (`public/index.html`, `upload.html`, `CURRENT_STATE.md`, `MARKETING_FACTS.md`) were staged and committed; every other pre-existing uncommitted file in the working tree (admin dashboard work, migrations 021/022, mobile-app docs — none touched or reviewed this session) was deliberately left alone, staged, and un-pushed, exactly as found. Confirmed live in production by fetching the real page afterward and finding the new FAQ text present.
+
+---
+
+# Mac security audit (2026-08-24) — read-only, sanitised summary
+
+Full read-only audit of this development Mac, requested separately from the launch-readiness work above, given the machine holds HCG development/production credentials and was previously used with a personal AI-agent tool ("OpenClaw") unrelated to HCG. **No credentials are recorded in this summary** — see the conversation's own final report for full detail; this is the durable, safe-to-keep pointer.
+
+**Overall status: AMBER** — no evidence of malware or compromise; one credible, currently-live sensitive-data exposure was found and requires Andrew's attention, plus several lower-severity hygiene items.
+
+**Top finding (RED, needs Andrew's action)**: a leftover `python -m http.server` process (started in an earlier session, unrelated to any HCG service) has been serving this session's scratchpad directory unauthenticated to the entire local network since 2026-08-23, and that directory contains real Stripe live customer/charge data and app-store reviewer credentials. Not stopped autonomously (explicit read-only-audit instruction) — flagged live to Andrew mid-audit via the session itself. **Andrew: kill this process (or just reboot the Mac) at the first opportunity**, and treat anything in that scratchpad directory as having been network-exposed.
+
+**OpenClaw**: confirmed **still actively running** (not a historical remnant) — a legitimate, real open-source npm package (MIT-licensed "multi-channel AI gateway"), running continuously since mid-June as a LaunchAgent, gateway bound to localhost only (not directly network-reachable). Its own workspace/config/logs show **no evidence of ever touching HCG directories or credentials** — its active use is entirely separate personal projects (a trading-signal bot, job search, sales leads). Structurally worth noting: it has a Telegram messaging integration, i.e. a legitimate remote-control channel into a process running under the same user account as all HCG development — not a compromise, but a real reason to keep HCG credentials scoped away from this agent's reach.
+
+**Other findings**: macOS is several minor versions behind on updates (been deferred repeatedly since ~June) — routine but overdue. The application firewall is off. A 2-week-old ngrok tunnel exposes a local sandbox server to the public internet for Stripe test-mode webhook delivery — confirmed test-mode only, not live, but mixes with the production Supabase project. Both `.env` files are world-readable (644, should be 600). SIP, Gatekeeper, FileVault, SSH, and Screen Sharing all checked out clean/correctly configured. No secrets found committed to git history in either HCG repo, current or historical.
+
+A recurring lightweight security check (OS updates, `.env` permissions, listening ports, LaunchAgents diff) was recommended to Andrew as a short monthly routine — see the full report for the exact commands.
 
