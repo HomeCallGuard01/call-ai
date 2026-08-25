@@ -498,17 +498,21 @@ Verified before deploy: every internal link across all 13 new pages resolves to 
 
 ---
 
-# Privacy policy review (2026-08-25) — report only, `privacy.html` NOT changed
+# Privacy policy review (2026-08-25) — reviewed, proposed, then APPLIED same day
 
-Reviewed the live privacy policy against the actual code (not assumed) ahead of Play Store submission. Full proposed wording was delivered in conversation, not written to the file — this is a pointer/summary for anyone picking this up later.
+Reviewed the live privacy policy against the actual code (not assumed) ahead of Play Store submission. Proposed wording was delivered in conversation first (report-only), then Andrew explicitly asked for it to be applied — done, tested, deployed, and confirmed live the same day. This is a pointer/summary of what changed and why, for anyone picking this up later.
 
 **Real findings, verified against the code:**
 - OpenAI receives raw **audio** for transcription (`services/liveMonitoring/transcribeChunk.js`), not "a text version" as the policy currently says. The actual scam-detection scoring is 100% in-house (`services/liveMonitoring/scoring/`) — OpenAI only transcribes, never classifies. No call recording exists anywhere (confirmed: no Twilio `<Record>` usage). Only a non-transcript summary (numbers, outcome, timing, risk indicators) is ever persisted.
 - Two real disclosure gaps found: the mobile app can read the phone's **Contacts** (via `expo-contacts`, permission-gated, only user-selected numbers are ever uploaded) and registers the device's **push-notification token** with the telephony provider for incoming-call delivery — neither is mentioned in the current policy at all.
 - The current policy names vendors by name (Stripe, Supabase, Railway, Twilio, OpenAI) and describes implementation detail (hosting region/provider pairing, "keyword analysis and AI classification" as the detection method, the specific access-token/refresh-token cookie architecture) that GDPR doesn't require — Art 13(1)(e) only needs *categories* of recipients, not named companies.
-- Proposed replacement wording (delivered in full in conversation) for §2, §4, §5, §7, §9, plus two new subsections (mobile Contacts access, mobile device/push-token sharing) and an optional new §14 (children/minimum age, currently unaddressed).
-- A Google Play Data Safety worksheet was produced mapping the app's actual behaviour to Play's own data categories: **Audio** (yes — both normal call audio and scam-detection transcription), **Contacts** (yes), **Personal info/email** (yes), **Financial info** (yes, limited to Stripe IDs/status, no card data), **Device/other IDs** (yes — push token), **App activity/analytics** (no — confirmed no analytics/crash-reporting SDK in the mobile app's dependencies), **Location** (no).
-- **Recommendation, not yet actioned**: whoever updates `privacy.html` and completes the Play Console Data Safety form should use the proposed wording above as a starting draft, and confirm the "service provider vs. third-party sharing" distinction for the transcription/telephony providers against the live Play Console questionnaire before submitting, since Google's exact category/exemption wording can shift between policy versions.
+- A Google Play Data Safety worksheet was produced mapping the app's actual behaviour to Play's own data categories: **Audio** (yes — both normal call audio and scam-detection transcription), **Contacts** (yes), **Personal info/email** (yes), **Financial info** (yes, limited to Stripe IDs/status, no card data), **Device/other IDs** (yes — push token), **App activity/analytics** (no — confirmed no analytics/crash-reporting SDK in the mobile app's dependencies), **Location** (no). This worksheet still needs manually transcribing into the actual Play Console form when the Android listing is submitted — that's a Play Console UI action, not a code change, so it's still an owner action.
+
+## Applied — `privacy.html` updated, tested, deployed (commit `83a76ae`)
+
+All proposed wording changes were applied: §2 rewritten (accurate audio/transcription description, two new subsections added — "Contacts (mobile app)" and "Device information (mobile app)" — covering the two gaps found above); §4's vendor list replaced with functional categories; §5's parenthetical vendor list removed; §7 and §9 simplified to remove method/architecture detail; a new optional §14 "Children" added; "Last updated" date bumped to 25 August 2026. Double-checked afterward for any vendor name left anywhere in the file (found and fixed two the first pass missed: "Supabase" in §2's password paragraph, and "Stripe, Twilio and OpenAI" in §5's international-transfers paragraph) — confirmed fully clean on a second pass. 785/785 tests passing, deployed, confirmed live.
+
+**Worth knowing**: §13 of the policy itself says material changes get "reasonable steps" to notify customers, e.g. by email. This rewrite is a genuine, substantive update (new disclosures added, not just wording polish) — sending an update notice to existing customers is a business/communications decision, not something I've done or would do unilaterally. Flagging it here so it isn't missed.
 
 ## FAQ accordion clipping — found and fixed
 
