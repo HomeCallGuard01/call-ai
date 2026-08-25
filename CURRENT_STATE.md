@@ -520,3 +520,26 @@ Checked the homepage FAQ accordion at 320/360/390/412/428px widths (realistic ph
 
 **Fixed**: raised the cap to `max-height: 1000px` — comfortably clears today's longest answer with real margin for future edits and larger accessibility text sizes. Tested (785/785 passing), committed (`c1afd79`), pushed, and confirmed live.
 
+---
+
+# Terms and Conditions review (2026-08-25) — reviewed, concerns flagged, Andrew confirmed, then applied
+
+Same review discipline as the privacy policy: read the full document, cross-checked every factual claim against the actual code (not assumed), reported significant concerns before touching commercial terms/liability/cancellation/customer obligations, got Andrew's explicit go-ahead, then implemented, tested, and deployed the same day. `terms.html` commit `f36258f`.
+
+**Real findings, verified against the code:**
+- Section 2 said unknown callers are "screened... before the call is allowed to reach your phone" — the same inaccuracy already found and fixed on the homepage FAQ/dashboard earlier this session. The call actually connects and rings as normal; monitoring happens live, during the call.
+- Section 5 described cancellation as an email-to-support process — wrong for almost every real account. `routes/billing.js`'s "Manage Membership" button redirects to Stripe's self-service Billing Portal; cancellation is instant and customer-driven. Email-to-support only genuinely applies to the rare complimentary/promotional account with no real Stripe subscription behind it (confirmed via `upload.html`'s conditional "not manageable" note).
+- Section 7 named the detection technique ("keyword analysis and AI classification", "automated, real-time transcription") — same category of over-disclosure as the privacy policy, but with an extra wrinkle worth recording: genericising this to "automated technology" isn't just less disclosure, it's arguably *better* liability protection, since a named, specific technique invites an argument like "you said AI classification, so prove what it did in my case" that a general description doesn't.
+- Section 3 named "Stripe" directly. Checked whether Stripe's own merchant terms require this in customer-facing Terms specifically (as opposed to a privacy/data-consent notice, where Stripe's own guidance does suggest naming it) — found no such requirement for Terms of Service, so genericised to "our payment processor" here too, independently reasoned rather than copied from the privacy-policy pass.
+- Section 8 named vendor *categories* already ("telephony, hosting, database and AI providers") — no company names, left as-is; the same category-level disclosure is fine here as it was in the privacy policy.
+
+**New protections added** (all confirmed with Andrew before implementing, since they touch customer obligations/liability): an eligibility clause (18+, contractual capacity, UK phone number — previously entirely absent, and left the Terms inconsistent with the privacy policy's new "Children" section); explicit non-liability for the customer's *own* phone line/mobile network/device/internet connection failing (previously only covered outages at HCG's own suppliers); a brief, generic clause noting protection may be delivered through the mobile app under the same Terms, once it's made available.
+
+**Deliberately not touched**: Section 9 (fair use), Section 10 (statutory 14-day cooling-off/refund rights), and the core liability-cap structure in Section 12 (death/personal injury/fraud carve-out, 12-months'-fees cap) — already correctly scoped, standard boilerplate, no factual or disclosure problems found.
+
+**Genuine open questions flagged for Andrew, not resolved by Terms wording** (relevant before Google Play/Apple submission):
+- The mobile app opens Stripe Checkout in a web browser (`WebBrowser.openAuthSessionAsync`) rather than using Apple In-App Purchase or Google Play Billing. Very likely fine — HCG is a real-world telephony service, not in-app digital content, the standard exception both platforms recognise — but this is Apple's/Google's call at review, not something the Terms or this session can certify.
+- Unknown whether the app uses Apple's Standard EULA or a custom one in App Store Connect — not visible from this environment. If custom, Apple's minimum required terms need to be present somewhere; if standard, nothing extra is needed.
+
+**Verification**: no vendor/architecture names anywhere in the file (checked live, post-deploy); all 15 section numbers unchanged, so the existing internal cross-references (Section 5, Section 10) stay valid; checked at 320/360/390/428px on both the local file and the live production page — zero horizontal overflow at every width, no clipping risk (plain flowing paragraphs, not the fixed-height accordion pattern that caused the FAQ bug). Full regression suite: 785/785 passing. Live page confirmed showing the new "Last updated: 25 August 2026" date and all new wording.
+
