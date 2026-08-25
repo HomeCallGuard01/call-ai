@@ -543,3 +543,7 @@ Same review discipline as the privacy policy: read the full document, cross-chec
 
 **Verification**: no vendor/architecture names anywhere in the file (checked live, post-deploy); all 15 section numbers unchanged, so the existing internal cross-references (Section 5, Section 10) stay valid; checked at 320/360/390/428px on both the local file and the live production page — zero horizontal overflow at every width, no clipping risk (plain flowing paragraphs, not the fixed-height accordion pattern that caused the FAQ bug). Full regression suite: 785/785 passing. Live page confirmed showing the new "Last updated: 25 August 2026" date and all new wording.
 
+## Follow-up wording fix (2026-08-25) — privacy policy, "Contacts (mobile app)"
+
+Andrew requested one small, precisely-scoped wording change: §2's "Contacts (mobile app)" subsection said we only store "the specific contacts you choose to add" — this didn't accurately cover the app's "Sync all contacts" functionality. Changed to "the contacts you choose to add **or sync**." Confirmed via `git diff` this was the only change in the file (2 lines touched, nothing else). No supplier names, architecture, or detection-method detail reintroduced. Tested (785/785 passing), committed (`33d4171`), pushed, deployed, and confirmed live — including a repeat 320/360/390/428px mobile check on the live page (zero horizontal overflow, unchanged from the prior pass).
+
