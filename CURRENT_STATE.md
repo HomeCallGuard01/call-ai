@@ -547,3 +547,25 @@ Same review discipline as the privacy policy: read the full document, cross-chec
 
 Andrew requested one small, precisely-scoped wording change: §2's "Contacts (mobile app)" subsection said we only store "the specific contacts you choose to add" — this didn't accurately cover the app's "Sync all contacts" functionality. Changed to "the contacts you choose to add **or sync**." Confirmed via `git diff` this was the only change in the file (2 lines touched, nothing else). No supplier names, architecture, or detection-method detail reintroduced. Tested (785/785 passing), committed (`33d4171`), pushed, deployed, and confirmed live — including a repeat 320/360/390/428px mobile check on the live page (zero horizontal overflow, unchanged from the prior pass).
 
+---
+
+# Read-only verification passes (2026-08-25) — terms.html, privacy.html, index.html
+
+Three separate read-only verification requests against the live pages (terms, privacy, then the homepage), each checking HTTP status, exact wording, no vendor/architecture reappearance, mobile overflow at 320/360/390/428px, and visual clipping — with instructions to change nothing unless a genuine defect was found.
+
+**`terms.html`**: fully clean. HTTP 200, correct date, all new wording (cancellation, eligibility, UK-number, mobile-app, automated-screening, network-dependency) present and correctly rendered, no vendor names, zero overflow at every width, table/lists/footer/email links all clean on mobile and desktop. No changes made.
+
+**`privacy.html`**: fully clean. HTTP 200, correct date, "add or sync" wording confirmed live and rendering correctly, both new mobile-app subsections present, call/audio retention wording accurate, automated-screening wording generic, no vendor names, Section 3 table renders correctly on both mobile and desktop, zero overflow at every width. No changes made.
+
+**`index.html`**: **found and fixed a genuine, repeated factual defect.** The homepage still contained the same "screened/blocked before the call reaches you" inaccuracy already corrected elsewhere this session — but in **six more places** that an earlier pass had missed:
+1. The meta description, Open Graph description, and Twitter Card description (the text shown in Google search results and social shares — the single highest-visibility instance, since it reaches people before they even click through).
+2. The hero section's bullet point ("screened by AI before your phone rings").
+3. The hero "reassurance" copy ("screened before reaching you").
+4. The phone-mockup illustration's own caption text ("Screening this caller before the call reaches you").
+5. The "problem" section's intro paragraph.
+6. The "how it works" section's intro paragraph.
+
+All six corrected to accurately describe live, in-call monitoring rather than pre-connect blocking (e.g. "screened by AI during the call", "Screening this call now"). **Deliberately left unchanged**: the H1 ("Stop scam callers before they reach you") — reasoned as a value-proposition tagline about outcomes, not a literal technical claim about call-handling timing, unlike the six fixed instances which all made a specific, checkable, false claim about mechanism. This is a judgment call, flagged rather than decided silently — Andrew may want it revisited.
+
+Verified: full regression suite 785/785 passing; zero horizontal overflow at 320/360/390/428px and 1440px on both the local file and the live production page; the FAQ accordion's earlier clipping fix (`max-height: 1000px`) re-confirmed still showing the complete longest answer with no truncation; header/logo/buttons/pricing/footer/legal links all visually clean at the narrowest width and on desktop; `/privacy.html`, `/terms.html`, and `/guides/` links all confirmed resolving to `200` from the live homepage. Committed `faa8f41`, pushed, deployed, confirmed live.
+
