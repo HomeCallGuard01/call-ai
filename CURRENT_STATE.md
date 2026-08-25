@@ -569,3 +569,35 @@ All six corrected to accurately describe live, in-call monitoring rather than pr
 
 Verified: full regression suite 785/785 passing; zero horizontal overflow at 320/360/390/428px and 1440px on both the local file and the live production page; the FAQ accordion's earlier clipping fix (`max-height: 1000px`) re-confirmed still showing the complete longest answer with no truncation; header/logo/buttons/pricing/footer/legal links all visually clean at the narrowest width and on desktop; `/privacy.html`, `/terms.html`, and `/guides/` links all confirmed resolving to `200` from the live homepage. Committed `faa8f41`, pushed, deployed, confirmed live.
 
+---
+
+# Google Play delete-account requirement (2026-08-25) — real implementation gap found and fixed, then the public page built
+
+Google Play's Data Safety section requires a public account-deletion URL. Before writing that page, cross-checked its claims against the actual deletion mechanism rather than assuming `privacy.html`'s existing wording was accurate.
+
+## Real gap found: account deletion never actually deleted trusted contacts or call records
+
+`privacy.html` promised that deleting an account removes "your trusted-contact data" — but the only mechanism that existed, `anonymize_inactive_household` (migration 020), only ever scrubbed the `households` row itself (email/phone/auth_user_id/stripe_customer_id/twilio_number). It never touched `public.contacts` or `public.calls` at all — confirmed directly, not assumed, including checking `database/contacts.js` (only a single-contact delete exists, never a bulk per-household one). So a customer's real trusted contacts (their family/friends' names and numbers) and their full call/screening history remained in the database indefinitely after "deletion," tied to the now-anonymised household_id.
+
+Reported this to Andrew before writing the delete-account page rather than repeating an unverified promise a third time (following the same privacy.html/terms.html/homepage pattern this session). Andrew confirmed: treat as a real implementation gap and fix it properly.
+
+## Fix — Migration 029: `supabase/migrations/029_anonymize_household_deletes_contacts_and_calls.sql`
+
+Extends the existing `anonymize_inactive_household(uuid, text)` RPC (same signature, same two existing guards — no Twilio number assigned, no active entitlement — preserved verbatim) to also delete every `contacts` and `calls` row for that household, scoped only by `household_id`, only after every guard has passed. Deliberately still does **not** touch `subscriptions`, `entitlements`, or `stripe_webhook_events` — checked directly: none of those three tables stores a customer's name/email/phone in a dedicated column, so they don't need scrubbing to protect a deleted customer's identity, and they're the genuine billing/audit history UK tax law requires keeping. One residual item flagged, not fixed: `stripe_webhook_events.payload` stores Stripe's raw webhook JSON verbatim and can in principle carry fragments like a customer's email depending on event type — redacting inside that column would be a separate, materially riskier change (it's the only durable record of exactly what Stripe sent, relied on for safely reprocessing a failed event) — Andrew explicitly said not to touch this as part of this work.
+
+Atomicity comes from PL/pgSQL's own implicit per-call transaction — no explicit BEGIN/COMMIT needed inside the function; if any statement raises, the whole call (including the two new deletes) rolls back.
+
+**Tests added** to `tests/migrations.pglite.test.mjs` covering every scenario requested: household anonymisation itself, trusted contacts deleted, call/screening records deleted, billing/entitlement records retained, no cross-household deletion (a second, untouched household fixture proves this), and failure/rollback behaviour (an active entitlement blocks the whole operation — verified a blocked attempt deletes nothing at all, not a partial cleanup). All pass; full suite 795/795 (up from 785), 0 failures.
+
+## Production application
+
+Reported the exact proposed SQL and its production-impact analysis before touching anything. Andrew approved, then verified the correct Supabase project (`psbzynxplxfbyrbdidmn`) two ways before applying anything: the Project Settings Reference ID, and a live household/entitlement-count cross-check I supplied in real time from a read-only query, independent of anything he ran himself. Applied via the Supabase SQL Editor (no working Management API/direct Postgres access from this environment — same limitation as migrations 019/027/028). Post-application, read-only verification (no real customer's data touched or tested) confirmed: `security definer = true`, `owner = postgres`, `search_path` pinned empty, correct `(uuid, text)` arguments, and the function body containing both new delete statements. Migration header updated to APPLIED with the verification detail recorded.
+
+## Privacy Policy updated to match the now-real behaviour
+
+`privacy.html` §6's deletion paragraph previously said only "we will remove or anonymise your account and trusted-contact data" — didn't mention call/screening records at all. Updated to explicitly state account information is removed/anonymised, trusted-contact data is deleted, and call/screening records are deleted — matching migration 029 exactly. "Last updated" date unchanged (already 25 August 2026 from earlier the same day).
+
+## `delete-account.html` — created and deployed
+
+New page at `/delete-account.html`, reusing `privacy.html`/`terms.html`'s exact visual design (same CSS, header, footer). Covers: AFMD Ltd identification, how to request deletion (email support@ from the account's own address, state the account and personal data should be deleted), identity verification may be required, 30-day completion target, exactly what's deleted (account info, trusted contacts, call/screening records — now true), what's retained (billing/accounting records only, only for the legally required period), and the cancellation-vs-deletion distinction (confirmed accurate against `routes/billing.js`'s actual Stripe cancellation flow — cancelling never triggers anonymisation). `noindex, follow` (utility page, consistent with how register/login/etc. are already treated). Links to the Privacy Policy. No vendor names or implementation detail anywhere on the page. Checked at 320/360/390/428px and 1440px desktop — zero horizontal overflow, visually clean at both extremes. Full test suite: 795/795 passing.
+

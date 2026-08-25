@@ -661,6 +661,161 @@ async function main() {
   }
   assert(lifecycleRpcDeniedToAuthenticated, 'authenticated role cannot execute release_household_twilio_number_immediately directly');
 
+  console.log('\nRunning smoke checks on migration 029 (anonymize_inactive_household deletes contacts and calls)...\n');
+
+  // --- fixture: a household with contacts, calls, an expired
+  // entitlement, and an expired/canceled subscription — the shape of a
+  // genuinely deletable, no-longer-protected account ---
+  await db.exec(`reset role;`);
+  const { rows: [delHousehold] } = await db.query(
+    `insert into public.households (auth_user_id, email, phone_number)
+     values (null, $1, $2) returning id`,
+    ['delete-me@example.com', '+447700900111']
+  );
+  const delHouseholdId = delHousehold.id;
+
+  await db.query(
+    `insert into public.contacts (household_id, name, number) values ($1, $2, $3), ($1, $4, $5)`,
+    [delHouseholdId, 'Trusted Friend', '+447700900222', 'Trusted Family', '+447700900333']
+  );
+
+  await db.query(
+    `insert into public.calls (household_id, call_sid, number, status, result)
+     values ($1, $2, $3, 'Unknown', 'SAFE'), ($1, $4, $5, 'Known', 'SAFE')`,
+    [delHouseholdId, 'CA-delete-test-1', '+447700900444', 'CA-delete-test-2', '+447700900555']
+  );
+
+  await db.query(
+    `insert into public.subscriptions (household_id, stripe_subscription_id, stripe_price_id, status)
+     values ($1, $2, $3, 'canceled')`,
+    [delHouseholdId, 'sub_delete_test_1', 'price_delete_test_1']
+  );
+
+  await db.query(
+    `insert into public.entitlements (household_id, entitlement_type, status, source, external_reference)
+     values ($1, 'paid_subscription', 'expired', 'stripe', 'sub_delete_test_1')`,
+    [delHouseholdId]
+  );
+
+  const { rows: [beforeCounts] } = await db.query(
+    `select
+       (select count(*) from public.contacts where household_id = $1) as contacts,
+       (select count(*) from public.calls where household_id = $1) as calls,
+       (select count(*) from public.subscriptions where household_id = $1) as subscriptions,
+       (select count(*) from public.entitlements where household_id = $1) as entitlements`,
+    [delHouseholdId]
+  );
+  assert(
+    Number(beforeCounts.contacts) === 2 && Number(beforeCounts.calls) === 2 &&
+      Number(beforeCounts.subscriptions) === 1 && Number(beforeCounts.entitlements) === 1,
+    'fixture set up correctly: 2 contacts, 2 calls, 1 subscription, 1 (expired) entitlement before deletion'
+  );
+
+  // --- a second, untouched household — proves no cross-household deletion ---
+  const { rows: [otherHousehold] } = await db.query(
+    `insert into public.households (auth_user_id, email, phone_number)
+     values (null, $1, $2) returning id`,
+    ['keep-me@example.com', '+447700900666']
+  );
+  const otherHouseholdId = otherHousehold.id;
+
+  await db.query(
+    `insert into public.contacts (household_id, name, number) values ($1, $2, $3)`,
+    [otherHouseholdId, 'Someone Else Entirely', '+447700900777']
+  );
+  await db.query(
+    `insert into public.calls (household_id, call_sid, number, status, result)
+     values ($1, $2, $3, 'Unknown', 'SAFE')`,
+    [otherHouseholdId, 'CA-other-household', '+447700900888']
+  );
+
+  // --- failure/rollback: an active entitlement blocks the whole
+  // operation, and blocks it before any deletion happens ---
+  await asServiceRole(db);
+  const { rows: [blockingEntitlement] } = await db.query(
+    `insert into public.entitlements (household_id, entitlement_type, status, source)
+     values ($1, 'complimentary', 'active', 'admin_manual') returning id`,
+    [delHouseholdId]
+  );
+  let blockedByActiveEntitlement = false;
+  try {
+    await db.query(`select public.anonymize_inactive_household($1, $2)`, [delHouseholdId, 'test: should be blocked']);
+  } catch (err) {
+    blockedByActiveEntitlement = /still has an active entitlement/.test(err.message);
+  }
+  assert(blockedByActiveEntitlement, 'anonymize_inactive_household refuses to run while an active entitlement exists');
+
+  const { rows: [afterBlockedAttempt] } = await db.query(
+    `select
+       (select count(*) from public.contacts where household_id = $1) as contacts,
+       (select count(*) from public.calls where household_id = $1) as calls
+     from public.households where id = $1`,
+    [delHouseholdId]
+  );
+  assert(
+    Number(afterBlockedAttempt.contacts) === 2 && Number(afterBlockedAttempt.calls) === 2,
+    'a blocked (exception-raised) attempt deletes nothing — contacts and calls are untouched, not partially removed'
+  );
+
+  // Resolve the blocking entitlement so the real deletion below can
+  // proceed — matching how the real system actually clears one (expired
+  // via the normal subscription lifecycle), not a raw delete: service_role
+  // itself only has select/insert/update on entitlements (migration 012),
+  // never delete, so a real delete here would fail exactly as it should.
+  await db.query(`update public.entitlements set status = 'expired' where id = $1`, [blockingEntitlement.id]);
+
+  // --- the real anonymisation: household scrubbed, contacts and calls
+  // deleted, subscription/entitlement history retained ---
+  await db.query(`select public.anonymize_inactive_household($1, $2)`, [delHouseholdId, 'test: genuine deletion']);
+
+  const { rows: [afterHousehold] } = await db.query(
+    `select email, phone_number, auth_user_id, status from public.households where id = $1`,
+    [delHouseholdId]
+  );
+  assert(
+    afterHousehold.email === `anonymized-${delHouseholdId}@deleted.homecallguard.internal` &&
+      afterHousehold.phone_number === null &&
+      afterHousehold.auth_user_id === null &&
+      afterHousehold.status === 'cancelled',
+    'household anonymisation itself is unchanged: email/phone/auth_user_id scrubbed, status cancelled'
+  );
+
+  const { rows: [afterCounts] } = await db.query(
+    `select
+       (select count(*) from public.contacts where household_id = $1) as contacts,
+       (select count(*) from public.calls where household_id = $1) as calls,
+       (select count(*) from public.subscriptions where household_id = $1) as subscriptions,
+       (select count(*) from public.entitlements where household_id = $1) as entitlements`,
+    [delHouseholdId]
+  );
+  assert(Number(afterCounts.contacts) === 0, 'all trusted-contact rows for the deleted household are gone');
+  assert(Number(afterCounts.calls) === 0, 'all call/screening records for the deleted household are gone');
+  assert(Number(afterCounts.subscriptions) === 1, 'the subscription (billing) record is retained, not deleted');
+  assert(Number(afterCounts.entitlements) === 2, 'both entitlement records (the original expired one, and the one used to test the active-entitlement guard, now itself expired) are retained, not deleted');
+
+  // --- the other household's data survived completely untouched ---
+  const { rows: [otherCounts] } = await db.query(
+    `select
+       (select count(*) from public.contacts where household_id = $1) as contacts,
+       (select count(*) from public.calls where household_id = $1) as calls,
+       (select email from public.households where id = $1) as email`,
+    [otherHouseholdId]
+  );
+  assert(
+    Number(otherCounts.contacts) === 1 && Number(otherCounts.calls) === 1 && otherCounts.email === 'keep-me@example.com',
+    'a different household\'s contacts, calls, and account data are completely unaffected by deleting another household'
+  );
+
+  // --- direct execute privilege is not available to authenticated ---
+  await asAuthUser(db, userId2, 'c-anon-test@example.com');
+  let anonymizeRpcDeniedToAuthenticated = false;
+  try {
+    await db.query(`select public.anonymize_inactive_household($1, $2)`, [otherHouseholdId, 'should be denied']);
+  } catch {
+    anonymizeRpcDeniedToAuthenticated = true;
+  }
+  assert(anonymizeRpcDeniedToAuthenticated, 'authenticated role cannot execute anonymize_inactive_household directly');
+
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //
   // Discovers every SECURITY DEFINER function in public from pg_proc
