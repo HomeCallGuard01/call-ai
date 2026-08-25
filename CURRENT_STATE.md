@@ -455,3 +455,64 @@ A recurring lightweight security check (OS updates, `.env` permissions, listenin
 
 **Update**: Andrew explicitly authorised killing the exposed process (`kill 91639`) directly in-session. Done and verified — port 8931 confirmed no longer listening. The RED finding is resolved; everything else in the AMBER list above still stands as recommended-but-not-urgent follow-up.
 
+**Follow-up**: at Andrew's request, the sandbox test-mode Stripe key was rotated (Stripe Dashboard, "Now" expiration) and the new key pasted directly into `/Users/ad/call-ai-sandbox-mobile-app-v1/.env` by Andrew himself — the raw value never passed through this session. `.env` permissions corrected to `600`, the sandbox server restarted and confirmed authenticating successfully (`HTTP 200`, `livemode: false`) using only status-code/boolean output, never the key itself.
+
+---
+
+# SEO foundation + Scam Advice content section (2026-08-24)
+
+Autonomous SEO project (technical SEO + a public Scam Advice / Guides section) — separate initiative, does not touch call-protection/billing/auth/monitoring/routing architecture. Committed `5791206`, pushed and deployed.
+
+## Phase 1 audit findings
+
+**Already correct, left alone**: mobile viewport meta on every page; single H1 + clean semantic H2 hierarchy on the homepage (8 well-structured H2s); image alt text present; no render-blocking external fonts/scripts; no broken internal links; the actual dashboard (`upload.html`, served only via the authenticated `/dashboard` route) is not statically reachable, so authenticated content was never at risk of indexing — confirmed via `express.static("public")` only serving the `public/` directory and `requireAuth` redirecting unauthenticated requests to `/login.html`.
+
+**Real gaps found and fixed**: no `sitemap.xml` (404); `robots.txt` was entirely Cloudflare's auto-generated default with no sitemap reference; zero canonical tags anywhere; zero Open Graph/Twitter Card metadata; zero structured data; account/utility pages (register/login/confirmed/forgot-password/reset-password) had no `noindex`, meaning Google could index low-value account-flow pages; `logo.png` was 1536×1024px / 580KB despite only ever being displayed at ~130px height max.
+
+## Phase 2 technical SEO — deployed
+
+- `public/robots.txt` (Allow all, points to sitemap) and `public/sitemap.xml` (all indexable public URLs).
+- Canonical tags on every public page.
+- `<meta name="robots" content="noindex, follow">` added to register/login/confirmed/forgot-password/reset-password — kept crawlable so the tag itself is seen (a `Disallow` in robots.txt would have prevented Google from ever reading the noindex tag), just excluded from the index.
+- Open Graph + Twitter Card metadata and `Organization`/`WebSite`/`Service` JSON-LD structured data on the homepage — only verified facts (name, £4.99/month price, support email), no ratings/reviews/awards.
+- `logo.png` resized 1536×1024 (580KB) → 480×320 (73KB), an 87% reduction, still comfortably retina-sharp at its actual ~130px max display size — verified visually before committing.
+- While researching current copy for the technical audit, found and corrected two customer-facing FAQ answers (on `index.html` and `upload.html`, part of the earlier Sunday-night commit `2ba0e50`) that still described the old, removed pre-connect call-screening gate rather than the live in-call monitoring the product actually uses.
+
+## Phase 3/4 — Scam Advice / Guides section
+
+12 UK-focused guide pages plus a hub at `/guides/`, each targeting a distinct, genuinely differentiated search intent (no near-duplicates): protecting elderly parents from phone scams (overview), stopping scam calls to elderly parents (practical tools), landline-specific protection (general + family-setup angle), what to do if it's already happening, talking to a parent about it, identifying a scam call, common UK scam types (courier fraud, tech support, pension, bank impersonation, family-emergency/AI-voice-clone scams), caller ID/number spoofing, official reporting routes (7726, Action Fraud, 159), blocking a specific number, and an honest evaluation of call-blocking apps' real limits.
+
+Facts sourced from Action Fraud, Ofcom, the FCA, Age UK, Citizens Advice, the NCSC, and Stop Scams UK (159) — cited on every page. Every HCG claim in each page's CTA box matches `MARKETING_FACTS.md` exactly (£4.99/month, no long-term contract, no app, trusted contacts ring through immediately, live in-call monitoring rather than pre-connect blocking, no guaranteed-protection claims). No keyword stuffing, no doorway pages, no fabricated reviews/ratings/awards, no near-duplicate city/town pages. Both target audiences ("protect myself" and "protect Mum/Dad") are covered naturally — the family-focused pages explicitly, the general pages in neutral second person.
+
+Internal linking: main site header nav + footer now link to `/guides/`; every guide links to 2-3 related guides and to `/register.html` / `/#how-it-works`.
+
+## Phase 5 — QA and deployment
+
+Verified before deploy: every internal link across all 13 new pages resolves to a real file (checked programmatically); exactly one H1 per page; all page titles and meta descriptions unique; all HTML tags balanced; all JSON-LD blocks valid JSON. Full regression suite: **785/785 passing** (unaffected, since this is entirely static frontend content — no routes/schema/logic touched). Deployed and confirmed live: `/guides/` hub, `/sitemap.xml`, `/robots.txt`.
+
+## Google Search Console
+
+**Not currently set up** — confirmed via repo search (no `google-site-verification` meta tag anywhere) and a live DNS TXT lookup on `homecallguard.co.uk` (no verification record). This requires Andrew's own Google account and DNS-panel access, neither available from this session.
+
+**One exact Monday action**: go to [search.google.com/search-console](https://search.google.com/search-console), add `homecallguard.co.uk` as a Domain property, verify via the DNS TXT record method (add the TXT record Google provides to the domain's DNS at IONOS — this is the standard route for a domain-wide property and also covers `www.` automatically), then once verified, go to Sitemaps and submit `https://homecallguard.co.uk/sitemap.xml`. Everything else needed for this (the sitemap itself, clean URLs, correct metadata) is already live — this is a ~5 minute task once Andrew is back.
+
+---
+
+# Privacy policy review (2026-08-25) — report only, `privacy.html` NOT changed
+
+Reviewed the live privacy policy against the actual code (not assumed) ahead of Play Store submission. Full proposed wording was delivered in conversation, not written to the file — this is a pointer/summary for anyone picking this up later.
+
+**Real findings, verified against the code:**
+- OpenAI receives raw **audio** for transcription (`services/liveMonitoring/transcribeChunk.js`), not "a text version" as the policy currently says. The actual scam-detection scoring is 100% in-house (`services/liveMonitoring/scoring/`) — OpenAI only transcribes, never classifies. No call recording exists anywhere (confirmed: no Twilio `<Record>` usage). Only a non-transcript summary (numbers, outcome, timing, risk indicators) is ever persisted.
+- Two real disclosure gaps found: the mobile app can read the phone's **Contacts** (via `expo-contacts`, permission-gated, only user-selected numbers are ever uploaded) and registers the device's **push-notification token** with the telephony provider for incoming-call delivery — neither is mentioned in the current policy at all.
+- The current policy names vendors by name (Stripe, Supabase, Railway, Twilio, OpenAI) and describes implementation detail (hosting region/provider pairing, "keyword analysis and AI classification" as the detection method, the specific access-token/refresh-token cookie architecture) that GDPR doesn't require — Art 13(1)(e) only needs *categories* of recipients, not named companies.
+- Proposed replacement wording (delivered in full in conversation) for §2, §4, §5, §7, §9, plus two new subsections (mobile Contacts access, mobile device/push-token sharing) and an optional new §14 (children/minimum age, currently unaddressed).
+- A Google Play Data Safety worksheet was produced mapping the app's actual behaviour to Play's own data categories: **Audio** (yes — both normal call audio and scam-detection transcription), **Contacts** (yes), **Personal info/email** (yes), **Financial info** (yes, limited to Stripe IDs/status, no card data), **Device/other IDs** (yes — push token), **App activity/analytics** (no — confirmed no analytics/crash-reporting SDK in the mobile app's dependencies), **Location** (no).
+- **Recommendation, not yet actioned**: whoever updates `privacy.html` and completes the Play Console Data Safety form should use the proposed wording above as a starting draft, and confirm the "service provider vs. third-party sharing" distinction for the transcription/telephony providers against the live Play Console questionnaire before submitting, since Google's exact category/exemption wording can shift between policy versions.
+
+## FAQ accordion clipping — found and fixed
+
+Checked the homepage FAQ accordion at 320/360/390/412/428px widths (realistic phone widths, via Playwright). Found a real bug: `.faq-item.open .faq-answer` used a hardcoded `max-height: 250px` (needed since CSS can't transition to `height: auto`). On narrow phones the same text wraps into more lines, needing more vertical space than on desktop — the longest answer ("What do I need to do after I subscribe?", added earlier this session) needed 443px at 320px wide, so roughly 193px of it — including the Sky/Virgin Call Divert cost disclosure, mid-sentence — was silently clipped with no visual indication anything was missing. The dashboard's separate FAQ (`upload.html`, native `<details>`/`<summary>`) was checked too and is unaffected — no hardcoded height there.
+
+**Fixed**: raised the cap to `max-height: 1000px` — comfortably clears today's longest answer with real margin for future edits and larger accessibility text sizes. Tested (785/785 passing), committed (`c1afd79`), pushed, and confirmed live.
+
