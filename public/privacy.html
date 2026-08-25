@@ -324,7 +324,7 @@
       <div class="doc-header">
         <span class="doc-label">Legal</span>
         <h1>Privacy Policy</h1>
-        <p class="doc-updated">Last updated: 20 July 2026</p>
+        <p class="doc-updated">Last updated: 25 August 2026</p>
 
         <div class="doc-intro">
           This Privacy Policy explains how Home Call Guard collects, uses, shares and protects your
@@ -351,8 +351,8 @@
         <h3>Account and contact information</h3>
         <p>
           When you register, we collect your email address and a password (stored securely as a hash by
-          our authentication provider, Supabase — we never store or see your password in plain text).
-          Your account is linked to the household phone number the Service protects.
+          our account-login provider — we never store or see your password in plain text). Your account
+          is linked to the household phone number the Service protects.
         </p>
 
         <h3>Trusted-contact telephone numbers</h3>
@@ -362,21 +362,36 @@
           screening.
         </p>
 
+        <h3>Contacts (mobile app)</h3>
+        <p>
+          If you use our mobile app to add trusted contacts, the app may ask permission to access your
+          phone's contacts so you can pick numbers from your address book. Your full contact list is
+          only read on your device for this purpose — we only receive and store the specific contacts
+          you choose to add.
+        </p>
+
         <h3>Call and screening records</h3>
         <p>
-          For each screened call, we record the caller's number, the call status, the screening result
-          (for example, whether it was assessed as safe or a likely scam), a decision reason, and
-          technical details such as processing time and which detection method was used. Where our AI
-          classification step is used, the caller's spoken words are converted to text and analysed at
-          the time of the call to help classify it — this text is not stored in our database once the
-          call has been processed.
+          For each call, we record the caller's number, whether it was recognised as a trusted contact,
+          and the outcome of any automated check, along with basic technical details like timing. For
+          calls from numbers not on your trusted list, the audio is analysed at the time of the call —
+          using a combination of our own automated checks and a third-party transcription service — to
+          help detect the signs of a scam call. We do not store the call audio or a transcript of what
+          was said; only the short summary described above is kept.
         </p>
 
         <h3>Payment information</h3>
         <p>
           We do not collect or store your card details. Payment is handled entirely by our payment
-          processor, Stripe — see Section 4. We store only your Stripe customer and subscription
+          processor — see Section 4. We store only your payment processor's customer and subscription
           identifiers, and your subscription status.
+        </p>
+
+        <h3>Device information (mobile app)</h3>
+        <p>
+          To alert your device when a protected call is coming in, our mobile app registers your device
+          with our telephony provider's push-notification service. This shares a device identifier (not
+          linked to your personal contacts or messages) solely so incoming calls can reach you.
         </p>
 
         <h3>Technical and session information</h3>
@@ -430,17 +445,17 @@
           contracts that require them to protect it appropriately. We do not sell your personal data.
         </p>
         <ul>
-          <li><strong>Stripe</strong> (payment processing) — handles your payment details and processes
-            your subscription charges directly; we never see or store your full card details.</li>
-          <li><strong>Supabase</strong> (database and authentication) — stores your account and
-            household data, and manages secure login. Hosted in the UK (London, eu-west-2 region).</li>
-          <li><strong>Railway</strong> (application hosting) — runs the Home Call Guard application.
-            Hosted in the UK (London, eu-west-2 region).</li>
-          <li><strong>Twilio</strong> (telephony) — routes and connects calls to and through the Service
-            so calls can be screened.</li>
-          <li><strong>OpenAI</strong> (AI call classification) — receives a text version of an unknown
-            caller's spoken words, at the moment of the call, solely to help classify whether the call is
-            likely to be a scam.</li>
+          <li><strong>Our payment processor</strong> — handles your payment details and processes your
+            subscription charges directly; we never see or store your full card details.</li>
+          <li><strong>Our database and account-login provider</strong> — stores your account and
+            household data and manages secure sign-in. Your data is hosted within the UK.</li>
+          <li><strong>Our application hosting provider</strong> — runs the Home Call Guard service.
+            Hosted within the UK.</li>
+          <li><strong>Our telephony provider</strong> — routes and connects calls to and through the
+            Service, and (for mobile app users) delivers call notifications to your device.</li>
+          <li><strong>Our transcription provider</strong> — converts the audio of calls from
+            unrecognised numbers into text, at the moment of the call, solely so it can be checked for
+            the signs of a scam.</li>
         </ul>
         <p>
           We may also disclose personal data where required by law, to protect our rights, or in
@@ -452,9 +467,9 @@
       <section>
         <h2><span class="num">5.</span>International data transfers</h2>
         <p>
-          Some of our service providers (including Stripe, Twilio and OpenAI) are based outside the UK,
-          or may process data outside the UK/European Economic Area as part of providing their service
-          to us. Where this happens, we rely on appropriate safeguards recognised under UK data
+          Some of our service providers are based outside the UK, or may process data outside the
+          UK/European Economic Area as part of providing their service to us. Where this happens, we
+          rely on appropriate safeguards recognised under UK data
           protection law — such as Standard Contractual Clauses, an equivalent UK-approved mechanism, or
           the provider's own adequacy/compliance certifications — to ensure your data remains protected
           to a UK standard.
@@ -487,10 +502,10 @@
       <section>
         <h2><span class="num">7.</span>Automated screening decisions</h2>
         <p>
-          Home Call Guard uses automated methods (keyword analysis and AI classification) to assess
-          incoming calls from numbers not on your trusted-contact list. This affects how a call is
-          handled, but does not produce any legal or similarly significant automated decision about you
-          as our customer. If you believe a call was screened incorrectly, you can contact us and we
+          Home Call Guard uses automated technology to check incoming calls from numbers not on your
+          trusted-contact list for known patterns associated with phone scams. This affects how a call
+          is handled, but does not produce any legal or similarly significant automated decision about
+          you as our customer. If you believe a call was handled incorrectly, you can contact us and we
           will look into it.
         </p>
       </section>
@@ -508,11 +523,8 @@
       <section>
         <h2><span class="num">9.</span>Cookies and session storage</h2>
         <p>
-          We use two strictly necessary cookies to keep you securely signed in: an access token and a
-          refresh token. Both are set as <code>httpOnly</code> cookies (not readable by page scripts),
-          transmitted only over secure connections in production, and used solely to recognise your
-          logged-in session. We do not use these, or any other cookies, for advertising, analytics or
-          cross-site tracking.
+          We use essential cookies to keep you securely signed in. We do not use these, or any other
+          cookies, for advertising, analytics or cross-site tracking.
         </p>
       </section>
 
@@ -564,6 +576,14 @@
           obligations change. Where changes are material, we will take reasonable steps to let you know,
           such as by email. The "Last updated" date at the top of this page shows when it was last
           revised.
+        </p>
+      </section>
+
+      <section>
+        <h2><span class="num">14.</span>Children</h2>
+        <p>
+          Home Call Guard is intended for adult use and is not directed at children. We do not knowingly
+          collect personal data from children.
         </p>
       </section>
 
