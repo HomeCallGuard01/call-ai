@@ -1132,7 +1132,12 @@
     }
 
     .faq-item.open .faq-answer {
-      max-height: 250px;
+      /* Generous fixed cap, not a tight fit to current content — a plain
+         max-height transition can't animate to "auto", so this needs to
+         comfortably exceed the tallest realistic answer at narrow widths
+         and larger accessibility text sizes, not just today's longest
+         (443px at 320px wide) with no margin. */
+      max-height: 1000px;
     }
 
     .faq-item.open .faq-icon {
