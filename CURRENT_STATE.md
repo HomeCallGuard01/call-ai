@@ -601,3 +601,23 @@ Reported the exact proposed SQL and its production-impact analysis before touchi
 
 New page at `/delete-account.html`, reusing `privacy.html`/`terms.html`'s exact visual design (same CSS, header, footer). Covers: AFMD Ltd identification, how to request deletion (email support@ from the account's own address, state the account and personal data should be deleted), identity verification may be required, 30-day completion target, exactly what's deleted (account info, trusted contacts, call/screening records — now true), what's retained (billing/accounting records only, only for the legally required period), and the cancellation-vs-deletion distinction (confirmed accurate against `routes/billing.js`'s actual Stripe cancellation flow — cancelling never triggers anonymisation). `noindex, follow` (utility page, consistent with how register/login/etc. are already treated). Links to the Privacy Policy. No vendor names or implementation detail anywhere on the page. Checked at 320/360/390/428px and 1440px desktop — zero horizontal overflow, visually clean at both extremes. Full test suite: 795/795 passing.
 
+---
+
+# Google Play visual assets: branding source correction (2026-08-26)
+
+## Branding audit finding
+Inventoried every logo/icon asset across both repos. Found the mobile app was shipping **two conflicting visual identities**: the website (`public/logo.png` and everywhere on homecallguard.co.uk) uses a green shield + phone/signal mark; the mobile app's actual configured icon (`mobile/assets/icon.png`, wired up in `app.config.js`) was a completely different blue chevron mark — confirmed by reading the config directly, not assumed. Andrew decided: **green shield + phone is canonical going forward; the blue chevron is legacy/placeholder.** This session only touched Google Play Store *listing* assets (`docs/launch/`) — no mobile app icon/config files were changed, per explicit instruction to scope this down.
+
+## Multiple iterations were needed to get the 512×512 Play Store icon right
+1. First attempt used `mobile/assets/shield-mark.png` directly, scaled and centered with computed padding — looked correct by the numbers, but Andrew reported the shield's bottom point still looked clipped in actual Google Play.
+2. Investigated further and found the real root cause: **`shield-mark.png` itself is a truncated source file** — its artwork's bottom edge sits at the very last pixel row with zero internal padding, so no amount of external padding/centering could fix it. Confirmed by direct pixel inspection, not assumed.
+3. Fix: extracted the shield fresh from `public/logo.png` instead (which has the complete, genuine pointed/V-shaped bottom — confirmed by zooming into both sources and comparing directly), cropped out the wordmark/divider, color-keyed the flat black background to transparency. Saved as a new, reusable source: `mobile/assets/shield-mark-from-logo-master.png`.
+4. Verified color fidelity before use: sampled the phone handset's actual pixel values (green gradients, e.g. RGB 44,231,89) to confirm it wasn't accidentally white or altered.
+
+## Final approved assets
+- **`docs/launch/google-play-app-icon-512.png`** — 512×512, PNG, RGB, 28.5 KB. Built from `shield-mark-from-logo-master.png`, centered, complete pointed bottom with generous dark padding on every side, no text/badge.
+- **`docs/launch/play-store-feature-graphic.png`** — 1024×500, PNG, RGB, 54.6 KB. Same shield on the left; "Home Call Guard" + the approved Play Store short description from `docs/launch/STORE_LISTING_COPY.md` ("Real-time scam-call protection. Trusted contacts always ring through.") on the right; existing dark HCG background.
+- **`docs/launch/google-play-screenshots/`** — 5 genuine device screenshots selected from `docs/screenshots/mobile-rc1/`, covering protection status, trusted contacts, call activity, setup/activation, and account/membership. One deliberate substitution worth remembering: the populated Trusted Contacts screenshot was **not** used because it displayed what look like real phone numbers next to labels like "Wife (QA trusted contact)" — used the empty/paywall variant instead as a safe placeholder. Andrew may want a proper redacted or fresh-demo-data version before final submission.
+
+Both Andrew-confirmed as correct. No EAS build run, no mobile app config changed, nothing submitted to Google or Apple.
+
