@@ -30,7 +30,7 @@ module.exports = {
     android: {
       package: "co.uk.homecallguard.app",
       adaptiveIcon: {
-        backgroundColor: "#E6F4FE",
+        backgroundColor: "#0b1220",
         foregroundImage: "./assets/android-icon-foreground.png",
         backgroundImage: "./assets/android-icon-background.png",
         monochromeImage: "./assets/android-icon-monochrome.png",
