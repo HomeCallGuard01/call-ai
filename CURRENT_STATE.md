@@ -621,3 +621,28 @@ Inventoried every logo/icon asset across both repos. Found the mobile app was sh
 
 Both Andrew-confirmed as correct. No EAS build run, no mobile app config changed, nothing submitted to Google or Apple.
 
+---
+
+# First production Android builds — icon fix, real-device bug found and fixed, v3 and v4 (2026-08-26/27)
+
+## Compiled app icon corrected (not just the Play Store listing)
+The branding-correction pass above only fixed the *Play Store listing* icon — the actual compiled Android app was still launching with the old blue chevron (`mobile/assets/android-icon-foreground.png`/`android-icon-background.png`/`android-icon-monochrome.png`), found and flagged before the first production build so Andrew could decide rather than shipping it silently. Andrew chose to fix it: rebuilt all three adaptive-icon layers from the same verified `shield-mark-from-logo-master.png` source, at the same safe-zone scale the previous icon used (measured from the existing files, not guessed). Found and fixed one real defect along the way: `android-icon-background.png` had a design-tool safe-zone guide grid (faint circles/dashed lines) baked into its actual pixels — replaced with a plain `#0b1220` fill matching the approved Play assets, and `adaptiveIcon.backgroundColor` updated to match. Visually verified all three layers directly. Committed `878b767` on `sandbox/mobile-app-v1`, pushed.
+
+## Production readiness verification (before the first build)
+Checked, not assumed: EAS `production` environment resolves to the real production API/Supabase URLs (`www.homecallguard.co.uk`, `psbzynxplxfbyrbdidmn`); remote Android signing credentials (`Cn5OlZSb-i`) already proven by an earlier successful store build; `appVersionSource: remote` with `autoIncrement: true`; final merged Android permissions traced through the Twilio Voice SDK's own manifest (microphone/foreground-service only activates on an actually-answered/placed call, never in the background otherwise — confirmed `FOREGROUND_SERVICE_PHONE_CALL`/`phoneCall` is not declared anywhere in the dependency tree, only `microphone`). Full test suite green before building.
+
+## v3 (versionCode 3) — first production build
+Built via `eas build --platform android --profile production`. `mobile/build-output/home-call-guard-production-v3.aab` (79.7 MB, local only, never uploaded).
+
+## Real bug found on physical device, diagnosed, fixed
+Installed from Google Play Internal Testing on a real phone: Home screen stuck on "Protection status unavailable" / "Try again" doing nothing visible. Diagnosed properly rather than guessed:
+- Production DB checked directly (read-only) for the actual logged-in account (`andrewbusinessai@gmail.com`): auth user, household, role, and Twilio number are all healthy — but its one entitlement is `expired` and its subscription `canceled`. That state should produce a clean 402 `not_entitled` from the server (a *different* screen, "Not protected yet") — not the "unavailable" screen actually shown, which only happens when the client never gets a clean response at all.
+- Root cause: `lib/api.ts`'s `authorizedFetch()` called `supabase.auth.getSession()` on every authenticated request — the same intermittent real-Android-device bug already found and worked around for Voice SDK registration on 2026-08-23 (`getSession()` returning null despite a genuinely valid session already held in `AuthContext`), but never fixed for the dashboard/contacts/billing/activation calls, only for the voice token call.
+- Fix: `authorizedFetch()` and all 9 authenticated API functions now accept an optional `accessToken`, used directly instead of re-deriving it; `resolveAuthToken()` (new, dependency-free, unit tested) makes the explicit-token-wins decision; all 14 screens now pass `session?.access_token` from `useAuth()`. Fully backward compatible (omitting the token falls back to the old behaviour). Full worktree test suite: 1,017/1,017 passing. Committed `6e8f199` on `sandbox/mobile-app-v1`, pushed.
+- Separate, deliberately untouched: `andrewbusinessai@gmail.com`'s expired entitlement is real account state, not a bug — once this fix ships it should correctly show "Not protected yet," not "You're protected," until resubscribed.
+
+## v4 (versionCode 4) — rebuilt with the fix
+Built the same way, same verified production environment/signing/icon (fingerprint identical to v3, confirming only code changed, not native config). `mobile/build-output/home-call-guard-production-v4.aab` (79.8 MB, local only, never uploaded). Note: the build's own EAS-recorded "Commit" metadata shows `878b767` (the icon commit) rather than `6e8f199` (the auth fix) — the fix was already committed on disk and included in the build's uploaded archive (EAS packages the working tree, not a git ref) at build time, but the auth-fix commit itself was made in a later step, after the build had already started. The v4 `.aab` genuinely contains the fix; the commit-hash field just lags one commit behind for that reason.
+
+Neither v3 nor v4 has been uploaded or submitted to Google Play from here — that remains Andrew's own action in Play Console.
+
