@@ -16,12 +16,14 @@ import { useFocusEffect } from "expo-router";
 import { Screen } from "../../../components/Screen";
 import { Banner } from "../../../components/Banner";
 import { fetchActivationInstructions } from "../../../lib/api";
+import { useAuth } from "../../../lib/AuthContext";
 import { loadActivationDevice } from "../../../lib/activationDeviceStorage";
 import { colors, spacing, typography } from "../../../lib/theme";
 
 type ScreenState = "loading" | "ready" | "no_device_on_record" | "unavailable";
 
 export default function TurnOffProtection() {
+  const { session } = useAuth();
   const [state, setState] = useState<ScreenState>("loading");
   const [cancelCode, setCancelCode] = useState<string | null>(null);
 
@@ -37,7 +39,7 @@ export default function TurnOffProtection() {
             setState("no_device_on_record");
             return;
           }
-          return fetchActivationInstructions(device.deviceType, device.provider)
+          return fetchActivationInstructions(device.deviceType, device.provider, undefined, session?.access_token)
             .then(result => {
               if (cancelled) return;
               setCancelCode(result.cancelCode);
@@ -54,7 +56,7 @@ export default function TurnOffProtection() {
       return () => {
         cancelled = true;
       };
-    }, [])
+    }, [session?.access_token])
   );
 
   if (state === "loading") {

@@ -44,12 +44,14 @@ import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
 import { BackLink } from "../../../components/BackLink";
 import { syncContacts } from "../../../lib/api";
+import { useAuth } from "../../../lib/AuthContext";
 import { buildSelectableContacts } from "../../../lib/contactSelection";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
 type ScreenState = "intro" | "syncing" | "denied" | "limited" | "result";
 
 export default function AddFromPhoneContacts() {
+  const { session } = useAuth();
   const [screenState, setScreenState] = useState<ScreenState>("intro");
   const [error, setError] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -86,7 +88,10 @@ export default function AddFromPhoneContacts() {
         sort: Contacts.SortTypes.FirstName,
       });
       const selectable = buildSelectableContacts(data);
-      const result = await syncContacts(selectable.map(c => ({ name: c.name, number: c.number })));
+      const result = await syncContacts(
+        selectable.map(c => ({ name: c.name, number: c.number })),
+        session?.access_token
+      );
       setResultMessage(result.message);
       setScreenState("result");
     } catch {

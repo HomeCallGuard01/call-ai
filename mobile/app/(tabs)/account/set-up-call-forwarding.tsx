@@ -16,6 +16,7 @@ import { Screen } from "../../../components/Screen";
 import { Banner } from "../../../components/Banner";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { fetchActivationInstructions } from "../../../lib/api";
+import { useAuth } from "../../../lib/AuthContext";
 import { loadActivationDevice } from "../../../lib/activationDeviceStorage";
 import { canAutoOpenDialer, buildDialerUrl } from "../../../lib/dialerLink";
 import type { ActivationInstructionsResponse } from "../../../lib/types";
@@ -24,6 +25,7 @@ import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/them
 type ScreenState = "loading" | "ready" | "no_device_on_record" | "unavailable";
 
 export default function SetUpCallForwarding() {
+  const { session } = useAuth();
   const [state, setState] = useState<ScreenState>("loading");
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [deviceType, setDeviceType] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export default function SetUpCallForwarding() {
             return;
           }
           setDeviceType(device.deviceType);
-          return fetchActivationInstructions(device.deviceType, device.provider)
+          return fetchActivationInstructions(device.deviceType, device.provider, undefined, session?.access_token)
             .then(result => {
               if (cancelled) return;
               setInstructions(result);
@@ -60,7 +62,7 @@ export default function SetUpCallForwarding() {
       return () => {
         cancelled = true;
       };
-    }, [])
+    }, [session?.access_token])
   );
 
   async function handleOpenPhone() {

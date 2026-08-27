@@ -13,9 +13,11 @@ import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
 import { BackLink } from "../../../components/BackLink";
 import { addContact, updateContact, ApiError } from "../../../lib/api";
+import { useAuth } from "../../../lib/AuthContext";
 import { colors, spacing, typography } from "../../../lib/theme";
 
 export default function AddOrEditContact() {
+  const { session } = useAuth();
   const params = useLocalSearchParams<{ id?: string; name?: string; number?: string }>();
   const isEditing = !!params.id;
 
@@ -35,9 +37,9 @@ export default function AddOrEditContact() {
     setIsSubmitting(true);
     try {
       if (isEditing) {
-        await updateContact(params.id!, name.trim(), number.trim());
+        await updateContact(params.id!, name.trim(), number.trim(), session?.access_token);
       } else {
-        await addContact(name.trim(), number.trim());
+        await addContact(name.trim(), number.trim(), session?.access_token);
       }
       router.back();
     } catch (err) {

@@ -136,7 +136,8 @@ check(
 );
 
 check(
-  source.includes('params.protectedNumber') && source.includes('fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber)'),
+  source.includes('params.protectedNumber') &&
+    source.includes('fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber, session?.access_token)'),
   'the confirmed phone number from device-picker is actually sent to the backend for the loop check, not silently dropped'
 );
 

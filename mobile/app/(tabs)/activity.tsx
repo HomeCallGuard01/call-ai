@@ -9,6 +9,7 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl } f
 import { router, useFocusEffect } from "expo-router";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 import type { DashboardActivityItem } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
 
@@ -23,6 +24,7 @@ function describeOutcome(item: DashboardActivityItem): { text: string; tone: "ne
 }
 
 export default function Activity() {
+  const { session } = useAuth();
   const [items, setItems] = useState<DashboardActivityItem[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -31,7 +33,7 @@ export default function Activity() {
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setIsRefreshing(true);
     try {
-      const data = await fetchDashboard();
+      const data = await fetchDashboard(session?.access_token);
       setItems(data.activity);
       setNotEntitled(false);
     } catch (err) {
@@ -44,7 +46,7 @@ export default function Activity() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [session?.access_token]);
 
   useFocusEffect(
     useCallback(() => {

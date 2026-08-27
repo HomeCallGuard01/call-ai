@@ -40,6 +40,7 @@ import { resumeSetupAt, stepIndexForScreen, SETUP_STEPS } from '../mobile/lib/se
 import { canAutoOpenDialer, buildDialerUrl } from '../mobile/lib/dialerLink.ts';
 import { outcomeContent, planResendEffect } from '../mobile/lib/registrationOutcome.ts';
 import { computeProvisioningStages, shouldAutoAdvance, isProvisioningFailed, shouldShowManualRetry } from '../mobile/lib/provisioningStages.ts';
+import { resolveAuthToken } from '../mobile/lib/resolveAuthToken.ts';
 
 let failures = 0;
 
@@ -502,6 +503,40 @@ function check(condition, message) {
   check(shouldShowManualRetry(0) === false, 'shouldShowManualRetry: no manual retry while polling is working normally — this is the exact dead-end pattern being replaced, and it must not come back for the common case');
   check(shouldShowManualRetry(1) === false, 'shouldShowManualRetry: a single poll failure (e.g. one dropped request) does not yet show a manual retry');
   check(shouldShowManualRetry(2) === true, 'shouldShowManualRetry: repeated poll failures (polling itself broken, e.g. offline) do surface a manual retry — the one legitimate fallback case');
+}
+
+// --- resolveAuthToken: explicit-token path vs getSession() fallback path ---
+// (2026-08-27) The bug: authorizedFetch() in lib/api.ts always re-derived
+// the session via supabase.auth.getSession(), which was already known
+// (from the earlier Voice SDK registration fix) to intermittently return
+// null on a real Android device even with a genuinely valid session held
+// in AuthContext — causing GET /api/v1/me/dashboard and every other
+// authenticated call to fail closed with a local 401, never reaching the
+// server at all. Every screen was updated to pass its already-held
+// session token through explicitly; this is the pure decision of which
+// token wins.
+
+{
+  check(
+    resolveAuthToken('explicit-token', 'fallback-token') === 'explicit-token',
+    'resolveAuthToken: an explicit token always wins over the fallback session token, even when both are present'
+  );
+  check(
+    resolveAuthToken(undefined, 'fallback-token') === 'fallback-token',
+    'resolveAuthToken: falls back to the session-derived token when no explicit token is passed — preserves the exact previous behaviour for any call site not yet updated'
+  );
+  check(
+    resolveAuthToken(undefined, undefined) === null,
+    'resolveAuthToken: no explicit token and no session at all resolves to null — authorizedFetch turns this into the same 401 "unauthenticated" ApiError as before, never a silent request with no auth header'
+  );
+  check(
+    resolveAuthToken(undefined, null) === null,
+    'resolveAuthToken: a null fallback (e.g. session?.access_token when session itself is null) is treated the same as undefined, not as a truthy value'
+  );
+  check(
+    resolveAuthToken('', 'fallback-token') === 'fallback-token',
+    'resolveAuthToken: an empty-string explicit token is not treated as "provided" — falls back to the session token rather than sending an empty Authorization header'
+  );
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

@@ -52,7 +52,7 @@ export default function Account() {
         .then(({ data }) => setEmail(data.user?.email ?? null))
         .catch(() => {});
 
-      fetchDashboard()
+      fetchDashboard(session?.access_token)
         .then(result => {
           setMembershipStatus(result.membership.status);
           setIsProtected(!!result.protection.activationVerifiedAt);
@@ -71,7 +71,7 @@ export default function Account() {
             setStatusState("unavailable");
           }
         });
-    }, [])
+    }, [session?.access_token])
   );
 
   function handleLogout() {

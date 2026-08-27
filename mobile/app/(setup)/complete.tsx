@@ -12,14 +12,16 @@ import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { fetchDashboard } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 import { colors, spacing, typography } from "../../lib/theme";
 
 export default function SetupComplete() {
+  const { session } = useAuth();
   const [contactCount, setContactCount] = useState<number | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    fetchDashboard()
+    fetchDashboard(session?.access_token)
       .then(data => {
         if (isMounted) setContactCount(data.contacts.length);
       })
@@ -29,7 +31,7 @@ export default function SetupComplete() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [session?.access_token]);
 
   const contactsLine =
     contactCount === null

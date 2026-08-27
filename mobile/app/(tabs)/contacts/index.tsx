@@ -11,17 +11,19 @@ import { router, useFocusEffect } from "expo-router";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Screen } from "../../../components/Screen";
 import { fetchDashboard, deleteContact as apiDeleteContact, NotEntitledError } from "../../../lib/api";
+import { useAuth } from "../../../lib/AuthContext";
 import type { DashboardContact } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
 export default function ContactsList() {
+  const { session } = useAuth();
   const [contacts, setContacts] = useState<DashboardContact[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [notEntitled, setNotEntitled] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await fetchDashboard();
+      const data = await fetchDashboard(session?.access_token);
       setContacts(data.contacts);
       setNotEntitled(false);
     } catch (err) {
@@ -36,7 +38,7 @@ export default function ContactsList() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [session?.access_token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -54,7 +56,7 @@ export default function ContactsList() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            await apiDeleteContact(contact.id);
+            await apiDeleteContact(contact.id, session?.access_token);
             load();
           },
         },

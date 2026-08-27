@@ -11,6 +11,7 @@ import { Screen } from "../../../components/Screen";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
 import { fetchDashboard, createPortalSession, ApiError, NotEntitledError } from "../../../lib/api";
+import { useAuth } from "../../../lib/AuthContext";
 import type { DashboardResponse } from "../../../lib/types";
 import { colors, spacing, typography } from "../../../lib/theme";
 
@@ -22,6 +23,7 @@ const STATUS_LABELS: Record<DashboardResponse["membership"]["status"], string> =
 };
 
 export default function Membership() {
+  const { session } = useAuth();
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export default function Membership() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchDashboard()
+      fetchDashboard(session?.access_token)
         .then(result => {
           setData(result);
           setNotEntitled(false);
@@ -37,14 +39,14 @@ export default function Membership() {
         .catch(err => {
           if (err instanceof NotEntitledError) setNotEntitled(true);
         });
-    }, [])
+    }, [session?.access_token])
   );
 
   async function handleManage() {
     setError(null);
     setIsOpeningPortal(true);
     try {
-      const { url } = await createPortalSession();
+      const { url } = await createPortalSession(session?.access_token);
       await WebBrowser.openBrowserAsync(url);
     } catch (err) {
       if (err instanceof ApiError && err.code === "not_manageable") {

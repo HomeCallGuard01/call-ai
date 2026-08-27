@@ -5,6 +5,7 @@
 // calls the V1 app actually makes, matching the Launch Feature Matrix.
 import { Platform } from "react-native";
 import { supabase } from "./supabase";
+import { resolveAuthToken } from "./resolveAuthToken";
 import type {
   RegisterResponse,
   ResendConfirmationResponse,
@@ -53,12 +54,33 @@ export class NotEntitledError extends Error {
   }
 }
 
-async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+// accessToken, when passed, is used directly instead of re-deriving the
+// session via supabase.auth.getSession() — fixed 2026-08-2X (real Android
+// device evidence, GET /api/v1/me/dashboard): the same intermittent
+// getSession()-returns-null behaviour already documented and worked around
+// for fetchVoiceToken (see that function's own comment) also affected
+// every other authenticated call routed through here, since this was the
+// one place still re-deriving the session instead of accepting an
+// already-valid one. Every caller above already holds a live session via
+// useAuth() by the time it calls one of these, so there is no reason to
+// re-fetch it here at all when the caller can just pass it through.
+// Omitting accessToken preserves the exact previous behaviour, so any
+// call site not yet updated keeps working unchanged.
+async function authorizedFetch(path: string, init: RequestInit = {}, accessToken?: string): Promise<Response> {
+  // Only fall back to the (occasionally unreliable, see above) session
+  // lookup when the caller didn't already provide a token — skips the
+  // getSession() call entirely on the common, now-preferred path.
+  let fallbackSessionToken: string | undefined;
+  if (!accessToken) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    fallbackSessionToken = session?.access_token;
+  }
 
-  if (!session) {
+  const token = resolveAuthToken(accessToken, fallbackSessionToken);
+
+  if (!token) {
     throw new ApiError(401, "unauthenticated", "No active session");
   }
 
@@ -66,7 +88,7 @@ async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Re
     ...init,
     headers: {
       ...init.headers,
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
   });
@@ -155,8 +177,8 @@ export async function resendConfirmationEmail(email: string): Promise<ResendConf
 // device) — surfaced as a distinct error code rather than a generic
 // failure so B2 can show "you're already protected" instead of a scary
 // error banner.
-export async function createCheckoutSession(): Promise<CheckoutSessionResponse> {
-  const response = await authorizedFetch("/api/v1/billing/create-checkout-session", { method: "POST" });
+export async function createCheckoutSession(accessToken?: string): Promise<CheckoutSessionResponse> {
+  const response = await authorizedFetch("/api/v1/billing/create-checkout-session", { method: "POST" }, accessToken);
   return parseJsonOrThrow<CheckoutSessionResponse>(response);
 }
 
@@ -164,16 +186,16 @@ export async function createCheckoutSession(): Promise<CheckoutSessionResponse> 
 // founding/promotional/staff access, which has no real Stripe
 // subscription behind it to manage — D1 should hide/disable the
 // "Manage membership" button rather than let this be called in that case.
-export async function createPortalSession(): Promise<PortalSessionResponse> {
-  const response = await authorizedFetch("/api/v1/billing/manage-membership", { method: "POST" });
+export async function createPortalSession(accessToken?: string): Promise<PortalSessionResponse> {
+  const response = await authorizedFetch("/api/v1/billing/manage-membership", { method: "POST" }, accessToken);
   return parseJsonOrThrow<PortalSessionResponse>(response);
 }
 
 // Throws NotEntitledError if there's no active subscription yet — callers
 // (the Home screen, the setup flow) branch on that specifically, per
 // APP_VISUAL_SPECIFICATION.md's C1/B1 states.
-export async function fetchDashboard(): Promise<DashboardResponse> {
-  const response = await authorizedFetch("/api/v1/me/dashboard");
+export async function fetchDashboard(accessToken?: string): Promise<DashboardResponse> {
+  const response = await authorizedFetch("/api/v1/me/dashboard", {}, accessToken);
   return parseJsonOrThrow<DashboardResponse>(response, true);
 }
 
@@ -208,8 +230,8 @@ export async function fetchVoiceToken(accessToken?: string): Promise<VoiceTokenR
   return parseJsonOrThrow<VoiceTokenResponse>(response, true);
 }
 
-export async function verifyActivation(): Promise<ActivationVerifyResponse> {
-  const response = await authorizedFetch("/api/v1/activation/verify", { method: "POST" });
+export async function verifyActivation(accessToken?: string): Promise<ActivationVerifyResponse> {
+  const response = await authorizedFetch("/api/v1/activation/verify", { method: "POST" }, accessToken);
   return parseJsonOrThrow<ActivationVerifyResponse>(response);
 }
 
@@ -224,21 +246,26 @@ export async function verifyActivation(): Promise<ActivationVerifyResponse> {
 export async function fetchActivationInstructions(
   deviceType: DeviceType,
   provider?: LandlineProvider,
-  protectedNumber?: string
+  protectedNumber?: string,
+  accessToken?: string
 ): Promise<ActivationInstructionsResponse> {
   const params = new URLSearchParams({ deviceType });
   if (provider) params.set("provider", provider);
   if (protectedNumber) params.set("protectedNumber", protectedNumber);
 
-  const response = await authorizedFetch(`/api/v1/activation/instructions?${params.toString()}`);
+  const response = await authorizedFetch(`/api/v1/activation/instructions?${params.toString()}`, {}, accessToken);
   return parseJsonOrThrow<ActivationInstructionsResponse>(response);
 }
 
-export async function addContact(name: string, number: string): Promise<ContactResponse> {
-  const response = await authorizedFetch("/api/v1/contacts", {
-    method: "POST",
-    body: JSON.stringify({ name, number }),
-  });
+export async function addContact(name: string, number: string, accessToken?: string): Promise<ContactResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/contacts",
+    {
+      method: "POST",
+      body: JSON.stringify({ name, number }),
+    },
+    accessToken
+  );
   return parseJsonOrThrow<ContactResponse>(response);
 }
 
@@ -247,23 +274,39 @@ export async function addContact(name: string, number: string): Promise<ContactR
 // addContact() call per contact. Server-side dedup means calling this
 // repeatedly with the same contacts is always safe — see
 // routes/mobileApi.js's own comment for the full rationale.
-export async function syncContacts(contacts: { name: string; number: string }[]): Promise<SyncContactsResponse> {
-  const response = await authorizedFetch("/api/v1/contacts/sync", {
-    method: "POST",
-    body: JSON.stringify({ contacts }),
-  });
+export async function syncContacts(
+  contacts: { name: string; number: string }[],
+  accessToken?: string
+): Promise<SyncContactsResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/contacts/sync",
+    {
+      method: "POST",
+      body: JSON.stringify({ contacts }),
+    },
+    accessToken
+  );
   return parseJsonOrThrow<SyncContactsResponse>(response);
 }
 
-export async function updateContact(id: string, name: string, number: string): Promise<ContactResponse> {
-  const response = await authorizedFetch(`/api/v1/contacts/${id}`, {
-    method: "PUT",
-    body: JSON.stringify({ name, number }),
-  });
+export async function updateContact(
+  id: string,
+  name: string,
+  number: string,
+  accessToken?: string
+): Promise<ContactResponse> {
+  const response = await authorizedFetch(
+    `/api/v1/contacts/${id}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ name, number }),
+    },
+    accessToken
+  );
   return parseJsonOrThrow<ContactResponse>(response);
 }
 
-export async function deleteContact(id: string): Promise<{ ok: true }> {
-  const response = await authorizedFetch(`/api/v1/contacts/${id}`, { method: "DELETE" });
+export async function deleteContact(id: string, accessToken?: string): Promise<{ ok: true }> {
+  const response = await authorizedFetch(`/api/v1/contacts/${id}`, { method: "DELETE" }, accessToken);
   return parseJsonOrThrow<{ ok: true }>(response);
 }

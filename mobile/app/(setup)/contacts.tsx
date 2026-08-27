@@ -25,6 +25,7 @@ import { Banner } from "../../components/Banner";
 import { TextField } from "../../components/TextField";
 import { SetupProgress } from "../../components/SetupProgress";
 import { addContact, ApiError } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 import {
   addPickedContact,
   removePickedContact,
@@ -44,6 +45,7 @@ function contactDisplayName(contact: Contacts.Contact): string {
 }
 
 export default function SetupContacts() {
+  const { session } = useAuth();
   const [selected, setSelected] = useState<PickedContact[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -163,7 +165,7 @@ export default function SetupContacts() {
     const results: SaveResult[] = await Promise.all(
       selected.map(async (contact): Promise<SaveResult> => {
         try {
-          await addContact(contact.name, contact.number);
+          await addContact(contact.name, contact.number, session?.access_token);
           return { key: contact.key, name: contact.name, outcome: "saved" };
         } catch (err) {
           if (err instanceof ApiError && err.code === "duplicate") {

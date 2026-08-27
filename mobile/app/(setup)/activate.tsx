@@ -28,6 +28,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { fetchActivationInstructions, fetchDashboard, ApiError } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
 import { saveActivationDevice } from "../../lib/activationDeviceStorage";
 import {
@@ -40,6 +41,7 @@ import type { ActivationInstructionsResponse, DeviceType, LandlineProvider, Twil
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 export default function Activate() {
+  const { session } = useAuth();
   const params = useLocalSearchParams<{ deviceType: DeviceType; provider?: LandlineProvider; protectedNumber?: string }>();
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +90,7 @@ export default function Activate() {
     setError(null);
     setForwardingLoopError(null);
     setNotProvisioned(false);
-    fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber)
+    fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber, session?.access_token)
       .then(result => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
         setInstructions(result);
@@ -127,7 +129,7 @@ export default function Activate() {
       });
   }
 
-  useEffect(load, [params.deviceType, params.provider, params.protectedNumber]);
+  useEffect(load, [params.deviceType, params.provider, params.protectedNumber, session?.access_token]);
 
   // Real iPhone testing (2026-08-08) found the old "Still setting up your
   // line" / "Check again" state a dead end — the customer had to manually
@@ -145,7 +147,7 @@ export default function Activate() {
 
     async function poll() {
       try {
-        const dashboard = await fetchDashboard();
+        const dashboard = await fetchDashboard(session?.access_token);
         if (cancelled) return;
         consecutiveFailures = 0;
         setPollFailures(0);
@@ -166,7 +168,7 @@ export default function Activate() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [notProvisioned]);
+  }, [notProvisioned, session?.access_token]);
 
   async function handleCopy() {
     if (!instructions) return;

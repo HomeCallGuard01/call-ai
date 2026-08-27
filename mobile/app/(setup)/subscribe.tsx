@@ -26,11 +26,13 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { createCheckoutSession, fetchDashboard, ApiError } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 const RETURN_URL = "homecallguard://setup/subscribe";
 
 export default function Subscribe() {
+  const { session } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [startImmediately, setStartImmediately] = useState(false);
@@ -58,7 +60,7 @@ export default function Subscribe() {
     setIsProcessing(true);
 
     try {
-      const { url } = await createCheckoutSession();
+      const { url } = await createCheckoutSession(session?.access_token);
       await WebBrowser.openAuthSessionAsync(url, RETURN_URL);
       if (!isMounted.current) return;
 
@@ -68,7 +70,7 @@ export default function Subscribe() {
       // browser event alone, since a webhook can land after Checkout
       // itself completes.
       try {
-        await fetchDashboard();
+        await fetchDashboard(session?.access_token);
         if (!isMounted.current) return;
         router.replace("/(setup)/confirmation");
       } catch {

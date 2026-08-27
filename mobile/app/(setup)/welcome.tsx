@@ -10,6 +10,7 @@ import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import { colors, spacing, typography } from "../../lib/theme";
 
@@ -21,12 +22,13 @@ const RESUME_ROUTE: Record<string, string> = {
 };
 
 export default function SetupWelcome() {
+  const { session } = useAuth();
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
-    fetchDashboard()
+    fetchDashboard(session?.access_token)
       .then(data => {
         if (!isMounted) return;
         const target = resumeSetupAt({
@@ -58,7 +60,7 @@ export default function SetupWelcome() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [session?.access_token]);
 
   if (isChecking) {
     return (

@@ -19,11 +19,13 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { verifyActivation } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
 import { colors, spacing, typography } from "../../lib/theme";
 
 type CheckState = "checking" | "verified" | "not_yet";
 
 export default function Verify() {
+  const { session } = useAuth();
   const [state, setState] = useState<CheckState>("checking");
   const [hasCheckedOnce, setHasCheckedOnce] = useState(false);
 
@@ -37,7 +39,7 @@ export default function Verify() {
   async function runCheck() {
     setState("checking");
     try {
-      const result = await verifyActivation();
+      const result = await verifyActivation(session?.access_token);
       if (!isMounted.current) return;
       setState(result.verified ? "verified" : "not_yet");
     } catch {

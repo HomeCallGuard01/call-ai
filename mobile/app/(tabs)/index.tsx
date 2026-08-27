@@ -122,7 +122,7 @@ export default function Home() {
     let result: DashboardResponse | null = null;
 
     try {
-      result = await fetchDashboard();
+      result = await fetchDashboard(session?.access_token);
       succeeded = true;
     } catch (err) {
       isNotEntitledError = err instanceof NotEntitledError;
@@ -153,7 +153,7 @@ export default function Home() {
       setIsStale(false);
       setState("unavailable");
     }
-  }, [data]);
+  }, [data, session?.access_token]);
 
   useFocusEffect(
     useCallback(() => {
