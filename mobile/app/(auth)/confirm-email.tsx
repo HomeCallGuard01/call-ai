@@ -23,15 +23,22 @@
 //    Supabase fell back to the public marketing homepage, and tapping
 //    the link left the customer stranded there with no way back into
 //    the app and no session, forcing a full re-registration). Mirrors
-//    app/reset-password.tsx's already-proven pattern exactly: Expo
-//    Router surfaces the fragment as local search params, and
-//    supabase.auth.setSession() exchanges them for a real session —
-//    which fires AuthContext's onAuthStateChange (SIGNED_IN), which
-//    already triggers household bootstrap automatically, so this screen
-//    only needs to establish the session and hand off to /(tabs) — the
-//    same place login.tsx hands off to, which already redirects into
-//    (setup) if onboarding isn't complete yet. The customer never
-//    re-enters their email or password.
+//    app/reset-password.tsx's pattern for reading the fragment via Expo
+//    Router's local search params, then supabase.auth.setSession()
+//    exchanges them for a real session. Unlike reset-password.tsx (whose
+//    household always already exists from an earlier session), this is
+//    the one place a session can be established for a household that
+//    doesn't exist yet — so this screen explicitly awaits
+//    bootstrapHousehold() itself before navigating, rather than trusting
+//    AuthContext's own fire-and-forget bootstrap trigger to have
+//    finished in time (2026-08-29 fix — found via real iOS device
+//    testing: navigating immediately raced the Home screen's own
+//    dashboard fetch against that un-awaited call, landing on a
+//    confusing "check your connection" error for a brand-new account
+//    whose household simply hadn't been created yet). Hands off to
+//    /(tabs) — the same place login.tsx hands off to, which already
+//    redirects into (setup) if onboarding isn't complete yet. The
+//    customer never re-enters their email or password.
 //
 // The "Resend confirmation email" button can itself transition the
 // screen from pending_confirmation to already_registered in place (if
@@ -44,7 +51,7 @@ import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { supabase } from "../../lib/supabase";
-import { resendConfirmationEmail } from "../../lib/api";
+import { resendConfirmationEmail, bootstrapHousehold } from "../../lib/api";
 import { outcomeContent, planResendEffect, type RegisterStatus } from "../../lib/registrationOutcome";
 import { colors, spacing, typography } from "../../lib/theme";
 
@@ -67,16 +74,45 @@ export default function ConfirmEmail() {
     if (!hasConfirmationLink) return;
 
     let cancelled = false;
-    supabase.auth.setSession({ access_token: access_token!, refresh_token: refresh_token! }).then(({ error }) => {
+    supabase.auth.setSession({ access_token: access_token!, refresh_token: refresh_token! }).then(async ({ error, data }) => {
       if (cancelled) return;
       if (error) {
         setLinkState("failed");
         return;
       }
-      // AuthContext's onAuthStateChange (SIGNED_IN) has already fired by
-      // this point and kicked off household bootstrap — same handoff
-      // point login.tsx uses on a normal sign-in, so this doesn't
-      // duplicate or race that logic, just reaches the same destination.
+
+      // Found 2026-08-29 via real iOS device testing: AuthContext's own
+      // onAuthStateChange-triggered bootstrap (lib/AuthContext.tsx) is
+      // deliberately fire-and-forget — fine for login.tsx, whose
+      // household already exists from an earlier session, but this is
+      // the ONE place a session can be established for a household that
+      // does not exist yet. Navigating to /(tabs) immediately raced the
+      // Home screen's own dashboard fetch (fired the instant it mounts,
+      // via useFocusEffect) against that un-awaited bootstrap call — the
+      // household row often didn't exist yet, so the backend's
+      // requireAuthApi returned 401 "no_household" instead of the 402
+      // "not_entitled" the client knows how to interpret, landing on a
+      // confusing "check your connection" error for a brand-new,
+      // perfectly healthy account. Awaiting bootstrap directly here,
+      // before navigating, closes the race — AuthContext's own bootstrap
+      // trigger still fires too (from the SIGNED_IN event this
+      // setSession call produces) but bootstrapHousehold is idempotent
+      // (services/householdBootstrap.js checks for an existing household
+      // before creating one), so the redundant second call is harmless.
+      try {
+        await bootstrapHousehold(data.session!.access_token, data.session!.refresh_token);
+      } catch (err) {
+        // Fail open, matching AuthContext's own convention: a transient
+        // bootstrap failure here must never strand the customer on this
+        // screen forever. The Home screen's own dashboard fetch will
+        // surface a real, visible error if the household is still
+        // genuinely missing, and AuthContext's own bootstrap trigger
+        // (INITIAL_SESSION on next launch, or this same SIGNED_IN event)
+        // gets another chance to self-heal it.
+        console.error("CONFIRM-EMAIL BOOTSTRAP FAILED:", err);
+      }
+
+      if (cancelled) return;
       router.replace("/(tabs)");
     });
 

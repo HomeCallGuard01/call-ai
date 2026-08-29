@@ -89,6 +89,37 @@ export function resetPurchasesIdentity(): void {
   });
 }
 
+// Reports a RevenueCat/StoreKit purchase failure to the backend's own
+// diagnostic beacon (routes/mobileApi.js's POST /debug/purchase-beacon,
+// same pattern as lib/voiceClient.ts's beacon()) — console-logged
+// server-side only, never written to the database. Found 2026-08-29: the
+// real underlying SDK error (e.g. "product not available", a
+// misconfigured offering, a network failure) was being swallowed
+// entirely into subscribe.tsx's generic "we couldn't start checkout"
+// message, making a genuine purchase failure undiagnosable without
+// physical device + Xcode console access. Deliberately extracts only
+// RevenueCat's own SDK-level diagnostic fields (code/message/
+// underlyingErrorMessage — StoreKit/App Store error descriptions, never
+// anything customer-identifying) rather than logging the raw error
+// object, which could in principle carry more than intended.
+function purchaseBeacon(stage: string, err: unknown): void {
+  try {
+    const base = process.env.EXPO_PUBLIC_API_BASE_URL;
+    if (!base) return;
+    const e = err as { code?: string; message?: string; underlyingErrorMessage?: string; userCancelled?: boolean } | null;
+    const detail = e
+      ? `code=${e.code ?? "?"} userCancelled=${e.userCancelled ?? "?"} message=${e.message ?? "?"} underlying=${e.underlyingErrorMessage ?? "?"}`.slice(0, 500)
+      : undefined;
+    fetch(`${base}/debug/purchase-beacon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, detail }),
+    }).catch(() => {});
+  } catch {
+    // never let diagnostics break the real purchase flow
+  }
+}
+
 export class PurchasesNotConfiguredError extends Error {
   constructor() {
     super("purchases_not_configured");
@@ -107,12 +138,30 @@ export class PurchasesNotConfiguredError extends Error {
 export async function fetchHcgPackage(): Promise<PurchasesPackage> {
   if (!REVENUECAT_API_KEY_IOS) throw new PurchasesNotConfiguredError();
 
-  const offerings = await Purchases.getOfferings();
+  let offerings;
+  try {
+    offerings = await Purchases.getOfferings();
+  } catch (err) {
+    purchaseBeacon("getOfferings-failed", err);
+    throw err;
+  }
+
   const offering = offerings.current;
-  if (!offering) throw new Error("no_offering_available");
+  if (!offering) {
+    purchaseBeacon("no-offering-available", null);
+    throw new Error("no_offering_available");
+  }
 
   const pkg = offering.availablePackages.find(p => p.identifier === HCG_PACKAGE_ID);
-  if (!pkg) throw new Error("expected_package_not_found");
+  if (!pkg) {
+    // Most likely cause: the App Store Connect subscription isn't fully
+    // "Ready to Submit" yet (missing metadata/localisation/review
+    // screenshot) — StoreKit won't serve a product in that state to any
+    // build, TestFlight included, so RevenueCat can't resolve $rc_monthly
+    // to a real product and the offering comes back with no packages.
+    purchaseBeacon("expected-package-not-found", null);
+    throw new Error("expected_package_not_found");
+  }
 
   if (__DEV__ && pkg.product.identifier !== EXPECTED_APPLE_PRODUCT_ID) {
     // Expected in local/sandbox testing against the RevenueCat Test
@@ -129,8 +178,13 @@ export async function fetchHcgPackage(): Promise<PurchasesPackage> {
 }
 
 export async function purchaseHcgPackage(pkg: PurchasesPackage): Promise<CustomerInfo> {
-  const { customerInfo } = await Purchases.purchasePackage(pkg);
-  return customerInfo;
+  try {
+    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    return customerInfo;
+  } catch (err) {
+    purchaseBeacon("purchasePackage-failed", err);
+    throw err;
+  }
 }
 
 export async function restorePurchases(): Promise<CustomerInfo> {
