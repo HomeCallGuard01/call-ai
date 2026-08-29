@@ -18,7 +18,7 @@
 // review pass before launch, same as the exact guarantee/founding-member
 // terms text.
 import { useState, useRef, useEffect } from "react";
-import { Text, View, Pressable, StyleSheet } from "react-native";
+import { Text, View, Pressable, StyleSheet, Platform } from "react-native";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { Screen } from "../../components/Screen";
@@ -26,6 +26,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { createCheckoutSession, fetchDashboard, ApiError } from "../../lib/api";
+import { fetchHcgPackage, purchaseHcgPackage, isEntitled, PurchasesNotConfiguredError } from "../../lib/purchases";
 import { useAuth } from "../../lib/AuthContext";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
@@ -49,16 +50,12 @@ export default function Subscribe() {
     };
   }, []);
 
-  async function handleSubscribe() {
-    setError(null);
-
-    if (!startImmediately) {
-      setError("Please confirm you'd like your protection to start right away before continuing.");
-      return;
-    }
-
-    setIsProcessing(true);
-
+  // Android/web: unchanged from before this session's Apple IAP work —
+  // Stripe Checkout in an in-app browser, real server-derived state
+  // checked on return. iOS never calls this function; see
+  // handleSubscribeIOS below for why iOS needs a structurally different
+  // flow (Guideline 3.1.1 — no external purchase mechanism on iOS).
+  async function handleSubscribeStripe() {
     try {
       const { url } = await createCheckoutSession(session?.access_token);
       await WebBrowser.openAuthSessionAsync(url, RETURN_URL);
@@ -84,7 +81,89 @@ export default function Subscribe() {
         router.replace("/(setup)/confirmation");
         return;
       }
-      setError("We couldn't start checkout. Please check your connection and try again.");
+      throw err;
+    }
+  }
+
+  // iOS: Apple StoreKit via RevenueCat — no Stripe/external checkout
+  // mechanism anywhere in this path (Guideline 3.1.1). RevenueCat/
+  // StoreKit itself is the purchase UI (Apple's native payment sheet);
+  // this just triggers it and then waits for our own backend's
+  // entitlement state to catch up, exactly the same "never trust the
+  // client's own success signal alone" discipline handleSubscribeStripe
+  // already applies to Stripe — the real grant happens server-side, off
+  // RevenueCat's webhook (routes/mobileApi.js), not from purchaseHcgPackage
+  // resolving here.
+  async function handleSubscribeIOS() {
+    try {
+      const pkg = await fetchHcgPackage();
+      const customerInfo = await purchaseHcgPackage(pkg);
+      if (!isMounted.current) return;
+
+      if (!isEntitled(customerInfo)) {
+        // StoreKit's own purchase sheet was cancelled or failed before
+        // ever reaching Apple/RevenueCat — not an error state, the
+        // customer simply didn't complete it.
+        return;
+      }
+
+      // RevenueCat's webhook to our backend is typically near-instant,
+      // but is a separate, genuinely asynchronous server-to-server call
+      // — never assumed to have already landed just because the client-
+      // side purchase resolved. A couple of short, bounded retries here
+      // covers that ordinary race without ever trusting the client's own
+      // purchase result as the entitlement source of truth.
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          await fetchDashboard(session?.access_token);
+          if (!isMounted.current) return;
+          router.replace("/(setup)/confirmation");
+          return;
+        } catch {
+          if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      }
+      // Entitlement confirmed by StoreKit/RevenueCat but our own webhook
+      // hasn't landed after ~4.5s of retrying — let the customer proceed
+      // to Confirmation manually rather than stranding them here; the
+      // Home screen's own dashboard fetch will pick up the real state
+      // moments later regardless.
+      if (isMounted.current) router.replace("/(setup)/confirmation");
+    } catch (err) {
+      if (!isMounted.current) return;
+      if (err instanceof PurchasesNotConfiguredError) {
+        setError("Subscriptions aren't available right now. Please try again shortly.");
+        return;
+      }
+      // react-native-iap/StoreKit user-cancellation is a normal outcome,
+      // not an error — RevenueCat's PurchasesError carries userCancelled;
+      // anything else is treated as a genuine failure.
+      const userCancelled = (err as { userCancelled?: boolean })?.userCancelled;
+      if (!userCancelled) {
+        throw err;
+      }
+    }
+  }
+
+  async function handleSubscribe() {
+    setError(null);
+
+    if (!startImmediately) {
+      setError("Please confirm you'd like your protection to start right away before continuing.");
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      if (Platform.OS === "ios") {
+        await handleSubscribeIOS();
+      } else {
+        await handleSubscribeStripe();
+      }
+    } catch {
+      if (isMounted.current) {
+        setError("We couldn't start checkout. Please check your connection and try again.");
+      }
     } finally {
       if (isMounted.current) setIsProcessing(false);
     }

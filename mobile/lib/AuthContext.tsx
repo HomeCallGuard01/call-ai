@@ -13,6 +13,7 @@ import { router } from "expo-router";
 import { supabase } from "./supabase";
 import { bootstrapHousehold } from "./api";
 import { shouldTriggerBootstrap } from "./bootstrapTrigger";
+import { configurePurchases, resetPurchasesIdentity } from "./purchases";
 
 interface AuthContextValue {
   session: Session | null;
@@ -110,9 +111,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // for both cases.
       if (event === "SIGNED_OUT") {
         router.replace("/(auth)/welcome");
+        resetPurchasesIdentity();
       }
 
       const userId = newSession?.user?.id ?? null;
+
+      // iOS-only no-op on Android/web (see lib/purchases.ts). Configured
+      // here, not just in the tabs layout, so it's ready before the
+      // Subscribe screen — reachable from (setup), before (tabs) — ever
+      // needs it. Uses this exact auth_user_id as the RevenueCat App
+      // User ID so a purchase always maps back to the right household —
+      // see the webhook route's own comment for the matching lookup.
+      if (userId) {
+        configurePurchases(userId);
+      }
 
       if (shouldTriggerBootstrap({ event, userId, alreadyBootstrappedUserId: bootstrappedUserId.current })) {
         // Marked optimistically, before the call resolves — this is what

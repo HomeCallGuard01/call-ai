@@ -45,6 +45,11 @@ export interface DashboardResponse {
     accessUntil: string | null;
     trialEndDate: string | null;
     manageable: boolean;
+    // entitlements.source — 'stripe' | 'apple_revenuecat' | 'admin_manual'
+    // | ... (free-text server-side, see database/billing.js). Used to
+    // send an iOS customer to the billing portal that actually applies
+    // to their membership, not just whichever platform they're on.
+    billingSource: string;
   };
   contacts: DashboardContact[];
   activity: DashboardActivityItem[];

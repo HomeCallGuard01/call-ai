@@ -4,16 +4,23 @@
 // kept deliberately thin rather than natively rebuilt (Stripe's hosted
 // UI is already well-designed and well-tested).
 import { useCallback, useState } from "react";
-import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
+import { Text, View, StyleSheet, ActivityIndicator, Linking, Platform } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { Screen } from "../../../components/Screen";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
 import { fetchDashboard, createPortalSession, ApiError, NotEntitledError } from "../../../lib/api";
+import { restorePurchases as restoreApplePurchases, isEntitled } from "../../../lib/purchases";
 import { useAuth } from "../../../lib/AuthContext";
 import type { DashboardResponse } from "../../../lib/types";
 import { colors, spacing, typography } from "../../../lib/theme";
+
+// Apple's own "manage subscriptions" deep link — the only place an
+// Apple-billed subscription can actually be changed/cancelled from;
+// Stripe's Billing Portal has no concept of it. Documented, stable
+// Apple URL scheme, not an undocumented trick.
+const APPLE_MANAGE_SUBSCRIPTIONS_URL = "itms-apps://apps.apple.com/account/subscriptions";
 
 const STATUS_LABELS: Record<DashboardResponse["membership"]["status"], string> = {
   active: "Active",
@@ -28,6 +35,8 @@ export default function Membership() {
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notEntitled, setNotEntitled] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -59,6 +68,47 @@ export default function Membership() {
     }
   }
 
+  // Apple-billed subscribers: there's no Stripe customer/portal to open
+  // for them at all (billingSource === 'apple_revenuecat' means
+  // household.stripe_customer_id is null) — the only place to manage or
+  // cancel is Apple's own subscriptions screen.
+  async function handleManageIOS() {
+    setError(null);
+    try {
+      await Linking.openURL(APPLE_MANAGE_SUBSCRIPTIONS_URL);
+    } catch {
+      setError("We couldn't open Apple's subscription settings. You can also manage this from Settings → your name → Subscriptions.");
+    }
+  }
+
+  // Required by App Review for any IAP app: lets a customer who
+  // reinstalled, or is on a new device, recover an Apple purchase they
+  // already made without paying twice. Never trusted as an entitlement
+  // grant itself — it only re-syncs RevenueCat's own record with Apple,
+  // then the real entitlement state still comes from our own dashboard
+  // fetch (RevenueCat's webhook to the backend), same as a fresh
+  // purchase.
+  async function handleRestore() {
+    setError(null);
+    setRestoreMessage(null);
+    setIsRestoring(true);
+    try {
+      const customerInfo = await restoreApplePurchases();
+      if (!isEntitled(customerInfo)) {
+        setRestoreMessage("No active Home Call Guard purchase was found on this Apple ID.");
+        return;
+      }
+      const result = await fetchDashboard(session?.access_token);
+      setData(result);
+      setNotEntitled(false);
+      setRestoreMessage("Your subscription has been restored.");
+    } catch {
+      setError("We couldn't restore purchases right now. Please try again.");
+    } finally {
+      setIsRestoring(false);
+    }
+  }
+
   if (notEntitled) {
     return (
       <Screen scroll={false}>
@@ -67,6 +117,17 @@ export default function Membership() {
           <View style={styles.notEntitledButton}>
             <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
           </View>
+          {Platform.OS === "ios" && (
+            <View style={styles.restoreLink}>
+              <PrimaryButton
+                label="Restore purchases"
+                variant="secondary"
+                onPress={handleRestore}
+                loading={isRestoring}
+              />
+              {restoreMessage && <Text style={styles.restoreMessage}>{restoreMessage}</Text>}
+            </View>
+          )}
         </View>
       </Screen>
     );
@@ -103,9 +164,25 @@ export default function Membership() {
       )}
 
       {error && <Banner variant="error" message={error} />}
+      {restoreMessage && <Banner variant="notice" message={restoreMessage} />}
 
-      {membership.manageable && (
-        <PrimaryButton label="Manage membership" onPress={handleManage} loading={isOpeningPortal} />
+      {membership.billingSource === "apple_revenuecat" ? (
+        <PrimaryButton label="Manage subscription" onPress={handleManageIOS} />
+      ) : (
+        membership.manageable && (
+          <PrimaryButton label="Manage membership" onPress={handleManage} loading={isOpeningPortal} />
+        )
+      )}
+
+      {Platform.OS === "ios" && (
+        <View style={styles.restoreLink}>
+          <PrimaryButton
+            label="Restore purchases"
+            variant="secondary"
+            onPress={handleRestore}
+            loading={isRestoring}
+          />
+        </View>
       )}
     </Screen>
   );
@@ -121,6 +198,16 @@ const styles = StyleSheet.create({
   notEntitledButton: {
     marginTop: spacing.md,
     alignSelf: "stretch",
+  },
+  restoreLink: {
+    marginTop: spacing.md,
+    alignSelf: "stretch",
+  },
+  restoreMessage: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: spacing.sm,
   },
   plan: {
     ...typography.hero,
