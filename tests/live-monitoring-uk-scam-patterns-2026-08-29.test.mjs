@@ -211,38 +211,29 @@ function run() {
     );
   }
 
-  // --- Documented, pre-existing, deliberately NOT fixed here ---
-  // Found while writing the legitimate-call tests above: the EXISTING
-  // (not new — present before this session's changes)
+  // --- Previously documented as a known issue, now fixed 2026-08-29 ---
+  // Found while writing the legitimate-call tests above: the
   // credential_or_otp_request pattern in both signals.js and
-  // criticalSignals.js matches the bare word "PIN" with no requirement
+  // criticalSignals.js matched the bare word "PIN" with no requirement
   // that it be part of a REQUEST — including a legitimate bank's own
   // standard anti-fraud disclaimer ("we will never ask you for your
   // PIN"). Because this pattern is severity:'high' AND standalone in
-  // criticalSignals.js, that exact sentence would both float the
-  // progressive score to the HIGH_SEVERITY_SCORE_FLOOR (90) and trigger
-  // immediate call termination — a real false-positive risk on a call
-  // that is actively protecting the customer, not attacking them.
+  // criticalSignals.js, that exact sentence would have both floated the
+  // progressive score to the HIGH_SEVERITY_SCORE_FLOOR (90) and triggered
+  // immediate call termination — a false-positive on a call that is
+  // actively protecting the customer, not attacking them.
   //
-  // Deliberately NOT patched in this remediation pass: safely excluding
-  // negated/protective phrasing ("never share your PIN", "we'll never
-  // ask for your password") without weakening genuine detection ("share
-  // your PIN with me", "read out your PIN") needs careful negation-aware
-  // regex work and its own dedicated regression suite across many real
-  // phrasings — exactly the kind of change the task asked to defer
-  // rather than rush. This test exists to make the current, real
-  // behaviour explicit and trackable, not to assert it as correct.
+  // Fixed via services/liveMonitoring/scoring/negationGuard.js — see
+  // tests/live-monitoring-negation-guard.test.mjs for the full dedicated
+  // regression suite (the user's exact specified phrases). This block now
+  // asserts the fixed behaviour directly, in place of the old
+  // informational-only log line.
   {
     const transcript = "We will never ask you for your PIN or password — if anyone does, hang up and call us back.";
     const scored = scoreTranscript(transcript, null);
     const critical = extractCriticalSignals(transcript);
-    console.log(
-      `ℹ KNOWN ISSUE (pre-existing, not introduced by this change, not fixed here): a bank's own protective ` +
-      `"we will never ask for your PIN" disclaimer currently scores ${scored.riskScore} ` +
-      `(high-severity floor: ${THRESHOLDS.HIGH_SEVERITY_SCORE_FLOOR}) and ${critical.hasCriticalSignal ? 'DOES' : 'does not'} ` +
-      `trigger a critical/red-line signal via the existing credential_or_otp_request pattern matching the bare word "PIN". ` +
-      `Recommended as a priority, carefully-tested post-launch fix — see this test's own comment.`
-    );
+    check(scored.riskScore < THRESHOLDS.HIGH_SEVERITY_SCORE_FLOOR, `fixed: bank's own "we will never ask for your PIN" disclaimer no longer floats the score to the high-severity floor (got ${scored.riskScore})`);
+    check(!critical.hasCriticalSignal, 'fixed: bank\'s own "we will never ask for your PIN" disclaimer no longer triggers a critical/red-line signal');
   }
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

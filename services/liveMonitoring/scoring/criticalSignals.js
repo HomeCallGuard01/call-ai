@@ -45,6 +45,22 @@
 
 'use strict';
 
+const { hasUnnegatedMatch } = require('./negationGuard');
+
+// negationAware: true (added 2026-08-29) — see signals.js's own comment
+// on this flag for the full rationale (found via a real false-positive:
+// "we will never ask for your PIN" was scoring as a live request and,
+// because this is the standalone/immediate-termination layer, would
+// have ended a call that was actively protecting the customer).
+// Every STANDALONE pattern here with a realistic "we will never ask you
+// to..." bank-disclaimer analogue is marked. isolation_from_family/
+// isolation_from_bank, verification_call_interception, and
+// stay_connected_during_money_transfer were inspected and deliberately
+// left unmarked — none has a common real disclaimer phrasing of that
+// specific shape. authority_threat and prevents_independent_verification
+// are already compound-only (standalone: false), so a negated false
+// match there can never alone terminate a call regardless — inspected,
+// left as-is rather than adding an unnecessary extra guard.
 const CRITICAL_PATTERNS = [
   {
     id: 'isolation_from_family',
@@ -65,6 +81,7 @@ const CRITICAL_PATTERNS = [
   {
     id: 'financial_redirection',
     standalone: true,
+    negationAware: true,
     // Broadened 2026-08-16: the object noun (money/savings/funds/it) and
     // the "another account" case (no descriptor needed — "another"
     // already implies "a different one") were both missing, found
@@ -83,18 +100,21 @@ const CRITICAL_PATTERNS = [
   {
     id: 'credential_or_otp_request',
     standalone: true,
+    negationAware: true,
     regex: /\b(one[\s-]?time (passcode|code|password)|otp|pin\s*(number)?|cvv|security code|verification code|\w+[\s-]?digit code|passwords?|passcode|card number|sort code)\b/i,
     description: 'requests a password, PIN, OTP, CVV or full card/sort code — promoted from the progressive layer',
   },
   {
     id: 'remote_access_request',
     standalone: true,
+    negationAware: true,
     regex: /\b(teamviewer|anydesk|remote access|remote desktop|install (this|the) app|download (this|the) (app|software)|give (me|us) access to your (computer|laptop|phone))\b/i,
     description: 'asks the caller to install remote-access software or grant device access — promoted from the progressive layer',
   },
   {
     id: 'directed_verification_callback',
     standalone: true,
+    negationAware: true,
     // Deliberately narrow: requires a caller-supplied-number reference
     // ("this number" / "the number I've given you"), never "the number"
     // alone — "call the number on the back of your card" (legitimate
@@ -105,6 +125,7 @@ const CRITICAL_PATTERNS = [
   {
     id: 'physical_collection_request',
     standalone: true,
+    negationAware: true,
     // New 2026-08-16: courier fraud / card-collection scam — Action
     // Fraud and Met Police's most specific UK-only pattern, previously
     // entirely unrepresented in this codebase. Every alternative
@@ -117,6 +138,7 @@ const CRITICAL_PATTERNS = [
   {
     id: 'gift_card_payment_request',
     standalone: true,
+    negationAware: true,
     // New 2026-08-16: near-zero legitimate use as a payment method to a
     // caller — named explicitly by gov.uk (HMRC), FCA, and courier-fraud
     // guidance. Requires a payment-action verb plus a specific gift-card
@@ -128,6 +150,7 @@ const CRITICAL_PATTERNS = [
   {
     id: 'cryptocurrency_payment_request',
     standalone: true,
+    negationAware: true,
     // New 2026-08-16: same reasoning as gift cards — gov.uk/FCA/courier-
     // fraud guidance all name crypto as a payment method scammers use
     // and legitimate organisations don't. Requires a payment-action verb
@@ -189,6 +212,7 @@ const CRITICAL_PATTERNS = [
   {
     id: 'cash_withdrawal_instruction',
     standalone: false,
+    negationAware: true,
     // Added 2026-08-29 (Apple remediation, UK scam-pattern review):
     // compound-only, same reasoning as prevents_independent_verification
     // — a withdrawal instruction alone (e.g. a genuine family member
@@ -215,7 +239,10 @@ function extractCriticalSignals(transcript) {
   const compoundMatches = [];
 
   for (const pattern of CRITICAL_PATTERNS) {
-    if (!pattern.regex.test(text)) continue;
+    const matched = pattern.negationAware
+      ? hasUnnegatedMatch(text, pattern.regex)
+      : pattern.regex.test(text);
+    if (!matched) continue;
     const hit = { id: pattern.id, description: pattern.description };
     if (pattern.standalone) {
       standaloneMatches.push(hit);

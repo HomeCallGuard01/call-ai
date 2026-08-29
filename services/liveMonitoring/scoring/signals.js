@@ -11,14 +11,37 @@
 
 'use strict';
 
+const { hasUnnegatedMatch } = require('./negationGuard');
+
 // --- risk indicator patterns -------------------------------------------
 // severity: 'high' patterns can trigger the high-severity override
 // (thresholds.js's HIGH_SEVERITY_SCORE_FLOOR) when that flag is on.
+//
+// negationAware: true (added 2026-08-29) — matched via
+// negationGuard.hasUnnegatedMatch instead of a plain regex.test(),
+// applied to every pattern here with a realistic real-world "we will
+// never ask you to..." bank/NCSC anti-fraud disclaimer analogue (found
+// via a real false-positive: "we will never ask for your PIN" was
+// scoring as a live credential request).
+//
+// Every other pattern below was inspected for the same risk and
+// deliberately left as a plain match:
+//   fabricated_authority_claim / urgency_or_threat / authority_threat /
+//   secrecy_or_coaching / refund_or_overpayment_pretext /
+//   investigation_pretext / unexpected_prize_or_investment_pretext —
+//   none of these have a common real "X will never say/do this" bank-
+//   disclaimer phrasing (a bank disclaiming "we will never threaten to
+//   arrest you" or "we will never create urgency" is not realistic
+//   published guidance the way "we will never ask for your PIN" is),
+//   and all are medium/low severity, so even an occasional negated
+//   false match cannot alone reach HIGH_SEVERITY_SCORE_FLOOR the way
+//   the negation-aware patterns above could.
 const RISK_PATTERNS = [
   {
     id: 'credential_or_otp_request',
     severity: 'high',
     weight: 55,
+    negationAware: true,
     regex: /\b(one[\s-]?time (passcode|code|password)|otp|pin\s*(number)?|cvv|security code|verification code|\w+[\s-]?digit code|passwords?|passcode|card number|sort code)\b/i,
     description: 'asks for a password, PIN, OTP, CVV or full card/sort code',
   },
@@ -26,6 +49,7 @@ const RISK_PATTERNS = [
     id: 'remote_access_request',
     severity: 'high',
     weight: 55,
+    negationAware: true,
     regex: /\b(teamviewer|anydesk|remote access|remote desktop|install (this|the) app|download (this|the) (app|software)|give (me|us) access to your (computer|laptop|phone))\b/i,
     description: 'asks the caller to install remote-access software or grant device access',
   },
@@ -76,6 +100,7 @@ const RISK_PATTERNS = [
     id: 'payment_or_transfer_request',
     severity: 'medium',
     weight: 20,
+    negationAware: true,
     // Gift-card and cryptocurrency wording moved OUT 2026-08-16 to their
     // own dedicated patterns below — the evidence review found these
     // payment methods have essentially no legitimate use (gov.uk/FCA/
@@ -100,6 +125,7 @@ const RISK_PATTERNS = [
     id: 'gift_card_payment_request',
     severity: 'high',
     weight: 45,
+    negationAware: true,
     // New 2026-08-16, promoted to criticalSignals.js as a standalone red
     // line — see that file's comment for the evidence and false-positive
     // reasoning (requires a payment-action verb, never a bare mention).
@@ -110,6 +136,7 @@ const RISK_PATTERNS = [
     id: 'cryptocurrency_payment_request',
     severity: 'high',
     weight: 45,
+    negationAware: true,
     // New 2026-08-16, promoted to criticalSignals.js as a standalone red
     // line — see that file's comment for the evidence and false-positive
     // reasoning (requires a payment-action verb, never a bare mention).
@@ -138,6 +165,7 @@ const RISK_PATTERNS = [
     id: 'cash_withdrawal_instruction',
     severity: 'medium',
     weight: 25,
+    negationAware: true,
     // Added 2026-08-29 (Apple remediation, UK scam-pattern review — Action
     // Fraud / Met Police courier-fraud guidance): being instructed to
     // withdraw a specific sum of cash from the bank is the standard
@@ -234,7 +262,10 @@ function extractSignals(transcript) {
 
   const riskIndicators = [];
   for (const pattern of RISK_PATTERNS) {
-    if (pattern.regex.test(text)) {
+    const matched = pattern.negationAware
+      ? hasUnnegatedMatch(text, pattern.regex)
+      : pattern.regex.test(text);
+    if (matched) {
       riskIndicators.push({
         id: pattern.id,
         severity: pattern.severity,
