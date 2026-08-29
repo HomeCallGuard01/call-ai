@@ -32,3 +32,5 @@ backups/
 # Supabase CLI local cache (project ref, pooler host — no credentials, but
 # still local machine state, not repo content)
 supabase/.temp/
+# Firebase service-account keys (private key material — never commit)
+*firebase-adminsdk*.json

@@ -188,6 +188,50 @@
     padding: 8px 0;
   }
 
+  .customer-table-wrap {
+    overflow-x: auto;
+  }
+
+  .customer-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+
+  .customer-table th {
+    text-align: left;
+    color: #93a3b8;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 8px 12px;
+    border-bottom: 1px solid #1e293b;
+    white-space: nowrap;
+  }
+
+  .customer-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #1e293b;
+    white-space: nowrap;
+  }
+
+  .customer-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .status-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    background: #1e293b;
+  }
+
+  .status-pill.good { background: #14532d; color: #86efac; }
+  .status-pill.warn { background: #78350f; color: #fdba74; }
+  .status-pill.bad { background: #7f1d1d; color: #fca5a5; }
+
   .columns-3-1 {
     display: grid;
     grid-template-columns: 2fr 1fr;
@@ -465,6 +509,11 @@
         <div class="quick-action-result" id="quickActionResult"></div>
       </div>
     </div>
+
+    <div class="card" style="margin-top:20px;">
+      <h3>Recent customers</h3>
+      <div class="customer-table-wrap" id="recentCustomers"></div>
+    </div>
   </section>
 
   <section class="section">
@@ -634,10 +683,13 @@
   function renderBusinessOverview(overview) {
     renderStatCards("businessOverviewGrid", [
       { label: "Total customers", value: overview.totalCustomers },
+      { label: "Active paid customers", value: overview.activePaidCustomers, className: "good" },
       { label: "Active protected households", value: overview.activeProtectedHouseholds, className: "good" },
+      { label: "New today", value: overview.newCustomersToday },
       { label: "New customers this week", value: overview.newCustomersThisWeek },
       { label: "Monthly recurring revenue", value: formatCurrency(overview.mrr) },
       { label: "Failed payments", value: overview.failedPayments, className: overview.failedPayments > 0 ? "warn" : "" },
+      { label: "Canceled", value: overview.canceled, className: overview.canceled > 0 ? "warn" : "" },
     ]);
   }
 
@@ -767,6 +819,62 @@
       .join("");
   }
 
+  const MEMBERSHIP_STATUS_LABELS = {
+    active: { label: "Active", className: "good" },
+    trial: { label: "Trial", className: "good" },
+    payment_issue: { label: "Payment issue", className: "warn" },
+    cancelled: { label: "Cancelling", className: "warn" },
+    inactive: { label: "Inactive", className: "bad" },
+    none: { label: "No entitlement", className: "" },
+  };
+
+  const PROVISIONING_STATUS_CLASSNAMES = {
+    active: "good",
+    pending: "",
+    failed: "bad",
+  };
+
+  function renderRecentCustomers(customers) {
+    const container = document.getElementById("recentCustomers");
+
+    if (!customers || customers.length === 0) {
+      container.innerHTML = `<div class="empty-state">No customers yet.</div>`;
+      return;
+    }
+
+    const rows = customers
+      .map(c => {
+        const membership = MEMBERSHIP_STATUS_LABELS[c.membershipStatus] || { label: c.membershipStatus, className: "" };
+        const provisioningClassName = PROVISIONING_STATUS_CLASSNAMES[c.provisioningStatus] || "";
+
+        return `
+      <tr>
+        <td>${new Date(c.signedUpAt).toLocaleString()}</td>
+        <td>${c.email}</td>
+        <td><span class="status-pill ${membership.className}">${membership.label}</span></td>
+        <td><span class="status-pill ${c.activationStatus === "verified" ? "good" : ""}">${c.activationStatus === "verified" ? "Verified" : "Not yet verified"}</span></td>
+        <td><span class="status-pill ${provisioningClassName}">${c.provisioningStatus}</span></td>
+      </tr>
+    `;
+      })
+      .join("");
+
+    container.innerHTML = `
+      <table class="customer-table">
+        <thead>
+          <tr>
+            <th>Signed up</th>
+            <th>Email</th>
+            <th>Membership / payment</th>
+            <th>Activation</th>
+            <th>Provisioning</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
   async function loadOverview() {
     try {
       const res = await fetch("/admin/api/overview");
@@ -777,6 +885,7 @@
       renderProtectionActivity(data.protectionActivity);
 
       renderList("recentRegistrations", data.customerOperations.recentRegistrations, "No registrations yet.", describeActivityEvent);
+      renderRecentCustomers(data.customerOperations.recentCustomers);
       renderBreakdown("subscriptionStatusBreakdown", data.customerOperations.subscriptionStatusBreakdown, "No subscriptions yet.");
       renderBreakdown("provisioningStatusBreakdown", data.customerOperations.provisioningStatusBreakdown, "No households yet.");
       document.getElementById("provisioningFailuresSummary").innerHTML =

@@ -1,8 +1,17 @@
 # Production Migration Runbook — Migrations 021 & 022
 
-**Status:** Proposed. Not executed. No linking, no SQL, no changes have been made to production (`psbzynxplxfbyrbdidmn`) as part of preparing this document — only an org-level project listing (`supabase projects list`), which does not link to or touch any project's database.
+**Status: EXECUTED — 2026-08-02.** Both migrations applied to production (`psbzynxplxfbyrbdidmn`) following the corrected §4 sequence below. See "Execution Outcome" at the end of this document for the full record and post-deployment verification evidence.
 **Scope:** Apply exactly `021_household_activation_verified.sql` and `022_lock_down_security_definer_execute_grants.sql` to production. Nothing else. Both are already applied to and verified on staging (`tigwgmayeuisrxjjykqd`) — see `docs/engineering/MIGRATION_RECOVERY_PLAN.md`.
-**Do not execute any step below without separate, explicit approval, per this project's established convention for launch-critical/architectural work.**
+
+## ⚠️ Critical correction (2026-08-02) — §4's execution sequence is unsafe as originally written
+
+This runbook originally assumed `supabase db push` against production would cleanly apply just `021` then `022`, "since nothing is being inserted before an already-applied migration." That assumption is **wrong**, confirmed live via `supabase db push --linked --dry-run` against production: the `supabase_migrations.schema_migrations` tracking table **does not exist on production at all** (`relation "supabase_migrations.schema_migrations" does not exist`) — consistent with production never once having been touched by the Supabase CLI (every migration to date was hand-pasted into the SQL Editor, which never populates that table). A plain `db push` therefore treats **all 22 local migration files as unapplied** and would attempt to replay `000` through `022` in full — not just the intended two.
+
+This is not merely a bookkeeping inconvenience. Replaying `000_baseline_contacts_table.sql` would (harmlessly) no-op its `create table if not exists`, but its two `create policy "Allow development select"` / `"Allow development insert"` statements are **not** guarded by `drop policy if exists` and are not currently present on production (confirmed live: `contacts` currently has exactly the 4 `*_own_household` policies from migration 008, nothing else). Replaying `000` would recreate these two permissive, unrestricted, `anon`-scoped policies (`using (true)` / `with check (true)`) on the live `contacts` table — real customer data — for the window between `000` committing and `008` committing (each migration file is its own transaction) later in the same `db push` run. That window is real, live exposure of all contacts data to anonymous read/insert, however brief.
+
+**Required fix, added to §4 below:** repair production's tracking table first, marking `000`–`020` (everything except `005`, never applied anywhere, and `021`/`022`, the two migrations actually being deployed) as applied via `supabase migration repair --status applied <versions...> --linked` — this only writes rows to the tracking table, it does not execute any migration SQL. Confirmed via `--dry-run` afterward that this correctly narrows the push to just `021` and `022` before running it for real. See the corrected §4.
+
+Also confirmed live, same session: production's 10 existing `SECURITY DEFINER` functions are still exactly as documented (`service_role`-only, safe `search_path`, `postgres`-owned, fail-closed default ACL) — 022 remains a provable no-op there. Production `households` currently has 9 rows.
 
 ---
 
@@ -39,8 +48,8 @@
 
 - [ ] **Current project health** — last confirmed `ACTIVE_HEALTHY`, `eu-west-2`, Postgres `17.6.1.141`, via `supabase projects list` (org-level, no linking) on 2026-07-31, immediately before writing this runbook. **Re-run `supabase projects list` again immediately before execution** — this is a point-in-time snapshot, not a live guarantee.
 - [ ] **Linked project verification** — confirm `supabase/.temp/project-ref` is currently **staging** (`tigwgmayeuisrxjjykqd`), not production, right up until the deliberate `supabase link --project-ref psbzynxplxfbyrbdidmn` step in the execution sequence below. Do not link early "just to check something" — every production touch in this runbook should be an intentional, logged step.
-- [ ] **Backup/snapshot strategy — currently unconfirmed, must be resolved first.** `docs/engineering/STAGING_ENVIRONMENT_PLAN.md` §8 flagged this and it has never been checked: production's Supabase plan/tier and backup retention (Free tier has no automatic backups; paid tiers add daily backups, higher tiers add point-in-time recovery) needs dashboard access to confirm. **Action required before execution:** check the Supabase dashboard's Database → Backups page for the production project. If no automatic backup exists, take an explicit manual backup (dashboard "Database backups" button, or `pg_dump` against the production connection string) immediately before running anything below, regardless of how low-risk these two migrations are assessed to be — belt and braces, per §8's own recommendation.
-- [ ] **Migration history verification** — after linking (execution time only), `supabase migration list --linked` must show production's remote history ending at `020`, with `021` and `022` present locally but not yet remotely. Confirm no unexpected extra versions and no `005` (should never appear — it was never applied here either, confirmed by `calls` having zero RLS policies on production this session).
+- [x] **Backup/snapshot strategy — resolved 2026-08-02.** `supabase backups list --project-ref psbzynxplxfbyrbdidmn` (read-only, no linking required) confirms automatic daily physical backups, 8 days of history, most recent within the last 24h. `pitr_enabled: false` (no point-in-time recovery — not available on this tier), but daily coverage exists and is current. Recommend triggering one additional manual backup immediately before execution anyway, per §8's "belt and braces" guidance — cheap and non-destructive.
+- [ ] **Migration history verification** — **do not assume remote ends at `020`.** Confirmed 2026-08-02: production's `supabase_migrations.schema_migrations` tracking table does not exist at all (production has never been touched by CLI-based migration tooling). `supabase migration list --linked` will show every local version with an empty remote column. This must be resolved via `migration repair` (§4 steps 6–8) before pushing anything — see the critical correction at the top of this document.
 - [ ] **Pending schema drift** — this project has direct, documented precedent (`docs/engineering/016_017_migration_incident_notes.md`, referenced in `KNOWN_ISSUES.md`) for "migration list says applied" not matching live reality. Before applying 021, explicitly re-confirm (read-only) that `households.activation_verified_at` and `mark_household_activation_verified` do **not** already exist on production — expected, but verify rather than assume.
 - [ ] **Function inventory** — re-run the exact `pg_proc`/`pg_get_function_identity_arguments` query used on 2026-07-31 (captured in `MIGRATION_RECOVERY_PLAN.md`) and diff against that snapshot: still exactly 10 `SECURITY DEFINER` functions, same signatures, same owner (`postgres`).
 - [ ] **Privilege inventory** — re-run `node scripts/verify-security-definer-grants.js` while linked to production, **before** applying anything, as a pre-check. It is expected to report the 10 existing functions already clean (`service_role`-only) and only fail on `mark_household_activation_verified` not existing yet — confirming the starting state matches what this runbook assumes.
@@ -51,14 +60,17 @@
 ## 4. Execution sequence
 
 1. Confirm separate, explicit approval for **this specific execution**, not just this runbook's preparation.
-2. Resolve the backup/snapshot gap (§3) — confirm automatic coverage or take a manual backup.
+2. Resolve the backup/snapshot gap (§3) — confirmed 2026-08-02: production has automatic daily physical backups (`supabase backups list --project-ref psbzynxplxfbyrbdidmn`), most recent within the last 24h. No PITR. Recommend triggering one more immediately before execution anyway, belt and braces, since it's a cheap, non-destructive action.
 3. `supabase link --project-ref psbzynxplxfbyrbdidmn`
 4. `cat supabase/.temp/project-ref` — confirm the output is exactly `psbzynxplxfbyrbdidmn`.
-5. `supabase migration list --linked` — confirm remote history ends at `020`; `021`/`022` absent remotely.
-6. Read-only re-verification per the pending-schema-drift and privilege-inventory checklist items above.
-7. `supabase db push` — applies `021` then `022`, in that order, in one pass. (No `--include-all` needed here, unlike staging's `000` case — nothing is being inserted before an already-applied migration; `021`/`022` are simply the next two in sequence.)
-8. Immediately proceed to post-deployment verification (§5) — do not consider the deploy complete until every item there passes.
-9. `supabase link --project-ref tigwgmayeuisrxjjykqd` — relink back to staging once verification is complete, returning the repo to its normal working state.
+5. `supabase migration list --linked` — **expect every version to show an empty remote column** (confirmed 2026-08-02 — the tracking table doesn't exist on production yet). This is expected, not an error condition; do not proceed past this step assuming remote already ends at `020`.
+6. **Repair the tracking table before pushing anything:** `supabase migration repair --status applied 000 001 002 003 004 006 007 008 009 010 011 012 013 014 015 016 017 018 019 020 --linked` — marks these 20 already-live migrations as applied without executing any of their SQL. Do not include `005` (never applied anywhere) or `021`/`022` (the two actually being deployed).
+7. `supabase migration list --linked` again — confirm remote now shows `000`–`004`, `006`–`020` matching local, with only `021`/`022` remaining unapplied.
+8. `supabase db push --linked --dry-run` — confirm the output lists **only** `021_household_activation_verified.sql` and `022_lock_down_security_definer_execute_grants.sql`. Do not proceed if it lists anything else.
+9. Read-only re-verification per the pending-schema-drift and privilege-inventory checklist items above.
+10. `supabase db push --linked` — applies `021` then `022`, in that order, in one pass.
+11. Immediately proceed to post-deployment verification (§5) — do not consider the deploy complete until every item there passes.
+12. `supabase link --project-ref tigwgmayeuisrxjjykqd` — relink back to staging once verification is complete, returning the repo to its normal working state.
 
 ---
 
@@ -109,4 +121,36 @@
 
 ## 10. Stop for approval
 
-Nothing in this runbook has been executed. Waiting for explicit approval to proceed with §4's execution sequence — including separate confirmation that the backup/snapshot gap in §3 has been resolved first.
+Executed 2026-08-02 — see below. This section is kept for the historical record of the approval gate this runbook enforced before that point.
+
+---
+
+## Execution Outcome (2026-08-02)
+
+Executed exactly per the corrected §4, after explicit, separate approval for this specific execution (a written go/no-go report, then a final pre-flight re-verification, then the exact confirmation phrase "EXECUTE PRODUCTION MIGRATION").
+
+**Pre-flight, same session, immediately before execution:**
+- `supabase projects list`: production still `ACTIVE_HEALTHY`, unchanged.
+- `supabase backups list --project-ref psbzynxplxfbyrbdidmn`: automatic daily backup confirmed, most recent ~11h old at time of execution, 8 days retained. No additional manual backup was requested.
+- Confirmed linked project ref via two independent methods: `supabase/.temp/project-ref` and `supabase projects list`'s own `linked: true` flag — both `psbzynxplxfbyrbdidmn`.
+- Confirmed no uncommitted changes under `supabase/migrations/` or `scripts/` (`git status`/`git diff --stat` against `HEAD`, both empty for those paths) — only this runbook document itself was locally modified, which `db push` never reads.
+- `supabase migration repair --status applied 000 001 002 003 004 006 007 008 009 010 011 012 013 014 015 016 017 018 019 020 --linked` — ran successfully. Verified immediately after that this touched only the tracking table: `households.activation_verified_at` still did not exist, row count still 9, unchanged.
+- `supabase db push --linked --dry-run` (twice — once right after repair, once immediately before the real push) — both times listed exactly `021_household_activation_verified.sql` and `022_lock_down_security_definer_execute_grants.sql`, nothing else.
+
+**Execution:**
+```
+supabase db push --linked
+```
+Output: `Applying migration 021_household_activation_verified.sql... Applying migration 022_lock_down_security_definer_execute_grants.sql...` — completed with no errors.
+
+**Post-deployment verification — all passed:**
+- `supabase migration list --linked`: local and remote match exactly for all 21 versions (`000`–`004`, `006`–`022`).
+- `households.activation_verified_at` exists; all 9 existing rows have `NULL` (no existing data touched).
+- `mark_household_activation_verified` called as `service_role` with a nonexistent household UUID → raised the function's own business-logic exception (proves it reached the function body; zero real data touched by the call).
+- Same RPC called as `anon` → `permission denied for function mark_household_activation_verified`, confirming the grant lockdown holds for the newly-added function too.
+- `node scripts/verify-security-definer-grants.js`, run correctly from this worktree (linked to production) — **all checks passed** across all 11 `SECURITY DEFINER` functions (10 pre-existing + the new one): no `PUBLIC`/`anon`/`authenticated` `EXECUTE` on any of them, `service_role` has `EXECUTE` on all, safe `search_path`, correct `postgres` ownership, and the schema's default privileges for future functions confirmed fail-closed.
+- One process note, corrected in the moment rather than left wrong: the first attempt at this same script was run from the `sandbox/mobile-app-v1` worktree, which was linked to *staging* at the time — its "all checks passed" output was genuine but was re-verifying staging, not production. Re-run correctly from this (production-linked) worktree immediately after, with the same clean result.
+
+**Relinked back to staging** (`tigwgmayeuisrxjjykqd`) once verification completed, per this runbook's own standing discipline.
+
+**No user-visible impact observed or expected** — matches §8's prediction exactly; nothing in the currently-shipped web application references either migration's changes.

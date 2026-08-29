@@ -20,6 +20,8 @@ const {
   computeSubscriptionStatusBreakdown,
   computeProvisioningStatusBreakdown,
   computeReadinessSummary,
+  deriveMembershipStatus,
+  latestRowPerHousehold,
 } = require('../database/adminMetrics.js');
 
 let failures = 0;
@@ -38,16 +40,21 @@ function check(condition, message) {
 const overviewWithPrice = computeBusinessOverview({
   totalCustomers: 10,
   activeProtectedHouseholds: 6,
+  newCustomersToday: 1,
   newCustomersThisWeek: 2,
   activeEntitlements: 7,
   failedPayments: 2,
+  canceled: 3,
   price: { unitAmount: 999, currency: 'gbp' },
 });
 
 check(overviewWithPrice.totalCustomers === 10, 'totalCustomers passes through the raw count');
 check(overviewWithPrice.activeProtectedHouseholds === 6, 'activeProtectedHouseholds passes through the raw count');
+check(overviewWithPrice.activePaidCustomers === 7, 'activePaidCustomers surfaces the same activeEntitlements count used for MRR, as its own field');
+check(overviewWithPrice.newCustomersToday === 1, 'newCustomersToday passes through the raw count');
 check(overviewWithPrice.newCustomersThisWeek === 2, 'newCustomersThisWeek passes through the raw count');
 check(overviewWithPrice.failedPayments === 2, 'failedPayments passes through the raw count');
+check(overviewWithPrice.canceled === 3, 'canceled passes through the raw count');
 check(overviewWithPrice.mrr.available === true, 'mrr is marked available when a Stripe price was fetched');
 check(overviewWithPrice.mrr.amount === 69.93, 'mrr is active subscriptions × unit price, in major currency units (7 × £9.99)');
 check(overviewWithPrice.mrr.currency === 'gbp', 'mrr currency comes from the Stripe price');
@@ -55,9 +62,11 @@ check(overviewWithPrice.mrr.currency === 'gbp', 'mrr currency comes from the Str
 const overviewWithoutPrice = computeBusinessOverview({
   totalCustomers: 3,
   activeProtectedHouseholds: 1,
+  newCustomersToday: 0,
   newCustomersThisWeek: 0,
   activeEntitlements: 2,
   failedPayments: 0,
+  canceled: 0,
   price: null,
 });
 
@@ -157,6 +166,48 @@ const alerts = mergeAlerts({
 check(alerts.length === 2, 'mergeAlerts combines provisioning failures and webhook failures');
 check(alerts[0].type === 'webhook_failed', 'mergeAlerts sorts most-recent-first');
 check(alerts[1].type === 'provisioning_failed' && alerts[1].severity === 'high', 'a provisioning failure is surfaced as high severity');
+
+// --- deriveMembershipStatus ---
+
+check(deriveMembershipStatus(null, null) === 'none', 'deriveMembershipStatus: no entitlement at all is "none"');
+
+check(
+  deriveMembershipStatus({ status: 'revoked', entitlement_type: 'paid_subscription' }, null) === 'inactive',
+  'deriveMembershipStatus: a non-active entitlement (e.g. revoked) is "inactive", regardless of type'
+);
+
+check(
+  deriveMembershipStatus({ status: 'active', entitlement_type: 'free_trial' }, null) === 'trial',
+  'deriveMembershipStatus: an active free_trial entitlement is "trial"'
+);
+
+check(
+  deriveMembershipStatus({ status: 'active', entitlement_type: 'paid_subscription' }, { status: 'past_due' }) === 'payment_issue',
+  'deriveMembershipStatus: an active entitlement with a past_due subscription is "payment_issue"'
+);
+
+check(
+  deriveMembershipStatus({ status: 'active', entitlement_type: 'paid_subscription' }, { status: 'active', cancel_at_period_end: true }) ===
+    'cancelled',
+  'deriveMembershipStatus: an active entitlement whose subscription is set to cancel at period end is "cancelled"'
+);
+
+check(
+  deriveMembershipStatus({ status: 'active', entitlement_type: 'complimentary' }, null) === 'active',
+  'deriveMembershipStatus: an active complimentary entitlement with no subscription is plain "active"'
+);
+
+// --- latestRowPerHousehold ---
+
+const latest = latestRowPerHousehold([
+  { household_id: 'a', status: 'active', updated_at: '2026-07-20T10:00:00Z' },
+  { household_id: 'a', status: 'past_due', updated_at: '2026-07-21T10:00:00Z' },
+  { household_id: 'b', status: 'canceled', updated_at: '2026-07-19T10:00:00Z' },
+]);
+
+check(latest.get('a').status === 'past_due', 'latestRowPerHousehold keeps only the most recently updated row per household');
+check(latest.get('b').status === 'canceled', 'latestRowPerHousehold keeps a household with only one row');
+check(latest.get('missing') === undefined, 'latestRowPerHousehold has no entry for a household with no rows at all');
 
 // --- looksLikeUuid ---
 

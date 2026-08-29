@@ -68,6 +68,91 @@ async function getRecentCustomerActivity(limit = 15) {
   return mergeCustomerActivity({ households: households || [], subscriptions: subscriptions || [] }, limit);
 }
 
+// Pure — same "membership/payment status" vocabulary as the customer-
+// facing dashboards (server.js's /dashboard-data, routes/mobileApi.js's
+// GET /api/v1/me/dashboard) for consistency, adapted for an admin list
+// that (unlike those two, which are only ever reached once
+// requireEntitlement has already confirmed status === 'active') also
+// needs to describe households whose latest entitlement is not active —
+// hence the leading 'none'/'inactive' checks neither of those call sites
+// needs.
+function deriveMembershipStatus(entitlement, subscription) {
+  if (!entitlement) return "none";
+  if (entitlement.status !== "active") return "inactive";
+  if (entitlement.entitlement_type === "free_trial") return "trial";
+  if (subscription && subscription.status === "past_due") return "payment_issue";
+  if (subscription && subscription.cancel_at_period_end) return "cancelled";
+  return "active";
+}
+
+// Pure — reduces possibly-many historical rows per household_id down to
+// each household's single latest row (by updated_at), same rule
+// computeSubscriptionStatusBreakdown already applies, just returning a
+// lookup map instead of a count.
+function latestRowPerHousehold(rows) {
+  const latest = new Map();
+  for (const row of rows) {
+    const existing = latest.get(row.household_id);
+    if (!existing || new Date(row.updated_at) > new Date(existing.updated_at)) {
+      latest.set(row.household_id, row);
+    }
+  }
+  return latest;
+}
+
+// One row per recently-signed-up household, for the admin "Recent
+// customers" table — signup date/time, email, membership/payment status,
+// protection/activation status, and Twilio provisioning status. Entitlements/
+// subscriptions are fetched scoped to just this batch of household IDs
+// (not the whole table, unlike the platform-wide breakdown functions
+// above) since only these households' latest rows are needed here.
+async function getRecentCustomers(limit = 20) {
+  if (!supabaseAdmin) return [];
+
+  const { data: households, error: hErr } = await supabaseAdmin
+    .from("households")
+    .select("id, email, created_at, twilio_provisioning_status, activation_verified_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (hErr) {
+    console.error("ADMIN METRICS: RECENT CUSTOMERS HOUSEHOLDS READ ERROR:", hErr.message);
+    return [];
+  }
+
+  const householdIds = (households || []).map(h => h.id);
+  if (householdIds.length === 0) return [];
+
+  const [{ data: entitlements, error: eErr }, { data: subscriptions, error: sErr }] = await Promise.all([
+    supabaseAdmin
+      .from("entitlements")
+      .select("household_id, entitlement_type, status, updated_at")
+      .in("household_id", householdIds),
+    supabaseAdmin
+      .from("subscriptions")
+      .select("household_id, status, cancel_at_period_end, updated_at")
+      .in("household_id", householdIds),
+  ]);
+
+  if (eErr) console.error("ADMIN METRICS: RECENT CUSTOMERS ENTITLEMENTS READ ERROR:", eErr.message);
+  if (sErr) console.error("ADMIN METRICS: RECENT CUSTOMERS SUBSCRIPTIONS READ ERROR:", sErr.message);
+
+  const latestEntitlementByHousehold = latestRowPerHousehold(entitlements || []);
+  const latestSubscriptionByHousehold = latestRowPerHousehold(subscriptions || []);
+
+  return households.map(h => ({
+    householdId: h.id,
+    email: h.email,
+    signedUpAt: h.created_at,
+    membershipStatus: deriveMembershipStatus(
+      latestEntitlementByHousehold.get(h.id),
+      latestSubscriptionByHousehold.get(h.id)
+    ),
+    activationStatus: h.activation_verified_at ? "verified" : "not_verified",
+    provisioningStatus: h.twilio_provisioning_status,
+  }));
+}
+
 async function getRecentCallsAcrossHouseholds(limit = 20) {
   if (!supabaseAdmin) return [];
 
@@ -162,9 +247,11 @@ async function getAlerts(limit = 20) {
 function computeBusinessOverview({
   totalCustomers,
   activeProtectedHouseholds,
+  newCustomersToday,
   newCustomersThisWeek,
   activeEntitlements,
   failedPayments,
+  canceled,
   price,
 }) {
   const mrr =
@@ -175,9 +262,17 @@ function computeBusinessOverview({
   return {
     totalCustomers,
     activeProtectedHouseholds,
+    // Same count already used for the MRR calculation above, now also
+    // surfaced directly — "active protected households" is a provisioning
+    // proxy (has a live Twilio number), which can genuinely differ from
+    // "currently entitled to the service" (e.g. paid but not yet
+    // provisioned), so both are shown rather than conflated.
+    activePaidCustomers: activeEntitlements,
+    newCustomersToday,
     newCustomersThisWeek,
     mrr,
     failedPayments,
+    canceled,
   };
 }
 
@@ -197,9 +292,11 @@ async function getBusinessOverview() {
     return computeBusinessOverview({
       totalCustomers: 0,
       activeProtectedHouseholds: 0,
+      newCustomersToday: 0,
       newCustomersThisWeek: 0,
       activeEntitlements: 0,
       failedPayments: 0,
+      canceled: 0,
       price: null,
     });
   }
@@ -207,9 +304,11 @@ async function getBusinessOverview() {
   const [
     { count: totalCustomers },
     { count: activeProtectedHouseholds },
+    { count: newCustomersToday },
     { count: newCustomersThisWeek },
     { count: activeEntitlements },
     { count: failedPayments },
+    { count: canceled },
     price,
   ] = await Promise.all([
     supabaseAdmin.from("households").select("id", { count: "exact", head: true }),
@@ -218,6 +317,10 @@ async function getBusinessOverview() {
       .select("id", { count: "exact", head: true })
       .eq("twilio_provisioning_status", "active")
       .not("twilio_number", "is", null),
+    supabaseAdmin
+      .from("households")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", startOfToday().toISOString()),
     supabaseAdmin
       .from("households")
       .select("id", { count: "exact", head: true })
@@ -230,15 +333,20 @@ async function getBusinessOverview() {
     // failure (see mergeAlerts) — that's this app failing to record an
     // event, not Stripe failing to charge a card.
     supabaseAdmin.from("subscriptions").select("id", { count: "exact", head: true }).in("status", ["past_due", "unpaid"]),
+    // "Canceled" — same source/shape as the failed-payments count above,
+    // just the 'canceled' status bucket instead of past_due/unpaid.
+    supabaseAdmin.from("subscriptions").select("id", { count: "exact", head: true }).eq("status", "canceled"),
     getSubscriptionPrice(),
   ]);
 
   return computeBusinessOverview({
     totalCustomers: totalCustomers || 0,
     activeProtectedHouseholds: activeProtectedHouseholds || 0,
+    newCustomersToday: newCustomersToday || 0,
     newCustomersThisWeek: newCustomersThisWeek || 0,
     activeEntitlements: activeEntitlements || 0,
     failedPayments: failedPayments || 0,
+    canceled: canceled || 0,
     price,
   });
 }
@@ -413,6 +521,9 @@ async function searchCustomers(query) {
 module.exports = {
   mergeCustomerActivity,
   getRecentCustomerActivity,
+  deriveMembershipStatus,
+  latestRowPerHousehold,
+  getRecentCustomers,
   getRecentCallsAcrossHouseholds,
   mergeAlerts,
   getAlerts,

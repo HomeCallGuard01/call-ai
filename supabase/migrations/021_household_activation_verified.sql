@@ -9,7 +9,10 @@
 -- identifies: activation verification needs to check for a real routed
 -- call and remember that it happened.
 --
--- STATUS: DRAFT — NOT APPLIED
+-- STATUS: APPLIED — staging (tigwgmayeuisrxjjykqd) 2026-07-30, production
+-- (psbzynxplxfbyrbdidmn) 2026-08-02. See docs/engineering/
+-- PRODUCTION_MIGRATION_RUNBOOK_021_022.md for the production execution
+-- record and post-deployment verification evidence.
 
 begin;
 

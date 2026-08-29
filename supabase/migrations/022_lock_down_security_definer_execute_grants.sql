@@ -1,6 +1,10 @@
 -- Lock down SECURITY DEFINER function execute grants: service_role only
 --
--- STATUS: DRAFT — NOT APPLIED
+-- STATUS: APPLIED — staging (tigwgmayeuisrxjjykqd) 2026-07-31, production
+-- (psbzynxplxfbyrbdidmn) 2026-08-02, confirmed a provable no-op there both
+-- times it was checked (2026-07-31 and immediately pre-deployment
+-- 2026-08-02) — production's SECURITY DEFINER grants were already clean.
+-- See docs/engineering/PRODUCTION_MIGRATION_RUNBOOK_021_022.md.
 --
 -- Every SECURITY DEFINER RPC in this codebase ends its own migration with
 -- `revoke all on function ... from public; grant execute on function ...

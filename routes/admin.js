@@ -5,6 +5,7 @@ const { requireAdmin } = require("../middleware/requireAdmin");
 const { getSystemHealth } = require("../services/healthChecks");
 const {
   getRecentCustomerActivity,
+  getRecentCustomers,
   getRecentCallsAcrossHouseholds,
   getAlerts,
   searchCustomers,
@@ -31,6 +32,7 @@ router.get("/admin/api/overview", requireAuth, requireAdmin, async (req, res) =>
     businessOverview,
     protectionActivity,
     recentActivity,
+    recentCustomers,
     recentCalls,
     alerts,
     subscriptionStatusBreakdown,
@@ -40,6 +42,7 @@ router.get("/admin/api/overview", requireAuth, requireAdmin, async (req, res) =>
     getBusinessOverview(),
     getProtectionActivityToday(),
     getRecentCustomerActivity(15),
+    getRecentCustomers(20),
     getRecentCallsAcrossHouseholds(20),
     getAlerts(20),
     getSubscriptionStatusBreakdown(),
@@ -56,6 +59,7 @@ router.get("/admin/api/overview", requireAuth, requireAdmin, async (req, res) =>
     protectionActivity,
     customerOperations: {
       recentRegistrations: recentSignups,
+      recentCustomers,
       subscriptionStatusBreakdown,
       provisioningStatusBreakdown,
       provisioningFailuresCount: alerts.filter(a => a.type === "provisioning_failed").length,
