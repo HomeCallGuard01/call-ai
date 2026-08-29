@@ -212,7 +212,11 @@ export default function Subscribe() {
 
       <PrimaryButton label="Subscribe — £4.99/month" onPress={handleSubscribe} loading={isProcessing} />
 
-      <Text style={styles.smallprint}>Secure payment via Stripe. You can cancel any time from Account.</Text>
+      <Text style={styles.smallprint}>
+        {Platform.OS === "ios"
+          ? "Secure payment via the App Store. You can cancel any time from Account."
+          : "Secure payment via Stripe. You can cancel any time from Account."}
+      </Text>
     </Screen>
   );
 }
