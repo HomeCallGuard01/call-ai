@@ -4,9 +4,14 @@
 // genuinely be delayed past the moment Checkout itself completes).
 //
 // Reflects the approved launch model: paid from day one, no free trial,
-// a 30-day money-back guarantee as the risk-reversal mechanism, and a
-// time-limited Founding Member framing. The Stripe price/checkout
-// mechanics themselves are unchanged — this is presentation only.
+// a 30-day money-back guarantee as the risk-reversal mechanism. The
+// Founding Member / "first 500 customers" framing and 12-month price-lock
+// claim were removed 2026-08-29 for the App Store release — Apple's
+// review guidance is to keep subscription screens plain and accurate,
+// and the guarantee's own wording needs to be honest about who actually
+// issues a refund on each platform (see the guaranteeBody text below).
+// The Stripe price/checkout mechanics themselves are unchanged for
+// Android/web — this is presentation only.
 //
 // The "start immediately" consent checkbox exists because of the
 // Consumer Contracts Regulations 2013: a trader shouldn't begin
@@ -15,8 +20,7 @@
 // product whose entire point is starting now, is the whole premise. The
 // checkbox and its copy are a reasonable working draft, not a legal
 // sign-off; flagged in this session's report as needing a real legal
-// review pass before launch, same as the exact guarantee/founding-member
-// terms text.
+// review pass before launch, same as the exact guarantee terms text.
 import { useState, useRef, useEffect } from "react";
 import { Text, View, Pressable, StyleSheet, Platform } from "react-native";
 import { router } from "expo-router";
@@ -173,22 +177,28 @@ export default function Subscribe() {
     <Screen>
       <SetupProgress currentStep={1} />
 
-      <View style={styles.foundingBadge}>
-        <Text style={styles.foundingBadgeText}>FOUNDING MEMBER OFFER — FIRST 500 CUSTOMERS</Text>
-      </View>
-
       <Text style={styles.title} accessibilityRole="header">Home Call Guard Standard</Text>
       <Text style={styles.price}>£4.99 per month</Text>
       <Text style={styles.body}>
-        AI call screening and unlimited trusted contacts. As a founding member, your price is locked
-        for 12 months — cancel any time.
+        AI-powered call protection and unlimited trusted contacts. Simple monthly membership — cancel
+        anytime.
       </Text>
 
       <View style={styles.guaranteeBox}>
         <Text style={styles.guaranteeTitle}>30-day money-back guarantee</Text>
         <Text style={styles.guaranteeBody}>
-          Not right for you, for any reason? Get a full refund within your first 30 days — just ask,
-          no forms to fill in.
+          {Platform.OS === "ios"
+            ? // Apple, not Home Call Guard, controls and issues App Store
+              // refunds — "just ask [us]" would misrepresent who actually
+              // grants it for an Apple-billed purchase. This still honours
+              // the guarantee (we support the request) without claiming a
+              // capability only Apple has.
+              "Not right for you, for any reason? Apple handles all App Store refunds directly — " +
+              "request one any time within your first 30 days from Settings on your iPhone " +
+              "(your name → Subscriptions) or at reportaproblem.apple.com. Contact us any time if you'd " +
+              "like help with your request."
+            : "Not right for you, for any reason? Get a full refund within your first 30 days — just ask, " +
+              "no forms to fill in."}
         </Text>
       </View>
 
@@ -222,22 +232,6 @@ export default function Subscribe() {
 }
 
 const styles = StyleSheet.create({
-  foundingBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.accentMuted,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 999,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  foundingBadgeText: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.4,
-  },
   title: {
     ...typography.hero,
     color: colors.text,
