@@ -829,4 +829,27 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
   }
 });
 
+// POST /debug/purchase-beacon — the RevenueCat/StoreKit equivalent of
+// mobile/lib/voiceClient.ts's own beacon() calls to /debug/voice-beacon.
+// Found 2026-08-29 (App Store IAP investigation): the RevenueCat SDK's
+// real error (code/message/underlyingErrorMessage — StoreKit-level
+// diagnostics like "product not available", never anything customer-
+// identifying) was being swallowed entirely into a generic "we couldn't
+// start checkout" message client-side, making an actual purchase failure
+// undiagnosable without a physical device and Xcode console access. Fires
+// from mobile/app/(setup)/subscribe.tsx's handleSubscribeIOS() catch
+// block — deliberately unauthenticated, matching voice-beacon's own
+// reasoning: a purchase can fail before/without any household context to
+// authenticate with. Console-logged only (visible in Railway logs), never
+// written to the database — this is a debugging aid, not an audit trail.
+// Payload is capped and never echoes anything back beyond ok:true, so it
+// can't be used to probe server state.
+router.post("/debug/purchase-beacon", (req, res) => {
+  const { stage, detail } = req.body || {};
+  if (typeof stage === "string" && stage.length <= 100 && (detail === undefined || (typeof detail === "string" && detail.length <= 500))) {
+    console.log("PURCHASE BEACON:", stage, detail || "");
+  }
+  res.json({ ok: true });
+});
+
 module.exports = router;
