@@ -160,6 +160,131 @@ async function getSubscriptionByHouseholdId(householdId) {
   return data;
 }
 
+// Grants or renews a non-Stripe entitlement (currently: Apple IAP via
+// RevenueCat) — plain table writes rather than an RPC, since this is an
+// additive payment source, not a modification of the Stripe-specific
+// process_stripe_webhook_event function. Reuses entitlements' existing,
+// deliberately free-text `source` column (migration 011's own comment:
+// "future sources... shouldn't require a schema migration just to add a
+// label") and `external_reference` for the store's own subscription
+// identifier — no new table, no migration.
+//
+// Idempotent by construction: if the household's current active
+// entitlement already IS this exact subscription (same source +
+// external_reference), this is a renewal/uncancellation for a grant we
+// already made — only ends_at is extended, never a duplicate row. A
+// genuinely new grant (first purchase, or replacing a different/no
+// active entitlement) expires whatever was active first, preserving the
+// same "at most one active row per household" invariant migration 011's
+// partial unique index enforces for every other source.
+async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTransactionId, expiresAtMs }) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const endsAt = expiresAtMs ? new Date(expiresAtMs).toISOString() : null;
+
+  const { data: existingActive, error: readError } = await supabaseAdmin
+    .from("entitlements")
+    .select("*")
+    .eq("household_id", householdId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (readError) {
+    console.error("SUPABASE ENTITLEMENT READ ERROR (revenuecat upsert):", readError);
+    throw readError;
+  }
+
+  if (
+    existingActive &&
+    existingActive.source === "apple_revenuecat" &&
+    existingActive.external_reference === originalTransactionId
+  ) {
+    if (existingActive.ends_at !== endsAt) {
+      const { error: updateError } = await supabaseAdmin
+        .from("entitlements")
+        .update({ ends_at: endsAt })
+        .eq("id", existingActive.id);
+      if (updateError) {
+        console.error("SUPABASE ENTITLEMENT ENDS_AT UPDATE ERROR:", updateError);
+        throw updateError;
+      }
+    }
+    return { action: "renewed", entitlementId: existingActive.id };
+  }
+
+  if (existingActive) {
+    const { error: expireError } = await supabaseAdmin
+      .from("entitlements")
+      .update({ status: "expired" })
+      .eq("id", existingActive.id);
+    if (expireError) {
+      console.error("SUPABASE ENTITLEMENT EXPIRE-ON-TRANSITION ERROR:", expireError);
+      throw expireError;
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("entitlements")
+    .insert({
+      household_id: householdId,
+      entitlement_type: "paid_subscription",
+      status: "active",
+      source: "apple_revenuecat",
+      external_reference: originalTransactionId,
+      ends_at: endsAt,
+      notes: "Granted via RevenueCat (Apple In-App Purchase, StoreKit).",
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("SUPABASE ENTITLEMENT GRANT ERROR (revenuecat):", error);
+    throw error;
+  }
+  return { action: "granted", entitlementId: data.id };
+}
+
+// Revokes a household's active entitlement on a genuine RevenueCat
+// EXPIRATION event — only if that active entitlement is actually the one
+// RevenueCat owns (source + external_reference match). A household that
+// cancelled Apple IAP and separately resubscribed via Stripe on the web
+// must never have that Stripe entitlement revoked by a late/retried
+// Apple expiration event — this check is what prevents that.
+async function expireEntitlementFromRevenueCat(householdId, originalTransactionId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data: existingActive, error: readError } = await supabaseAdmin
+    .from("entitlements")
+    .select("id, source, external_reference")
+    .eq("household_id", householdId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (readError) {
+    console.error("SUPABASE ENTITLEMENT READ ERROR (revenuecat expire):", readError);
+    throw readError;
+  }
+
+  if (
+    !existingActive ||
+    existingActive.source !== "apple_revenuecat" ||
+    existingActive.external_reference !== originalTransactionId
+  ) {
+    return { revoked: false };
+  }
+
+  const { error } = await supabaseAdmin
+    .from("entitlements")
+    .update({ status: "expired" })
+    .eq("id", existingActive.id);
+
+  if (error) {
+    console.error("SUPABASE ENTITLEMENT REVOKE ERROR (revenuecat):", error);
+    throw error;
+  }
+  return { revoked: true };
+}
+
 module.exports = {
   setHouseholdStripeCustomerId,
   getHouseholdByStripeCustomerId,
@@ -167,4 +292,6 @@ module.exports = {
   processWebhookEvent,
   getActiveEntitlement,
   getSubscriptionByHouseholdId,
+  upsertActiveEntitlementFromRevenueCat,
+  expireEntitlementFromRevenueCat,
 };

@@ -13,9 +13,16 @@ const express = require("express");
 const { requireAuthApi, verifyBearerToken } = require("../middleware/requireAuthApi");
 const { requireEntitlement } = require("../middleware/requireEntitlement");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("../database/contacts");
-const { getSubscriptionByHouseholdId, getActiveEntitlement } = require("../database/billing");
+const {
+  getSubscriptionByHouseholdId,
+  getActiveEntitlement,
+  upsertActiveEntitlementFromRevenueCat,
+  expireEntitlementFromRevenueCat,
+} = require("../database/billing");
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
-const { markActivationVerified } = require("../database/households");
+const { markActivationVerified, getHouseholdByAuthUserId } = require("../database/households");
+const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
+const { classifyRevenueCatEvent, resolveOriginalTransactionId } = require("../services/revenuecatWebhook");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
@@ -678,6 +685,105 @@ router.post("/api/v1/contacts/sync", requireAuthApi, requireEntitlement, async (
   } catch (err) {
     console.error("MOBILE CONTACTS SYNC ERROR:", err.message);
     res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /api/v1/billing/apple/revenuecat-webhook
+//
+// RevenueCat's server-side webhook — the single source of truth for iOS
+// Apple IAP entitlement state, exactly mirroring the role Stripe's own
+// webhook (routes/billing.js) already plays for web/Android: never trust
+// a client-reported purchase, only ever grant/revoke access here, off a
+// server-to-server event RevenueCat has already verified against Apple.
+//
+// Auth: RevenueCat lets you configure an arbitrary Authorization header
+// value in its dashboard, sent back on every webhook call — checked
+// directly against REVENUECAT_WEBHOOK_AUTHORIZATION below. Not a bearer
+// token in the requireAuthApi sense (this isn't a customer's own
+// session); a shared secret, same trust model as Stripe's webhook
+// signature check.
+//
+// app_user_id is deliberately set client-side (lib/purchases.ts) to this
+// same household's Supabase auth_user_id — see that file's own comment —
+// so this route can resolve the household with the exact same lookup
+// requireAuthApi already uses everywhere else, no new identity mapping
+// invented for this one payment source.
+//
+// Grant/revoke logic itself lives in database/billing.js
+// (upsertActiveEntitlementFromRevenueCat / expireEntitlementFromRevenueCat)
+// — idempotent by construction (checks current state before acting), and
+// scoped so a RevenueCat event can only ever touch an entitlement that
+// source itself granted, never a Stripe-paid household's access. Twilio
+// provisioning reuses updateTwilioNumberForEntitlementChange verbatim,
+// the exact function the Stripe webhook already calls — same policy, one
+// implementation, two payment sources.
+router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
+  const expectedAuth = process.env.REVENUECAT_WEBHOOK_AUTHORIZATION;
+
+  if (!expectedAuth) {
+    console.error("REVENUECAT WEBHOOK ERROR: REVENUECAT_WEBHOOK_AUTHORIZATION not configured");
+    return res.status(503).json({ error: "not_configured" });
+  }
+
+  if (req.headers.authorization !== expectedAuth) {
+    console.error("REVENUECAT WEBHOOK ERROR: authorization header mismatch");
+    return res.status(401).json({ error: "unauthorized" });
+  }
+
+  const event = req.body && req.body.event;
+
+  if (!event || typeof event.type !== "string" || !event.app_user_id) {
+    return res.status(400).json({ error: "invalid_payload" });
+  }
+
+  try {
+    const household = await getHouseholdByAuthUserId(event.app_user_id);
+
+    if (!household) {
+      // Acknowledge (200) rather than error — an unmappable app_user_id
+      // (e.g. a RevenueCat anonymous ID from before login, or a sandbox
+      // event for an already-deleted/anonymised household) should never
+      // cause RevenueCat to keep retrying an event that will never
+      // resolve differently.
+      console.error("REVENUECAT WEBHOOK: no household for app_user_id", event.app_user_id);
+      return res.json({ ok: true, skipped: "no_household" });
+    }
+
+    const originalTransactionId = resolveOriginalTransactionId(event);
+    const classification = classifyRevenueCatEvent(event.type);
+
+    if (classification === "grant") {
+      if (!originalTransactionId) {
+        return res.status(400).json({ error: "invalid_payload", message: "missing transaction id" });
+      }
+      const result = await upsertActiveEntitlementFromRevenueCat(household.id, {
+        originalTransactionId,
+        expiresAtMs: event.expiration_at_ms,
+      });
+      await updateTwilioNumberForEntitlementChange(household, true).catch(err =>
+        console.error("REVENUECAT WEBHOOK: Twilio provisioning update failed:", err.message)
+      );
+      return res.json({ ok: true, ...result });
+    }
+
+    if (classification === "revoke") {
+      const result = await expireEntitlementFromRevenueCat(household.id, originalTransactionId);
+      if (result.revoked) {
+        await updateTwilioNumberForEntitlementChange(household, false).catch(err =>
+          console.error("REVENUECAT WEBHOOK: Twilio provisioning update failed:", err.message)
+        );
+      }
+      return res.json({ ok: true, ...result });
+    }
+
+    // CANCELLATION, BILLING_ISSUE, TEST, and anything else RevenueCat
+    // might add later: acknowledged, no entitlement change — see
+    // services/revenuecatWebhook.js's own comment for why CANCELLATION
+    // specifically must never revoke immediately.
+    return res.json({ ok: true, action: "acknowledged_no_change" });
+  } catch (err) {
+    console.error("REVENUECAT WEBHOOK ERROR:", err.message);
+    return res.status(500).json({ error: "failed" });
   }
 });
 
