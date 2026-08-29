@@ -230,6 +230,29 @@ router.post("/api/v1/billing/manage-membership", requireAuthApi, async (req, res
 // session (post-registration-confirmation, post-login, post-password-
 // reset), before calling anything else.
 //
+// Found 2026-08-29 via real iOS device testing: neither /register nor
+// /register/resend passed emailRedirectTo, so Supabase fell back to the
+// project's default Site URL (the public marketing homepage) for the
+// mobile app's confirmation emails too — a customer tapping "Confirm
+// your email" landed in Safari on the homepage with no way back into
+// the app, and had to re-register from scratch. This is the same
+// homecallguard://... scheme already proven working for the password-
+// reset deep link (mobile/app/reset-password.tsx) — Supabase appends the
+// confirmation session as a URL fragment
+// (homecallguard://confirm-email#access_token=...&refresh_token=...),
+// which mobile/app/(auth)/confirm-email.tsx now detects and exchanges
+// for a real session via supabase.auth.setSession(), exactly mirroring
+// reset-password.tsx's existing pattern. Web's /register and
+// /resend-confirmation routes (server.js) are untouched — they keep
+// their own ${APP_URL}/confirmed.html redirect.
+//
+// Requires this exact URL (or a homecallguard://* wildcard) to be
+// present in the Supabase project's Authentication → URL Configuration
+// → Redirect URLs allow-list, or Supabase silently falls back to the
+// default Site URL again — same allow-list the reset-password deep link
+// already relies on.
+const MOBILE_CONFIRM_EMAIL_REDIRECT_URL = "homecallguard://confirm-email";
+
 // POST /api/v1/register — replaces the mobile client's old direct
 // supabase.auth.signUp() call. Deliberately unauthenticated (no session
 // exists yet) and deliberately NOT given the service-role key itself —
@@ -249,7 +272,13 @@ router.post("/api/v1/register", async (req, res) => {
   }
 
   try {
-    const result = await handleRegisterRequest({ email, password, adminClient: supabaseAdmin, authClient: supabase });
+    const result = await handleRegisterRequest({
+      email,
+      password,
+      adminClient: supabaseAdmin,
+      authClient: supabase,
+      emailRedirectTo: MOBILE_CONFIRM_EMAIL_REDIRECT_URL,
+    });
 
     if (result.status === "error") {
       return res.status(400).json({ error: "failed" });
@@ -275,7 +304,12 @@ router.post("/api/v1/register/resend", async (req, res) => {
   }
 
   try {
-    const result = await handleResendConfirmationRequest({ email, adminClient: supabaseAdmin, authClient: supabase });
+    const result = await handleResendConfirmationRequest({
+      email,
+      adminClient: supabaseAdmin,
+      authClient: supabase,
+      emailRedirectTo: MOBILE_CONFIRM_EMAIL_REDIRECT_URL,
+    });
     res.json({ status: result.status });
   } catch (err) {
     console.error("MOBILE RESEND CONFIRMATION ERROR:", err.message);
