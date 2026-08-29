@@ -134,6 +134,47 @@ const RISK_PATTERNS = [
     regex: /\b(refund|overpaid|owe you money|compensation (is )?due|entitled to a (refund|rebate))\b/i,
     description: 'uses a refund/overpayment pretext, a common social-engineering opener',
   },
+  {
+    id: 'cash_withdrawal_instruction',
+    severity: 'medium',
+    weight: 25,
+    // Added 2026-08-29 (Apple remediation, UK scam-pattern review — Action
+    // Fraud / Met Police courier-fraud guidance): being instructed to
+    // withdraw a specific sum of cash from the bank is the standard
+    // precursor to a card/cash-collection scam, distinct from
+    // physical_collection_request (criticalSignals.js) which covers the
+    // handover itself. Requires an actual instruction verb plus
+    // cash/money in a bank/withdrawal context — never a bare "cash"
+    // mention (e.g. "I paid cash for the shopping" must not match; see
+    // the false-positive regression test).
+    regex: /\b(withdraw (a large (amount|sum) of |some |£\s?\d[\d,]* ?(pounds|worth)? ?(of |in )?)?(cash|money)|go to the bank and (withdraw|take out)|take out (a large (amount|sum) of |some )?(cash|money) from your (account|bank))\b/i,
+    description: 'instructs the person to withdraw cash from the bank — the standard precursor to courier/card-collection fraud',
+  },
+  {
+    id: 'investigation_pretext',
+    severity: 'medium',
+    weight: 20,
+    // Added 2026-08-29: Action Fraud/police guidance names "help us with
+    // an investigation" / "you've been selected to assist" as a common
+    // pretext used to recruit a victim into courier fraud or a fake-
+    // police scam — distinct from a bare identity claim
+    // (fabricated_authority_claim above), which stays low-weight on its
+    // own by design.
+    regex: /\b((help|assist)( (us|the (bank|police)))? with (an |our )?investigation|assist (us|the (bank|police)) in (an |our )?investigation|you'?ve been (selected|chosen) to (help|assist)|part of an? (ongoing )?(police )?investigation|(acting|act) as an? (undercover )?agent for (the bank|the police))\b/i,
+    description: 'frames the call as needing the person\'s help with an "investigation" — a known pretext used to recruit a victim into courier fraud',
+  },
+  {
+    id: 'unexpected_prize_or_investment_pretext',
+    severity: 'low',
+    weight: 12,
+    // Added 2026-08-29: deliberately requires unambiguous scam-adjacent
+    // qualifying language (guaranteed/risk-free/selected/won), never a
+    // bare "investment" or "prize" mention — a genuine financial adviser
+    // discussing investments, or a legitimate competition win, must not
+    // match this on its own (see the false-positive regression test).
+    regex: /\b(guaranteed (return|profit)|risk[- ]?free investment|you'?ve (won|been selected to receive)|selected to receive (a|this) (prize|refund|reward)|limited[- ]?time investment opportunity|double your money)\b/i,
+    description: 'uses unexpected-prize or too-good-to-be-true investment framing — a common social-engineering opener when paired with a request for money or details',
+  },
 ];
 
 // --- prompt-injection patterns -------------------------------------------

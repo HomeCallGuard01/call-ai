@@ -186,6 +186,22 @@ const CRITICAL_PATTERNS = [
     regex: /\b(don'?t hang up|stay on the (phone|line|call))\b/i,
     description: 'instructs the person not to hang up or to stay on the call — only a red line in combination with another critical signal, since alone it has legitimate uses',
   },
+  {
+    id: 'cash_withdrawal_instruction',
+    standalone: false,
+    // Added 2026-08-29 (Apple remediation, UK scam-pattern review):
+    // compound-only, same reasoning as prevents_independent_verification
+    // — a withdrawal instruction alone (e.g. a genuine family member
+    // asking someone to get cash out for them) is not itself dangerous,
+    // but combined with any other standalone critical signal (a
+    // fabricated-authority financial instruction, isolation, a
+    // caller-supplied callback number, remote access, etc.) it becomes a
+    // red line. Same regex as the progressive layer's copy in
+    // scoring/signals.js — kept duplicated, not imported, matching this
+    // file's own stated precedent for every other shared pattern here.
+    regex: /\b(withdraw (a large (amount|sum) of |some |£\s?\d[\d,]* ?(pounds|worth)? ?(of |in )?)?(cash|money)|go to the bank and (withdraw|take out)|take out (a large (amount|sum) of |some )?(cash|money) from your (account|bank))\b/i,
+    description: 'instructs the person to withdraw cash from the bank — only a red line in combination with another critical signal, since alone it has legitimate uses',
+  },
 ];
 
 /**

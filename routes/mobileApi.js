@@ -374,6 +374,14 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         accessUntil: subscription ? subscription.current_period_end : null,
         trialEndDate: req.entitlement.entitlement_type === "free_trial" ? req.entitlement.ends_at : null,
         manageable: !!(req.household.stripe_customer_id && subscription),
+        // The active entitlement's own source (entitlements.source —
+        // 'stripe', 'apple_revenuecat', 'admin_manual', ...), exposed so
+        // the app can send an iOS customer to the *right* place to
+        // manage billing. Not redundant with `manageable`: a household
+        // can be on iOS today but still be genuinely Stripe-billed (e.g.
+        // subscribed on the web first) — Platform.OS alone can't tell
+        // the app which portal actually applies to this membership.
+        billingSource: req.entitlement.source,
       },
       contacts: contacts.map(c => ({ id: c.id, name: c.name, number: c.number })),
       activity: recentCalls.map(toClientCall),
