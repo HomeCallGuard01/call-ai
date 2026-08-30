@@ -16,6 +16,14 @@ export type SetupStepName = (typeof SETUP_STEPS)[number];
 export interface SetupResumeState {
   isEntitled: boolean;
   contactCount: number;
+  // "Activation" is considered done once EITHER a real forwarded call was
+  // verified (the old app/(setup)/verify.tsx second-phone test,
+  // protection.activationVerifiedAt) OR the app's Voice SDK client is
+  // confirmed reachable (2026-08-30, app/(setup)/connecting.tsx,
+  // protection.voiceClientReachable) — call sites pass
+  // `!!activationVerifiedAt || voiceClientReachable` so an account
+  // verified the old way still resumes correctly, and a new account
+  // completing the new flow is recognised as done too.
   isActivationVerified: boolean;
 }
 
@@ -47,6 +55,7 @@ const STEP_BY_SCREEN: Record<string, number> = {
   "device-picker": 3,
   activate: 3,
   verify: 3,
+  connecting: 3,
 };
 
 export function stepIndexForScreen(screen: string): number | null {

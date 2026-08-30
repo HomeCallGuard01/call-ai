@@ -34,7 +34,7 @@ export default function SetupWelcome() {
         const target = resumeSetupAt({
           isEntitled: true,
           contactCount: data.contacts.length,
-          isActivationVerified: !!data.protection.activationVerifiedAt,
+          isActivationVerified: !!data.protection.activationVerifiedAt || data.protection.voiceClientReachable,
         });
         if (target.screen === "subscribe") {
           // Shouldn't happen (fetchDashboard succeeded, so entitlement

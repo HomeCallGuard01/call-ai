@@ -36,6 +36,12 @@ export interface DashboardResponse {
     twilioProvisioningStatus: TwilioProvisioningStatus;
     activationVerifiedAt: string | null;
     recentUnconfirmedCallSeen: boolean;
+    // Whether this household's Voice SDK client is currently registered
+    // and reachable (call-ai backend, services/callRouting.js's
+    // isVoiceClientReachable / migration 030) — polled by
+    // app/(setup)/connecting.tsx to confirm activation without a
+    // second-phone call test. See that screen's own header comment.
+    voiceClientReachable: boolean;
   };
   membership: {
     planName: string;

@@ -78,7 +78,7 @@ export default function Activate() {
     const subscription = AppState.addEventListener("change", nextState => {
       if (nextState === "active" && dialerOpened.current) {
         dialerOpened.current = false;
-        router.push("/(setup)/verify");
+        router.push("/(setup)/connecting");
       }
     });
     return () => subscription.remove();
@@ -183,7 +183,7 @@ export default function Activate() {
       // Landline: nothing to open on this device — the customer has
       // already dialled from their landline phone by the time they tap
       // this, so go straight to verification.
-      router.push("/(setup)/verify");
+      router.push("/(setup)/connecting");
       return;
     }
 
@@ -339,7 +339,7 @@ export default function Activate() {
           stuck on this screen unsure what to do next. */}
       {canAutoDial && (
         <Pressable
-          onPress={() => router.push("/(setup)/verify")}
+          onPress={() => router.push("/(setup)/connecting")}
           accessibilityRole="button"
           style={styles.manualVerifyLink}
         >

@@ -1,10 +1,34 @@
-// B5 — Activation verification. Per APP_VISUAL_SPECIFICATION.md/
-// APP_DECISION_003/007: the single highest-value screen in the whole
-// activation flow — replaces "did I do this right?" with a real,
-// server-checked answer instead of a static help page. Polls once on
-// arrival (a customer just came back from dialling the code — no
-// "keep checking forever" spinner needed), with a manual retry and a
-// troubleshooting panel on failure rather than a dead end.
+// B5 — Activation verification (SECOND-PHONE CALL TEST).
+//
+// NO LONGER PART OF THE NORMAL SETUP FLOW as of 2026-08-30 — Andrew's
+// explicit product decision was that a customer should never need a
+// second phone, or to call their own number and press "Try again", just
+// to activate protection. app/(setup)/activate.tsx now routes to
+// app/(setup)/connecting.tsx instead, which confirms activation via a
+// genuine Voice SDK reachability signal (no second phone, no manual
+// "check now") rather than this screen's real-inbound-call check.
+//
+// Left fully intact, not deleted — same rollback-path convention
+// server.js's /process route already documents for itself: reverting to
+// this screen is a one-line change to activate.tsx's three
+// router.push targets, not git-history archaeology. The backend it
+// calls (POST /api/v1/activation/verify, isCallWithinVerificationWindow)
+// is untouched and still real — this screen's own check (a real inbound
+// call reaching this household within the last 30 minutes) proves a
+// genuinely different fact than connecting.tsx's Voice SDK reachability
+// check does (carrier-side forwarding is actually active, vs. this
+// device's app can receive a Client-delivered call) — kept working in
+// case a future troubleshooting flow wants to offer it as a diagnostic,
+// not as the default onboarding gate.
+//
+// Original comment, describing this screen when it WAS the default flow:
+// Per APP_VISUAL_SPECIFICATION.md/APP_DECISION_003/007: the single
+// highest-value screen in the whole activation flow — replaces "did I do
+// this right?" with a real, server-checked answer instead of a static
+// help page. Polls once on arrival (a customer just came back from
+// dialling the code — no "keep checking forever" spinner needed), with a
+// manual retry and a troubleshooting panel on failure rather than a dead
+// end.
 //
 // Routes to B9 (setup complete) on success, not B6-B8 (the native
 // contact picker) — those are explicitly deferred post-launch per the

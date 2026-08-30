@@ -227,7 +227,7 @@ export default function Home() {
   const resumeTarget = resumeSetupAt({
     isEntitled: true,
     contactCount: data!.contacts.length,
-    isActivationVerified: !!data!.protection.activationVerifiedAt,
+    isActivationVerified: !!data!.protection.activationVerifiedAt || data!.protection.voiceClientReachable,
   });
   // No "subscribe" entry: `isEntitled: true` above is hardcoded, not
   // read from `data`, because `state === "ready"` is only reachable once
