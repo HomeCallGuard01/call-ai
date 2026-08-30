@@ -32,6 +32,7 @@ import {
   looksLikePhoneNumber,
   contactsStillNeedingSave,
   describeSaveFailure,
+  isEntitlementTimingIssue,
   buildSelectableContacts,
   toggleContactSelection,
 } from '../mobile/lib/contactSelection.ts';
@@ -41,6 +42,11 @@ import { canAutoOpenDialer, buildDialerUrl } from '../mobile/lib/dialerLink.ts';
 import { outcomeContent, planResendEffect } from '../mobile/lib/registrationOutcome.ts';
 import { computeProvisioningStages, shouldAutoAdvance, isProvisioningFailed, shouldShowManualRetry } from '../mobile/lib/provisioningStages.ts';
 import { resolveAuthToken } from '../mobile/lib/resolveAuthToken.ts';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let failures = 0;
 
@@ -344,6 +350,40 @@ function check(condition, message) {
     describeSaveFailure({ key: 'b', name: 'Dad', outcome: 'failed' }) === "Dad — couldn't be saved",
     'describeSaveFailure: an unexpected error falls back to a generic per-contact message'
   );
+
+  // Regression for the real bug found during Build 8 production testing
+  // (2026-08-30): both contacts showed "Nothing was saved" while the
+  // screen simultaneously still displayed both contacts and offered
+  // "Continue with 2 contacts" — traced to the "everyone failed" branch
+  // never filtering `selected` the way the "some failed" branch already
+  // did, plus a genuine 402 (entitlement not yet created — the
+  // subscription webhook hadn't landed server-side yet) being
+  // indistinguishable from a real per-contact failure.
+  const allNotEntitled = [
+    { key: 'a', name: 'Mum', outcome: 'not_entitled' },
+    { key: 'b', name: 'Dad', outcome: 'not_entitled' },
+  ];
+  check(
+    contactsStillNeedingSave(allNotEntitled).length === 2,
+    'contactsStillNeedingSave: not_entitled counts as still needing save, same as invalid/failed — never silently dropped'
+  );
+  check(
+    describeSaveFailure({ key: 'a', name: 'Mum', outcome: 'not_entitled' }) ===
+      'Mum — still finishing setting up your subscription',
+    'describeSaveFailure: not_entitled gets its own honest, non-alarming message, distinct from a genuine failure'
+  );
+  check(
+    isEntitlementTimingIssue(allNotEntitled) === true,
+    'isEntitlementTimingIssue: true when every remaining failure is the entitlement-timing race'
+  );
+  check(
+    isEntitlementTimingIssue([{ key: 'a', name: 'Mum', outcome: 'not_entitled' }, { key: 'b', name: 'Dad', outcome: 'failed' }]) === false,
+    'isEntitlementTimingIssue: false as soon as any remaining failure is a genuine one, not just entitlement timing'
+  );
+  check(
+    isEntitlementTimingIssue([]) === false,
+    'isEntitlementTimingIssue: false for an empty list — nothing failed, so there is no "issue" to describe'
+  );
 }
 
 // --- Onboarding redesign: setup resume/progress logic ---
@@ -536,6 +576,35 @@ function check(condition, message) {
   check(
     resolveAuthToken('', 'fallback-token') === 'fallback-token',
     'resolveAuthToken: an empty-string explicit token is not treated as "provided" — falls back to the session token rather than sending an empty Authorization header'
+  );
+}
+
+// --- Static structure check: contacts.tsx's "everyone failed" branch ---
+// (2026-08-30 fix — see the isEntitlementTimingIssue checks above for the
+// pure-logic half of this same fix)
+
+{
+  const contactsSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'app', '(setup)', 'contacts.tsx'),
+    'utf8'
+  );
+
+  check(
+    contactsSource.includes('NotEntitledError'),
+    'contacts.tsx recognises NotEntitledError specifically, rather than treating a not-yet-entitled 402 as a generic failure'
+  );
+
+  const setSelectedCallCount = (contactsSource.match(/setSelected\(prev => prev\.filter\(/g) || []).length;
+  check(
+    setSelectedCallCount === 1,
+    `setSelected(...filter...) is called from exactly one place (found ${setSelectedCallCount}) — a single, unconditional filter that always runs before any error message is chosen, so the "everyone failed" case can never again skip it the way the original bug did`
+  );
+
+  const nothingWasSavedIndex = contactsSource.indexOf('Nothing was saved');
+  const setSelectedIndex = contactsSource.indexOf('setSelected(prev => prev.filter(');
+  check(
+    nothingWasSavedIndex !== -1 && setSelectedIndex !== -1 && setSelectedIndex < nothingWasSavedIndex,
+    '`selected` is filtered down to what still needs saving BEFORE the "Nothing was saved" message is ever chosen, not after — so the visible contact list and button label can never disagree with the error shown'
   );
 }
 

@@ -64,7 +64,18 @@ export function looksLikePhoneNumber(value: string): boolean {
 // name-prefix string matching, which misclassifies contacts where one
 // name is a prefix of another (e.g. "Jo" and "Jo Smith" both produce
 // failure messages starting with "Jo").
-export type SaveOutcome = "saved" | "duplicate" | "invalid" | "failed";
+// "not_entitled" (2026-08-30): the batch save hit a 402 from
+// POST /api/v1/contacts — a customer can genuinely reach this screen
+// before the subscription webhook (RevenueCat/Stripe) has created their
+// entitlement server-side yet. subscribe.tsx's own handleSubscribeIOS
+// comment documents this exact race and proceeds past Confirmation after
+// a bounded retry regardless of whether the webhook has landed, so this
+// is an expected, recoverable state here, not a genuine per-contact
+// problem — kept distinct from "failed" so the UI can say something
+// honest ("still finishing setting up your subscription") instead of an
+// alarming "couldn't be saved" for something that was never wrong with
+// what the customer entered.
+export type SaveOutcome = "saved" | "duplicate" | "invalid" | "not_entitled" | "failed";
 
 export interface SaveResult {
   key: string;
@@ -76,17 +87,31 @@ export interface SaveResult {
 // after a batch attempt. A "duplicate" result means the contact is
 // already genuinely trusted server-side under a different action — that
 // is a real, complete outcome, not a failure to retry, so it's removed
-// from the list exactly like a fresh save success. Only genuine failures
-// (invalid input, or an unexpected error) stay, so the customer can see
-// and retry exactly what didn't work — never a contact that's already
-// safely saved either way.
+// from the list exactly like a fresh save success. Genuine failures
+// (invalid input, an unexpected error, or a not-yet-entitled account)
+// stay, so the customer can see and retry exactly what didn't work —
+// never a contact that's already safely saved either way.
 export function contactsStillNeedingSave(results: SaveResult[]): string[] {
-  return results.filter(r => r.outcome === "invalid" || r.outcome === "failed").map(r => r.key);
+  return results
+    .filter(r => r.outcome === "invalid" || r.outcome === "failed" || r.outcome === "not_entitled")
+    .map(r => r.key);
 }
 
 export function describeSaveFailure(result: SaveResult): string {
   if (result.outcome === "invalid") return `${result.name} — that number doesn't look right`;
+  if (result.outcome === "not_entitled") return `${result.name} — still finishing setting up your subscription`;
   return `${result.name} — couldn't be saved`;
+}
+
+// True when every remaining failure is purely the entitlement-timing race
+// described above, never a real per-contact problem — used to choose
+// reassuring, accurate wording ("still finishing setting up your
+// subscription, try again in a moment") instead of an alarming "Nothing
+// was saved" / "couldn't be saved" when nothing the customer entered was
+// actually wrong. False for an empty list — there is no "issue" to
+// describe when nothing failed.
+export function isEntitlementTimingIssue(results: SaveResult[]): boolean {
+  return results.length > 0 && results.every(r => r.outcome === "not_entitled");
 }
 
 // --- Multi-select "Choose from my iPhone/Android contacts" (2026-08-08) ---

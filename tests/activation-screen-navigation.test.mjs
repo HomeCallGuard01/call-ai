@@ -151,5 +151,30 @@ check(
   'the activation screen persists which device/provider was used, so the cancel code stays reachable after setup (Account tab) rather than only existing on this one-time screen'
 );
 
+// --- Entitlement-timing race (2026-08-30, found during Build 8 production
+// testing): "We couldn't load your activation code" was shown for a
+// customer who had genuinely subscribed but whose entitlement hadn't
+// landed server-side yet — a 402 not_entitled, indistinguishable from a
+// real failure before this fix. Reuses the existing notProvisioned
+// state/polling machinery rather than adding a second, near-identical one. ---
+
+check(
+  source.includes('NotEntitledError') && source.includes('err instanceof NotEntitledError'),
+  'the screen recognises NotEntitledError as its own case, not a generic error'
+);
+
+const notEntitledIndex = source.indexOf('err instanceof NotEntitledError');
+const setNotProvisionedCalls = source.match(/setNotProvisioned\(true\)/g) || [];
+check(
+  notEntitledIndex !== -1 && setNotProvisionedCalls.length === 2,
+  `NotEntitledError reuses the same setNotProvisioned(true) state as not_provisioned, rather than introducing a separate screen (found ${setNotProvisionedCalls.length} call(s) to setNotProvisioned(true), expected 2: one for not_provisioned, one for NotEntitledError)`
+);
+
+const genericErrorIndex = source.indexOf('We couldn\'t load your activation code');
+check(
+  notEntitledIndex !== -1 && genericErrorIndex !== -1 && notEntitledIndex < genericErrorIndex,
+  'the NotEntitledError check is placed before the generic fallback error, so it actually intercepts this case rather than the fallback firing first'
+);
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;
