@@ -24,7 +24,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { TextField } from "../../components/TextField";
 import { SetupProgress } from "../../components/SetupProgress";
-import { addContact, ApiError } from "../../lib/api";
+import { addContact, ApiError, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import {
   addPickedContact,
@@ -33,6 +33,7 @@ import {
   looksLikePhoneNumber,
   contactsStillNeedingSave,
   describeSaveFailure,
+  isEntitlementTimingIssue,
   type PickedContact,
   type SaveResult,
 } from "../../lib/contactSelection";
@@ -168,6 +169,12 @@ export default function SetupContacts() {
           await addContact(contact.name, contact.number, session?.access_token);
           return { key: contact.key, name: contact.name, outcome: "saved" };
         } catch (err) {
+          if (err instanceof NotEntitledError) {
+            // Genuine, expected race: the subscription webhook hasn't
+            // landed server-side yet — see lib/contactSelection.ts's own
+            // comment on "not_entitled". Not a real per-contact problem.
+            return { key: contact.key, name: contact.name, outcome: "not_entitled" };
+          }
           if (err instanceof ApiError && err.code === "duplicate") {
             // Already trusted server-side under a separate action — a
             // complete outcome, not a failure to retry.
@@ -189,15 +196,34 @@ export default function SetupContacts() {
       router.push("/(setup)/device-picker");
       return;
     }
-    if (stillNeedsSaveKeys.length === selected.length) {
-      const messages = results.filter(r => stillNeedsSaveKeys.includes(r.key)).map(describeSaveFailure);
-      setError(`Nothing was saved:\n${messages.join("\n")}`);
-      return;
-    }
+
+    // Fixed 2026-08-30: this used to only run in the "some, but not all,
+    // failed" case, leaving `selected` (and therefore the visible contact
+    // list and the "Continue with N contacts" button label) completely
+    // unchanged whenever EVERY contact failed — showing "Nothing was
+    // saved" while still displaying all N contacts and offering to
+    // continue with them, as if nothing had gone wrong. Filtering
+    // unconditionally, before choosing which message to show, means the
+    // visible state always matches what actually still needs saving,
+    // regardless of how many contacts failed.
     const stillNeedsSave = new Set(stillNeedsSaveKeys);
-    const messages = results.filter(r => stillNeedsSave.has(r.key)).map(describeSaveFailure);
     setSelected(prev => prev.filter(c => stillNeedsSave.has(c.key)));
-    setError(`Some contacts couldn't be saved:\n${messages.join("\n")}`);
+
+    const failingResults = results.filter(r => stillNeedsSave.has(r.key));
+    const messages = failingResults.map(describeSaveFailure);
+
+    if (isEntitlementTimingIssue(failingResults)) {
+      // Every remaining failure is the entitlement-timing race, not a
+      // real problem with what was entered — reassuring wording, and the
+      // contacts stay selected (already true via `selected` above) so a
+      // simple retry a moment later, with no re-picking, is all that's
+      // needed once the subscription webhook lands.
+      setError(`Still finishing setting up your subscription — try again in a moment:\n${messages.join("\n")}`);
+    } else if (stillNeedsSaveKeys.length === selected.length) {
+      setError(`Nothing was saved:\n${messages.join("\n")}`);
+    } else {
+      setError(`Some contacts couldn't be saved:\n${messages.join("\n")}`);
+    }
   }
 
   function handleSkip() {

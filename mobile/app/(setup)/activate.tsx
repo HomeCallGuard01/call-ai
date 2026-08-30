@@ -27,7 +27,7 @@ import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
-import { fetchActivationInstructions, fetchDashboard, ApiError } from "../../lib/api";
+import { fetchActivationInstructions, fetchDashboard, ApiError, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
 import { saveActivationDevice } from "../../lib/activationDeviceStorage";
@@ -118,6 +118,25 @@ export default function Activate() {
           // started and no indication anything happened. Showing this
           // state in place, with its own retry, fixes that without
           // touching resumeSetupAt's unrelated logic.
+          setNotProvisioned(true);
+          return;
+        }
+        if (err instanceof NotEntitledError) {
+          // Fixed 2026-08-30 (found during Build 8 production testing):
+          // a customer can genuinely reach this screen before the
+          // subscription webhook has created their entitlement server-
+          // side yet — subscribe.tsx's own handleSubscribeIOS comment
+          // documents this exact race and proceeds past Confirmation
+          // after a bounded retry regardless. Entitlement always
+          // precedes Twilio number provisioning (the webhook that grants
+          // one triggers the other), so this is strictly earlier in the
+          // same wait the notProvisioned state below already handles —
+          // reusing it, rather than adding a second near-identical
+          // screen, means the exact same polling/auto-advance/manual-
+          // retry machinery covers both without duplicating it. Once the
+          // webhook lands, twilioProvisioningStatus flips to "active",
+          // shouldAutoAdvance fires, and this same load() naturally
+          // succeeds now that both entitlement and number exist.
           setNotProvisioned(true);
           return;
         }

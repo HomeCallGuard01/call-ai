@@ -254,7 +254,15 @@ export async function fetchActivationInstructions(
   if (protectedNumber) params.set("protectedNumber", protectedNumber);
 
   const response = await authorizedFetch(`/api/v1/activation/instructions?${params.toString()}`, {}, accessToken);
-  return parseJsonOrThrow<ActivationInstructionsResponse>(response);
+  // allow402: this route is requireEntitlement-gated, and a customer can
+  // genuinely reach B4 before RevenueCat/Stripe's webhook has landed
+  // server-side (subscribe.tsx's own handleSubscribeIOS comment documents
+  // this exact race, and proceeds past Confirmation after a bounded
+  // retry regardless). Without this flag a still-pending entitlement
+  // surfaced as an indistinguishable generic ApiError, which
+  // activate.tsx's caller previously had no way to tell apart from a
+  // real failure — see that screen's own NotEntitledError handling.
+  return parseJsonOrThrow<ActivationInstructionsResponse>(response, true);
 }
 
 export async function addContact(name: string, number: string, accessToken?: string): Promise<ContactResponse> {
@@ -266,7 +274,12 @@ export async function addContact(name: string, number: string, accessToken?: str
     },
     accessToken
   );
-  return parseJsonOrThrow<ContactResponse>(response);
+  // allow402: same entitlement-timing race as fetchActivationInstructions
+  // above — a customer reaching B3 (Trusted Contacts) before the
+  // subscription webhook has landed server-side gets a genuine, expected
+  // 402 here, not a real per-contact failure. See
+  // app/(setup)/contacts.tsx's handleContinue for how this is surfaced.
+  return parseJsonOrThrow<ContactResponse>(response, true);
 }
 
 // POST /api/v1/contacts/sync — one request for the whole device contact
