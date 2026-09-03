@@ -1417,6 +1417,43 @@ app.post("/reset-password-complete", async (req, res) => {
   return res.json({ ok: true });
 });
 
+// AUTH: RESET PASSWORD VERIFY (confirm-gated token_hash flow)
+//
+// Separate from /reset-password-complete above: this only exchanges a
+// still-unconsumed recovery token_hash (query param, arrives directly at
+// reset-password.html rather than through GoTrue's auto-consuming
+// /verify redirect) for a session, in response to that page's explicit
+// "Continue to reset password" button click — never on page load. See
+// public/reset-password.html's own parseRecoveryLink/"confirm" mode.
+// Establishes a session but does not itself set cookies or touch the
+// password; the client still calls the existing /reset-password-complete
+// with the returned tokens for that, unchanged.
+app.post("/reset-password-verify", express.json(), async (req, res) => {
+  const { token_hash, type } = req.body || {};
+
+  if (!token_hash || type !== "recovery") {
+    return res.status(400).json({ error: "invalid" });
+  }
+
+  // Fresh, per-request client — same reasoning as /reset-password-complete:
+  // this token belongs to one specific user and must never touch the
+  // shared `supabase` instance above.
+  const verifyClient = buildUserScopedClient();
+
+  const { data, error } = await verifyClient.auth.verifyOtp({ token_hash, type: "recovery" });
+
+  if (error || !data?.session) {
+    console.error("SUPABASE RESET TOKEN VERIFY ERROR:", error ? error.message : "no session returned");
+    return res.status(400).json({ error: "invalid" });
+  }
+
+  return res.json({
+    ok: true,
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+  });
+});
+
 // PAGES
 
 app.get("/", (req, res) => {
