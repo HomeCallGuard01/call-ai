@@ -50,7 +50,12 @@ async function fetchUsageTotalGbp(client, { startDate, endDate }) {
   const relevant = records.filter((r) =>
     ['calls-inbound', 'calls-outbound', 'phonenumbers', 'sms', 'sms-outbound', 'sms-inbound', 'trunking-termination', 'trunking-origination'].includes(category(r))
   );
-  return { totalGbp: sumUsageRecordsGbp(relevant), byCategory: relevant.map((r) => ({ category: r.category, usage: r.usage, usageUnit: r.usage_unit, priceGbp: Number(r.price) || 0 })) };
+  // Bug fix (2026-09): the Twilio Node SDK returns this field as
+  // `usageUnit` (camelCase) — confirmed directly against a real API
+  // response — not `usage_unit`. The wrong name was always undefined;
+  // never affected the actual £ total (sumUsageRecordsGbp reads `price`
+  // separately), only this display-only field.
+  return { totalGbp: sumUsageRecordsGbp(relevant), byCategory: relevant.map((r) => ({ category: r.category, usage: r.usage, usageUnit: r.usageUnit, priceGbp: Number(r.price) || 0 })) };
 }
 
 // Real Twilio account snapshot: balance, number count, and today/MTD
@@ -82,4 +87,4 @@ async function getTwilioAccountSnapshot({ client = twilioRestClient } = {}) {
   }
 }
 
-module.exports = { getTwilioAccountSnapshot, sumUsageRecordsGbp, startOfTodayIso, startOfMonthIso };
+module.exports = { getTwilioAccountSnapshot, sumUsageRecordsGbp, fetchUsageTotalGbp, startOfTodayIso, startOfMonthIso };
