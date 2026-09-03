@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Call Guard — Business Dashboard</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, sans-serif; background: #0b1220; color: white; font-size: 15px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 32px; background: #030712; border-bottom: 1px solid #1e293b; }
+  .topbar-title { font-size: 19px; font-weight: 700; }
+  .admin-badge { background: #0e7490; color: #cffafe; font-size: 11px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid #22d3ee; }
+  .topbar-link { color: #93a3b8; text-decoration: none; font-size: 13px; padding: 8px 14px; border: 1px solid #1e293b; border-radius: 6px; }
+  .topbar-link:hover { color: #e2e8f0; border-color: #334155; }
+  .main { padding: 28px 32px 48px; max-width: 1480px; margin: 0 auto; }
+  h2 { margin: 0; font-size: 16px; color: #e2e8f0; }
+  h3 { margin: 0 0 10px; font-size: 13px; color: #7dd3fc; text-transform: uppercase; letter-spacing: 0.5px; }
+  .section { margin-bottom: 30px; }
+  .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #1e293b; }
+  .last-updated { font-size: 12px; color: #64748b; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+  .card { background: #111a2e; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; }
+  .card .label { font-size: 11.5px; color: #93a3b8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+  .card .value { font-size: 24px; font-weight: 700; color: #e2e8f0; }
+  .card .sub { font-size: 11.5px; color: #64748b; margin-top: 4px; }
+  .card .est { color: #fbbf24; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+  th { color: #93a3b8; font-weight: 600; font-size: 11.5px; text-transform: uppercase; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .badge-GREEN { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+  .badge-AMBER { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
+  .badge-RED { background: #450a0a; color: #fca5a5; border: 1px solid #ef4444; }
+  .gaps { background: #1c1608; border: 1px solid #78350f; border-radius: 8px; padding: 14px 18px; font-size: 13px; color: #fbbf24; }
+  .gaps li { margin-bottom: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .loading, .error { color: #93a3b8; padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title-row" style="display:flex;align-items:center;gap:10px;">
+    <span class="topbar-title">Home Call Guard</span>
+    <span class="admin-badge">Business</span>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <a class="topbar-link" href="/admin">Operations dashboard</a>
+    <a class="topbar-link" href="#" onclick="load();return false;">Refresh</a>
+  </div>
+</div>
+
+<div class="main" id="app">
+  <div class="loading">Loading…</div>
+</div>
+
+<script>
+function fmtGbp(n) {
+  if (n === null || n === undefined) return '—';
+  return '£' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtNum(n) { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('en-GB'); }
+function badge(status) { return '<span class="badge badge-' + status + '">' + status + '</span>'; }
+function card(label, value, sub, isEstimate) {
+  return '<div class="card"><div class="label">' + label + '</div><div class="value' + (isEstimate ? ' est' : '') + '">' + value + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
+}
+
+async function load() {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const res = await fetch('/admin/api/business/overview', { credentials: 'include' });
+    if (res.status === 403 || res.status === 302) { app.innerHTML = '<div class="error">Not authorized.</div>'; return; }
+    if (!res.ok) { app.innerHTML = '<div class="error">Failed to load (' + res.status + ')</div>'; return; }
+    const d = await res.json();
+    render(d);
+  } catch (err) {
+    app.innerHTML = '<div class="error">Failed to load: ' + err.message + '</div>';
+  }
+}
+
+function render(d) {
+  const app = document.getElementById('app');
+  let html = '';
+
+  html += '<div class="section-header"><h2>System Health — ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Last updated ' + new Date(d.generatedAt).toLocaleString('en-GB') + '</span></div>';
+  html += '<div class="section"><table><tr><th>Component</th><th>Status</th><th>Detail</th></tr>';
+  for (const [name, c] of Object.entries(d.systemHealth.components)) {
+    html += '<tr><td>' + name + '</td><td>' + badge(c.status) + '</td><td style="color:#93a3b8;">' + c.reason + '</td></tr>';
+  }
+  html += '</table></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Customers</h2></div><div class="cards">';
+  html += card('Total customers', fmtNum(d.customers.totalCustomers));
+  html += card('Active protected', fmtNum(d.customers.activeProtectedHouseholds));
+  html += card('Active entitlements', fmtNum(d.customers.activeEntitlements));
+  html += card('New today', fmtNum(d.customers.newCustomersToday));
+  html += card('New this week', fmtNum(d.customers.newCustomersThisWeek));
+  html += card('Payment-issue', fmtNum(d.customers.paymentIssueCustomers));
+  html += card('Cancelled', fmtNum(d.customers.cancelledCustomers));
+  html += card('Apple-billed active', fmtNum(d.customers.activeAppleEntitlements));
+  html += '</div></div>';
+
+  const rev = d.revenue, cost = d.costs, profit = d.profitability;
+  html += '<div class="section"><div class="section-header"><h2>Revenue (MTD)</h2></div><div class="cards">';
+  html += card('Stripe gross MTD', rev.stripe.available ? fmtGbp(rev.stripe.grossRevenueMtdGbp) : 'unavailable');
+  html += card('Stripe fees MTD', rev.stripe.available ? fmtGbp(rev.stripe.stripeFeesMtdGbp) : 'unavailable');
+  html += card('Apple gross MTD (est.)', fmtGbp(rev.apple.grossRevenueEstimateGbp), rev.apple.note, true);
+  html += card('MRR', rev.mrr.available ? fmtGbp(rev.mrr.amount) : 'unavailable');
+  html += card('VAT rate', (rev.vatRate * 100).toFixed(0) + '%');
+  html += '</div></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Costs</h2></div><div class="cards">';
+  html += card('Twilio spend today', cost.twilio.available ? fmtGbp(cost.twilio.spendTodayGbp) : 'unavailable');
+  html += card('Twilio spend MTD', cost.twilio.available ? fmtGbp(cost.twilio.spendMtdGbp) : 'unavailable');
+  html += card('Twilio numbers', cost.twilio.available ? fmtNum(cost.twilio.numberCount) : '—');
+  html += card('Twilio balance', cost.twilio.available ? (cost.twilio.balance.amount + ' ' + cost.twilio.balance.currency) : 'unavailable');
+  html += card('OpenAI cost today (est.)', fmtGbp(cost.openai.today.estimatedCostGbp), 'assumes ' + cost.openai.today.assumedAvgMinutesPerCall + ' min/call', true);
+  html += card('OpenAI cost MTD (est.)', fmtGbp(cost.openai.monthToDate.estimatedCostGbp), null, true);
+  html += card('Railway (fixed)', fmtGbp(cost.fixedMonthlyCostsGbp.railway) + '/mo');
+  html += card('Supabase (fixed)', fmtGbp(cost.fixedMonthlyCostsGbp.supabase) + '/mo');
+  html += card('Resend (fixed)', fmtGbp(cost.fixedMonthlyCostsGbp.resend) + '/mo');
+  html += '</div></div>';
+
+  if (profit.monthToDate) {
+    const p = profit.monthToDate;
+    html += '<div class="section"><div class="section-header"><h2>Profitability (MTD)</h2></div><div class="cards">';
+    html += card('Net revenue ex-VAT', fmtGbp(p.revenue.netRevenueExVatGbp));
+    html += card('Total variable costs', fmtGbp(p.costs.totalVariableCostsGbp));
+    html += card('Fixed costs', fmtGbp(p.costs.fixedMonthlyCostsGbp));
+    html += card('Contribution', fmtGbp(p.profit.contributionGbp));
+    html += card('Operating profit', fmtGbp(p.profit.operatingProfitGbp));
+    html += card('Gross margin', p.profit.grossMarginPercent !== null ? p.profit.grossMarginPercent + '%' : '—');
+    html += card('Avg revenue/customer', fmtGbp(p.perCustomer.avgRevenuePerCustomerGbp));
+    html += card('Avg cost/customer', fmtGbp(p.perCustomer.avgVariableCostPerCustomerGbp));
+    html += card('Avg contribution/customer', fmtGbp(p.perCustomer.avgContributionPerCustomerGbp));
+    html += card('Break-even monitored min/customer', fmtNum(profit.breakEvenMonitoredMinutesPerCustomer), 'estimate', true);
+    html += '</div></div>';
+  } else {
+    html += '<div class="section"><div class="error">Profitability unavailable — Stripe data could not be retrieved.</div></div>';
+  }
+
+  const cs = d.callStats;
+  html += '<div class="grid2"><div class="section"><div class="section-header"><h2>Calls today</h2></div>' + callStatsTable(cs.today) + '</div>';
+  html += '<div class="section"><div class="section-header"><h2>Calls MTD</h2></div>' + callStatsTable(cs.monthToDate) + '</div></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Fair use — top Unknown-caller volume this month (count-based proxy, not £)</h2></div>';
+  html += '<table><tr><th>Household</th><th>Unknown calls (MTD)</th><th>Tier</th></tr>';
+  for (const h of d.fairUse.households) {
+    const tierBadge = h.tier === 'over_hard_threshold' ? badge('RED') : h.tier === 'approaching_threshold' ? badge('AMBER') : badge('GREEN');
+    html += '<tr><td>' + (h.email || h.householdId) + '</td><td>' + h.unknownCallCount + '</td><td>' + tierBadge + ' ' + h.tier + '</td></tr>';
+  }
+  if (d.fairUse.households.length === 0) html += '<tr><td colspan="3" style="color:#64748b;">No Unknown-caller calls recorded this month.</td></tr>';
+  html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Production release</h2></div><div class="cards">';
+  html += card('Backend commit', d.release.backend.gitCommitSha || 'UNCONFIRMED', d.release.backend.note);
+  html += card('Backend branch', d.release.backend.gitBranch || 'UNCONFIRMED');
+  html += card('Environment', d.release.backend.environmentName);
+  html += card('Android version', d.release.mobile.android.appVersion + ' (build ' + d.release.mobile.android.versionCode + ')', d.release.mobile.android.confidence);
+  html += card('iOS version', d.release.mobile.ios.appVersion + ' (build ' + d.release.mobile.ios.buildNumber + ')', d.release.mobile.ios.confidence);
+  html += '</div></div>';
+
+  html += '<div class="section"><h3>Known gaps in this dashboard (not faked)</h3><div class="gaps"><ul>';
+  for (const g of d.knownGaps) html += '<li>' + g + '</li>';
+  html += '</ul></div></div>';
+
+  app.innerHTML = html;
+}
+
+function callStatsTable(cs) {
+  if (!cs.available) return '<div class="error">Unavailable: ' + cs.reason + '</div>';
+  return '<table>' +
+    row('Total calls', cs.totalCalls) +
+    row('Known contact', cs.knownContactCalls) +
+    row('Unknown monitored', cs.unknownMonitoredCalls) +
+    row('Safe', cs.safeCalls) +
+    row('Suspicious', cs.suspiciousCalls) +
+    row('High risk', cs.highRiskCalls) +
+    row('Warnings sent', cs.warningsSent) +
+    row('Terminated by HCG', cs.callsTerminatedByHcg) +
+    row('Avg risk score', cs.averageRiskScore) +
+    '</table>';
+}
+function row(label, value) { return '<tr><td>' + label + '</td><td>' + fmtNum(value) + '</td></tr>'; }
+
+load();
+</script>
+</body>
+</html>
