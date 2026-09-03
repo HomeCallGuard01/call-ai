@@ -114,6 +114,14 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
     const fixedMonthlyCosts = resolveFixedMonthlyCostsGbp();
     const fixedCostsTotalGbp = fixedMonthlyCosts.railway + fixedMonthlyCosts.supabase + fixedMonthlyCosts.resend;
     const vatRate = resolveVatRate();
+    // Bug fix (2026-09): database/adminMetrics.js's computeBusinessOverview
+    // returns activePaidCustomers, not activeEntitlements — confirmed by
+    // running this exact code against real production data, which
+    // surfaced this immediately (activeEntitlements was always undefined,
+    // silently falling back to 0 in every `|| 0` below). One local
+    // variable, used everywhere below, so this can't drift out of sync
+    // across the five places this count is needed again.
+    const activePaidCustomerCount = businessOverview.activePaidCustomers || 0;
 
     const profitabilityMtd = stripeRevenue.available
       ? computeProfitabilitySnapshot({
@@ -124,7 +132,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
           openaiCostEstimateGbp: openaiEstimateMtd.estimatedCostGbp,
           fixedMonthlyCostsGbp: fixedCostsTotalGbp,
           vatRateAppliedToGross: vatRate,
-          activeCustomerCount: businessOverview.activeEntitlements || 0,
+          activeCustomerCount: activePaidCustomerCount,
         })
       : null;
 
@@ -137,7 +145,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
           openaiCostEstimateGbp: openaiEstimateToday.estimatedCostGbp,
           fixedMonthlyCostsGbp: 0, // fixed costs are not meaningfully allocable to "today" — MTD figure only
           vatRateAppliedToGross: vatRate,
-          activeCustomerCount: businessOverview.activeEntitlements || 0,
+          activeCustomerCount: activePaidCustomerCount,
         })
       : null;
 
@@ -151,7 +159,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       profitabilityMtd && costPerMonitoredMinuteGbp
         ? computeBreakEvenMonitoredMinutes({
             netRevenuePerCustomerGbp: netOfVat(priceGbp, process.env).netAmount,
-            fixedCostPerCustomerGbp: businessOverview.activeEntitlements > 0 ? fixedCostsTotalGbp / businessOverview.activeEntitlements : fixedCostsTotalGbp,
+            fixedCostPerCustomerGbp: activePaidCustomerCount > 0 ? fixedCostsTotalGbp / activePaidCustomerCount : fixedCostsTotalGbp,
             costPerMonitoredMinuteGbp,
           })
         : null;
@@ -164,7 +172,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       customers: {
         totalCustomers: businessOverview.totalCustomers,
         activeProtectedHouseholds: businessOverview.activeProtectedHouseholds,
-        activeEntitlements: businessOverview.activeEntitlements,
+        activeEntitlements: activePaidCustomerCount,
         newCustomersToday: businessOverview.newCustomersToday,
         newCustomersThisWeek: businessOverview.newCustomersThisWeek,
         paymentIssueCustomers: businessOverview.failedPayments,

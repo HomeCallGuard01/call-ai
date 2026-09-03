@@ -7,6 +7,18 @@
 // Run with: node tests/business-metrics.test.mjs
 
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+
+// database/adminMetrics.js (required below, for the Bug 1/Bug 2
+// regressions) transitively requires services/supabaseClients.js, whose
+// plain (non-admin) client is constructed unconditionally and throws
+// synchronously if SUPABASE_URL is unset — a pre-existing quirk of that
+// shared file, unrelated to this test. A syntactically-valid but unused
+// dummy value avoids that crash without touching any real configuration;
+// SUPABASE_SERVICE_ROLE_KEY is deliberately left unset so every actual
+// database call in this test run still fails open, exactly as intended.
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://dummy-test.supabase.co';
+process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'dummy';
 
 const require = createRequire(import.meta.url);
 
@@ -28,8 +40,21 @@ const {
 } = require('../services/businessMetrics/systemHealth.js');
 const { computeProfitabilitySnapshot, computeBreakEvenMonitoredMinutes } = require('../services/businessMetrics/profitability.js');
 const { classifyFairUseTier, classifyHouseholds } = require('../services/businessMetrics/fairUse.js');
-const { sumUsageRecordsGbp } = require('../services/businessMetrics/twilioCosts.js');
+const { sumUsageRecordsGbp, fetchUsageTotalGbp } = require('../services/businessMetrics/twilioCosts.js');
 const { getBackendReleaseInfo } = require('../services/businessMetrics/releaseInfo.js');
+
+// Regression tests below import the REAL database/adminMetrics.js and
+// call its REAL exported functions with representative inputs — not a
+// hand-built fake shaped to whatever routes/adminBusiness.js assumed.
+// This is deliberate: the original bugs (missing export, wrong field
+// name) both slipped past this file's earlier tests precisely because
+// those tests only exercised business-metrics functions in isolation
+// with self-consistent fake data, never the actual shape
+// database/adminMetrics.js really produces. Found instead by running
+// the real code against real production data (2026-09-03) — see
+// routes/adminBusiness.js's own comment on the fix.
+const adminMetrics = require('../database/adminMetrics.js');
+const routeSourceForRegressionChecks = readFileSync(new URL('../routes/adminBusiness.js', import.meta.url), 'utf8');
 
 let failures = 0;
 function check(condition, message) {
@@ -209,6 +234,83 @@ check(sumUsageRecordsGbp(null) === 0, 'sumUsageRecordsGbp never throws on a null
 {
   const info = getBackendReleaseInfo({ RAILWAY_GIT_COMMIT_SHA: 'abc123', RAILWAY_GIT_BRANCH: 'main' });
   check(info.gitCommitSha === 'abc123' && info.gitCommitShaConfirmed === true, 'getBackendReleaseInfo reads real Railway-injected values when present');
+}
+
+// --- Regression: Bug 1 (2026-09-03) — database/adminMetrics.js defined
+// getSubscriptionPrice but never added it to module.exports.
+// routes/adminBusiness.js imported it as undefined and called it inside
+// Promise.all, throwing "getSubscriptionPrice is not a function" on
+// every real request — confirmed by running the merged code against
+// real production data. Caught here by importing the REAL module and
+// checking its REAL export shape, not a hand-built fake. ---
+
+check(
+  typeof adminMetrics.getSubscriptionPrice === 'function',
+  'REGRESSION (Bug 1): database/adminMetrics.js exports getSubscriptionPrice as a callable function — routes/adminBusiness.js depends on this exact export existing'
+);
+
+// --- Regression: Bug 2 (2026-09-03) — computeBusinessOverview's real
+// return shape uses `activePaidCustomers`; routes/adminBusiness.js read
+// `activeEntitlements`, which doesn't exist on the real object and
+// silently evaluated to `undefined` (masked behind `|| 0` in most
+// places, producing wrong £0/customer figures rather than an error).
+// Two checks: the REAL pure function's REAL shape, and that the route's
+// own source no longer references the wrong name anywhere. ---
+
+{
+  const overview = adminMetrics.computeBusinessOverview({
+    totalCustomers: 10,
+    activeProtectedHouseholds: 5,
+    newCustomersToday: 1,
+    newCustomersThisWeek: 2,
+    activeEntitlements: 4, // the function's own PARAMETER name — deliberately still called this internally; only the RETURNED field name changed, which is exactly what caused the bug
+    failedPayments: 0,
+    canceled: 1,
+    price: { unitAmount: 499, currency: 'gbp' },
+  });
+  check(
+    overview.activePaidCustomers === 4,
+    'REGRESSION (Bug 2): computeBusinessOverview\'s real returned shape uses activePaidCustomers — this is the field name any consumer must read'
+  );
+  check(
+    !('activeEntitlements' in overview),
+    'REGRESSION (Bug 2): computeBusinessOverview\'s returned object has no activeEntitlements field at all — reading it silently returns undefined, exactly the failure mode that shipped'
+  );
+}
+
+check(
+  !routeSourceForRegressionChecks.includes('businessOverview.activeEntitlements'),
+  'REGRESSION (Bug 2): routes/adminBusiness.js never reads businessOverview.activeEntitlements anywhere in its source — the fix replaced every occurrence with the real activePaidCustomers field'
+);
+check(
+  routeSourceForRegressionChecks.includes('businessOverview.activePaidCustomers'),
+  'REGRESSION (Bug 2): routes/adminBusiness.js reads the real activePaidCustomers field from database/adminMetrics.js\'s actual output'
+);
+
+// --- Regression: Bug 3 (2026-09-03, cosmetic) — the Twilio Node SDK
+// returns usage records with a camelCase `usageUnit` field (confirmed
+// directly against a real API response); the code read `usage_unit`
+// (snake_case), always undefined. Never affected the £ total
+// (sumUsageRecordsGbp reads `price` separately) — display-only. Tested
+// here via fetchUsageTotalGbp with a fake client shaped exactly like the
+// real SDK's actual field casing, not a self-consistent fake using
+// whatever casing the code happened to expect. ---
+
+{
+  const fakeClient = {
+    usage: {
+      records: {
+        list: async () => [
+          { category: 'calls-inbound', usage: '10', usageUnit: 'minutes', price: '-0.076' },
+        ],
+      },
+    },
+  };
+  const result = await fetchUsageTotalGbp(fakeClient, { startDate: new Date(), endDate: new Date() });
+  check(
+    result.byCategory[0].usageUnit === 'minutes',
+    `REGRESSION (Bug 3): fetchUsageTotalGbp correctly reads the real SDK's camelCase usageUnit field (got ${JSON.stringify(result.byCategory[0].usageUnit)})`
+  );
 }
 
 console.log(failures === 0 ? '\nAll business-metrics checks passed.' : `\n${failures} check(s) failed.`);

@@ -519,6 +519,7 @@ async function searchCustomers(query) {
 }
 
 module.exports = {
+  getSubscriptionPrice,
   mergeCustomerActivity,
   getRecentCustomerActivity,
   deriveMembershipStatus,
