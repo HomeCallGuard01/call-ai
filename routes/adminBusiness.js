@@ -27,10 +27,16 @@ const { getTwilioAccountSnapshot } = require("../services/businessMetrics/twilio
 const { estimateOpenAiCostGbp, isOpenAiKeyConfigured } = require("../services/businessMetrics/openaiCosts");
 const { getCallStatsToday, getCallStatsMtd, getTopUnknownCallHouseholdsMtd } = require("../services/businessMetrics/callStats");
 const { getSystemHealthSnapshot } = require("../services/businessMetrics/systemHealth");
-const { computeProfitabilitySnapshot, computeBreakEvenMonitoredMinutes, estimateCostPerMonitoredMinuteGbp } = require("../services/businessMetrics/profitability");
+const {
+  computeProfitabilitySnapshot,
+  computeConfirmedContribution,
+  computeBreakEvenMonitoredMinutes,
+  estimateCostPerMonitoredMinuteGbp,
+} = require("../services/businessMetrics/profitability");
 const { classifyHouseholds } = require("../services/businessMetrics/fairUse");
 const { getBackendReleaseInfo, getMobileReleaseInfo } = require("../services/businessMetrics/releaseInfo");
-const { resolveVatRate, resolveFixedMonthlyCostsGbp, resolveUsdToGbpRate } = require("../services/businessMetrics/config");
+const { resolveVatRate, resolveFixedMonthlyCostsGbp, resolveFixedMonthlyCostsStatus, resolveUsdToGbpRate } = require("../services/businessMetrics/config");
+const { getGenuineCustomerOverview } = require("../services/businessMetrics/customerClassificationOverview");
 
 const router = express.Router();
 
@@ -90,6 +96,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       activeAppleEntitlements,
       recentFailedStripeWebhookCount,
       topHouseholdsRaw,
+      genuineOverview,
     ] = await Promise.all([
       getBusinessOverview(),
       getSubscriptionStatusBreakdown(),
@@ -101,6 +108,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       getActiveAppleEntitlementCount(),
       getRecentFailedStripeWebhookCount(),
       getTopUnknownCallHouseholdsMtd(10),
+      getGenuineCustomerOverview(),
     ]);
 
     const systemHealth = await getSystemHealthSnapshot({ recentFailedStripeWebhookCount });
@@ -113,7 +121,29 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
 
     const fixedMonthlyCosts = resolveFixedMonthlyCostsGbp();
     const fixedCostsTotalGbp = fixedMonthlyCosts.railway + fixedMonthlyCosts.supabase + fixedMonthlyCosts.resend;
+    const fixedCostsStatus = resolveFixedMonthlyCostsStatus();
     const vatRate = resolveVatRate();
+
+    // Business Dashboard V2 (2026-09): real, confirmed MRR — Stripe-only
+    // active entitlements belonging to genuine_customer-classified
+    // households only. Deliberately separate from businessOverview.mrr
+    // below (kept as-is, unchanged, for the existing operational view),
+    // which counts every active entitlement regardless of source or
+    // account classification.
+    const confirmedMrr = genuineOverview.available
+      ? { amount: Number((genuineOverview.genuineStripePayingCustomers * priceGbp).toFixed(2)), currency: "gbp", available: true }
+      : { amount: null, currency: null, available: false };
+
+    const confirmedContributionMtd = stripeRevenue.available
+      ? computeConfirmedContribution({
+          stripeGrossRevenueGbp: stripeRevenue.grossRevenueMtdGbp,
+          stripeFeesGbp: stripeRevenue.stripeFeesMtdGbp,
+          twilioCostGbp: twilio.available ? twilio.spendMtdGbp : 0,
+          vatRateAppliedToGross: vatRate,
+          fixedCostsStatus,
+          genuinePayingCustomerCount: genuineOverview.available ? genuineOverview.genuinePayingCustomers : 0,
+        })
+      : null;
     // Bug fix (2026-09): database/adminMetrics.js's computeBusinessOverview
     // returns activePaidCustomers, not activeEntitlements — confirmed by
     // running this exact code against real production data, which
@@ -170,6 +200,30 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       generatedAt: new Date().toISOString(),
       systemHealth,
       customers: {
+        // Genuine-customer headline figures (Business Dashboard V2,
+        // 2026-09) — an UNCLASSIFIED household is never counted as a
+        // genuine customer; see services/businessMetrics/
+        // customerClassificationOverview.js. Shown first/above the raw
+        // operational counts below, per the explicit brief.
+        genuine: genuineOverview.available
+          ? {
+              genuineCustomers: genuineOverview.genuineCustomers,
+              genuinePayingCustomers: genuineOverview.genuinePayingCustomers,
+              genuineStripePayingCustomers: genuineOverview.genuineStripePayingCustomers,
+              activeProtectedGenuineCustomers: genuineOverview.activeProtectedGenuineCustomers,
+              internalTest: genuineOverview.internalTest,
+              admin: genuineOverview.admin,
+              reviewer: genuineOverview.reviewer,
+              qaAutomation: genuineOverview.qaAutomation,
+              unclassified: genuineOverview.unclassified,
+              unclassifiedAccounts: genuineOverview.unclassifiedAccounts,
+            }
+          : { available: false, reason: genuineOverview.reason },
+        // Existing raw/operational counts — unchanged, kept available
+        // below the genuine-customer headline above, per the explicit
+        // brief ("Keep the existing operational/raw account counts
+        // available below the genuine-customer headline figures").
+        // These count every households row regardless of classification.
         totalCustomers: businessOverview.totalCustomers,
         activeProtectedHouseholds: businessOverview.activeProtectedHouseholds,
         activeEntitlements: activePaidCustomerCount,
@@ -184,17 +238,37 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
         vatRate,
         stripe: stripeRevenue,
         apple: appleRevenue,
+        // CONFIRMED: Stripe-only, genuine-customer-only. This is the
+        // trustworthy headline MRR figure.
+        confirmedMrr,
+        // ESTIMATED: unchanged from V1 — every active entitlement
+        // (any source, any account classification) x list price. Kept
+        // for the existing operational view, never the headline number.
         mrr: businessOverview.mrr,
       },
       costs: {
         twilio,
         openai: { today: openaiEstimateToday, monthToDate: openaiEstimateMtd, configured: isOpenAiKeyConfigured() },
+        // ESTIMATED/operational view — unset fixed costs still read as
+        // £0 here, unchanged, matching V1 behaviour for this field.
         fixedMonthlyCostsGbp: fixedMonthlyCosts,
         fixedMonthlyCostsTotalGbp: fixedCostsTotalGbp,
+        // CONFIRMED view — an unset fixed cost is NOT_CONFIGURED here,
+        // never silently £0. See services/businessMetrics/config.js's
+        // resolveFixedMonthlyCostsStatus.
+        fixedMonthlyCostsStatus: fixedCostsStatus,
       },
       profitability: {
+        // ESTIMATED — unchanged from V1: blends the Apple revenue
+        // estimate and the OpenAI cost estimate into one figure.
         today: profitabilityToday,
         monthToDate: profitabilityMtd,
+        // CONFIRMED — Stripe-only revenue, real Twilio cost only; no
+        // Apple estimate, no OpenAI estimate. operatingProfitGbp is
+        // null with profit.operatingProfitStatus === "INCOMPLETE" and
+        // profit.missingCostInputs populated whenever a fixed cost
+        // isn't configured — never presented as a false £0-cost profit.
+        confirmedMonthToDate: confirmedContributionMtd,
         costPerMonitoredMinuteGbp,
         breakEvenMonitoredMinutesPerCustomer: breakEvenMonitoredMinutes,
         fxRateUsdToGbp: resolveUsdToGbpRate(),
@@ -211,6 +285,8 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
         "Apple/RevenueCat revenue is an estimate (active-entitlement count x list price) — no per-transaction Apple amount or commission tier is available from this integration.",
         "No RevenueCat webhook failure log exists in this schema — RevenueCat health cannot be confirmed from recent operational evidence.",
         "No UTM/acquisition-source capture exists anywhere in the signup path — marketing attribution (section 15) is not yet possible.",
+        "Account classification (genuine/internal/admin/reviewer/qa) is explicit and manually maintained (public.account_classifications) — any household with no row is UNCLASSIFIED and excluded from genuine-customer figures; see customers.genuine.unclassifiedAccounts for the current list needing review.",
+        "calls.duration_seconds still does not exist — Twilio number-rental vs. call-usage cost is now split (costs.twilio.spendMtdSplit), but no per-household or per-genuine-customer £ cost can be computed without duration data.",
       ],
     });
   } catch (err) {

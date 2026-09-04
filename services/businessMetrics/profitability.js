@@ -79,6 +79,79 @@ function computeProfitabilitySnapshot({
   };
 }
 
+// Business Dashboard V2 (2026-09): the CONFIRMED counterpart to
+// computeProfitabilitySnapshot above, which stays exactly as it was —
+// it's the full, labeled-ESTIMATE view (blends the Apple revenue
+// estimate and the OpenAI cost estimate in) and remains available as
+// that. This function only ever uses provider-confirmed inputs — real
+// Stripe gross/fees (balance_transactions), real Twilio spend
+// (usage.records) — and deliberately never includes the Apple estimate
+// or the OpenAI estimate, so its own output can honestly be labeled
+// CONFIRMED rather than blended.
+//
+// Contribution (revenue minus the variable costs we're actually sure
+// of) is always computable from these inputs alone. Operating profit
+// additionally needs the fixed monthly costs (Railway/Supabase/Resend)
+// — when those aren't configured (services/businessMetrics/config.js's
+// resolveFixedMonthlyCostsStatus), operating profit is reported as
+// unavailable/INCOMPLETE with the exact missing inputs named, rather
+// than silently treating an unset cost as £0. Per the explicit brief:
+// "Do not show a precise operating-profit/margin figure as confirmed
+// when material costs are unknown."
+function computeConfirmedContribution({
+  stripeGrossRevenueGbp,
+  stripeFeesGbp,
+  twilioCostGbp,
+  vatRateAppliedToGross,
+  fixedCostsStatus,
+  genuinePayingCustomerCount,
+}) {
+  const vatElementGbp = (stripeGrossRevenueGbp * vatRateAppliedToGross) / (1 + vatRateAppliedToGross);
+  const netRevenueExVatGbp = stripeGrossRevenueGbp - vatElementGbp;
+
+  const totalVariableCostsGbp = stripeFeesGbp + twilioCostGbp;
+  const contributionGbp = netRevenueExVatGbp - totalVariableCostsGbp;
+  const contributionMarginPercent = netRevenueExVatGbp > 0 ? round2((contributionGbp / netRevenueExVatGbp) * 100) : null;
+
+  const missingCostInputs = [];
+  if (!fixedCostsStatus.railway.configured) missingCostInputs.push('railway_fixed_cost');
+  if (!fixedCostsStatus.supabase.configured) missingCostInputs.push('supabase_fixed_cost');
+  if (!fixedCostsStatus.resend.configured) missingCostInputs.push('resend_fixed_cost');
+
+  const operatingProfitAvailable = fixedCostsStatus.allConfigured;
+  const operatingProfitGbp = operatingProfitAvailable ? contributionGbp - fixedCostsStatus.totalGbp : null;
+  const operatingMarginPercent =
+    operatingProfitAvailable && netRevenueExVatGbp > 0 ? round2((operatingProfitGbp / netRevenueExVatGbp) * 100) : null;
+
+  return {
+    label: 'CONFIRMED',
+    revenue: {
+      stripeGrossRevenueGbp: round2(stripeGrossRevenueGbp),
+      vatElementGbp: round2(vatElementGbp),
+      netRevenueExVatGbp: round2(netRevenueExVatGbp),
+    },
+    costs: {
+      stripeFeesGbp: round2(stripeFeesGbp),
+      twilioCostGbp: round2(twilioCostGbp),
+      totalVariableCostsGbp: round2(totalVariableCostsGbp),
+      fixedMonthlyCostsGbp: operatingProfitAvailable ? round2(fixedCostsStatus.totalGbp) : null,
+      fixedCostsConfigured: operatingProfitAvailable,
+    },
+    profit: {
+      contributionGbp: round2(contributionGbp),
+      contributionMarginPercent,
+      operatingProfitGbp: operatingProfitAvailable ? round2(operatingProfitGbp) : null,
+      operatingProfitStatus: operatingProfitAvailable ? 'CONFIRMED' : 'INCOMPLETE',
+      missingCostInputs,
+      operatingMarginPercent,
+    },
+    perCustomer: {
+      costPerGenuinePayingCustomerGbp:
+        genuinePayingCustomerCount > 0 ? round2(totalVariableCostsGbp / genuinePayingCustomerCount) : null,
+    },
+  };
+}
+
 // Break-even monitored (Unknown-caller) minutes for a single £4.99
 // subscriber — pure, uses the SAME OpenAI/Twilio-per-minute assumptions
 // the rest of this module labels as estimates. See
@@ -101,4 +174,9 @@ function estimateCostPerMonitoredMinuteGbp({ twilioInboundPerMinuteGbp, env = pr
   return round2(twilioInboundPerMinuteGbp + perMinuteUsd * fxRate);
 }
 
-module.exports = { computeProfitabilitySnapshot, computeBreakEvenMonitoredMinutes, estimateCostPerMonitoredMinuteGbp };
+module.exports = {
+  computeProfitabilitySnapshot,
+  computeConfirmedContribution,
+  computeBreakEvenMonitoredMinutes,
+  estimateCostPerMonitoredMinuteGbp,
+};
