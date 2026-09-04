@@ -2605,8 +2605,16 @@
 
   const continueToSetupButton = document.getElementById("continueToSetupButton");
   if (continueToSetupButton) {
+    // Bug fix (2026-09): this used to call setStatus("protected") directly,
+    // which shows the unconditional "You're protected" text with no check
+    // of phone number, provisioning, or activation. loadDashboard() is the
+    // same real, backend-driven path every other transition into this card
+    // already uses — it calls setStatus("protected") first, then
+    // immediately corrects it via renderProtectionStatus(data) using the
+    // genuine /dashboard-data response, so this button can never force the
+    // protected state on its own.
     continueToSetupButton.addEventListener("click", function () {
-      setStatus("protected");
+      loadDashboard();
     });
   }
 
