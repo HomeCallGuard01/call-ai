@@ -58,6 +58,23 @@ async function fetchUsageTotalGbp(client, { startDate, endDate }) {
   return { totalGbp: sumUsageRecordsGbp(relevant), byCategory: relevant.map((r) => ({ category: r.category, usage: r.usage, usageUnit: r.usageUnit, priceGbp: Number(r.price) || 0 })) };
 }
 
+// Business Dashboard V2 (2026-09): splits an already-fetched byCategory
+// breakdown into number-rental vs. call-usage cost — both real, both
+// already present in the existing `usage.records` response, just never
+// separately summed before. Pure, no new Twilio call.
+function splitRentalVsUsageGbp(byCategory) {
+  let numberRentalGbp = 0;
+  let callUsageGbp = 0;
+  for (const row of byCategory || []) {
+    if (row.category === 'phonenumbers') {
+      numberRentalGbp += row.priceGbp;
+    } else {
+      callUsageGbp += row.priceGbp;
+    }
+  }
+  return { numberRentalGbp: Number(numberRentalGbp.toFixed(4)), callUsageGbp: Number(callUsageGbp.toFixed(4)) };
+}
+
 // Real Twilio account snapshot: balance, number count, and today/MTD
 // spend broken down by category. `client` is injectable for tests.
 async function getTwilioAccountSnapshot({ client = twilioRestClient } = {}) {
@@ -81,10 +98,19 @@ async function getTwilioAccountSnapshot({ client = twilioRestClient } = {}) {
       spendMtdGbp: Number(mtdUsage.totalGbp.toFixed(4)),
       spendTodayByCategory: todayUsage.byCategory,
       spendMtdByCategory: mtdUsage.byCategory,
+      spendTodaySplit: splitRentalVsUsageGbp(todayUsage.byCategory),
+      spendMtdSplit: splitRentalVsUsageGbp(mtdUsage.byCategory),
     };
   } catch (err) {
     return { available: false, reason: err.message };
   }
 }
 
-module.exports = { getTwilioAccountSnapshot, sumUsageRecordsGbp, fetchUsageTotalGbp, startOfTodayIso, startOfMonthIso };
+module.exports = {
+  getTwilioAccountSnapshot,
+  sumUsageRecordsGbp,
+  fetchUsageTotalGbp,
+  splitRentalVsUsageGbp,
+  startOfTodayIso,
+  startOfMonthIso,
+};

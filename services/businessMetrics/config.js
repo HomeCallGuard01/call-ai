@@ -53,6 +53,44 @@ function resolveFixedMonthlyCostsGbp(env = process.env) {
   };
 }
 
+// Business Dashboard V2 (2026-09): resolveFixedMonthlyCostsGbp above
+// cannot distinguish "operator explicitly entered 0" (a real, deliberate
+// value — e.g. Resend's free tier) from "nobody has ever set this env
+// var" (genuinely unknown) — both parse to 0. That's fine for the
+// existing full/estimated profitability view (unchanged, still uses the
+// function above), but the new CONFIRMED profitability view must never
+// let an unset cost silently become £0 — an unknown Railway/Supabase
+// bill is a real, material cost AFMD is paying regardless of whether
+// anyone has told this dashboard the number yet. This function reports
+// presence explicitly per field, so the caller can render "NOT
+// CONFIGURED" instead of a false £0.00.
+function resolveFixedMonthlyCostsStatus(env = process.env) {
+  const resolve = (raw) => {
+    if (raw === undefined || raw === null || raw === '') {
+      return { configured: false, valueGbp: null };
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) {
+      return { configured: false, valueGbp: null };
+    }
+    return { configured: true, valueGbp: n };
+  };
+
+  const railway = resolve(env.BUSINESS_FIXED_COST_RAILWAY_GBP);
+  const supabase = resolve(env.BUSINESS_FIXED_COST_SUPABASE_GBP);
+  const resend = resolve(env.BUSINESS_FIXED_COST_RESEND_GBP);
+
+  const allConfigured = railway.configured && supabase.configured && resend.configured;
+
+  return {
+    railway,
+    supabase,
+    resend,
+    allConfigured,
+    totalGbp: allConfigured ? railway.valueGbp + supabase.valueGbp + resend.valueGbp : null,
+  };
+}
+
 // OpenAI Whisper's published per-minute rate (USD) — see
 // services/businessMetrics/openaiCosts.js for why this can only ever
 // produce an ESTIMATE in the current architecture (no call-duration
@@ -105,6 +143,7 @@ module.exports = {
   DEFAULT_USD_TO_GBP_RATE,
   resolveUsdToGbpRate,
   resolveFixedMonthlyCostsGbp,
+  resolveFixedMonthlyCostsStatus,
   DEFAULT_OPENAI_WHISPER_USD_PER_MINUTE,
   DEFAULT_ASSUMED_AVG_MONITORED_CALL_MINUTES,
   resolveOpenAiEstimateInputs,

@@ -35,6 +35,14 @@
   .gaps li { margin-bottom: 4px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .loading, .error { color: #93a3b8; padding: 40px; text-align: center; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; margin-left: 6px; vertical-align: middle; }
+  .tag-confirmed { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+  .tag-estimated { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
+  .headline { background: #0d1526; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px; margin-bottom: 30px; }
+  .headline-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 14px; }
+  .headline-item .label { font-size: 11.5px; color: #93a3b8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+  .headline-item .value { font-size: 26px; font-weight: 800; color: #e2e8f0; }
+  .headline-item .value.incomplete { color: #fbbf24; font-size: 18px; }
 </style>
 </head>
 <body>
@@ -63,6 +71,10 @@ function badge(status) { return '<span class="badge badge-' + status + '">' + st
 function card(label, value, sub, isEstimate) {
   return '<div class="card"><div class="label">' + label + '</div><div class="value' + (isEstimate ? ' est' : '') + '">' + value + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
 }
+function tag(kind) { return '<span class="tag tag-' + kind + '">' + kind + '</span>'; }
+function headlineItem(label, value, incomplete) {
+  return '<div class="headline-item"><div class="label">' + label + '</div><div class="value' + (incomplete ? ' incomplete' : '') + '">' + value + '</div></div>';
+}
 
 async function load() {
   const app = document.getElementById('app');
@@ -89,7 +101,60 @@ function render(d) {
   }
   html += '</table></div>';
 
-  html += '<div class="section"><div class="section-header"><h2>Customers</h2></div><div class="cards">';
+  // Headline strip (Business Dashboard V2) — answers, at a glance: are
+  // systems healthy, how many real customers, how many paying, real
+  // MRR, what's actually been collected, what it's cost, are we
+  // profitable, and is a household creating abnormal cost. Everything
+  // here is either CONFIRMED (provider-confirmed, genuine-customer-only)
+  // or explicitly marked otherwise — never a blended figure presented as
+  // certain.
+  const g = d.customers.genuine;
+  const pc = d.profitability.confirmedMonthToDate;
+  const abnormal = d.fairUse.overHardThresholdCount > 0 ? (d.fairUse.overHardThresholdCount + ' household(s) over hard threshold')
+    : (d.fairUse.approachingCount > 0 ? (d.fairUse.approachingCount + ' approaching threshold') : 'None');
+  html += '<div class="headline"><div class="section-header" style="border:none;margin:0;padding:0;"><h2>At a glance ' + badge(d.systemHealth.overall) + '</h2></div><div class="headline-grid">';
+  if (g && g.genuineCustomers !== undefined) {
+    html += headlineItem('Real customers', fmtNum(g.genuineCustomers));
+    html += headlineItem('Real paying customers', fmtNum(g.genuinePayingCustomers));
+    html += headlineItem('Real MRR ' + tag('confirmed'), d.revenue.confirmedMrr.available ? fmtGbp(d.revenue.confirmedMrr.amount) : '—');
+  } else {
+    html += headlineItem('Real customers', 'unavailable' + (g && g.reason ? ' (' + g.reason + ')' : ''), true);
+  }
+  html += headlineItem('Collected this month ' + tag('confirmed'), d.revenue.stripe.available ? fmtGbp(d.revenue.stripe.grossRevenueMtdGbp) : '—');
+  if (pc) {
+    const profitLabel = pc.profit.operatingProfitStatus === 'CONFIRMED' ? fmtGbp(pc.profit.operatingProfitGbp) : 'INCOMPLETE';
+    html += headlineItem('Operating profit ' + tag('confirmed'), profitLabel, pc.profit.operatingProfitStatus !== 'CONFIRMED');
+    if (pc.profit.operatingProfitStatus !== 'CONFIRMED') {
+      html += headlineItem('Missing cost inputs', pc.profit.missingCostInputs.join(', ') || '—', true);
+    }
+  }
+  html += headlineItem('Abnormal cost', abnormal);
+  html += '</div></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Real customers ' + tag('confirmed') + '</h2></div><div class="cards">';
+  if (g && g.genuineCustomers !== undefined) {
+    html += card('Real customers', fmtNum(g.genuineCustomers), 'excludes unclassified — never assumed genuine');
+    html += card('Real paying customers', fmtNum(g.genuinePayingCustomers));
+    html += card('Real, Stripe-paying customers', fmtNum(g.genuineStripePayingCustomers), 'basis for Real MRR');
+    html += card('Active protected (real)', fmtNum(g.activeProtectedGenuineCustomers));
+    html += card('Internal/test', fmtNum(g.internalTest));
+    html += card('Admin', fmtNum(g.admin));
+    html += card('Reviewer', fmtNum(g.reviewer));
+    html += card('QA/automation', fmtNum(g.qaAutomation));
+    html += card('Unclassified', fmtNum(g.unclassified), g.unclassified > 0 ? 'excluded from every genuine-customer figure until classified' : null);
+    if (g.unclassified > 0) {
+      html += '</div><table style="margin-top:10px;"><tr><th>Unclassified account</th></tr>';
+      for (const a of g.unclassifiedAccounts) html += '<tr><td>' + (a.email || a.householdId) + '</td></tr>';
+      html += '</table>';
+    } else {
+      html += '</div>';
+    }
+  } else {
+    html += '</div><div class="error">Classification data unavailable' + (g && g.reason ? ': ' + g.reason : '') + '</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="section"><div class="section-header"><h2>All accounts (raw, unclassified operational view)</h2></div><div class="cards">';
   html += card('Total customers', fmtNum(d.customers.totalCustomers));
   html += card('Active protected', fmtNum(d.customers.activeProtectedHouseholds));
   html += card('Active entitlements', fmtNum(d.customers.activeEntitlements));
@@ -102,28 +167,53 @@ function render(d) {
 
   const rev = d.revenue, cost = d.costs, profit = d.profitability;
   html += '<div class="section"><div class="section-header"><h2>Revenue (MTD)</h2></div><div class="cards">';
-  html += card('Stripe gross MTD', rev.stripe.available ? fmtGbp(rev.stripe.grossRevenueMtdGbp) : 'unavailable');
-  html += card('Stripe fees MTD', rev.stripe.available ? fmtGbp(rev.stripe.stripeFeesMtdGbp) : 'unavailable');
-  html += card('Apple gross MTD (est.)', fmtGbp(rev.apple.grossRevenueEstimateGbp), rev.apple.note, true);
-  html += card('MRR', rev.mrr.available ? fmtGbp(rev.mrr.amount) : 'unavailable');
+  html += card('Stripe gross MTD ' + tag('confirmed'), rev.stripe.available ? fmtGbp(rev.stripe.grossRevenueMtdGbp) : 'unavailable');
+  html += card('Stripe fees MTD ' + tag('confirmed'), rev.stripe.available ? fmtGbp(rev.stripe.stripeFeesMtdGbp) : 'unavailable');
+  html += card('Apple gross MTD ' + tag('estimated'), fmtGbp(rev.apple.grossRevenueEstimateGbp), rev.apple.note, true);
+  html += card('Real MRR ' + tag('confirmed'), rev.confirmedMrr.available ? fmtGbp(rev.confirmedMrr.amount) : 'unavailable', 'Stripe-only, genuine paying customers only');
+  html += card('MRR (all sources/accounts) ' + tag('estimated'), rev.mrr.available ? fmtGbp(rev.mrr.amount) : 'unavailable', 'includes Apple estimate + test/admin/reviewer accounts', true);
   html += card('VAT rate', (rev.vatRate * 100).toFixed(0) + '%');
   html += '</div></div>';
 
   html += '<div class="section"><div class="section-header"><h2>Costs</h2></div><div class="cards">';
-  html += card('Twilio spend today', cost.twilio.available ? fmtGbp(cost.twilio.spendTodayGbp) : 'unavailable');
-  html += card('Twilio spend MTD', cost.twilio.available ? fmtGbp(cost.twilio.spendMtdGbp) : 'unavailable');
+  html += card('Twilio spend today ' + tag('confirmed'), cost.twilio.available ? fmtGbp(cost.twilio.spendTodayGbp) : 'unavailable');
+  html += card('Twilio spend MTD ' + tag('confirmed'), cost.twilio.available ? fmtGbp(cost.twilio.spendMtdGbp) : 'unavailable');
+  if (cost.twilio.available) {
+    html += card('— number rental MTD', fmtGbp(cost.twilio.spendMtdSplit.numberRentalGbp));
+    html += card('— call usage MTD', fmtGbp(cost.twilio.spendMtdSplit.callUsageGbp));
+  }
   html += card('Twilio numbers', cost.twilio.available ? fmtNum(cost.twilio.numberCount) : '—');
   html += card('Twilio balance', cost.twilio.available ? (cost.twilio.balance.amount + ' ' + cost.twilio.balance.currency) : 'unavailable');
-  html += card('OpenAI cost today (est.)', fmtGbp(cost.openai.today.estimatedCostGbp), 'assumes ' + cost.openai.today.assumedAvgMinutesPerCall + ' min/call', true);
-  html += card('OpenAI cost MTD (est.)', fmtGbp(cost.openai.monthToDate.estimatedCostGbp), null, true);
-  html += card('Railway (fixed)', fmtGbp(cost.fixedMonthlyCostsGbp.railway) + '/mo');
-  html += card('Supabase (fixed)', fmtGbp(cost.fixedMonthlyCostsGbp.supabase) + '/mo');
-  html += card('Resend (fixed)', fmtGbp(cost.fixedMonthlyCostsGbp.resend) + '/mo');
+  html += card('OpenAI cost today ' + tag('estimated'), fmtGbp(cost.openai.today.estimatedCostGbp), 'assumes ' + cost.openai.today.assumedAvgMinutesPerCall + ' min/call', true);
+  html += card('OpenAI cost MTD ' + tag('estimated'), fmtGbp(cost.openai.monthToDate.estimatedCostGbp), null, true);
+  const fcs = cost.fixedMonthlyCostsStatus;
+  html += card('Railway (fixed)', fcs.railway.configured ? fmtGbp(fcs.railway.valueGbp) + '/mo' : 'NOT CONFIGURED', null, !fcs.railway.configured);
+  html += card('Supabase (fixed)', fcs.supabase.configured ? fmtGbp(fcs.supabase.valueGbp) + '/mo' : 'NOT CONFIGURED', null, !fcs.supabase.configured);
+  html += card('Resend (fixed)', fcs.resend.configured ? fmtGbp(fcs.resend.valueGbp) + '/mo' : 'NOT CONFIGURED', null, !fcs.resend.configured);
   html += '</div></div>';
+
+  if (pc) {
+    html += '<div class="section"><div class="section-header"><h2>Profitability — CONFIRMED (MTD) ' + tag('confirmed') + '</h2></div><div class="cards">';
+    html += card('Net revenue ex-VAT', fmtGbp(pc.revenue.netRevenueExVatGbp));
+    html += card('Variable costs (Stripe fees + Twilio)', fmtGbp(pc.costs.totalVariableCostsGbp));
+    html += card('Contribution', fmtGbp(pc.profit.contributionGbp));
+    html += card('Contribution margin', pc.profit.contributionMarginPercent !== null ? pc.profit.contributionMarginPercent + '%' : '—');
+    if (pc.profit.operatingProfitStatus === 'CONFIRMED') {
+      html += card('Fixed costs', fmtGbp(pc.costs.fixedMonthlyCostsGbp));
+      html += card('Operating profit', fmtGbp(pc.profit.operatingProfitGbp));
+      html += card('Operating margin', pc.profit.operatingMarginPercent !== null ? pc.profit.operatingMarginPercent + '%' : '—');
+    } else {
+      html += card('Operating profit', 'INCOMPLETE', 'missing: ' + pc.profit.missingCostInputs.join(', '), true);
+    }
+    html += card('Cost per real paying customer', fmtGbp(pc.perCustomer.costPerGenuinePayingCustomerGbp));
+    html += '</div></div>';
+  } else {
+    html += '<div class="section"><div class="error">Confirmed profitability unavailable — Stripe data could not be retrieved.</div></div>';
+  }
 
   if (profit.monthToDate) {
     const p = profit.monthToDate;
-    html += '<div class="section"><div class="section-header"><h2>Profitability (MTD)</h2></div><div class="cards">';
+    html += '<div class="section"><div class="section-header"><h2>Profitability — ESTIMATED, all sources/accounts (MTD) ' + tag('estimated') + '</h2></div><div class="cards">';
     html += card('Net revenue ex-VAT', fmtGbp(p.revenue.netRevenueExVatGbp));
     html += card('Total variable costs', fmtGbp(p.costs.totalVariableCostsGbp));
     html += card('Fixed costs', fmtGbp(p.costs.fixedMonthlyCostsGbp));

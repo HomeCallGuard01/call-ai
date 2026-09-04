@@ -123,6 +123,7 @@ for (const varName of SECRET_ENV_VAR_NAMES) {
 const moduleFiles = [
   'config.js', 'vat.js', 'twilioCosts.js', 'openaiCosts.js', 'revenue.js',
   'callStats.js', 'systemHealth.js', 'profitability.js', 'fairUse.js', 'releaseInfo.js',
+  'accountClassification.js', 'customerClassificationOverview.js',
 ];
 for (const file of moduleFiles) {
   const src = readFileSync(path.join(__dirname, '..', 'services', 'businessMetrics', file), 'utf8');
