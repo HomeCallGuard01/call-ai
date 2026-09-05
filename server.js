@@ -10,7 +10,8 @@ const cookieParser = require("cookie-parser");
 const { createClient } = require("@supabase/supabase-js");
 const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
 const { requireEntitlement } = require("./middleware/requireEntitlement");
-const { getHouseholdByTwilioNumber, markActivationVerified } = require("./database/households");
+const { getHouseholdByTwilioNumber, markActivationVerified, getUserRole } = require("./database/households");
+const { decidePostLoginRedirect, decideDashboardRouteRedirect } = require("./services/postLoginRouting");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
@@ -1252,9 +1253,17 @@ app.post("/login", async (req, res) => {
     return res.redirect("/login.html?error=setup_failed");
   }
 
-  console.log("[LOGIN] Redirect dashboard");
   setSessionCookies(res, data.session);
-  return res.redirect("/dashboard");
+
+  // Admin-authorisation check only — never a customer-entitlement check.
+  // getUserRole fails closed to "household" on any read error, matching
+  // requireAuth's own existing behaviour, so this can never accidentally
+  // send a real customer to the admin dashboard. See
+  // services/postLoginRouting.js for the pure decision this wraps.
+  const role = await getUserRole(data.user.id);
+  const redirectTarget = decidePostLoginRedirect({ role });
+  console.log(redirectTarget === "/admin/business" ? "[LOGIN] Redirect admin dashboard" : "[LOGIN] Redirect dashboard");
+  return res.redirect(redirectTarget);
 });
 
 // CONFIRM SESSION — lets email confirmation resume straight into the
@@ -1505,7 +1514,25 @@ app.get("/privacy", (req, res) => {
 // "Get Protected Today" prompt and start Checkout from it. The page's own
 // /dashboard-data fetch (requireEntitlement-gated) is what actually decides
 // whether the protected view or the subscribe prompt renders.
-app.get("/dashboard", requireAuth, (req, res) => {
+//
+// UI/navigation redirect only (2026-09) — an admin account with no
+// active consumer entitlement is sent to /admin/business instead of
+// this shell, so manually typing /dashboard never lands them on the
+// membership/paywall screen. getActiveEntitlement is only ever called
+// for an admin session (short-circuited by req.role === "admin" below),
+// so this adds zero extra queries to every normal customer's dashboard
+// load. See services/postLoginRouting.js for the pure decision this
+// wraps — an admin who genuinely also holds an active entitlement (e.g.
+// their own real household) sees the normal customer dashboard exactly
+// like any other entitled household; this is a navigation convenience,
+// never an entitlement bypass, and requireEntitlement/getActiveEntitlement
+// themselves are completely unmodified.
+app.get("/dashboard", requireAuth, async (req, res) => {
+  const entitlement = req.role === "admin" ? await getActiveEntitlement(req.household.id) : null;
+  const redirectTarget = decideDashboardRouteRedirect({ role: req.role, hasActiveEntitlement: !!entitlement });
+  if (redirectTarget) {
+    return res.redirect(redirectTarget);
+  }
   res.sendFile(__dirname + "/upload.html");
 });
 
