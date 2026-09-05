@@ -3,16 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Home Call Guard — Business Dashboard</title>
+<title>Home Call Guard — Admin Dashboard</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: Arial, sans-serif; background: #0b1220; color: white; font-size: 15px; }
   .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 32px; background: #030712; border-bottom: 1px solid #1e293b; }
   .topbar-title { font-size: 19px; font-weight: 700; }
   .admin-badge { background: #0e7490; color: #cffafe; font-size: 11px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid #22d3ee; }
-  .topbar-link { color: #93a3b8; text-decoration: none; font-size: 13px; padding: 8px 14px; border: 1px solid #1e293b; border-radius: 6px; }
-  .topbar-link:hover { color: #e2e8f0; border-color: #334155; }
-  .main { padding: 28px 32px 48px; max-width: 1480px; margin: 0 auto; }
+
+  /* Dashboard Cleanup (2026-09): "Operations dashboard" / "View Customer
+     Dashboard" cross-links are gone — this is now the single admin
+     destination, so there is nothing to navigate away to and no reason
+     to ever send an admin into the consumer /dashboard. */
+  .topbar-action { color: #93a3b8; text-decoration: none; font-size: 13px; padding: 8px 14px; border: 1px solid #1e293b; border-radius: 6px; background: none; cursor: pointer; font-family: inherit; }
+  .topbar-action:hover { color: #e2e8f0; border-color: #334155; }
+
+  .main { padding: 24px 32px 48px; max-width: 1480px; margin: 0 auto; }
   h2 { margin: 0; font-size: 16px; color: #e2e8f0; }
   h3 { margin: 0 0 10px; font-size: 13px; color: #7dd3fc; text-transform: uppercase; letter-spacing: 0.5px; }
   .section { margin-bottom: 30px; }
@@ -43,28 +49,150 @@
   .headline-item .label { font-size: 11.5px; color: #93a3b8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
   .headline-item .value { font-size: 26px; font-weight: 800; color: #e2e8f0; }
   .headline-item .value.incomplete { color: #fbbf24; font-size: 18px; }
+
+  /* --- Tab navigation (Dashboard Cleanup, 2026-09) ---
+     Strong, unmistakable contrast per the explicit UX requirement: the
+     active tab gets a solid cyan fill (#22d3ee, this dashboard's own
+     existing accent colour — already used for .admin-badge and every
+     action button), not just a border or a text-colour change, so it
+     cannot blend into the dark navy background the way the old
+     low-contrast .topbar-link nav did. */
+  .tab-nav { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid #1e293b; padding-bottom: 0; }
+  .tab-button {
+    background: #111a2e;
+    color: #93a3b8;
+    border: 1px solid #1e293b;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    padding: 11px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    position: relative;
+    top: 1px;
+  }
+  .tab-button:hover { color: #e2e8f0; background: #16243c; }
+  .tab-button[aria-current="page"] {
+    background: #22d3ee;
+    color: #04222b;
+    border-color: #22d3ee;
+  }
+  .tab-button .tab-flag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    background: #450a0a;
+    color: #fca5a5;
+  }
+  .tab-button[aria-current="page"] .tab-flag { background: #04222b; color: #fecaca; }
+  .tab-panel[hidden] { display: none; }
+
+  /* --- Ported from the retired admin.html (Operations content) --- */
+  .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .stat-card { background: #030712; border: 1px solid #1e293b; border-radius: 10px; padding: 18px 20px; }
+  .stat-number { font-size: 26px; font-weight: 700; color: white; font-variant-numeric: tabular-nums; }
+  .stat-number.warn { color: #f59e0b; }
+  .stat-number.good { color: #34d399; }
+  .stat-label { margin-top: 6px; font-size: 12.5px; color: #93a3b8; }
+  .empty-state { color: #93a3b8; font-size: 14px; padding: 8px 0; }
+  .customer-table-wrap { overflow-x: auto; }
+  .customer-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .customer-table th { text-align: left; color: #93a3b8; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 12px; border-bottom: 1px solid #1e293b; white-space: nowrap; }
+  .customer-table td { padding: 10px 12px; border-bottom: 1px solid #1e293b; white-space: nowrap; }
+  .customer-table tr:last-child td { border-bottom: none; }
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #1e293b; }
+  .status-pill.good { background: #14532d; color: #86efac; }
+  .status-pill.warn { background: #78350f; color: #fdba74; }
+  .status-pill.bad { background: #7f1d1d; color: #fca5a5; }
+  .status-pill.classification { background: #312e81; color: #c7d2fe; }
+  .columns-3-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; align-items: start; }
+  .subcards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .subcards > .card { padding: 18px; }
+  .list-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1e293b; }
+  .list-item:last-child { border-bottom: none; }
+  .list-icon { font-size: 17px; width: 24px; text-align: center; flex-shrink: 0; }
+  .list-details { flex: 1; min-width: 0; }
+  .list-title { font-weight: 600; font-size: 13.5px; }
+  .list-title.severity-high { color: #f87171; }
+  .list-title.severity-medium { color: #fbbf24; }
+  .list-meta { font-size: 12px; color: #93a3b8; margin-top: 2px; overflow-wrap: anywhere; }
+  .breakdown-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+  .breakdown-row:last-child { border-bottom: none; }
+  .breakdown-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .search-form { display: flex; gap: 8px; margin-bottom: 14px; }
+  .search-form input { flex: 1; background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 9px 12px; font-size: 14px; }
+  .search-result { padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+  .search-result:last-child { border-bottom: none; }
+  .search-result-email { font-weight: 600; font-size: 14px; }
+  .search-result-meta { color: #93a3b8; margin-top: 2px; }
+  .quick-action-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .quick-action-row input, .quick-action-row select { flex: 1; background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 8px 10px; font-size: 13px; }
+  button.action-button { background: #22d3ee; border: none; padding: 9px 16px; color: #04222b; font-weight: bold; font-size: 13px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  button.action-button:hover { background: #67e8f9; }
+  .quick-action-result { font-size: 12px; color: #93a3b8; min-height: 16px; }
+  .readiness-banner { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 8px; margin-bottom: 16px; font-weight: 700; font-size: 14px; }
+  .readiness-banner.not_ready { background: #450a0a; color: #fecaca; border: 1px solid #ef4444; }
+  .readiness-banner.ready_with_open_items { background: #422006; color: #fde68a; border: 1px solid #f59e0b; }
+  .readiness-banner.ready { background: #052e1a; color: #bbf7d0; border: 1px solid #22c55e; }
+  .readiness-item { padding: 12px 0; border-bottom: 1px solid #1e293b; }
+  .readiness-item:last-child { border-bottom: none; }
+  .readiness-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .readiness-title { font-weight: 600; font-size: 13px; }
+  .readiness-badge { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 3px 8px; border-radius: 999px; flex-shrink: 0; }
+  .readiness-badge.blocker { background: #450a0a; color: #fca5a5; }
+  .readiness-badge.high { background: #431407; color: #fdba74; }
+  .readiness-badge.medium { background: #422006; color: #fde68a; }
+  .readiness-badge.done { background: #064e3b; color: #6ee7b7; }
+  .readiness-detail { font-size: 12px; color: #93a3b8; margin-top: 6px; line-height: 1.5; }
+
+  @media (max-width: 1300px) {
+    .stat-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 1024px) {
+    .columns-3-1 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .stat-grid, .subcards { grid-template-columns: 1fr 1fr; }
+    .tab-nav { flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
 <div class="topbar">
-  <div class="topbar-title-row" style="display:flex;align-items:center;gap:10px;">
+  <div style="display:flex;align-items:center;gap:10px;">
     <span class="topbar-title">Home Call Guard</span>
-    <span class="admin-badge">Business</span>
+    <span class="admin-badge">Admin</span>
   </div>
   <div style="display:flex;gap:10px;align-items:center;">
-    <a class="topbar-link" href="/admin">Operations dashboard</a>
-    <a class="topbar-link" href="#" onclick="load();return false;">Refresh</a>
+    <button type="button" class="topbar-action" onclick="loadAll();">Refresh</button>
     <form action="/logout" method="POST" style="margin:0;">
-      <button type="submit" class="topbar-link" style="background:none;cursor:pointer;">Log out</button>
+      <button type="submit" class="topbar-action">Log out</button>
     </form>
   </div>
 </div>
 
-<div class="main" id="app">
-  <div class="loading">Loading…</div>
+<div class="main">
+  <nav class="tab-nav" id="tabNav" role="tablist" aria-label="Admin dashboard sections">
+    <button type="button" class="tab-button" id="tabBtn-business" role="tab" onclick="switchTab('business')">Business</button>
+    <button type="button" class="tab-button" id="tabBtn-customers" role="tab" onclick="switchTab('customers')">Customers</button>
+    <button type="button" class="tab-button" id="tabBtn-operations" role="tab" onclick="switchTab('operations')">Operations</button>
+    <button type="button" class="tab-button" id="tabBtn-systemhealth" role="tab" onclick="switchTab('systemhealth')">System Health</button>
+  </nav>
+
+  <div id="business" class="tab-panel" role="tabpanel"><div class="loading">Loading…</div></div>
+  <div id="customers" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
+  <div id="operations" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
+  <div id="systemhealth" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
 </div>
 
 <script>
+// ============================================================
+// Shared formatting helpers
+// ============================================================
 function fmtGbp(n) {
   if (n === null || n === undefined) return '—';
   return '£' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -79,43 +207,221 @@ function headlineItem(label, value, incomplete) {
   return '<div class="headline-item"><div class="label">' + label + '</div><div class="value' + (incomplete ? ' incomplete' : '') + '">' + value + '</div></div>';
 }
 
-async function load() {
-  const app = document.getElementById('app');
-  app.innerHTML = '<div class="loading">Loading…</div>';
+// TEST-EXTRACT-START: formatCurrency
+function formatCurrency(money) {
+  if (!money || !money.available) return "—";
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: (money.currency || "gbp").toUpperCase(),
+  }).format(money.amount);
+}
+// TEST-EXTRACT-END: formatCurrency
+
+// TEST-EXTRACT-START: formatProtectionRate
+function formatProtectionRate(rate) {
+  return rate === null || rate === undefined ? "No calls yet" : `${rate}%`;
+}
+// TEST-EXTRACT-END: formatProtectionRate
+
+// TEST-EXTRACT-START: describeActivityEvent
+function describeActivityEvent(event) {
+  const email = event.email || "Unknown customer";
+
+  if (event.type === "signup") {
+    return { icon: "🆕", title: `${email} signed up`, meta: event.at };
+  }
+
+  if (event.type.startsWith("subscription_")) {
+    const status = event.type.replace("subscription_", "");
+    return { icon: "💳", title: `${email} — subscription ${status}`, meta: event.at };
+  }
+
+  return { icon: "•", title: `${email} — ${event.type}`, meta: event.at };
+}
+// TEST-EXTRACT-END: describeActivityEvent
+
+// TEST-EXTRACT-START: describeAlert
+function describeAlert(alert) {
+  const email = alert.email || (alert.householdId ? alert.householdId.slice(0, 8) : "Unknown");
+  const severityClass = alert.severity === "high" ? "severity-high" : "severity-medium";
+
+  if (alert.type === "provisioning_failed") {
+    return { icon: "📵", className: severityClass, title: `Provisioning failed — ${email}`, meta: alert.message };
+  }
+
+  if (alert.type === "webhook_failed") {
+    return { icon: "⚠️", className: severityClass, title: "Webhook processing failed", meta: alert.message };
+  }
+
+  return { icon: "•", className: severityClass, title: alert.type, meta: alert.message };
+}
+// TEST-EXTRACT-END: describeAlert
+
+// TEST-EXTRACT-START: formatQuickActionResult
+function formatQuickActionResult(result) {
+  if (!result || !result.attempted) {
+    return "Not attempted — household already has a number, or has reached the maximum retry attempts.";
+  }
+
+  if (result.success) {
+    return `Provisioned successfully: ${result.twilioNumber}`;
+  }
+
+  return `Failed: ${result.error}`;
+}
+// TEST-EXTRACT-END: formatQuickActionResult
+
+// TEST-EXTRACT-START: formatLaunchReadinessBadge
+function formatLaunchReadinessBadge(item) {
+  const labels = { blocker: "Blocker", high: "High", medium: "Medium" };
+  if (item.status === "done") return { label: "Done", className: "done" };
+  return { label: labels[item.severity] || item.severity, className: item.severity };
+}
+// TEST-EXTRACT-END: formatLaunchReadinessBadge
+
+// TEST-EXTRACT-START: describeReadinessBanner
+function describeReadinessBanner(summary) {
+  if (summary.status === "not_ready") {
+    return {
+      className: "not_ready",
+      text: `Not ready — ${summary.blockersCount} open blocker${summary.blockersCount === 1 ? "" : "s"}`,
+    };
+  }
+
+  if (summary.status === "ready_with_open_items") {
+    return {
+      className: "ready_with_open_items",
+      text: `Ready with open items — ${summary.openCount} outstanding launch check${summary.openCount === 1 ? "" : "s"}`,
+    };
+  }
+
+  return { className: "ready", text: "Ready — no outstanding launch checks" };
+}
+// TEST-EXTRACT-END: describeReadinessBanner
+
+// TEST-EXTRACT-START: describeAdminAction
+function describeAdminAction(action) {
+  if (action.type === "retry_provisioning") {
+    const outcome = formatQuickActionResult(action.result);
+    return { icon: "🔁", title: `Retry provisioning — ${action.email || action.householdId}`, meta: `${outcome} · ${action.at}` };
+  }
+
+  if (action.type === "grant_complimentary") {
+    const outcome = action.result && action.result.granted === false
+      ? `Refused (active ${action.result.existingEntitlement ? action.result.existingEntitlement.source : "paid"} entitlement)`
+      : "Granted";
+    return { icon: "🎁", title: `Grant complimentary — ${action.email || action.householdId}`, meta: `${outcome} · ${action.at}` };
+  }
+
+  if (action.type === "revoke_complimentary") {
+    const outcome = action.result && action.result.revoked ? "Revoked" : `Not revoked (${action.result ? action.result.reason : "unknown"})`;
+    return { icon: "↩️", title: `Revoke complimentary — ${action.email || action.householdId}`, meta: `${outcome} · ${action.at}` };
+  }
+
+  return { icon: "•", title: action.type, meta: action.at };
+}
+// TEST-EXTRACT-END: describeAdminAction
+
+// ============================================================
+// Tab switching — one visible panel at a time, active tab has a
+// solid-fill, high-contrast state (never just text colour/underline).
+// ============================================================
+const TAB_NAMES = ['business', 'customers', 'operations', 'systemhealth'];
+
+function switchTab(name) {
+  for (const t of TAB_NAMES) {
+    document.getElementById(t).hidden = t !== name;
+    const btn = document.getElementById('tabBtn-' + t);
+    if (t === name) {
+      btn.setAttribute('aria-current', 'page');
+    } else {
+      btn.removeAttribute('aria-current');
+    }
+  }
+  window.location.hash = name;
+}
+
+function initialTab() {
+  const fromHash = (window.location.hash || '').replace('#', '');
+  return TAB_NAMES.includes(fromHash) ? fromHash : 'business';
+}
+
+// ============================================================
+// Data loading — two existing, unchanged JSON endpoints:
+// /admin/api/business/overview (Business/Customers/System Health tabs)
+// /admin/api/overview (Operations tab)
+// ============================================================
+let lastBusinessData = null;
+let lastOperationsData = null;
+let showAllCustomers = false;
+
+async function loadAll() {
+  await Promise.all([loadBusinessOverview(), loadOperationsOverview()]);
+}
+
+async function loadBusinessOverview() {
   try {
     const res = await fetch('/admin/api/business/overview', { credentials: 'include' });
-    if (res.status === 403 || res.status === 302) { app.innerHTML = '<div class="error">Not authorized.</div>'; return; }
-    if (!res.ok) { app.innerHTML = '<div class="error">Failed to load (' + res.status + ')</div>'; return; }
+    if (res.status === 403 || res.status === 302) {
+      setUnauthorized();
+      return;
+    }
+    if (!res.ok) {
+      showTabError('business', 'Failed to load (' + res.status + ')');
+      showTabError('customers', 'Failed to load (' + res.status + ')');
+      showTabError('systemhealth', 'Failed to load (' + res.status + ')');
+      return;
+    }
     const d = await res.json();
-    render(d);
+    lastBusinessData = d;
+    renderBusinessTab(d);
+    renderCustomersTab(d);
+    renderSystemHealthTab(d);
   } catch (err) {
-    app.innerHTML = '<div class="error">Failed to load: ' + err.message + '</div>';
+    showTabError('business', 'Failed to load: ' + err.message);
   }
 }
 
-function render(d) {
-  const app = document.getElementById('app');
+async function loadOperationsOverview() {
+  try {
+    const res = await fetch('/admin/api/overview', { credentials: 'include' });
+    if (res.status === 403 || res.status === 302) {
+      setUnauthorized();
+      return;
+    }
+    if (!res.ok) {
+      showTabError('operations', 'Failed to load (' + res.status + ')');
+      return;
+    }
+    const d = await res.json();
+    lastOperationsData = d;
+    renderOperationsTab(d);
+  } catch (err) {
+    showTabError('operations', 'Failed to load: ' + err.message);
+  }
+}
+
+function setUnauthorized() {
+  for (const t of TAB_NAMES) showTabError(t, 'Not authorized.');
+}
+function showTabError(tab, message) {
+  document.getElementById(tab).innerHTML = '<div class="error">' + message + '</div>';
+}
+
+// ============================================================
+// BUSINESS TAB — leads with real customers/real paying/real MRR and
+// genuine profitability; raw/test totals live in Operations instead,
+// never presented as commercial performance here.
+// ============================================================
+function renderBusinessTab(d) {
   let html = '';
 
-  html += '<div class="section-header"><h2>System Health — ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Last updated ' + new Date(d.generatedAt).toLocaleString('en-GB') + '</span></div>';
-  html += '<div class="section"><table><tr><th>Component</th><th>Status</th><th>Detail</th></tr>';
-  for (const [name, c] of Object.entries(d.systemHealth.components)) {
-    html += '<tr><td>' + name + '</td><td>' + badge(c.status) + '</td><td style="color:#93a3b8;">' + c.reason + '</td></tr>';
-  }
-  html += '</table></div>';
-
-  // Headline strip (Business Dashboard V2) — answers, at a glance: are
-  // systems healthy, how many real customers, how many paying, real
-  // MRR, what's actually been collected, what it's cost, are we
-  // profitable, and is a household creating abnormal cost. Everything
-  // here is either CONFIRMED (provider-confirmed, genuine-customer-only)
-  // or explicitly marked otherwise — never a blended figure presented as
-  // certain.
   const g = d.customers.genuine;
   const pc = d.profitability.confirmedMonthToDate;
   const abnormal = d.fairUse.overHardThresholdCount > 0 ? (d.fairUse.overHardThresholdCount + ' household(s) over hard threshold')
     : (d.fairUse.approachingCount > 0 ? (d.fairUse.approachingCount + ' approaching threshold') : 'None');
-  html += '<div class="headline"><div class="section-header" style="border:none;margin:0;padding:0;"><h2>At a glance ' + badge(d.systemHealth.overall) + '</h2></div><div class="headline-grid">';
+
+  html += '<div class="headline"><div class="section-header" style="border:none;margin:0;padding:0;"><h2>At a glance ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Last updated ' + new Date(d.generatedAt).toLocaleString('en-GB') + '</span></div><div class="headline-grid">';
   if (g && g.genuineCustomers !== undefined) {
     html += headlineItem('Real customers', fmtNum(g.genuineCustomers));
     html += headlineItem('Real paying customers', fmtNum(g.genuinePayingCustomers));
@@ -140,33 +446,11 @@ function render(d) {
     html += card('Real paying customers', fmtNum(g.genuinePayingCustomers));
     html += card('Real, Stripe-paying customers', fmtNum(g.genuineStripePayingCustomers), 'basis for Real MRR');
     html += card('Active protected (real)', fmtNum(g.activeProtectedGenuineCustomers));
-    html += card('Internal/test', fmtNum(g.internalTest));
-    html += card('Admin', fmtNum(g.admin));
-    html += card('Reviewer', fmtNum(g.reviewer));
-    html += card('QA/automation', fmtNum(g.qaAutomation));
-    html += card('Unclassified', fmtNum(g.unclassified), g.unclassified > 0 ? 'excluded from every genuine-customer figure until classified' : null);
-    if (g.unclassified > 0) {
-      html += '</div><table style="margin-top:10px;"><tr><th>Unclassified account</th></tr>';
-      for (const a of g.unclassifiedAccounts) html += '<tr><td>' + (a.email || a.householdId) + '</td></tr>';
-      html += '</table>';
-    } else {
-      html += '</div>';
-    }
+    html += '</div>';
   } else {
     html += '</div><div class="error">Classification data unavailable' + (g && g.reason ? ': ' + g.reason : '') + '</div>';
   }
   html += '</div>';
-
-  html += '<div class="section"><div class="section-header"><h2>All accounts (raw, unclassified operational view)</h2></div><div class="cards">';
-  html += card('Total customers', fmtNum(d.customers.totalCustomers));
-  html += card('Active protected', fmtNum(d.customers.activeProtectedHouseholds));
-  html += card('Active entitlements', fmtNum(d.customers.activeEntitlements));
-  html += card('New today', fmtNum(d.customers.newCustomersToday));
-  html += card('New this week', fmtNum(d.customers.newCustomersThisWeek));
-  html += card('Payment-issue', fmtNum(d.customers.paymentIssueCustomers));
-  html += card('Cancelled', fmtNum(d.customers.cancelledCustomers));
-  html += card('Apple-billed active', fmtNum(d.customers.activeAppleEntitlements));
-  html += '</div></div>';
 
   const rev = d.revenue, cost = d.costs, profit = d.profitability;
   html += '<div class="section"><div class="section-header"><h2>Revenue (MTD)</h2></div><div class="cards">';
@@ -256,10 +540,10 @@ function render(d) {
   html += '</div></div>';
 
   html += '<div class="section"><h3>Known gaps in this dashboard (not faked)</h3><div class="gaps"><ul>';
-  for (const g of d.knownGaps) html += '<li>' + g + '</li>';
+  for (const gap of d.knownGaps) html += '<li>' + gap + '</li>';
   html += '</ul></div></div>';
 
-  app.innerHTML = html;
+  document.getElementById('business').innerHTML = html;
 }
 
 function callStatsTable(cs) {
@@ -278,19 +562,6 @@ function callStatsTable(cs) {
 }
 function row(label, value) { return '<tr><td>' + label + '</td><td>' + fmtNum(value) + '</td></tr>'; }
 
-// Acquisition / Website section (2026-09). No customer PII is ever
-// shown here — only counts, a hostname-level UTM/source label, and
-// aggregate rates. Genuine-customer-only counts (checkoutsStarted/
-// paidConversions) use the same account_classifications system as the
-// rest of this dashboard; landing/registration counts are always raw,
-// since no household exists yet at those funnel stages — this is
-// stated plainly in the UI, not glossed over.
-// Two completely separate tables, never merged into one ambiguous list
-// (2026-09 review correction) — a raw/all-traffic funnel (every stage,
-// unclassified/internal/test/admin/reviewer/qa traffic included) and a
-// classified genuine-customer funnel (only the two stages where a
-// household — and therefore a classification — exists yet). An
-// unclassified household is never counted in the genuine funnel.
 function acquisitionRawFunnelTable(snapshot) {
   const f = snapshot.rawFunnel;
   let html = '<table><tr><th>Stage</th><th>Count (raw, all traffic)</th></tr>';
@@ -348,7 +619,325 @@ function acquisitionSection(acquisition) {
   return html;
 }
 
-load();
+// ============================================================
+// CUSTOMERS TAB — defaults to genuine customers only. HCG currently
+// has 0 genuine external customers, so the default view honestly shows
+// that, rather than the raw historical/test list. A "Show all
+// (diagnostics)" toggle reveals every historical/internal/admin/
+// reviewer/qa/anonymised/unclassified account, with its classification
+// visible per row — nothing is deleted or reclassified to produce
+// either view.
+// ============================================================
+const CUSTOMER_MEMBERSHIP_LABELS = {
+  active: { label: "Active", className: "good" },
+  trial: { label: "Trial", className: "good" },
+  payment_issue: { label: "Payment issue", className: "warn" },
+  cancelled: { label: "Cancelling", className: "warn" },
+  inactive: { label: "Inactive", className: "bad" },
+  none: { label: "No entitlement", className: "" },
+};
+const CUSTOMER_PROVISIONING_CLASSNAMES = { active: "good", pending: "", failed: "bad" };
+
+function customerRow(c, showClassification) {
+  const membership = CUSTOMER_MEMBERSHIP_LABELS[c.membershipStatus] || { label: c.membershipStatus, className: "" };
+  const provisioningClassName = CUSTOMER_PROVISIONING_CLASSNAMES[c.provisioningStatus] || "";
+  return '<tr>' +
+    '<td>' + new Date(c.signedUpAt).toLocaleString('en-GB') + '</td>' +
+    '<td>' + c.email + '</td>' +
+    '<td><span class="status-pill ' + membership.className + '">' + membership.label + '</span></td>' +
+    '<td><span class="status-pill ' + (c.activationStatus === 'verified' ? 'good' : '') + '">' + (c.activationStatus === 'verified' ? 'Verified' : 'Not yet verified') + '</span></td>' +
+    '<td><span class="status-pill ' + provisioningClassName + '">' + c.provisioningStatus + '</span></td>' +
+    (showClassification ? '<td><span class="status-pill classification">' + c.classification + '</span></td>' : '') +
+    '</tr>';
+}
+
+function customerTable(list, showClassification) {
+  if (!list || list.length === 0) {
+    return '<div class="empty-state">' + (showClassification ? 'No accounts recorded yet.' : 'No genuine customers yet — Home Call Guard has not yet acquired any genuine external customers. All historical activity is internal/test — see "Show all (diagnostics)".') + '</div>';
+  }
+  const rows = list.map((c) => customerRow(c, showClassification)).join('');
+  return '<div class="customer-table-wrap"><table class="customer-table"><thead><tr>' +
+    '<th>Signed up</th><th>Email</th><th>Membership / payment</th><th>Activation</th><th>Provisioning</th>' +
+    (showClassification ? '<th>Classification</th>' : '') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function renderCustomersTab(d) {
+  const list = d.customers.recentList;
+  let html = '<div class="section"><div class="section-header"><h2>Customers ' + (showAllCustomers ? '' : tag('confirmed')) + '</h2>' +
+    '<button type="button" class="action-button" onclick="toggleCustomerDiagnostics()">' + (showAllCustomers ? 'Show genuine customers only' : 'Show all (diagnostics)') + '</button>' +
+    '</div>';
+
+  if (!list || !list.available) {
+    html += '<div class="error">Customer data unavailable' + (list && list.reason ? ': ' + list.reason : '') + '</div></div>';
+    document.getElementById('customers').innerHTML = html;
+    return;
+  }
+
+  if (showAllCustomers) {
+    html += '<p class="sub" style="margin-bottom:14px;">Every historical account — internal/test/admin/reviewer/QA/anonymised/unclassified — stored but hidden from the normal customer view. Nothing here has been deleted or reclassified.</p>';
+    html += customerTable(list.all, true);
+  } else {
+    html += '<p class="sub" style="margin-bottom:14px;">Genuine external customers only. An unclassified or internal/test/admin/reviewer/QA account is never shown here by default.</p>';
+    html += customerTable(list.genuine, false);
+  }
+  html += '</div>';
+  document.getElementById('customers').innerHTML = html;
+}
+
+function toggleCustomerDiagnostics() {
+  showAllCustomers = !showAllCustomers;
+  if (lastBusinessData) renderCustomersTab(lastBusinessData);
+}
+
+// ============================================================
+// SYSTEM HEALTH TAB — one canonical interpretation only (Dashboard
+// Cleanup, 2026-09). The retired admin.html used a second, separate
+// health-check implementation (services/healthChecks.js) that could
+// disagree with this one (e.g. Twilio reachable-but-low-balance could
+// show differently on each) — that second panel is gone; this table,
+// sourced from services/businessMetrics/systemHealth.js via
+// /admin/api/business/overview, is the only health status shown
+// anywhere in this dashboard. "Configured" is deliberately not treated
+// as "confirmed working" — see each component's own reason text.
+// ============================================================
+function renderSystemHealthTab(d) {
+  let html = '<div class="section-header"><h2>System Health — ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Last updated ' + new Date(d.generatedAt).toLocaleString('en-GB') + '</span></div>';
+  html += '<div class="section"><table><tr><th>Component</th><th>Status</th><th>Detail</th></tr>';
+  for (const [name, c] of Object.entries(d.systemHealth.components)) {
+    html += '<tr><td>' + name + '</td><td>' + badge(c.status) + '</td><td style="color:#93a3b8;">' + c.reason + '</td></tr>';
+  }
+  html += '</table></div>';
+  html += '<div class="sub" style="color:#64748b;">This is the single, canonical health interpretation for this dashboard — "configured" is never treated as the same thing as "confirmed working" (see each component\'s own reason above).</div>';
+  document.getElementById('systemhealth').innerHTML = html;
+}
+
+// ============================================================
+// OPERATIONS TAB — ported from the retired admin.html: raw/diagnostic
+// account totals (moved out of the Business tab so they can never
+// masquerade as commercial performance), protection activity, search,
+// provisioning retry, complimentary access administration, launch
+// readiness, recent activity. Uses the existing, unmodified
+// /admin/api/overview endpoint and its existing /admin/api/* actions —
+// no authentication/authorisation change of any kind.
+// ============================================================
+function renderStatCardsHtml(cards) {
+  return cards.map((c) => '<div class="stat-card"><div class="stat-number' + (c.className ? ' ' + c.className : '') + '">' + c.value + '</div><div class="stat-label">' + c.label + '</div></div>').join('');
+}
+
+function renderListHtml(items, emptyMessage, describe) {
+  if (!items || items.length === 0) return '<div class="empty-state">' + emptyMessage + '</div>';
+  return items.map((item) => {
+    const dsc = describe(item);
+    return '<div class="list-item"><div class="list-icon">' + dsc.icon + '</div><div class="list-details"><div class="list-title ' + (dsc.className || '') + '">' + dsc.title + '</div><div class="list-meta">' + (dsc.meta || '') + '</div></div></div>';
+  }).join('');
+}
+
+function renderCallsHtml(calls) {
+  if (!calls || calls.length === 0) return '<div class="empty-state">No calls recorded yet.</div>';
+  return calls.map((call) => {
+    const icon = call.result === 'SCAM' ? '🚫' : '✅';
+    const who = call.householdEmail || 'Unknown household';
+    return '<div class="list-item"><div class="list-icon">' + icon + '</div><div class="list-details"><div class="list-title">' + call.number + ' — ' + call.result + '</div><div class="list-meta">' + who + ' · ' + call.time + '</div></div></div>';
+  }).join('');
+}
+
+function renderBreakdownHtml(rows, emptyMessage) {
+  if (!rows || rows.length === 0) return '<div class="empty-state">' + emptyMessage + '</div>';
+  return rows.map((r) => '<div class="breakdown-row"><span>' + r.status + '</span><span class="breakdown-count">' + r.count + '</span></div>').join('');
+}
+
+function renderLaunchReadinessHtml(launchReadiness) {
+  const bannerInfo = describeReadinessBanner(launchReadiness.summary);
+  let html = '<div class="readiness-banner ' + bannerInfo.className + '">' + bannerInfo.text + '</div>';
+  const items = launchReadiness.items;
+  if (!items || items.length === 0) return html + '<div class="empty-state">Nothing outstanding.</div>';
+  html += items.map((item) => {
+    const b = formatLaunchReadinessBadge(item);
+    return '<div class="readiness-item"><div class="readiness-header"><div class="readiness-title">' + item.title + '</div><div class="readiness-badge ' + b.className + '">' + b.label + '</div></div><div class="readiness-detail">' + item.detail + '</div></div>';
+  }).join('');
+  return html;
+}
+
+function renderSearchResultsHtml(results) {
+  if (!results || results.length === 0) return '<div class="empty-state">No matches.</div>';
+  return results.map((h) => '<div class="search-result"><div class="search-result-email">' + h.email + '</div><div class="search-result-meta">ID: ' + h.id + '<br>Number: ' + (h.twilio_number || '—') + ' · Provisioning: ' + h.twilio_provisioning_status + '<br>Status: ' + h.status + '</div></div>').join('');
+}
+
+function renderOperationsTab(data) {
+  let html = '';
+
+  html += '<div class="section"><div class="section-header"><h2>All accounts — raw, diagnostic view</h2></div>';
+  html += '<p class="sub" style="margin-bottom:12px;">Every household regardless of classification, including historical/test/anonymised accounts. Never presented as commercial performance — see the Business tab for real-customer figures.</p>';
+  html += '<div class="stat-grid">' + renderStatCardsHtml([
+    { label: 'Total customers', value: fmtNum(data.businessOverview.totalCustomers) },
+    { label: 'Active paid customers', value: fmtNum(data.businessOverview.activePaidCustomers), className: 'good' },
+    { label: 'Active protected households', value: fmtNum(data.businessOverview.activeProtectedHouseholds), className: 'good' },
+    { label: 'New today', value: fmtNum(data.businessOverview.newCustomersToday) },
+    { label: 'New this week', value: fmtNum(data.businessOverview.newCustomersThisWeek) },
+    { label: 'Monthly recurring revenue (all accounts)', value: formatCurrency(data.businessOverview.mrr) },
+    { label: 'Failed payments', value: fmtNum(data.businessOverview.failedPayments), className: data.businessOverview.failedPayments > 0 ? 'warn' : '' },
+    { label: 'Canceled', value: fmtNum(data.businessOverview.canceled), className: data.businessOverview.canceled > 0 ? 'warn' : '' },
+  ]) + '</div></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Protection activity (today)</h2></div><div class="stat-grid">' + renderStatCardsHtml([
+    { label: 'Calls processed today', value: fmtNum(data.protectionActivity.callsProcessedToday) },
+    { label: 'Calls blocked today', value: fmtNum(data.protectionActivity.callsBlockedToday), className: data.protectionActivity.callsBlockedToday > 0 ? 'warn' : '' },
+    { label: 'Calls allowed today', value: fmtNum(data.protectionActivity.callsAllowedToday), className: 'good' },
+    { label: 'Unknown callers challenged', value: fmtNum(data.protectionActivity.unknownChallengedToday) },
+    { label: 'Protection rate', value: formatProtectionRate(data.protectionActivity.protectionRate) },
+  ]) + '</div></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Customer operations</h2></div><div class="columns-3-1">';
+  html += '<div class="subcards">';
+  html += '<div class="card"><h3>Recent registrations</h3><div id="opRecentRegistrations">' + renderListHtml(data.customerOperations.recentRegistrations, 'No registrations yet.', describeActivityEvent) + '</div></div>';
+  html += '<div class="card"><h3>Subscription status</h3><div>' + renderBreakdownHtml(data.customerOperations.subscriptionStatusBreakdown, 'No subscriptions yet.') + '</div></div>';
+  html += '<div class="card"><h3>Twilio number status</h3><div>' + renderBreakdownHtml(data.customerOperations.provisioningStatusBreakdown, 'No households yet.') + '</div></div>';
+  html += '<div class="card"><h3>Provisioning failures</h3><div>' + (data.customerOperations.provisioningFailuresCount > 0
+    ? '<div class="stat-number warn">' + data.customerOperations.provisioningFailuresCount + '</div><div class="stat-label">household(s) currently failing provisioning</div>'
+    : '<div class="empty-state">No provisioning failures.</div>') + '</div></div>';
+  html += '</div>';
+
+  html += '<div class="card"><h3>Customer search</h3>' +
+    '<form class="search-form" id="opSearchForm"><input type="text" id="opSearchInput" placeholder="Email, phone, or Twilio number"><button type="submit" class="action-button">Search</button></form>' +
+    '<div id="opSearchResults"></div>' +
+    '<h3 style="margin-top:20px;">Retry provisioning</h3>' +
+    '<div class="quick-action-row"><input type="text" id="opRetryHouseholdId" placeholder="Household ID"><button type="button" id="opRetryProvisioningBtn" class="action-button">Retry</button></div>' +
+    '<div class="quick-action-result" id="opQuickActionResult"></div>' +
+    '<h3 style="margin-top:20px;">Grant complimentary access</h3>' +
+    '<p style="color:#93a3b8;font-size:12.5px;margin-bottom:8px;">Complimentary — no payment taken. For an existing registered household only; does not create or imply a Stripe/RevenueCat subscription.</p>' +
+    '<div class="quick-action-row"><input type="text" id="opComplimentaryHouseholdId" placeholder="Household ID"></div>' +
+    '<div class="quick-action-row"><select id="opComplimentaryDuration"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">12 months</option><option value="custom">Custom date…</option></select><input type="date" id="opComplimentaryCustomDate" style="display:none;"></div>' +
+    '<div class="quick-action-row"><input type="text" id="opComplimentaryNotes" placeholder="Reason (required)"></div>' +
+    '<div class="quick-action-row"><button type="button" id="opGrantComplimentaryBtn" class="action-button">Grant complimentary — no payment taken</button><button type="button" id="opRevokeComplimentaryBtn" class="action-button">Revoke complimentary</button></div>' +
+    '<div class="quick-action-result" id="opComplimentaryResult"></div>' +
+    '</div>';
+  html += '</div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Launch readiness</h2></div><div class="card">' + renderLaunchReadinessHtml(data.launchReadiness) + '</div></div>';
+
+  html += '<div class="section"><div class="section-header"><h2>Recent activity</h2></div><div class="subcards">';
+  html += '<div class="card"><h3>Recent calls</h3><div>' + renderCallsHtml(data.recentActivityFeed.recentCalls) + '</div></div>';
+  html += '<div class="card"><h3>Recent signups</h3><div>' + renderListHtml(data.recentActivityFeed.recentSignups, 'No signups yet.', describeActivityEvent) + '</div></div>';
+  html += '<div class="card"><h3>Recent errors</h3><div>' + renderListHtml(data.recentActivityFeed.recentErrors, 'No errors — everything is healthy.', describeAlert) + '</div></div>';
+  html += '<div class="card"><h3>Admin actions (this session)</h3><div>' + renderListHtml(data.recentActivityFeed.adminActions, 'No admin actions yet this session.', describeAdminAction) + '</div></div>';
+  html += '</div></div>';
+
+  document.getElementById('operations').innerHTML = html;
+  wireOperationsActions();
+}
+
+function wireOperationsActions() {
+  const searchForm = document.getElementById('opSearchForm');
+  if (searchForm) {
+    searchForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = document.getElementById('opSearchInput').value;
+      try {
+        const res = await fetch('/admin/api/search?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        document.getElementById('opSearchResults').innerHTML = renderSearchResultsHtml(data.results);
+      } catch (err) {
+        console.error('ADMIN SEARCH ERROR:', err);
+      }
+    });
+  }
+
+  const retryBtn = document.getElementById('opRetryProvisioningBtn');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', async () => {
+      const householdId = document.getElementById('opRetryHouseholdId').value.trim();
+      const resultEl = document.getElementById('opQuickActionResult');
+      if (!householdId) { resultEl.textContent = 'Enter a household ID first.'; return; }
+      resultEl.textContent = 'Retrying…';
+      try {
+        const res = await fetch('/admin/api/households/' + encodeURIComponent(householdId) + '/retry-provisioning', { method: 'POST' });
+        const data = await res.json();
+        resultEl.textContent = formatQuickActionResult(data);
+        loadOperationsOverview();
+      } catch (err) {
+        resultEl.textContent = 'Request failed — see console.';
+        console.error('RETRY PROVISIONING ERROR:', err);
+      }
+    });
+  }
+
+  const durationSelect = document.getElementById('opComplimentaryDuration');
+  if (durationSelect) {
+    durationSelect.addEventListener('change', (e) => {
+      document.getElementById('opComplimentaryCustomDate').style.display = e.target.value === 'custom' ? '' : 'none';
+    });
+  }
+
+  function resolveComplimentaryEndsAt() {
+    const duration = document.getElementById('opComplimentaryDuration').value;
+    if (duration === 'custom') {
+      const customDate = document.getElementById('opComplimentaryCustomDate').value;
+      if (!customDate) return null;
+      return new Date(customDate + 'T00:00:00Z').toISOString();
+    }
+    const days = parseInt(duration, 10);
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  const grantBtn = document.getElementById('opGrantComplimentaryBtn');
+  if (grantBtn) {
+    grantBtn.addEventListener('click', async () => {
+      const householdId = document.getElementById('opComplimentaryHouseholdId').value.trim();
+      const notes = document.getElementById('opComplimentaryNotes').value.trim();
+      const resultEl = document.getElementById('opComplimentaryResult');
+      if (!householdId) { resultEl.textContent = 'Enter a household ID first.'; return; }
+      if (!notes) { resultEl.textContent = 'A reason is required.'; return; }
+      const endsAt = resolveComplimentaryEndsAt();
+      if (!endsAt) { resultEl.textContent = 'Choose a custom expiry date.'; return; }
+      resultEl.textContent = 'Granting complimentary access (no payment taken)…';
+      try {
+        const res = await fetch('/admin/api/households/' + encodeURIComponent(householdId) + '/grant-complimentary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes, endsAt }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          resultEl.textContent = 'Failed: ' + data.error;
+        } else if (data.granted === false) {
+          resultEl.textContent = 'Not granted — this household already has an active ' + (data.existingEntitlement ? data.existingEntitlement.source : 'paid') + ' entitlement. Complimentary access refused to protect it.';
+        } else {
+          resultEl.textContent = 'Granted — complimentary, no payment taken. Expires ' + new Date(data.endsAt).toLocaleDateString('en-GB') + '.';
+        }
+        loadOperationsOverview();
+      } catch (err) {
+        resultEl.textContent = 'Request failed — see console.';
+        console.error('GRANT COMPLIMENTARY ERROR:', err);
+      }
+    });
+  }
+
+  const revokeBtn = document.getElementById('opRevokeComplimentaryBtn');
+  if (revokeBtn) {
+    revokeBtn.addEventListener('click', async () => {
+      const householdId = document.getElementById('opComplimentaryHouseholdId').value.trim();
+      const resultEl = document.getElementById('opComplimentaryResult');
+      if (!householdId) { resultEl.textContent = 'Enter a household ID first.'; return; }
+      resultEl.textContent = 'Revoking…';
+      try {
+        const res = await fetch('/admin/api/households/' + encodeURIComponent(householdId) + '/revoke-complimentary', { method: 'POST' });
+        const data = await res.json();
+        resultEl.textContent = data.revoked ? 'Complimentary access revoked.' : ('Not revoked: ' + (data.reason || data.error || 'unknown'));
+        loadOperationsOverview();
+      } catch (err) {
+        resultEl.textContent = 'Request failed — see console.';
+        console.error('REVOKE COMPLIMENTARY ERROR:', err);
+      }
+    });
+  }
+}
+
+// ============================================================
+// Boot
+// ============================================================
+switchTab(initialTab());
+loadAll();
 </script>
 </body>
 </html>

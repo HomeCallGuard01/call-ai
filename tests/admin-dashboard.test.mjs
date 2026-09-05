@@ -1,8 +1,15 @@
-// Unit tests for the Sprint 11 Operations Dashboard's pure rendering-logic
-// functions in admin.html — extracted from the real page markup (between
-// TEST-EXTRACT markers) and executed standalone, no browser or DOM
-// library required. Same extraction convention as
+// Unit tests for the consolidated Admin Dashboard's pure rendering-logic
+// functions in admin-business.html — extracted from the real page markup
+// (between TEST-EXTRACT markers) and executed standalone, no browser or
+// DOM library required. Same extraction convention as
 // tests/dashboard-status.test.mjs.
+//
+// Dashboard Consolidation (2026-09): this used to read admin.html, now
+// retired (routes/admin.js's GET /admin redirects to /admin/business).
+// formatHealthBadge is dropped along with it — that function rendered the
+// old, separate services/healthChecks.js-based health panel, which no
+// longer exists anywhere in this dashboard; System Health now has exactly
+// one rendering path, covered by tests/dashboard-consolidation.test.mjs.
 //
 // Run with: node tests/admin-dashboard.test.mjs
 
@@ -11,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(path.join(__dirname, '..', 'admin.html'), 'utf8');
+const html = readFileSync(path.join(__dirname, '..', 'admin-business.html'), 'utf8');
 
 let failures = 0;
 
@@ -36,7 +43,6 @@ function extractBetween(source, name) {
 }
 
 const names = [
-  'formatHealthBadge',
   'formatCurrency',
   'formatProtectionRate',
   'describeActivityEvent',
@@ -50,12 +56,11 @@ const names = [
 const sources = names.map(name => extractBetween(html, name));
 
 if (sources.some(s => !s)) {
-  console.error('✗ could not find one or more TEST-EXTRACT markers in admin.html — test cannot run');
+  console.error('✗ could not find one or more TEST-EXTRACT markers in admin-business.html — test cannot run');
   failures++;
 } else {
   const combinedSource = `${sources.join('\n')}\nreturn { ${names.join(', ')} };`;
   const {
-    formatHealthBadge,
     formatCurrency,
     formatProtectionRate,
     describeActivityEvent,
@@ -65,23 +70,6 @@ if (sources.some(s => !s)) {
     describeReadinessBanner,
     describeAdminAction,
   } = new Function(combinedSource)();
-
-  // --- formatHealthBadge ---
-
-  check(
-    formatHealthBadge({ status: 'ok' }).label === 'Operational' && formatHealthBadge({ status: 'ok' }).className === 'ok',
-    'formatHealthBadge: ok status renders as Operational'
-  );
-
-  check(
-    formatHealthBadge({ status: 'error' }).label === 'Error',
-    'formatHealthBadge: error status renders as Error'
-  );
-
-  check(
-    formatHealthBadge({ status: 'not_configured' }).label === 'Not configured',
-    'formatHealthBadge: not_configured renders as "Not configured" rather than a fake ok/error result'
-  );
 
   // --- formatCurrency ---
 
@@ -158,6 +146,11 @@ if (sources.some(s => !s)) {
   check(
     formatLaunchReadinessBadge({ severity: 'medium' }).className === 'medium',
     'formatLaunchReadinessBadge: css class matches the severity level'
+  );
+
+  check(
+    formatLaunchReadinessBadge({ status: 'done', severity: 'blocker' }).label === 'Done',
+    'formatLaunchReadinessBadge: a resolved item renders as "Done" regardless of its original severity'
   );
 
   // --- describeReadinessBanner ---

@@ -100,4 +100,57 @@ async function getGenuineCustomerOverview() {
   return { available: true, ...breakdown };
 }
 
-module.exports = { computeGenuineCustomerBreakdown, getGenuineCustomerOverview, KNOWN_CLASSIFICATIONS };
+// Pure — annotates an already-fetched customer list (database/
+// adminMetrics.js's getRecentCustomers shape) with each household's
+// classification, and splits it into genuine vs. everything-else.
+// Directly unit-testable with no database at all. Every row keeps its
+// classification field regardless of which list it lands in, so the
+// "diagnostics" view can show a badge per row rather than a second,
+// separately-shaped table.
+function classifyCustomerList(customers, classificationMap) {
+  const annotated = (customers || []).map((c) => ({
+    ...c,
+    classification: classifyHousehold(c.householdId, classificationMap),
+  }));
+
+  return {
+    all: annotated,
+    genuine: annotated.filter((c) => c.classification === 'genuine_customer'),
+  };
+}
+
+// Dashboard Cleanup (2026-09): the Customers tab's data source.
+// database/adminMetrics.js's getRecentCustomers() itself is completely
+// unchanged (still returns every household, unfiltered, most-recent
+// first) — classification is applied here, as an annotation layer, so
+// the underlying function keeps its existing, already-tested behaviour
+// and the "genuine-first, diagnostics available" split lives in exactly
+// one place. Never reclassifies anything: this only ever reads the
+// existing account_classifications table via getClassificationMap().
+async function getClassifiedCustomerList(limit = 20) {
+  const supabaseAdmin = resolveSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return { available: false, reason: 'SUPABASE_SERVICE_ROLE_KEY not configured' };
+  }
+
+  // Required here (not at module top) to avoid a require-cycle risk if
+  // database/adminMetrics.js ever grows a reverse dependency — it
+  // currently has none, but this keeps the two modules' coupling
+  // one-directional and explicit at the call site.
+  const { getRecentCustomers } = require('../../database/adminMetrics');
+
+  const [customers, classification] = await Promise.all([getRecentCustomers(limit), getClassificationMap()]);
+
+  if (!classification.available) return { available: false, reason: classification.reason };
+
+  const { all, genuine } = classifyCustomerList(customers, classification.map);
+  return { available: true, all, genuine };
+}
+
+module.exports = {
+  computeGenuineCustomerBreakdown,
+  getGenuineCustomerOverview,
+  classifyCustomerList,
+  getClassifiedCustomerList,
+  KNOWN_CLASSIFICATIONS,
+};

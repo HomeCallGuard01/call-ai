@@ -473,11 +473,18 @@ async function getProvisioningStatusBreakdown() {
 
 // Pure — the Launch readiness section's overall status, derived from the
 // same items list services/launchReadiness.js already provides. A single
-// open 'blocker' makes the whole launch not-ready, regardless of how many
+// OPEN 'blocker' makes the whole launch not-ready, regardless of how many
 // lower-severity items also remain — matching how docs/launch/KNOWN_ISSUES.md
 // itself is ordered (blockers first, everything else is "should fix").
+//
+// Bug fix (Dashboard Consolidation, 2026-09): this used to count any
+// blocker-SEVERITY item regardless of its status, so a resolved blocker
+// (status: 'done') still permanently pinned the dashboard at "not_ready" —
+// discovered when services/launchReadiness.js's two blocker items were
+// both corrected to status: 'done' and the banner still read "2 open
+// blockers". A blocker only counts here while it is still open.
 function computeReadinessSummary(items) {
-  const blockers = items.filter(i => i.severity === "blocker");
+  const blockers = items.filter(i => i.severity === "blocker" && i.status !== "done");
   const openCount = items.filter(i => i.status !== "done").length;
 
   const status = blockers.length > 0 ? "not_ready" : openCount > 0 ? "ready_with_open_items" : "ready";
