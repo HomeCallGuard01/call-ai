@@ -15,8 +15,18 @@ const {
   updateTwilioNumberForEntitlementChange,
   handleProcessedWebhookEvent,
 } = require("../services/twilioProvisioning");
+const { recordAcquisitionEvent } = require("../services/acquisitionAnalytics");
 
 const router = express.Router();
+
+// The exact Stripe subscription statuses treated as a genuine, real
+// paid conversion for acquisition analytics — matches
+// QUALIFYING_SUBSCRIPTION_STATUSES below (checkout-blocking) rather
+// than the webhook's own broader qualifying set (013/015's
+// process_stripe_webhook_event), since this is specifically "did a
+// brand-new subscription just start" for reporting purposes, not "is
+// access currently allowed to continue."
+const PAID_CONVERSION_STATUSES = new Set(["active", "trialing"]);
 
 const QUALIFYING_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"]);
 
@@ -255,6 +265,13 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
       { idempotencyKey }
     );
 
+    // Acquisition analytics (2026-09) — fire-and-forget, only reached
+    // once a genuinely new Checkout Session was created (every
+    // already-active/reusable-session bail-out above returns before
+    // this point, so this never double-counts a repeat visit to an
+    // already-open checkout).
+    recordAcquisitionEvent("checkout_started", { householdId: req.household.id, path: "/billing/create-checkout-session" }).catch(() => {});
+
     return res.redirect(303, session.url);
   } catch (err) {
     console.error("CHECKOUT SESSION ERROR:", err.message);
@@ -464,6 +481,29 @@ router.post(
         // newer state change for the same subscription.
         stripeEventCreated: new Date(event.created * 1000).toISOString(),
       });
+
+      // Acquisition analytics (2026-09) — the authoritative "successful
+      // paid subscription" signal, per the explicit requirement that
+      // this must come from the real Stripe webhook, never a client-side
+      // "thank you" page. Deliberately scoped to
+      // customer.subscription.created only (a genuinely NEW subscription
+      // object, not a renewal/cancellation/reactivation update to an
+      // existing one) with a qualifying status and a successfully
+      // processed (non-stale) result.
+      //
+      // Idempotent by construction, not just by this condition (2026-09
+      // review correction): Stripe's own event.id is passed as
+      // externalEventId, and migration 032's acquisition_events_dedup_idx
+      // enforces at the DATABASE level that the same (event_type,
+      // event.id) pair can never produce two rows — so even if this
+      // exact webhook delivery is retried/redelivered by Stripe (a
+      // normal, expected occurrence claimWebhookEvent's own dedup above
+      // already mitigates, but never at zero probability for a fresh
+      // process), a second insert attempt safely no-ops rather than
+      // double-counting a single real conversion.
+      if (event.type === "customer.subscription.created" && result === "processed" && PAID_CONVERSION_STATUSES.has(subscription.status)) {
+        recordAcquisitionEvent("paid_conversion", { householdId, path: "/billing/webhook", externalEventId: event.id }).catch(() => {});
+      }
 
       if (result === "processed" || result === "ignored_stale") {
         // Provisioning/release failure must never affect the webhook's

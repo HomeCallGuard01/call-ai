@@ -193,6 +193,18 @@
   </div>
 
   <form id="registerForm" action="/register" method="POST">
+    <!-- Acquisition analytics (2026-09) — forwards this exact page's own
+         URL query string and the browser's built-in document.referrer
+         hostname, nothing else. No cookie, no localStorage, no
+         fingerprinting: this only reads properties already present on
+         the current page load and submits them as part of the normal
+         form POST, same as any other form field. Populated by the
+         inline script at the bottom of this page. -->
+    <input type="hidden" id="utm_source" name="utm_source">
+    <input type="hidden" id="utm_medium" name="utm_medium">
+    <input type="hidden" id="utm_campaign" name="utm_campaign">
+    <input type="hidden" id="referrer_host" name="referrer_host">
+
     <label for="email">Email</label>
     <input type="email" id="email" name="email" required>
 
@@ -230,6 +242,34 @@
 </div>
 
 <script>
+  // Acquisition analytics (2026-09) — reads only this page's own current
+  // URL query string and the browser's built-in document.referrer, both
+  // already visible to any page via standard, non-tracking browser APIs.
+  // No cookie is read or set, nothing is written to localStorage, and
+  // nothing here can identify a visitor across pages or sites.
+  (function () {
+    var params = new URLSearchParams(window.location.search);
+    var utmSource = document.getElementById("utm_source");
+    var utmMedium = document.getElementById("utm_medium");
+    var utmCampaign = document.getElementById("utm_campaign");
+    var referrerHost = document.getElementById("referrer_host");
+
+    if (utmSource) utmSource.value = params.get("utm_source") || "";
+    if (utmMedium) utmMedium.value = params.get("utm_medium") || "";
+    if (utmCampaign) utmCampaign.value = params.get("utm_campaign") || "";
+
+    if (referrerHost && document.referrer) {
+      try {
+        var referrerUrl = new URL(document.referrer);
+        if (referrerUrl.hostname !== window.location.hostname) {
+          referrerHost.value = referrerUrl.hostname;
+        }
+      } catch (e) {
+        // Malformed/unparseable referrer — leave blank, never guess.
+      }
+    }
+  })();
+
   var ERROR_MESSAGES = {
     validation: "Please enter a valid email and password.",
     mismatch: "Passwords do not match. Please try again.",

@@ -2507,6 +2507,19 @@
   </footer>
 
   <script>
+    // Acquisition analytics (2026-09) — if this homepage was reached with
+    // UTM query parameters (e.g. from an ad campaign), preserve them
+    // through to the registration page so /register.html's own capture
+    // (see public/register.html) can record them. Pure URL query-string
+    // passthrough: no cookie, no localStorage, no fingerprinting — only
+    // ever appends this exact page's own current, already-visible query
+    // string to the existing registration links.
+    if (window.location.search) {
+      document.querySelectorAll('a[href="/register.html"]').forEach(function (link) {
+        link.href = "/register.html" + window.location.search;
+      });
+    }
+
     const faqQuestions = document.querySelectorAll(".faq-question");
 
     faqQuestions.forEach(function (question) {

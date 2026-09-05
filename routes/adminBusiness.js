@@ -37,6 +37,7 @@ const { classifyHouseholds } = require("../services/businessMetrics/fairUse");
 const { getBackendReleaseInfo, getMobileReleaseInfo } = require("../services/businessMetrics/releaseInfo");
 const { resolveVatRate, resolveFixedMonthlyCostsGbp, resolveFixedMonthlyCostsStatus, resolveUsdToGbpRate } = require("../services/businessMetrics/config");
 const { getGenuineCustomerOverview } = require("../services/businessMetrics/customerClassificationOverview");
+const { getAcquisitionOverview } = require("../services/businessMetrics/acquisitionOverview");
 
 const router = express.Router();
 
@@ -97,6 +98,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       recentFailedStripeWebhookCount,
       topHouseholdsRaw,
       genuineOverview,
+      acquisitionOverview,
     ] = await Promise.all([
       getBusinessOverview(),
       getSubscriptionStatusBreakdown(),
@@ -109,6 +111,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       getRecentFailedStripeWebhookCount(),
       getTopUnknownCallHouseholdsMtd(10),
       getGenuineCustomerOverview(),
+      getAcquisitionOverview(),
     ]);
 
     const systemHealth = await getSystemHealthSnapshot({ recentFailedStripeWebhookCount });
@@ -275,6 +278,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       },
       callStats: { today: callStatsToday, monthToDate: callStatsMtd },
       fairUse,
+      acquisition: acquisitionOverview,
       release: {
         backend: getBackendReleaseInfo(),
         mobile: getMobileReleaseInfo(),
@@ -284,7 +288,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
         "OpenAI cost is an estimate only — the configured API key cannot query organisation cost APIs (needs a separate Admin-scoped key); no persisted transcription-success record exists to confirm recent operation.",
         "Apple/RevenueCat revenue is an estimate (active-entitlement count x list price) — no per-transaction Apple amount or commission tier is available from this integration.",
         "No RevenueCat webhook failure log exists in this schema — RevenueCat health cannot be confirmed from recent operational evidence.",
-        "No UTM/acquisition-source capture exists anywhere in the signup path — marketing attribution (section 15) is not yet possible.",
+        "Acquisition/landing-visit counts are raw server-side page-request counts, not unique/deduplicated visitors — no cookie or session exists to distinguish a repeat visitor from a new one, and bots/prefetchers/link-scanners are not filtered out. Registration-submitted/completed counts likewise cannot be linked to a specific later checkout/conversion (no persistent identifier exists before a household is created), so only stage-level aggregate counts are available, never a true per-visitor funnel. Referrer is hostname-only and reflects only the browser's own Referer header, which many browsers/privacy settings omit or strip. The 'classified genuine-customer' funnel only ever counts households explicitly marked genuine_customer in account_classifications — an unclassified account is never counted as genuine.",
         "Account classification (genuine/internal/admin/reviewer/qa) is explicit and manually maintained (public.account_classifications) — any household with no row is UNCLASSIFIED and excluded from genuine-customer figures; see customers.genuine.unclassifiedAccounts for the current list needing review.",
         "calls.duration_seconds still does not exist — Twilio number-rental vs. call-usage cost is now split (costs.twilio.spendMtdSplit), but no per-household or per-genuine-customer £ cost can be computed without duration data.",
       ],
