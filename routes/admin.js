@@ -135,7 +135,16 @@ router.post("/admin/api/households/:id/retry-provisioning", requireAuth, require
 // updateTwilioNumberForEntitlementChange(household, true) hook every
 // other entitlement-activation path (Stripe checkout, RevenueCat
 // purchase) already uses — no separate/duplicate provisioning logic.
-router.post("/admin/api/households/:id/grant-complimentary", requireAuth, requireAdmin, async (req, res) => {
+//
+// express.json() scoped onto this route (same latent gap and same fix
+// as the Friends & Family create-invite route below): server.js applies
+// only bodyParser.urlencoded() globally, so this route's JSON body
+// (admin-business.html's grant-complimentary fetch sends
+// Content-Type: application/json) was previously never actually parsed
+// — req.body.notes/endsAt silently arrived undefined, which
+// grantComplimentaryEntitlement() would then reject as "A reason/note
+// is required"/"A valid expiry date... is required".
+router.post("/admin/api/households/:id/grant-complimentary", requireAuth, requireAdmin, express.json(), async (req, res) => {
   if (!supabaseAdmin) {
     return res.status(503).json({ error: "not_configured" });
   }
@@ -189,7 +198,12 @@ router.post("/admin/api/households/:id/grant-complimentary", requireAuth, requir
 // the household is actually a paying customer), and the Twilio
 // mark-for-release hook is deliberately only called when a revoke
 // genuinely happened.
-router.post("/admin/api/households/:id/revoke-complimentary", requireAuth, requireAdmin, async (req, res) => {
+//
+// express.json() scoped onto this route too, for consistency with its
+// grant-complimentary counterpart above (same convention) — this route
+// does not currently read any request body field, so this is
+// precautionary/consistent rather than a fix for an active defect here.
+router.post("/admin/api/households/:id/revoke-complimentary", requireAuth, requireAdmin, express.json(), async (req, res) => {
   if (!supabaseAdmin) {
     return res.status(503).json({ error: "not_configured" });
   }
@@ -232,7 +246,16 @@ router.post("/admin/api/households/:id/revoke-complimentary", requireAuth, requi
 // entitlement is granted later, at redemption time, via the exact same
 // grantComplimentaryEntitlement() used by the manual grant route above —
 // no second entitlement mechanism.
-router.post("/admin/api/complimentary-invites", requireAuth, requireAdmin, async (req, res) => {
+// express.json() is scoped to this one route (matching this codebase's
+// existing convention — see /household/phone-number, /confirm-session,
+// /reset-password-verify in server.js): server.js applies only
+// bodyParser.urlencoded() globally, so a route expecting a JSON body
+// (this page's admin-business.html sends
+// Content-Type: application/json) must parse it itself, or req.body
+// silently comes back {} — which is exactly what caused every duration
+// selection to fail with "durationDays must be one of 30, 90, 365"
+// (Number(undefined) is NaN, which matches no allowed value).
+router.post("/admin/api/complimentary-invites", requireAuth, requireAdmin, express.json(), async (req, res) => {
   const { durationDays, note } = req.body || {};
   const parsedDuration = Number(durationDays);
 
