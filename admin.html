@@ -511,6 +511,34 @@
           <button type="button" id="retryProvisioningBtn">Retry</button>
         </div>
         <div class="quick-action-result" id="quickActionResult"></div>
+
+        <h3 style="margin-top:20px;">Grant complimentary access</h3>
+        <p style="color:#93a3b8;font-size:12.5px;margin-bottom:8px;">
+          Complimentary — no payment taken. For an existing registered
+          household only; does not create or imply a Stripe/RevenueCat
+          subscription.
+        </p>
+        <div class="quick-action-row">
+          <input type="text" id="complimentaryHouseholdId" placeholder="Household ID">
+        </div>
+        <div class="quick-action-row">
+          <select id="complimentaryDuration">
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+            <option value="90">90 days</option>
+            <option value="365">12 months</option>
+            <option value="custom">Custom date…</option>
+          </select>
+          <input type="date" id="complimentaryCustomDate" style="display:none;">
+        </div>
+        <div class="quick-action-row">
+          <input type="text" id="complimentaryNotes" placeholder="Reason (required)">
+        </div>
+        <div class="quick-action-row">
+          <button type="button" id="grantComplimentaryBtn">Grant complimentary — no payment taken</button>
+          <button type="button" id="revokeComplimentaryBtn">Revoke complimentary</button>
+        </div>
+        <div class="quick-action-result" id="complimentaryResult"></div>
       </div>
     </div>
 
@@ -965,6 +993,89 @@
     } catch (err) {
       resultEl.textContent = "Request failed — see console.";
       console.error("RETRY PROVISIONING ERROR:", err);
+    }
+  });
+
+  document.getElementById("complimentaryDuration").addEventListener("change", (e) => {
+    document.getElementById("complimentaryCustomDate").style.display = e.target.value === "custom" ? "" : "none";
+  });
+
+  function resolveComplimentaryEndsAt() {
+    const duration = document.getElementById("complimentaryDuration").value;
+    if (duration === "custom") {
+      const customDate = document.getElementById("complimentaryCustomDate").value;
+      if (!customDate) return null;
+      return new Date(customDate + "T00:00:00Z").toISOString();
+    }
+    const days = parseInt(duration, 10);
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  document.getElementById("grantComplimentaryBtn").addEventListener("click", async () => {
+    const householdId = document.getElementById("complimentaryHouseholdId").value.trim();
+    const notes = document.getElementById("complimentaryNotes").value.trim();
+    const resultEl = document.getElementById("complimentaryResult");
+
+    if (!householdId) {
+      resultEl.textContent = "Enter a household ID first.";
+      return;
+    }
+    if (!notes) {
+      resultEl.textContent = "A reason is required.";
+      return;
+    }
+    const endsAt = resolveComplimentaryEndsAt();
+    if (!endsAt) {
+      resultEl.textContent = "Choose a custom expiry date.";
+      return;
+    }
+
+    resultEl.textContent = "Granting complimentary access (no payment taken)…";
+
+    try {
+      const res = await fetch(`/admin/api/households/${encodeURIComponent(householdId)}/grant-complimentary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes, endsAt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        resultEl.textContent = `Failed: ${data.error}`;
+      } else if (data.granted === false) {
+        resultEl.textContent = `Not granted — this household already has an active ${data.existingEntitlement ? data.existingEntitlement.source : "paid"} entitlement. Complimentary access refused to protect it.`;
+      } else {
+        resultEl.textContent = `Granted — complimentary, no payment taken. Expires ${new Date(data.endsAt).toLocaleDateString("en-GB")}.`;
+      }
+      loadOverview();
+    } catch (err) {
+      resultEl.textContent = "Request failed — see console.";
+      console.error("GRANT COMPLIMENTARY ERROR:", err);
+    }
+  });
+
+  document.getElementById("revokeComplimentaryBtn").addEventListener("click", async () => {
+    const householdId = document.getElementById("complimentaryHouseholdId").value.trim();
+    const resultEl = document.getElementById("complimentaryResult");
+
+    if (!householdId) {
+      resultEl.textContent = "Enter a household ID first.";
+      return;
+    }
+
+    resultEl.textContent = "Revoking…";
+
+    try {
+      const res = await fetch(`/admin/api/households/${encodeURIComponent(householdId)}/revoke-complimentary`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      resultEl.textContent = data.revoked
+        ? "Complimentary access revoked."
+        : `Not revoked: ${data.reason || data.error || "unknown"}`;
+      loadOverview();
+    } catch (err) {
+      resultEl.textContent = "Request failed — see console.";
+      console.error("REVOKE COMPLIMENTARY ERROR:", err);
     }
   });
 
