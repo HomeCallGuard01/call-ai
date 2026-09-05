@@ -244,6 +244,141 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
   return { action: "granted", entitlementId: data.id };
 }
 
+// Admin-granted complimentary access (2026-09) — no Stripe or RevenueCat
+// object exists or is implied: source is 'admin_manual', external_reference
+// is always null. Follows the exact same expire-old-then-insert-new
+// transition upsertActiveEntitlementFromRevenueCat above already uses,
+// so a household is never left with, or briefly passes through, two
+// active entitlements — entitlements_one_active_per_household (migration
+// 011) is the final backstop either way. Not wrapped in a single SQL
+// transaction/RPC, matching this exact same pre-existing two-step
+// pattern rather than introducing a new one.
+//
+// `deps.client` defaults to the real supabaseAdmin — only these two new
+// functions accept it, so this is purely additive and never changes how
+// the existing Stripe/RevenueCat functions above are called.
+async function grantComplimentaryEntitlement(householdId, { grantedByAuthUserId, notes, endsAt }, deps = {}) {
+  const { client = supabaseAdmin } = deps;
+  if (!client) throw new Error("Supabase admin client not configured");
+  if (!householdId) throw new Error("householdId is required");
+  if (typeof notes !== "string" || !notes.trim()) {
+    throw new Error("A reason/note is required to grant complimentary access");
+  }
+  if (!endsAt || Number.isNaN(Date.parse(endsAt))) {
+    throw new Error("A valid expiry date (endsAt) is required to grant complimentary access");
+  }
+
+  const { data: existingActive, error: readError } = await client
+    .from("entitlements")
+    .select("id, source, entitlement_type")
+    .eq("household_id", householdId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (readError) {
+    console.error("SUPABASE ENTITLEMENT READ ERROR (complimentary grant):", readError);
+    throw readError;
+  }
+
+  // Safety guard (2026-09): never expire or replace a real paid Stripe
+  // or RevenueCat entitlement. Exactly two starting states are safe to
+  // proceed from — no active entitlement at all, or an existing active
+  // entitlement that is ITSELF already an admin-granted complimentary
+  // one (safe to extend/replace/change, since nothing paid is at risk).
+  // Anything else — genuinely paying, of any source — is refused
+  // outright and left completely untouched. This is a normal, expected
+  // business-rule outcome for the caller to present cleanly (like
+  // revokeComplimentaryEntitlement's own { revoked: false, reason }
+  // pattern below), not a thrown program error.
+  if (existingActive && !(existingActive.source === "admin_manual" && existingActive.entitlement_type === "complimentary")) {
+    return {
+      granted: false,
+      reason: "active_paid_entitlement_exists",
+      existingEntitlement: { source: existingActive.source, entitlementType: existingActive.entitlement_type },
+    };
+  }
+
+  if (existingActive) {
+    const { error: expireError } = await client
+      .from("entitlements")
+      .update({ status: "expired" })
+      .eq("id", existingActive.id);
+
+    if (expireError) {
+      console.error("SUPABASE ENTITLEMENT EXPIRE-ON-TRANSITION ERROR (complimentary grant):", expireError);
+      throw expireError;
+    }
+  }
+
+  const { data, error } = await client
+    .from("entitlements")
+    .insert({
+      household_id: householdId,
+      entitlement_type: "complimentary",
+      status: "active",
+      source: "admin_manual",
+      external_reference: null,
+      ends_at: new Date(endsAt).toISOString(),
+      created_by: grantedByAuthUserId || null,
+      notes: notes.trim(),
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("SUPABASE ENTITLEMENT GRANT ERROR (complimentary):", error);
+    throw error;
+  }
+  return { granted: true, action: "granted", entitlementId: data.id, endsAt: data.ends_at };
+}
+
+// Revokes an admin-granted complimentary entitlement only. Verifies the
+// household's current active entitlement is actually
+// source='admin_manual' AND entitlement_type='complimentary' before
+// touching anything — this is what makes it impossible for this action
+// to accidentally revoke a real, currently-active paid Stripe or
+// RevenueCat entitlement. Uses 'revoked' (not 'expired') to distinguish
+// a deliberate admin action from a natural lapse, matching entitlements'
+// own status vocabulary (migration 011) — never deletes the row, so the
+// audit trail (who granted it, when, why) is preserved exactly like
+// every other entitlement transition in this codebase.
+async function revokeComplimentaryEntitlement(householdId, deps = {}) {
+  const { client = supabaseAdmin } = deps;
+  if (!client) throw new Error("Supabase admin client not configured");
+  if (!householdId) throw new Error("householdId is required");
+
+  const { data: existingActive, error: readError } = await client
+    .from("entitlements")
+    .select("id, source, entitlement_type")
+    .eq("household_id", householdId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (readError) {
+    console.error("SUPABASE ENTITLEMENT READ ERROR (complimentary revoke):", readError);
+    throw readError;
+  }
+
+  if (!existingActive) {
+    return { revoked: false, reason: "no_active_entitlement" };
+  }
+
+  if (existingActive.source !== "admin_manual" || existingActive.entitlement_type !== "complimentary") {
+    return { revoked: false, reason: "active_entitlement_is_not_complimentary" };
+  }
+
+  const { error } = await client
+    .from("entitlements")
+    .update({ status: "revoked" })
+    .eq("id", existingActive.id);
+
+  if (error) {
+    console.error("SUPABASE ENTITLEMENT REVOKE ERROR (complimentary):", error);
+    throw error;
+  }
+  return { revoked: true, entitlementId: existingActive.id };
+}
+
 // Revokes a household's active entitlement on a genuine RevenueCat
 // EXPIRATION event — only if that active entitlement is actually the one
 // RevenueCat owns (source + external_reference match). A household that
@@ -294,4 +429,6 @@ module.exports = {
   getSubscriptionByHouseholdId,
   upsertActiveEntitlementFromRevenueCat,
   expireEntitlementFromRevenueCat,
+  grantComplimentaryEntitlement,
+  revokeComplimentaryEntitlement,
 };

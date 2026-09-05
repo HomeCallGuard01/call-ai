@@ -17,7 +17,8 @@ const {
 } = require("../database/adminMetrics");
 const { getLaunchReadinessItems } = require("../services/launchReadiness");
 const { supabaseAdmin } = require("../services/supabaseClients");
-const { ensureTwilioNumberProvisioned } = require("../services/twilioProvisioning");
+const { ensureTwilioNumberProvisioned, updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
+const { grantComplimentaryEntitlement, revokeComplimentaryEntitlement } = require("../database/billing");
 const { recordAdminAction, getRecentAdminActions } = require("../services/adminActionLog");
 
 const router = express.Router();
@@ -113,6 +114,105 @@ router.post("/admin/api/households/:id/retry-provisioning", requireAuth, require
   });
 
   res.json(result);
+});
+
+// Admin-granted complimentary access (2026-09) — for an existing,
+// already-registered household only (this does not register anyone).
+// No Stripe or RevenueCat object is created or implied
+// (database/billing.js's grantComplimentaryEntitlement sets
+// source='admin_manual', external_reference=null). After the
+// entitlement is written, calls the exact same
+// updateTwilioNumberForEntitlementChange(household, true) hook every
+// other entitlement-activation path (Stripe checkout, RevenueCat
+// purchase) already uses — no separate/duplicate provisioning logic.
+router.post("/admin/api/households/:id/grant-complimentary", requireAuth, requireAdmin, async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ error: "not_configured" });
+  }
+
+  const { notes, endsAt } = req.body || {};
+
+  const { data: household, error } = await supabaseAdmin
+    .from("households")
+    .select("*")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (error || !household) {
+    return res.status(404).json({ error: "household_not_found" });
+  }
+
+  try {
+    const grantResult = await grantComplimentaryEntitlement(household.id, {
+      grantedByAuthUserId: req.authUserId,
+      notes,
+      endsAt,
+    });
+
+    // Only trigger provisioning when a grant genuinely happened — a
+    // refused grant (an active real Stripe/RevenueCat entitlement
+    // already exists) must never touch this household's Twilio number.
+    if (grantResult.granted) {
+      await updateTwilioNumberForEntitlementChange(household, true);
+    }
+
+    recordAdminAction({
+      type: "grant_complimentary",
+      householdId: household.id,
+      email: household.email,
+      result: grantResult,
+    });
+
+    res.json({ ok: true, ...grantResult });
+  } catch (err) {
+    console.error("ADMIN GRANT COMPLIMENTARY ERROR:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Revokes complimentary access only — grantComplimentaryEntitlement's
+// counterpart. database/billing.js's revokeComplimentaryEntitlement
+// verifies the household's active entitlement is genuinely
+// source='admin_manual'/entitlement_type='complimentary' before touching
+// anything, so this can never revoke a real paid Stripe/RevenueCat
+// entitlement; { revoked: false } is a normal, non-error outcome (e.g.
+// the household is actually a paying customer), and the Twilio
+// mark-for-release hook is deliberately only called when a revoke
+// genuinely happened.
+router.post("/admin/api/households/:id/revoke-complimentary", requireAuth, requireAdmin, async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ error: "not_configured" });
+  }
+
+  const { data: household, error } = await supabaseAdmin
+    .from("households")
+    .select("*")
+    .eq("id", req.params.id)
+    .maybeSingle();
+
+  if (error || !household) {
+    return res.status(404).json({ error: "household_not_found" });
+  }
+
+  try {
+    const revokeResult = await revokeComplimentaryEntitlement(household.id);
+
+    if (revokeResult.revoked) {
+      await updateTwilioNumberForEntitlementChange(household, false);
+    }
+
+    recordAdminAction({
+      type: "revoke_complimentary",
+      householdId: household.id,
+      email: household.email,
+      result: revokeResult,
+    });
+
+    res.json({ ok: true, ...revokeResult });
+  } catch (err) {
+    console.error("ADMIN REVOKE COMPLIMENTARY ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
 });
 
 module.exports = router;
