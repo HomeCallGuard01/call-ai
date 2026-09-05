@@ -10,7 +10,7 @@
 
   <meta
     name="description"
-    content="Home Call Guard screens unknown callers throughout the call, helping protect you and your family from scam and nuisance calls."
+    content="Home Call Guard monitors unknown calls while the conversation is happening and can step in if danger is detected — protecting you and your family from scam and nuisance calls."
   >
 
   <link rel="canonical" href="https://homecallguard.co.uk/">
@@ -18,14 +18,14 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Home Call Guard">
   <meta property="og:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-  <meta property="og:description" content="Home Call Guard screens unknown callers throughout the call, helping protect you and your family from scam and nuisance calls. £4.99/month, no long-term contract.">
+  <meta property="og:description" content="Home Call Guard monitors unknown calls while the conversation is happening and can step in if danger is detected. £4.99/month, no long-term contract.">
   <meta property="og:url" content="https://homecallguard.co.uk/">
   <meta property="og:image" content="https://homecallguard.co.uk/logo.png">
   <meta property="og:locale" content="en_GB">
 
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-  <meta name="twitter:description" content="Home Call Guard screens unknown callers throughout the call, helping protect you and your family from scam and nuisance calls.">
+  <meta name="twitter:description" content="Home Call Guard monitors unknown calls while the conversation is happening and can step in if danger is detected.">
   <meta name="twitter:image" content="https://homecallguard.co.uk/logo.png">
 
   <title>Home Call Guard | Protect Your Phone From Scam Callers</title>
@@ -57,10 +57,10 @@
       {
         "@type": "Service",
         "name": "Home Call Guard",
-        "serviceType": "Scam call screening service",
+        "serviceType": "Scam call monitoring service",
         "provider": { "@id": "https://homecallguard.co.uk/#organization" },
         "areaServed": "GB",
-        "description": "A call-screening service that lets trusted contacts through immediately and monitors calls from unknown numbers for the signs of a phone scam, warning a trusted contact or ending the call if one is detected.",
+        "description": "A service that lets trusted contacts through immediately and monitors unknown calls while the conversation is happening, stepping in if signs of a scam are detected.",
         "offers": {
           "@type": "Offer",
           "price": "4.99",
@@ -467,43 +467,151 @@
       font-size: 0.84rem;
     }
 
-    .mini-how-it-works {
-      padding: 44px 0;
-    }
-
-    .mini-how-it-works-title {
-      text-align: center;
-      font-size: 1.15rem;
-      font-weight: 800;
-      color: var(--white);
-      margin-bottom: 26px;
-    }
-
-    .mini-steps {
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      gap: 48px;
-      flex-wrap: wrap;
-    }
-
-    .mini-step {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      max-width: 160px;
-      text-align: center;
-    }
-
-    .mini-step-icon {
-      font-size: 1.3rem;
-    }
-
-    .mini-step span:last-child {
+    .compat-line {
+      max-width: 620px;
+      margin-top: 18px;
+      padding: 14px 18px;
+      border: 1px solid rgba(34, 229, 154, 0.22);
+      border-radius: 14px;
+      background: rgba(34, 229, 154, 0.06);
       color: var(--text);
-      font-size: 0.94rem;
-      font-weight: 600;
+      font-size: 0.98rem;
+      line-height: 1.6;
+    }
+
+    .compat-line strong {
+      color: var(--white);
+    }
+
+    .reassurance-line {
+      margin-top: 30px;
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .steps-grid.steps-grid-4 {
+      grid-template-columns: repeat(4, 1fr);
+    }
+
+    .compat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .compat-card {
+      padding: 30px 22px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--card);
+      text-align: center;
+    }
+
+    .compat-icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+    }
+
+    .compat-card h3 {
+      font-size: 1.08rem;
+      letter-spacing: -0.02em;
+    }
+
+    .compat-card p {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    .differentiator {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 38px 42px;
+      border: 1px solid rgba(34, 229, 154, 0.28);
+      border-radius: 26px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+
+    .differentiator p {
+      margin-top: 16px;
+      color: var(--text);
+      font-size: 1.02rem;
+      line-height: 1.7;
+    }
+
+    .differentiator p:first-of-type {
+      margin-top: 18px;
+    }
+
+    .differentiator strong {
+      color: var(--white);
+    }
+
+    .risk-flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .risk-node {
+      flex: 1 1 130px;
+      min-width: 110px;
+      padding: 20px 12px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.025);
+      text-align: center;
+    }
+
+    .risk-node .node-icon {
+      font-size: 1.6rem;
+    }
+
+    .risk-node strong {
+      display: block;
+      margin-top: 10px;
+      font-size: 0.9rem;
+    }
+
+    .risk-node span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+
+    .risk-node.state-caution {
+      border-color: rgba(245, 158, 11, 0.32);
+      background: rgba(245, 158, 11, 0.07);
+    }
+
+    .risk-node.state-suspicious {
+      border-color: rgba(245, 158, 11, 0.48);
+      background: rgba(245, 158, 11, 0.12);
+    }
+
+    .risk-node.state-high-risk {
+      border-color: rgba(239, 68, 68, 0.4);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .risk-node.state-ended {
+      border-color: rgba(239, 68, 68, 0.55);
+      background: rgba(239, 68, 68, 0.16);
+    }
+
+    .flow-caption {
+      margin-top: 22px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
     }
 
     .home-phone-card {
@@ -1271,6 +1379,18 @@
         transform: rotate(90deg);
       }
 
+      .risk-flow {
+        flex-direction: column;
+      }
+
+      .steps-grid.steps-grid-4 {
+        grid-template-columns: 1fr;
+      }
+
+      .compat-grid {
+        grid-template-columns: 1fr;
+      }
+
       .trust-grid {
         grid-template-columns: repeat(2, 1fr);
       }
@@ -1339,11 +1459,6 @@
         gap: 11px;
       }
 
-      .mini-steps {
-        flex-direction: column;
-        align-items: center;
-        gap: 20px;
-      }
 
       .home-phone-card {
         padding: 22px 20px;
@@ -1496,13 +1611,20 @@
           </div>
 
           <h1>
-            Stop <span>scam callers</span> before they reach you
+            Protection <span>while the conversation is happening</span>.
           </h1>
 
           <p class="hero-copy">
-            Protect your phone from nuisance and scam callers in around 2
-            minutes. Keep your existing number while Home Call Guard
-            automatically screens unknown callers.
+            Home Call Guard adds an extra layer of protection when an unknown
+            caller contacts you. It monitors the conversation as it happens,
+            looking for signs of scams or manipulation. If the call becomes
+            dangerous, Home Call Guard can step in and end it.
+          </p>
+
+          <p class="compat-line">
+            <strong>Protect your landline or mobile.</strong>
+            Works with landlines, Android and iPhone.
+            <strong>£4.99 per month.</strong>
           </p>
 
           <div class="hero-points">
@@ -1513,22 +1635,12 @@
 
             <div class="hero-point">
               <span class="check">✓</span>
-              Upload your trusted contacts in under 2 minutes
+              Trusted contacts connect normally, every time
             </div>
 
             <div class="hero-point">
               <span class="check">✓</span>
-              Friends and family ring through exactly as normal
-            </div>
-
-            <div class="hero-point">
-              <span class="check">✓</span>
-              Unknown callers are screened by AI during the call
-            </div>
-
-            <div class="hero-point">
-              <span class="check">✓</span>
-              Works with mobile phones and landlines
+              Unknown callers are monitored while you talk, not just checked beforehand
             </div>
           </div>
 
@@ -1537,16 +1649,17 @@
               Your trusted contacts call exactly as they do today.
             </p>
             <p>
-              Friends, family and saved contacts are never screened or delayed.
+              Friends, family and saved contacts are never monitored or delayed.
             </p>
             <p>
-              Only unknown callers are monitored during the call.
+              Only calls from unknown numbers are monitored, and only while
+              the conversation is happening.
             </p>
           </div>
 
           <div class="hero-actions">
             <a class="primary-button" href="/register.html">
-              Get Protected Today
+              Get Protected
             </a>
 
             <a class="secondary-button" href="#how-it-works">
@@ -1554,17 +1667,13 @@
             </a>
           </div>
 
-          <p class="price-note">
-            <strong>£4.99/month (including VAT)</strong>
-          </p>
-
           <p class="reassurance-badge">
             🔒 Setup takes under 2 minutes · Keep your existing phone number · Cancel anytime
           </p>
 
         </div>
 
-        <div class="phone-stage" aria-label="Home Call Guard screening an unknown caller">
+        <div class="phone-stage" aria-label="Home Call Guard monitoring a call from an unknown caller">
 
           <div class="phone-glow"></div>
 
@@ -1600,12 +1709,12 @@
                 </strong>
 
                 <p>
-                  Screening this call now.
+                  Monitoring this call for your safety.
                 </p>
 
                 <div class="screening-status">
                   <span class="pulse"></span>
-                  Screening in progress
+                  Live monitoring active
                 </div>
 
               </div>
@@ -1618,22 +1727,110 @@
       </div>
     </section>
 
-    <section class="mini-how-it-works">
+    <section class="section" id="how-it-works">
       <div class="container">
-        <h2 class="mini-how-it-works-title">How it works</h2>
-        <div class="mini-steps">
-          <div class="mini-step">
-            <span class="mini-step-icon" aria-hidden="true">1️⃣</span>
-            <span>Register</span>
-          </div>
-          <div class="mini-step">
-            <span class="mini-step-icon" aria-hidden="true">2️⃣</span>
-            <span>Upload your trusted contacts</span>
-          </div>
-          <div class="mini-step">
-            <span class="mini-step-icon" aria-hidden="true">3️⃣</span>
-            <span>We screen everyone else</span>
-          </div>
+
+        <div class="section-heading centered">
+          <span class="section-label">How it works</span>
+          <h2>How Home Call Guard works</h2>
+        </div>
+
+        <div class="steps-grid steps-grid-4">
+
+          <article class="step-card">
+            <div class="step-number">1</div>
+            <div class="step-icon">📞</div>
+            <h3>An unknown caller calls</h3>
+            <p>
+              Someone who isn't one of your trusted contacts calls your
+              landline or mobile.
+            </p>
+          </article>
+
+          <article class="step-card">
+            <div class="step-number">2</div>
+            <div class="step-icon">👂</div>
+            <h3>Home Call Guard monitors the conversation</h3>
+            <p>
+              Home Call Guard looks for signs that the conversation may be
+              becoming suspicious while you are talking.
+            </p>
+          </article>
+
+          <article class="step-card">
+            <div class="step-number">3</div>
+            <div class="step-icon">⚠️</div>
+            <h3>Risk develops</h3>
+            <p>
+              HCG can recognise warning signs as the conversation progresses.
+            </p>
+          </article>
+
+          <article class="step-card">
+            <div class="step-number">4</div>
+            <div class="step-icon">🛑</div>
+            <h3>Home Call Guard steps in</h3>
+            <p>
+              If sufficient danger is detected, Home Call Guard can intervene
+              and end the call to help protect you.
+            </p>
+          </article>
+
+        </div>
+
+        <p class="reassurance-line">
+          Calls from your trusted contacts connect normally.
+        </p>
+
+      </div>
+    </section>
+
+    <section class="section section-light">
+      <div class="container">
+
+        <div class="section-heading centered">
+          <span class="section-label">Compatibility</span>
+          <h2>Works with the phone you already have.</h2>
+        </div>
+
+        <div class="compat-grid">
+
+          <article class="compat-card">
+            <div class="compat-icon" aria-hidden="true">☎️</div>
+            <h3>Landline</h3>
+            <p>Protect your home telephone.</p>
+          </article>
+
+          <article class="compat-card">
+            <div class="compat-icon" aria-hidden="true">🤖</div>
+            <h3>Android</h3>
+            <p>Protect calls on your Android mobile.</p>
+          </article>
+
+          <article class="compat-card">
+            <div class="compat-icon" aria-hidden="true">🍎</div>
+            <h3>iPhone</h3>
+            <p>Home Call Guard supports protection for iPhone/mobile users.</p>
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="differentiator">
+          <span class="section-label">More than a call blocker</span>
+          <p>
+            Traditional call blocking tries to identify unwanted numbers
+            before you answer. But sophisticated scam calls can come from
+            unfamiliar numbers and may initially sound completely genuine.
+          </p>
+          <p>
+            <strong>Home Call Guard is different.</strong> It provides an
+            extra layer of protection while the conversation is taking place.
+          </p>
         </div>
       </div>
     </section>
@@ -1652,7 +1849,7 @@
         </div>
 
         <div class="trust-item">
-          <strong>No new app</strong>
+          <strong>Simple to set up</strong>
           <span>Nothing complicated to learn</span>
         </div>
 
@@ -1732,13 +1929,13 @@
       </div>
     </section>
 
-    <section class="section" id="how-it-works">
+    <section class="section" id="get-started">
       <div class="container">
 
         <div class="section-heading centered">
 
           <span class="section-label">
-            How it works
+            Getting started
           </span>
 
           <h2>
@@ -1807,18 +2004,18 @@
             <div class="step-icon">🛡</div>
 
             <h3>
-              Unknown callers are screened
+              Unknown callers are monitored
             </h3>
 
             <p>
-              Anyone not on your trusted list is politely answered before your
-              phone rings.
+              Anyone not on your trusted list is connected as normal, then
+              monitored while the conversation happens.
             </p>
 
             <p>
               Trusted callers are connected immediately.<br>
-              Unknown callers are screened using AI.<br>
-              Potential scam callers never disturb you unnecessarily.
+              Unknown callers are monitored by AI during the call.<br>
+              Home Call Guard can step in if the conversation turns dangerous.
             </p>
 
           </article>
@@ -1854,9 +2051,9 @@
             <div class="feature-icon">🛡</div>
 
             <div>
-              <h3>Screen unknown callers</h3>
+              <h3>Monitor unknown callers</h3>
               <p>
-                Add protection between you and callers you do not recognise.
+                Add protection while you talk to callers you don't recognise.
               </p>
             </div>
           </article>
@@ -1906,41 +2103,75 @@
         <div class="section-heading centered">
 
           <span class="section-label">
-            One simple journey
+            While the call is happening
           </span>
 
           <h2>
             What happens when somebody calls?
           </h2>
 
+          <p>
+            A genuine call from a trusted contact never enters this process —
+            it connects immediately. This is what happens for an unknown
+            caller.
+          </p>
+
         </div>
 
         <div class="flow-card">
-          <div class="flow">
+          <div class="risk-flow">
 
-            <div class="flow-node">
+            <div class="risk-node">
               <div class="node-icon">☎</div>
               <strong>Unknown caller</strong>
-              <span>A number you do not recognise</span>
+              <span>A number you don't recognise</span>
             </div>
 
             <div class="flow-arrow">→</div>
 
-            <div class="flow-node">
-              <div class="node-icon">🛡</div>
-              <strong>Caller is screened</strong>
-              <span>Home Call Guard answers first</span>
+            <div class="risk-node">
+              <div class="node-icon">👂</div>
+              <strong>Monitoring</strong>
+              <span>Home Call Guard listens as you talk</span>
             </div>
 
             <div class="flow-arrow">→</div>
 
-            <div class="flow-node good">
-              <div class="node-icon">📱</div>
-              <strong>You stay protected</strong>
-              <span>Genuine calls can continue</span>
+            <div class="risk-node state-caution">
+              <div class="node-icon">🤔</div>
+              <strong>Caution</strong>
+              <span>Early warning signs noticed</span>
+            </div>
+
+            <div class="flow-arrow">→</div>
+
+            <div class="risk-node state-suspicious">
+              <div class="node-icon">⚠️</div>
+              <strong>Suspicious</strong>
+              <span>The pattern looks concerning</span>
+            </div>
+
+            <div class="flow-arrow">→</div>
+
+            <div class="risk-node state-high-risk">
+              <div class="node-icon">🚨</div>
+              <strong>High risk</strong>
+              <span>Strong signs of a scam</span>
+            </div>
+
+            <div class="flow-arrow">→</div>
+
+            <div class="risk-node state-ended">
+              <div class="node-icon">⛔</div>
+              <strong>Call ended</strong>
+              <span>Home Call Guard steps in</span>
             </div>
 
           </div>
+          <p class="flow-caption">
+            Most calls never progress past monitoring — this shows what
+            happens if genuine danger is detected.
+          </p>
         </div>
 
       </div>
@@ -1983,7 +2214,7 @@
               <ul class="pricing-list">
                 <li>
                   <span class="check">✓</span>
-                  Unknown caller screening
+                  Unknown caller monitoring
                 </li>
 
                 <li>
@@ -2132,8 +2363,12 @@
 
             <div class="faq-answer">
               <p>
-                No. Your account and trusted contacts are managed through a
-                simple online dashboard, so there is no separate app to learn.
+                Your account and trusted contacts are always managed through
+                a simple online dashboard. If you're protecting a landline,
+                no app is needed at all. For mobile protection, Home Call
+                Guard uses a companion app — available for Android now, and
+                Home Call Guard supports protection for iPhone/mobile users
+                too.
               </p>
             </div>
 
