@@ -19,6 +19,7 @@ const { supabaseAdmin } = require("../services/supabaseClients");
 const { ensureTwilioNumberProvisioned, updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { grantComplimentaryEntitlement, revokeComplimentaryEntitlement } = require("../database/billing");
 const { recordAdminAction, getRecentAdminActions } = require("../services/adminActionLog");
+const { createInvite, listInvites, revokeInvite, ALLOWED_DURATIONS_DAYS } = require("../services/complimentaryInvites");
 
 const router = express.Router();
 
@@ -220,6 +221,68 @@ router.post("/admin/api/households/:id/revoke-complimentary", requireAuth, requi
     res.json({ ok: true, ...revokeResult });
   } catch (err) {
     console.error("ADMIN REVOKE COMPLIMENTARY ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// Friends & Family complimentary invite links (2026-09) — a
+// self-service alternative to the household-ID grant above, for a
+// recipient who doesn't have a household yet at all. Creates only an
+// invite-lifecycle row (services/complimentaryInvites.js); the actual
+// entitlement is granted later, at redemption time, via the exact same
+// grantComplimentaryEntitlement() used by the manual grant route above —
+// no second entitlement mechanism.
+router.post("/admin/api/complimentary-invites", requireAuth, requireAdmin, async (req, res) => {
+  const { durationDays, note } = req.body || {};
+  const parsedDuration = Number(durationDays);
+
+  if (!ALLOWED_DURATIONS_DAYS.includes(parsedDuration)) {
+    return res.status(400).json({ error: `durationDays must be one of ${ALLOWED_DURATIONS_DAYS.join(", ")}` });
+  }
+
+  try {
+    const { invite, token } = await createInvite({
+      durationDays: parsedDuration,
+      note,
+      createdByAuthUserId: req.authUserId,
+    });
+
+    recordAdminAction({
+      type: "create_complimentary_invite",
+      householdId: null,
+      email: null,
+      result: { inviteId: invite.id, durationDays: invite.duration_days },
+    });
+
+    // The raw token/URL is returned exactly once, in this response only —
+    // never logged, never persisted (only its hash is stored).
+    res.json({ ok: true, invite, url: `${process.env.APP_URL}/register.html?invite=${token}` });
+  } catch (err) {
+    console.error("ADMIN CREATE COMPLIMENTARY INVITE ERROR:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get("/admin/api/complimentary-invites", requireAuth, requireAdmin, async (req, res) => {
+  const result = await listInvites();
+  if (!result.available) {
+    return res.status(503).json({ error: result.reason });
+  }
+  res.json(result);
+});
+
+router.post("/admin/api/complimentary-invites/:id/revoke", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await revokeInvite(req.params.id);
+    recordAdminAction({
+      type: "revoke_complimentary_invite",
+      householdId: null,
+      email: null,
+      result,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("ADMIN REVOKE COMPLIMENTARY INVITE ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });

@@ -170,6 +170,14 @@
 
 <div class="box">
   <form id="loginForm" action="/login" method="POST">
+    <!-- Friends & Family complimentary invite (2026-09) — existing-account
+         path: forwards the opaque ?invite= token from this page's own
+         URL, exactly like register.html's own invite_token field. Not
+         stored in a cookie or localStorage — it only ever flows through
+         this one form submission. Validated entirely server-side, after
+         successful authentication. -->
+    <input type="hidden" id="invite_token" name="invite_token">
+
     <label for="email">Email</label>
     <input type="email" id="email" name="email" required>
 
@@ -213,6 +221,9 @@
   var loginError = params.get("error");
   var loginEmail = params.get("email");
   var state = params.get("state");
+
+  var inviteTokenField = document.getElementById("invite_token");
+  if (inviteTokenField) inviteTokenField.value = params.get("invite") || "";
 
   if (loginError && LOGIN_ERROR_MESSAGES[loginError]) {
     var banner = document.getElementById("errorBanner");

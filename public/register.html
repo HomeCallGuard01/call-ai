@@ -205,6 +205,13 @@
     <input type="hidden" id="utm_campaign" name="utm_campaign">
     <input type="hidden" id="referrer_host" name="referrer_host">
 
+    <!-- Friends & Family complimentary invite (2026-09) — forwards the
+         opaque ?invite= token from this page's own URL, nothing else.
+         Validated entirely server-side at redemption time; carrying it
+         through here adds no new tracking surface (same pattern as the
+         UTM fields above). -->
+    <input type="hidden" id="invite_token" name="invite_token">
+
     <label for="email">Email</label>
     <input type="email" id="email" name="email" required>
 
@@ -231,7 +238,7 @@
        load and after every outcome carries no signal at all. -->
   <div class="footer-link" id="loginFooterLink">
     Already have an account?
-    <a href="/login.html">Log in</a>
+    <a href="/login.html" id="loginLink">Log in</a>
     ·
     <a href="/forgot-password.html">Forgot your password?</a>
   </div>
@@ -253,6 +260,18 @@
     var utmMedium = document.getElementById("utm_medium");
     var utmCampaign = document.getElementById("utm_campaign");
     var referrerHost = document.getElementById("referrer_host");
+    var inviteToken = document.getElementById("invite_token");
+
+    var inviteTokenValue = params.get("invite") || "";
+    if (inviteToken) inviteToken.value = inviteTokenValue;
+
+    // Existing-account path (2026-09): if this visitor already has an
+    // HCG account, the "Log in" link is where they actually end up —
+    // carry the invite token forward so it survives that transition too.
+    var loginLink = document.getElementById("loginLink");
+    if (loginLink && inviteTokenValue) {
+      loginLink.href = "/login.html?invite=" + encodeURIComponent(inviteTokenValue);
+    }
 
     if (utmSource) utmSource.value = params.get("utm_source") || "";
     if (utmMedium) utmMedium.value = params.get("utm_medium") || "";
