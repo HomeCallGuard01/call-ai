@@ -101,8 +101,13 @@ async function sendCriticalAlert(type, message, context = {}, deps = {}) {
 
     const timestamp = new Date().toISOString();
     const env = process.env.NODE_ENV || "development";
+    // Presentation only (2026-09) — this used to hardcode "production
+    // alert" regardless of the real environment, directly contradicting
+    // the Environment: line a few rows below whenever NODE_ENV wasn't
+    // actually "production" (e.g. every local/dev run). Routing,
+    // recipients, and the rate-limit/dedup behavior above are unchanged.
     const lines = [
-      `Home Call Guard — production alert`,
+      `Home Call Guard — ${env === "production" ? "production" : "development"} alert`,
       ``,
       `Type: ${type}`,
       `Time: ${timestamp}`,
