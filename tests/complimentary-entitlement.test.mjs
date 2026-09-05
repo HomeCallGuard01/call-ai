@@ -336,5 +336,100 @@ check(
   'the revoke route only calls updateTwilioNumberForEntitlementChange(household, false) when a revoke genuinely happened — never unconditionally, so a refused (not-actually-complimentary) revoke attempt can never mark a paying customer\'s Twilio number for release'
 );
 
+// ============================================================
+// Regression: same latent JSON-body-parsing gap as the Friends & Family
+// create-invite route (fixed there after a live bug report) also
+// existed on these two older routes — server.js applies only
+// bodyParser.urlencoded() globally, so a route expecting a JSON body
+// must scope express.json() onto itself or req.body silently arrives
+// {}. Fixed on both grant-complimentary (which genuinely reads
+// req.body.notes/endsAt) and revoke-complimentary (which reads no body
+// field today, fixed for consistency with the same convention).
+// ============================================================
+
+check(
+  /router\.post\("\/admin\/api\/households\/:id\/grant-complimentary",[\s\S]{0,80}?express\.json\(\)/.test(adminRouteSource),
+  'routes/admin.js: POST .../grant-complimentary now scopes express.json() onto itself, matching the established per-route JSON-parsing convention — this route genuinely reads req.body.notes/endsAt'
+);
+check(
+  /router\.post\("\/admin\/api\/households\/:id\/revoke-complimentary",[\s\S]{0,80}?express\.json\(\)/.test(adminRouteSource),
+  'routes/admin.js: POST .../revoke-complimentary now also scopes express.json() onto itself, for consistency (this route does not currently read any body field)'
+);
+
+async function startTestApp(routeName, withJsonFix) {
+  const testExpress = require('express');
+  const testBodyParser = require('body-parser');
+  const app = testExpress();
+  // Same global body-parser configuration as the real server.js (line
+  // 143: app.use(bodyParser.urlencoded({ extended: false })) — no
+  // global express.json() anywhere in this codebase.
+  app.use(testBodyParser.urlencoded({ extended: false }));
+  app.post(
+    `/test-${routeName}`,
+    ...(withJsonFix ? [testExpress.json()] : []),
+    (req, res) => res.json({ receivedNotes: (req.body || {}).notes, receivedEndsAt: (req.body || {}).endsAt })
+  );
+  return new Promise((resolve) => {
+    const server = app.listen(0, () => resolve(server));
+  });
+}
+
+async function postJsonBody(port, path, payload) {
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+async function testGrantRouteJsonBodyParsesCorrectly() {
+  const server = await startTestApp('grant', true);
+  try {
+    const port = server.address().port;
+    const result = await postJsonBody(port, '/test-grant', { notes: 'Sister', endsAt: FUTURE_ENDS_AT });
+    check(
+      result.receivedNotes === 'Sister' && result.receivedEndsAt === FUTURE_ENDS_AT,
+      'Regression proof (grant-complimentary fix): with express.json() scoped onto the route, a real JSON POST correctly delivers notes/endsAt — previously these arrived undefined, causing grantComplimentaryEntitlement() to reject every request with "A reason/note is required"'
+    );
+  } finally {
+    server.close();
+  }
+}
+
+async function testGrantRouteJsonBodyWasLostWithoutTheFix() {
+  const server = await startTestApp('grant-nofix', false);
+  try {
+    const port = server.address().port;
+    const result = await postJsonBody(port, '/test-grant-nofix', { notes: 'Sister', endsAt: FUTURE_ENDS_AT });
+    check(
+      result.receivedNotes === undefined && result.receivedEndsAt === undefined,
+      'Regression proof (grant-complimentary bug mechanism): with only the global bodyParser.urlencoded() this codebase actually uses, a JSON POST body is silently NOT parsed — confirms this route had the exact same latent gap as the invite create route before this fix'
+    );
+  } finally {
+    server.close();
+  }
+}
+
+async function testRevokeRouteJsonBodyParsesCorrectly() {
+  const server = await startTestApp('revoke', true);
+  try {
+    const port = server.address().port;
+    // revoke-complimentary reads no body field today, and
+    // admin-business.html's actual revoke call sends no body and no
+    // Content-Type at all (fetch(url, { method: 'POST' })) — proving
+    // the added express.json() middleware does not break that real
+    // no-body request shape.
+    const res = await fetch(`http://127.0.0.1:${port}/test-revoke`, { method: 'POST' });
+    check(res.status === 200, 'Regression proof (revoke-complimentary): express.json() on this route does not break a real no-body POST, matching how admin-business.html actually calls it');
+  } finally {
+    server.close();
+  }
+}
+
+await testGrantRouteJsonBodyWasLostWithoutTheFix();
+await testGrantRouteJsonBodyParsesCorrectly();
+await testRevokeRouteJsonBodyParsesCorrectly();
+
 console.log(failures === 0 ? '\nAll complimentary-entitlement checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;

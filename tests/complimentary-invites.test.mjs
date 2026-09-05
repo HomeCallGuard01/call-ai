@@ -372,6 +372,108 @@ check(
   'routes/admin.js: the create-invite route uses the real services/complimentaryInvites.js module, not a reimplementation'
 );
 
+// ============================================================
+// Regression: LIVE BUG — every duration selection failed with
+// "durationDays must be one of 30, 90, 365", including 12 months
+// (365). Root cause: server.js applies only bodyParser.urlencoded()
+// globally (no global express.json()) — every JSON-body route in this
+// codebase must scope express.json() onto itself (see
+// /household/phone-number, /confirm-session, /reset-password-verify),
+// and the create-invite route never did, so req.body arrived {} for
+// every request regardless of which duration was picked.
+// ============================================================
+
+// --- structural: the actual fix is in place on the real route ---
+
+const createInviteRouteDeclaration = adminRouteSource.match(/router\.post\("\/admin\/api\/complimentary-invites",[\s\S]{0,120}?async/);
+check(
+  !!createInviteRouteDeclaration && createInviteRouteDeclaration[0].includes('express.json()'),
+  'routes/admin.js: POST /admin/api/complimentary-invites now scopes express.json() onto itself, matching this codebase\'s existing per-route JSON-parsing convention — this is the actual fix for the live duration-mismatch bug'
+);
+
+// --- functional: reproduces the exact Express/body-parser mechanism,
+// isolated from real auth/Supabase (this codebase never boots the real
+// server.js in tests — see tests/admin-business-auth.test.mjs). Proves
+// the bug's real mechanism (a JSON POST silently arrives as an empty
+// body under bodyParser.urlencoded() alone) and that scoping
+// express.json() onto the route actually fixes it. ---
+
+async function startTestApp(withJsonFix) {
+  const express = require('express');
+  const bodyParser = require('body-parser');
+  const app = express();
+  // Same global body-parser configuration as the real server.js (line
+  // 143: app.use(bodyParser.urlencoded({ extended: false })) — no
+  // global express.json() anywhere in this codebase).
+  app.use(bodyParser.urlencoded({ extended: false }));
+  app.post(
+    '/test-route',
+    ...(withJsonFix ? [express.json()] : []),
+    (req, res) => res.json({ receivedDurationDays: (req.body || {}).durationDays })
+  );
+  return new Promise((resolve) => {
+    const server = app.listen(0, () => resolve(server));
+  });
+}
+
+async function postJson(port, payload) {
+  const res = await fetch(`http://127.0.0.1:${port}/test-route`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+async function testJsonBodyIsLostWithoutTheFix() {
+  const server = await startTestApp(false);
+  try {
+    const port = server.address().port;
+    const result = await postJson(port, { durationDays: 365, note: 'Sister' });
+    check(
+      result.receivedDurationDays === undefined,
+      'Regression proof (bug mechanism): with only the global bodyParser.urlencoded() this codebase actually uses, a JSON POST body is silently NOT parsed — req.body.durationDays comes back undefined for EVERY duration, not just 365, exactly matching the reported "durationDays must be one of 30, 90, 365" failure on every selection'
+    );
+  } finally {
+    server.close();
+  }
+}
+
+async function testJsonBodyParsesCorrectlyWithTheFix() {
+  const server = await startTestApp(true);
+  try {
+    const port = server.address().port;
+    for (const duration of [30, 90, 365]) {
+      const result = await postJson(port, { durationDays: duration, note: 'Sister' });
+      check(
+        result.receivedDurationDays === duration,
+        `Regression proof (fix): with express.json() scoped onto the route (the actual fix applied to routes/admin.js), a JSON POST correctly delivers durationDays: ${duration}`
+      );
+    }
+  } finally {
+    server.close();
+  }
+}
+
+await testJsonBodyIsLostWithoutTheFix();
+await testJsonBodyParsesCorrectlyWithTheFix();
+
+// --- every dropdown option in the real admin UI submits an accepted
+// backend value, closing the actual UI/API mismatch surface, not just
+// the body-parsing bug ---
+
+const dashboardHtmlSourceForInviteCheck = readFileSync(new URL('../admin-business.html', import.meta.url), 'utf8');
+const inviteSelectMatch = dashboardHtmlSourceForInviteCheck.match(/<select id="opInviteDuration">([\s\S]*?)<\/select>/);
+check(!!inviteSelectMatch, 'admin-business.html: the Friends & Family duration <select> is present');
+const inviteOptionValues = [...(inviteSelectMatch ? inviteSelectMatch[1] : '').matchAll(/<option value="(\d+)">/g)].map((m) => Number(m[1]));
+check(inviteOptionValues.length === 3, 'admin-business.html: the duration dropdown has exactly the three expected options (30 days / 90 days / 12 months)');
+for (const optionValue of inviteOptionValues) {
+  check(
+    ALLOWED_DURATIONS_DAYS.includes(optionValue),
+    `admin-business.html: dropdown option value ${optionValue} is an accepted backend duration (ALLOWED_DURATIONS_DAYS: ${ALLOWED_DURATIONS_DAYS.join(', ')}) — the UI label may say "12 months" but must submit the exact backend value`
+  );
+}
+
 // --- no secret env var ever assigned into a response ---
 
 const SECRET_ENV_VAR_NAMES = ['STRIPE_SECRET_KEY', 'TWILIO_AUTH_TOKEN', 'TWILIO_VOICE_API_KEY_SECRET', 'OPENAI_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'Resend_API_Key'];
