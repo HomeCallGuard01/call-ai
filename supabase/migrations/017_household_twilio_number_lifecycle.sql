@@ -1,10 +1,22 @@
 -- Twilio number lifecycle — cancellation grace period + immediate release
 --
--- STATUS: NOT YET APPLIED to the real database (2026-07-21). This file
--- was written and pglite-verified earlier in the same session, but
--- direct probes (pg_proc / information_schema.routines / column checks)
--- confirmed all five objects in this file (the column and all four
--- functions) are missing from the real database — the same silent
+-- STATUS: APPLIED — corrected 2026-09 (Dashboard Cleanup audit). This
+-- header previously said "NOT YET APPLIED" (dated 2026-07-21, from when
+-- the real-database repair described below had not yet been run) and
+-- was never updated afterward — the same kind of stale-documentation
+-- gap already found and corrected once before for migration 020's own
+-- header. Direct live evidence, gathered independently of this file,
+-- confirms the repair succeeded: real assign_household_twilio_number
+-- assignments and real twilio_number_pending_release_at grace-period
+-- markings both exist and are working correctly in current production
+-- data. No executable SQL in this file was changed as part of this
+-- correction — only this header comment.
+--
+-- Original pre-repair header, kept for history: this file was written
+-- and pglite-verified in the same session as migration 016, but direct
+-- probes (pg_proc / information_schema.routines / column checks) at the
+-- time confirmed all five objects in this file (the column and all four
+-- functions) were missing from the real database — the same silent
 -- non-persistence failure diagnosed for migration 016 (see
 -- docs/engineering/sql/ and
 -- docs/engineering/016_017_migration_incident_notes.md). Three of the
@@ -13,11 +25,9 @@
 -- release_household_twilio_number_immediately) also carried the same
 -- FOUND-vs-manually-selected-boolean bug fixed in
 -- assign_household_twilio_number (016) — fixed here too, in the same
--- pass. The fixes below are reflected in this source file and confirmed
--- via the local pglite test suite, but the real-database repair itself
--- (staged, statement-by-statement, via docs/engineering/sql/017_stage1..5)
--- has not yet been run or verified. Update this header to APPLIED only
--- once that staged repair is confirmed against the real database.
+-- pass. The staged, statement-by-statement repair
+-- (docs/engineering/sql/017_stage1..5) has since been run and is now
+-- confirmed applied, per the live evidence above.
 --
 -- Purpose: companion to 016_household_twilio_provisioning.sql. That
 -- migration solves *acquiring* a number; this one solves *releasing* one,

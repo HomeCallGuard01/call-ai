@@ -1,5 +1,4 @@
 const express = require("express");
-const path = require("path");
 const { requireAuth } = require("../middleware/requireAuth");
 const { requireAdmin } = require("../middleware/requireAdmin");
 const { getSystemHealth } = require("../services/healthChecks");
@@ -23,8 +22,18 @@ const { recordAdminAction, getRecentAdminActions } = require("../services/adminA
 
 const router = express.Router();
 
+// Dashboard consolidation (2026-09) — the separate Operations page
+// (admin.html) is retired: /admin/business is now the single admin
+// destination, with Business/Customers/Operations/System Health as
+// sections of one page rather than two pages cross-linking each other
+// (the source of the "confusing, overlapping views" this consolidation
+// fixes). This route becomes a plain redirect so any existing
+// bookmark/link to /admin still lands somewhere valid, rather than
+// 404ing. Every /admin/api/* JSON route below is completely unchanged —
+// the consolidated page's Operations tab calls these exact same
+// endpoints; no route, no query, no business logic here was touched.
 router.get("/admin", requireAuth, requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "admin.html"));
+  res.redirect("/admin/business");
 });
 
 router.get("/admin/api/overview", requireAuth, requireAdmin, async (req, res) => {

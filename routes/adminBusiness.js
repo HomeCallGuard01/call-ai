@@ -36,7 +36,7 @@ const {
 const { classifyHouseholds } = require("../services/businessMetrics/fairUse");
 const { getBackendReleaseInfo, getMobileReleaseInfo } = require("../services/businessMetrics/releaseInfo");
 const { resolveVatRate, resolveFixedMonthlyCostsGbp, resolveFixedMonthlyCostsStatus, resolveUsdToGbpRate } = require("../services/businessMetrics/config");
-const { getGenuineCustomerOverview } = require("../services/businessMetrics/customerClassificationOverview");
+const { getGenuineCustomerOverview, getClassifiedCustomerList } = require("../services/businessMetrics/customerClassificationOverview");
 const { getAcquisitionOverview } = require("../services/businessMetrics/acquisitionOverview");
 
 const router = express.Router();
@@ -99,6 +99,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       topHouseholdsRaw,
       genuineOverview,
       acquisitionOverview,
+      classifiedCustomerList,
     ] = await Promise.all([
       getBusinessOverview(),
       getSubscriptionStatusBreakdown(),
@@ -112,6 +113,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
       getTopUnknownCallHouseholdsMtd(10),
       getGenuineCustomerOverview(),
       getAcquisitionOverview(),
+      getClassifiedCustomerList(20),
     ]);
 
     const systemHealth = await getSystemHealthSnapshot({ recentFailedStripeWebhookCount });
@@ -222,6 +224,16 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
               unclassifiedAccounts: genuineOverview.unclassifiedAccounts,
             }
           : { available: false, reason: genuineOverview.reason },
+        // Customers tab (Dashboard Cleanup, 2026-09): the same
+        // recent-customer rows database/adminMetrics.js's
+        // getRecentCustomers() has always returned, now annotated with
+        // each household's classification. `genuine` is the default,
+        // customer-facing view — currently empty, honestly, since HCG
+        // has 0 genuine external customers; `all` is the secondary
+        // diagnostics view (admin-only, same auth as everything else on
+        // this route) covering every historical/internal/test/anonymised
+        // account without deleting or reclassifying any of them.
+        recentList: classifiedCustomerList,
         // Existing raw/operational counts — unchanged, kept available
         // below the genuine-customer headline above, per the explicit
         // brief ("Keep the existing operational/raw account counts
