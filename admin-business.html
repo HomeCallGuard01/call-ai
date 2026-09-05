@@ -51,9 +51,12 @@
     <span class="topbar-title">Home Call Guard</span>
     <span class="admin-badge">Business</span>
   </div>
-  <div style="display:flex;gap:10px;">
+  <div style="display:flex;gap:10px;align-items:center;">
     <a class="topbar-link" href="/admin">Operations dashboard</a>
     <a class="topbar-link" href="#" onclick="load();return false;">Refresh</a>
+    <form action="/logout" method="POST" style="margin:0;">
+      <button type="submit" class="topbar-link" style="background:none;cursor:pointer;">Log out</button>
+    </form>
   </div>
 </div>
 
