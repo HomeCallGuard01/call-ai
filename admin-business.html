@@ -245,6 +245,8 @@ function render(d) {
   if (d.fairUse.households.length === 0) html += '<tr><td colspan="3" style="color:#64748b;">No Unknown-caller calls recorded this month.</td></tr>';
   html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div></div>';
 
+  html += acquisitionSection(d.acquisition);
+
   html += '<div class="section"><div class="section-header"><h2>Production release</h2></div><div class="cards">';
   html += card('Backend commit', d.release.backend.gitCommitSha || 'UNCONFIRMED', d.release.backend.note);
   html += card('Backend branch', d.release.backend.gitBranch || 'UNCONFIRMED');
@@ -275,6 +277,76 @@ function callStatsTable(cs) {
     '</table>';
 }
 function row(label, value) { return '<tr><td>' + label + '</td><td>' + fmtNum(value) + '</td></tr>'; }
+
+// Acquisition / Website section (2026-09). No customer PII is ever
+// shown here — only counts, a hostname-level UTM/source label, and
+// aggregate rates. Genuine-customer-only counts (checkoutsStarted/
+// paidConversions) use the same account_classifications system as the
+// rest of this dashboard; landing/registration counts are always raw,
+// since no household exists yet at those funnel stages — this is
+// stated plainly in the UI, not glossed over.
+// Two completely separate tables, never merged into one ambiguous list
+// (2026-09 review correction) — a raw/all-traffic funnel (every stage,
+// unclassified/internal/test/admin/reviewer/qa traffic included) and a
+// classified genuine-customer funnel (only the two stages where a
+// household — and therefore a classification — exists yet). An
+// unclassified household is never counted in the genuine funnel.
+function acquisitionRawFunnelTable(snapshot) {
+  const f = snapshot.rawFunnel;
+  let html = '<table><tr><th>Stage</th><th>Count (raw, all traffic)</th></tr>';
+  html += '<tr><td>Landing visits</td><td>' + fmtNum(f.landingVisits) + '</td></tr>';
+  html += '<tr><td>Registrations submitted</td><td>' + fmtNum(f.registrationsSubmitted) + '</td></tr>';
+  html += '<tr><td>Registrations completed</td><td>' + fmtNum(f.registrationsCompleted) + '</td></tr>';
+  html += '<tr><td>Checkouts started</td><td>' + fmtNum(f.checkoutsStarted) + '</td></tr>';
+  html += '<tr><td>Paid conversions</td><td>' + fmtNum(f.paidConversions) + '</td></tr>';
+  html += '</table>';
+  return html;
+}
+
+function acquisitionGenuineFunnelTable(snapshot) {
+  const g = snapshot.classifiedGenuineCustomerFunnel;
+  let html = '<table><tr><th>Stage</th><th>Count (real customers only)</th></tr>';
+  html += '<tr><td>Checkouts started</td><td>' + fmtNum(g.checkoutsStarted) + '</td></tr>';
+  html += '<tr><td>Paid conversions ' + tag('confirmed') + '</td><td>' + fmtNum(g.paidConversions) + '</td></tr>';
+  html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Landing visits/registrations cannot be classified — no household exists yet at those stages, so they never appear in this real-customer funnel.</div>';
+  return html;
+}
+
+function acquisitionSection(acquisition) {
+  let html = '<div class="section"><div class="section-header"><h2>Acquisition / Website</h2></div>';
+
+  if (!acquisition || !acquisition.available) {
+    html += '<div class="error">Acquisition data unavailable' + (acquisition && acquisition.reason ? ': ' + acquisition.reason : '') + '</div></div>';
+    return html;
+  }
+
+  html += '<div class="cards">';
+  html += card('Landing visits (today)', fmtNum(acquisition.today.rawFunnel.landingVisits), 'raw, all traffic');
+  html += card('Landing visits (MTD)', fmtNum(acquisition.monthToDate.rawFunnel.landingVisits), 'raw, all traffic');
+  html += card('Checkouts started (MTD, real customers)', fmtNum(acquisition.monthToDate.classifiedGenuineCustomerFunnel.checkoutsStarted));
+  html += card('Paid conversions (MTD, real customers) ' + tag('confirmed'), fmtNum(acquisition.monthToDate.classifiedGenuineCustomerFunnel.paidConversions));
+  html += card('Checkout → paid conversion rate', acquisition.monthToDate.genuineConversionRatePercent !== null ? acquisition.monthToDate.genuineConversionRatePercent + '%' : '—', 'real customers only');
+  html += '</div>';
+
+  html += '<div class="grid2" style="margin-top:16px;">';
+  html += '<div><h3 style="margin-bottom:8px;">Raw / all-traffic funnel (month to date)</h3>' + acquisitionRawFunnelTable(acquisition.monthToDate) + '</div>';
+  html += '<div><h3 style="margin-bottom:8px;">Classified genuine-customer funnel (month to date) ' + tag('confirmed') + '</h3>' + acquisitionGenuineFunnelTable(acquisition.monthToDate) + '</div>';
+  html += '</div>';
+
+  html += '<div style="margin-top:16px;"><h3 style="margin-bottom:8px;">Top sources (month to date)</h3><table><tr><th>Source</th><th>Events</th></tr>';
+  if (acquisition.monthToDate.topUtmSources.length === 0) {
+    html += '<tr><td colspan="2" style="color:#64748b;">No UTM-tagged traffic recorded this month.</td></tr>';
+  } else {
+    for (const s of acquisition.monthToDate.topUtmSources) {
+      html += '<tr><td>' + s.source + '</td><td>' + fmtNum(s.count) + '</td></tr>';
+    }
+  }
+  html += '</table></div>';
+
+  html += '<div class="sub" style="margin-top:12px;color:#64748b;">Landing/registration counts are raw page-request counts, not unique visitors — no cookie or session is used to deduplicate. Unclassified accounts are never counted as genuine customers. See Known gaps below for the full limitation.</div>';
+  html += '</div>';
+  return html;
+}
 
 load();
 </script>

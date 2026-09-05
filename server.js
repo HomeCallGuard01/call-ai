@@ -12,6 +12,7 @@ const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middl
 const { requireEntitlement } = require("./middleware/requireEntitlement");
 const { getHouseholdByTwilioNumber, markActivationVerified, getUserRole } = require("./database/households");
 const { decidePostLoginRedirect, decideDashboardRouteRedirect } = require("./services/postLoginRouting");
+const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require("./services/acquisitionAnalytics");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
@@ -1129,6 +1130,27 @@ function buildUserScopedClient() {
 app.post("/register", async (req, res) => {
   const { email, password, confirm_password } = req.body;
 
+  // Acquisition analytics (2026-09) — fire-and-forget, never awaited,
+  // never affects the real registration outcome below. Reads UTM/
+  // referrer fields forwarded in the POST body's own hidden inputs
+  // (public/register.html reads them from this exact page's own
+  // location.search/document.referrer at load time) — no cookie, no
+  // session, since no household exists yet at this point.
+  //
+  // Named "registration_submitted", not "registration_started"
+  // (2026-09 review correction): this fires when the POST /register
+  // request is received — i.e. the form was submitted — not when a
+  // visitor first began filling it in, which this app has no way to
+  // detect without adding behavioural focus/typing JavaScript, which
+  // was explicitly rejected as unnecessary tracking surface.
+  const registrationUtm = parseUtmParams(req.body);
+  const registrationReferrerHost = typeof req.body.referrer_host === "string" ? req.body.referrer_host.slice(0, 255) : null;
+  recordAcquisitionEvent("registration_submitted", {
+    path: "/register",
+    ...registrationUtm,
+    referrerHost: registrationReferrerHost,
+  }).catch(() => {});
+
   if (!email || !password) {
     const q = email ? `&email=${encodeURIComponent(email)}` : "";
     return res.redirect(`/register.html?state=error&reason=validation${q}`);
@@ -1186,6 +1208,18 @@ app.post("/register", async (req, res) => {
       `/register.html?state=error&reason=failed&email=${encodeURIComponent(email)}`
     );
   }
+
+  // Acquisition analytics (2026-09) — the account genuinely now exists
+  // in auth.users. household_id is deliberately not recorded here: no
+  // household row exists yet at this point (created later, on first
+  // login, by ensureHouseholdAndRole) — see services/businessMetrics/
+  // acquisitionOverview.js's own header for why this funnel stage can
+  // only ever be a raw, unclassified count in a cookie-free design.
+  recordAcquisitionEvent("registration_completed", {
+    path: "/register",
+    ...registrationUtm,
+    referrerHost: registrationReferrerHost,
+  }).catch(() => {});
 
   // Email confirmation is required on this project, so signUp() does not
   // return a session here — household/role creation happens on first
@@ -1465,8 +1499,24 @@ app.post("/reset-password-verify", express.json(), async (req, res) => {
 
 // PAGES
 
+// Acquisition analytics (2026-09): a privacy-minimised, cookie-free
+// landing-visit count — see services/acquisitionAnalytics.js's own
+// header. Fired after the real response starts sending (never awaited
+// before res.sendFile), so a slow/failed analytics write can never
+// delay or affect the homepage load itself. Only the referrer's
+// hostname (never the full referrer URL) and whatever UTM query
+// parameters are present on this exact request are recorded — no
+// cookie, no session, no IP address.
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
+  const { utmSource, utmMedium, utmCampaign } = parseUtmParams(req.query);
+  recordAcquisitionEvent("landing_visit", {
+    path: "/",
+    utmSource,
+    utmMedium,
+    utmCampaign,
+    referrerHost: parseReferrerHost(req.get("referer"), APP_URL_PARSED.hostname),
+  }).catch(() => {});
 });
 
 // Uptime endpoint (2026-08-23) — deliberately always 200 if this handler
