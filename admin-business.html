@@ -811,6 +811,12 @@ function renderOperationsTab(data) {
     '<div class="quick-action-row"><input type="text" id="opComplimentaryNotes" placeholder="Reason (required)"></div>' +
     '<div class="quick-action-row"><button type="button" id="opGrantComplimentaryBtn" class="action-button">Grant complimentary — no payment taken</button><button type="button" id="opRevokeComplimentaryBtn" class="action-button">Revoke complimentary</button></div>' +
     '<div class="quick-action-result" id="opComplimentaryResult"></div>' +
+    '<h3 style="margin-top:20px;">Friends &amp; Family — create invite link</h3>' +
+    '<p style="color:#93a3b8;font-size:12.5px;margin-bottom:8px;">For someone with no household yet — they register/log in normally, then complimentary access is granted automatically. Single use; the link expires for redemption after 7 days if unused.</p>' +
+    '<div class="quick-action-row"><select id="opInviteDuration"><option value="30">30 days</option><option value="90">90 days</option><option value="365">12 months</option></select><input type="text" id="opInviteNote" placeholder="Note (e.g. Sister, Family tester)"></div>' +
+    '<div class="quick-action-row"><button type="button" id="opCreateInviteBtn" class="action-button">Create invite link</button></div>' +
+    '<div class="quick-action-result" id="opInviteResult"></div>' +
+    '<div id="opInviteList" style="margin-top:12px;"></div>' +
     '</div>';
   html += '</div>';
 
@@ -930,6 +936,79 @@ function wireOperationsActions() {
         console.error('REVOKE COMPLIMENTARY ERROR:', err);
       }
     });
+  }
+
+  const createInviteBtn = document.getElementById('opCreateInviteBtn');
+  if (createInviteBtn) {
+    createInviteBtn.addEventListener('click', async () => {
+      const durationDays = Number(document.getElementById('opInviteDuration').value);
+      const note = document.getElementById('opInviteNote').value.trim();
+      const resultEl = document.getElementById('opInviteResult');
+      resultEl.textContent = 'Creating invite…';
+      try {
+        const res = await fetch('/admin/api/complimentary-invites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ durationDays, note }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          resultEl.textContent = 'Failed: ' + data.error;
+        } else {
+          resultEl.innerHTML = 'Invite created — copy this link: <input type="text" readonly value="' + data.url + '" onclick="this.select();" style="width:100%;margin-top:6px;background:#0b1220;border:1px solid #334155;border-radius:6px;color:white;padding:8px 10px;font-size:12.5px;">';
+        }
+        loadInviteList();
+      } catch (err) {
+        resultEl.textContent = 'Request failed — see console.';
+        console.error('CREATE INVITE ERROR:', err);
+      }
+    });
+  }
+
+  loadInviteList();
+}
+
+function renderInviteListHtml(invites) {
+  if (!invites || invites.length === 0) return '<div class="empty-state">No invites created yet.</div>';
+  const statusClass = { pending: 'good', redeemed: '', expired: 'warn', revoked: 'bad' };
+  const rows = invites.map((inv) => {
+    const status = inv.displayStatus;
+    return '<div class="list-item">' +
+      '<div class="list-icon">✉️</div>' +
+      '<div class="list-details">' +
+      '<div class="list-title">' + inv.duration_days + '-day invite' + (inv.note ? ' — ' + inv.note : '') + ' <span class="status-pill ' + (statusClass[status] || '') + '">' + status + '</span></div>' +
+      '<div class="list-meta">Created ' + new Date(inv.created_at).toLocaleString('en-GB') + ' · Redemption deadline ' + new Date(inv.redemption_expires_at).toLocaleString('en-GB') +
+      (inv.redeemed_at ? ' · Redeemed ' + new Date(inv.redeemed_at).toLocaleString('en-GB') + (inv.grant_outcome ? ' (' + inv.grant_outcome + ')' : '') : '') + '</div>' +
+      '</div>' +
+      (status === 'pending' ? '<button type="button" class="action-button" onclick="revokeInvite(\'' + inv.id + '\')">Revoke</button>' : '') +
+      '</div>';
+  }).join('');
+  return rows;
+}
+
+async function loadInviteList() {
+  const el = document.getElementById('opInviteList');
+  if (!el) return;
+  try {
+    const res = await fetch('/admin/api/complimentary-invites');
+    const data = await res.json();
+    if (!res.ok || !data.available) {
+      el.innerHTML = '<div class="error">Invite list unavailable' + (data.error || data.reason ? ': ' + (data.error || data.reason) : '') + '</div>';
+      return;
+    }
+    el.innerHTML = renderInviteListHtml(data.invites);
+  } catch (err) {
+    el.innerHTML = '<div class="error">Failed to load invites — see console.</div>';
+    console.error('LOAD INVITE LIST ERROR:', err);
+  }
+}
+
+async function revokeInvite(inviteId) {
+  try {
+    await fetch('/admin/api/complimentary-invites/' + encodeURIComponent(inviteId) + '/revoke', { method: 'POST' });
+    loadInviteList();
+  } catch (err) {
+    console.error('REVOKE INVITE ERROR:', err);
   }
 }
 

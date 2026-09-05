@@ -10,7 +10,8 @@ const cookieParser = require("cookie-parser");
 const { createClient } = require("@supabase/supabase-js");
 const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
 const { requireEntitlement } = require("./middleware/requireEntitlement");
-const { getHouseholdByTwilioNumber, markActivationVerified, getUserRole } = require("./database/households");
+const { getHouseholdByTwilioNumber, markActivationVerified, getUserRole, getHouseholdByAuthUserId } = require("./database/households");
+const { redeemInvite } = require("./services/complimentaryInvites");
 const { decidePostLoginRedirect, decideDashboardRouteRedirect } = require("./services/postLoginRouting");
 const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require("./services/acquisitionAnalytics");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
@@ -1130,6 +1131,18 @@ function buildUserScopedClient() {
 app.post("/register", async (req, res) => {
   const { email, password, confirm_password } = req.body;
 
+  // Friends & Family invite (2026-09) — carried through as an opaque
+  // string only; never validated here (that would couple ordinary
+  // registration success to invite validity). Actual validation
+  // (unused/not expired) happens entirely inside redeemInvite(), at the
+  // point the household genuinely exists. Stashed in this account's own
+  // Supabase Auth user_metadata (via signUp's options.data below) so it
+  // survives to first login — see the /login handler below, since
+  // households are normally created there, not here (email confirmation
+  // is required on this project, so signUp() does not return a session).
+  const rawInviteToken = typeof req.body.invite_token === "string" ? req.body.invite_token.trim() : "";
+  const inviteToken = rawInviteToken ? rawInviteToken.slice(0, 512) : null;
+
   // Acquisition analytics (2026-09) — fire-and-forget, never awaited,
   // never affects the real registration outcome below. Reads UTM/
   // referrer fields forwarded in the POST body's own hidden inputs
@@ -1190,8 +1203,11 @@ app.post("/register", async (req, res) => {
     // Already a real, confirmed account — never attempt another signup.
     // This redirect reveals only that some account exists for this email
     // (the same thing a normal failed-login attempt already implies),
-    // nothing more specific about the account itself.
-    return res.redirect("/login.html?state=already_registered");
+    // nothing more specific about the account itself. The invite token
+    // (if any) is forwarded so an existing-account recipient's invite
+    // still survives this transition to login.
+    const inviteQuery = inviteToken ? `&invite=${encodeURIComponent(inviteToken)}` : "";
+    return res.redirect(`/login.html?state=already_registered${inviteQuery}`);
   }
 
   const { data, error } = await supabase.auth.signUp({
@@ -1199,6 +1215,7 @@ app.post("/register", async (req, res) => {
     password,
     options: {
       emailRedirectTo: `${APP_URL}/confirmed.html`,
+      ...(inviteToken ? { data: { pending_invite_token: inviteToken } } : {}),
     },
   });
 
@@ -1238,6 +1255,21 @@ app.post("/register", async (req, res) => {
       refresh_token: data.session.refresh_token,
     });
     await ensureHouseholdAndRole(userClient, data.user.id, email, "[REGISTER]");
+
+    // Friends & Family invite redemption — only reachable here if email
+    // confirmation is disabled (signUp returned a session immediately).
+    // Never allowed to affect the real registration outcome: any error
+    // is caught and logged, never surfaced to the customer.
+    if (inviteToken) {
+      try {
+        const household = await getHouseholdByAuthUserId(data.user.id);
+        if (household) {
+          await redeemInvite(inviteToken, household);
+        }
+      } catch (inviteErr) {
+        console.error("FRIENDS & FAMILY INVITE REDEMPTION ERROR (REGISTER):", inviteErr.message);
+      }
+    }
   } catch (err) {
     console.error("REGISTER HOUSEHOLD SETUP ERROR:", err.message);
     return res.redirect(
@@ -1282,6 +1314,41 @@ app.post("/login", async (req, res) => {
       refresh_token: data.session.refresh_token,
     });
     await ensureHouseholdAndRole(userClient, data.user.id, email, "[LOGIN]");
+
+    // Friends & Family invite redemption (2026-09) — two paths land here,
+    // both only after authentication has already succeeded and the
+    // household has already been resolved above:
+    //  - New-user path: households are normally created on FIRST LOGIN
+    //    after email confirmation, not at /register, so the token
+    //    stashed in this account's own Supabase Auth user_metadata at
+    //    signUp time (see /register above) is read back here.
+    //  - Existing-account path: someone who already has an HCG account
+    //    opened an invite link and was routed to login with the token
+    //    forwarded in the URL (register.html's login link / server.js's
+    //    already_registered redirect) — carried here via the login
+    //    form's own hidden field, req.body.invite_token, never a
+    //    cookie/localStorage. Their existing household (just resolved by
+    //    ensureHouseholdAndRole above) is what the invite is redeemed
+    //    against.
+    // Fires at most once per account: the body token is a one-shot
+    // per-request value, and the metadata token is cleared below
+    // regardless of outcome. Never allowed to affect the real login
+    // outcome: any error is caught and logged, never surfaced to the
+    // customer.
+    const pendingInviteToken =
+      (typeof req.body.invite_token === "string" && req.body.invite_token.trim().slice(0, 512)) ||
+      data.user.user_metadata?.pending_invite_token;
+    if (pendingInviteToken) {
+      try {
+        const household = await getHouseholdByAuthUserId(data.user.id);
+        if (household) {
+          await redeemInvite(pendingInviteToken, household);
+        }
+        await userClient.auth.updateUser({ data: { pending_invite_token: null } });
+      } catch (inviteErr) {
+        console.error("FRIENDS & FAMILY INVITE REDEMPTION ERROR (LOGIN):", inviteErr.message);
+      }
+    }
   } catch (err) {
     console.error("LOGIN HOUSEHOLD SETUP ERROR:", err.message);
     return res.redirect("/login.html?error=setup_failed");
