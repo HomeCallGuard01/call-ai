@@ -207,6 +207,23 @@ function makeFakeRecordFailure() {
   };
 }
 
+// No-op fake for the injectable alert dependency (2026-09 fix) — a
+// real, un-injected sendCriticalAlert call here would make a genuine
+// HTTPS request to Resend whenever a real Resend_API_Key happens to be
+// configured (this file's own `require('dotenv').config()` above loads
+// exactly that from a real .env). Every call is recorded so tests can
+// assert what would have been sent, without ever sending it.
+function makeFakeSendAlert() {
+  const calls = [];
+  return {
+    calls,
+    fn: async (type, message, context) => {
+      calls.push({ type, message, context });
+      return true;
+    },
+  };
+}
+
 async function run() {
   // --- successful provisioning ---
   {
@@ -429,10 +446,11 @@ async function run() {
     const client = makeFakeTwilioClient({ purchaseThrows: new Error('Twilio account suspended') });
     const assign = makeFakeAssign(true);
     const recordFailure = makeFakeRecordFailure();
+    const sendAlert = makeFakeSendAlert();
 
     const household = { id: 'household-3', twilio_number: null, twilio_provisioning_attempts: 0 };
     const firstAttempt = await ensureTwilioNumberProvisioned(household, {
-      client, assign: assign.fn, recordFailure: recordFailure.fn, appUrl: 'https://app.example.com',
+      client, assign: assign.fn, recordFailure: recordFailure.fn, sendAlert: sendAlert.fn, appUrl: 'https://app.example.com',
     });
 
     check(
@@ -444,18 +462,39 @@ async function run() {
       'a failed attempt is recorded (attempt count / last error) rather than silently dropped'
     );
 
+    // Regression test (2026-09): proves the alert dependency is
+    // genuinely injected — not just present as an unused parameter —
+    // and confirms this is the ONLY way to observe the alert in a test:
+    // no real network/email call happens here at all.
+    check(
+      sendAlert.calls.length === 1,
+      'the injected fake alert function is called exactly once on a Twilio provisioning failure — never the real sendCriticalAlert during a test'
+    );
+    check(
+      sendAlert.calls[0] &&
+        sendAlert.calls[0].type === 'twilio_provisioning_failed' &&
+        sendAlert.calls[0].message === 'Twilio number provisioning failed: Twilio account suspended' &&
+        sendAlert.calls[0].context &&
+        sendAlert.calls[0].context.householdId === 'household-3',
+      'the alert call carries the expected type, message, and householdId context'
+    );
+
     // Simulate the next webhook/reconcile call retrying, now with a
     // working Twilio client — mirrors how attempts accumulate across
     // real calls in database/households.js.
     const workingClient = makeFakeTwilioClient();
     const retriedHousehold = { ...household, twilio_provisioning_attempts: 1 };
     const secondAttempt = await ensureTwilioNumberProvisioned(retriedHousehold, {
-      client: workingClient, assign: assign.fn, recordFailure: recordFailure.fn, appUrl: 'https://app.example.com',
+      client: workingClient, assign: assign.fn, recordFailure: recordFailure.fn, sendAlert: sendAlert.fn, appUrl: 'https://app.example.com',
     });
 
     check(
       secondAttempt.success === true,
       'a subsequent retry succeeds once the underlying Twilio issue is resolved'
+    );
+    check(
+      sendAlert.calls.length === 1,
+      'no additional alert is sent on the successful retry — only the original failure triggered one'
     );
   }
 

@@ -78,6 +78,15 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     client = twilioRestClient,
     assign = assignHouseholdTwilioNumber,
     recordFailure = recordTwilioProvisioningFailure,
+    // Injectable the same way as client/assign/recordFailure above —
+    // fixes a real test-isolation leak (2026-09): this was previously a
+    // direct, non-injectable call to the real sendCriticalAlert, so a
+    // unit test simulating a Twilio failure sent a genuine alert email
+    // whenever a real Resend_API_Key happened to be configured, despite
+    // the Twilio client and database writes both already being properly
+    // faked. Defaults to the real function for production use — no
+    // behavior change outside tests.
+    sendAlert = sendCriticalAlert,
     appUrl = process.env.APP_URL,
     addressSid = process.env.TWILIO_ADDRESS_SID,
     bundleSid = process.env.TWILIO_BUNDLE_SID,
@@ -134,7 +143,7 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     return { attempted: true, success: true, twilioNumber: purchased.phoneNumber };
   } catch (err) {
     console.error("TWILIO PROVISIONING FAILED:", household.id, err.message);
-    sendCriticalAlert("twilio_provisioning_failed", `Twilio number provisioning failed: ${err.message}`, {
+    sendAlert("twilio_provisioning_failed", `Twilio number provisioning failed: ${err.message}`, {
       householdId: household.id,
     }).catch(() => {});
     await recordFailure(household.id, err.message).catch(recordErr =>
