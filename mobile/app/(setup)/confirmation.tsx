@@ -4,8 +4,14 @@
 // app. This screen exists specifically to answer "did that actually
 // work, and what happens now" before handing off to the next task,
 // rather than silently continuing straight into contact-picking with no
-// acknowledgement that the founding-member signup just succeeded.
-import { Text, View, StyleSheet } from "react-native";
+// acknowledgement that the signup just succeeded.
+//
+// Founding Member / 12-month price-lock framing removed 2026-08-29 (App
+// Store release, matches subscribe.tsx) — this screen must not reintroduce
+// a claim just removed one screen earlier. The guarantee line is
+// platform-aware for the same reason subscribe.tsx's is: Apple, not Home
+// Call Guard, issues App Store refunds.
+import { Text, View, StyleSheet, Platform } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -21,8 +27,11 @@ export default function Confirmation() {
 
         <Text style={styles.title} accessibilityRole="header">You're covered</Text>
         <Text style={styles.body}>
-          Welcome to Home Call Guard. Your founding member price is locked in for the next 12 months,
-          and you're protected by our 30-day money-back guarantee — if it's not right for you, just ask.
+          {Platform.OS === "ios"
+            ? "Welcome to Home Call Guard — your protection starts now. You're covered by our 30-day " +
+              "money-back guarantee; Apple handles App Store refund requests directly."
+            : "Welcome to Home Call Guard — your protection starts now. You're covered by our 30-day " +
+              "money-back guarantee — if it's not right for you, just ask."}
         </Text>
 
         <View style={styles.nextBox}>
