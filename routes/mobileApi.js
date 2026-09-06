@@ -22,7 +22,7 @@ const {
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
 const { markActivationVerified, getHouseholdByAuthUserId } = require("../database/households");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
-const { classifyRevenueCatEvent, resolveOriginalTransactionId } = require("../services/revenuecatWebhook");
+const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference } = require("../services/revenuecatWebhook");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
@@ -774,12 +774,29 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
 
   const event = req.body && req.body.event;
 
-  if (!event || typeof event.type !== "string" || !event.app_user_id) {
+  if (!event || typeof event.type !== "string") {
     return res.status(400).json({ error: "invalid_payload" });
   }
 
+  // TRANSFER carries no app_user_id at all — identity comes from
+  // transferred_to instead. resolveEventAppUserId (services/
+  // revenuecatWebhook.js) is TRANSFER-aware; every other event type's
+  // resolution is unchanged (event.app_user_id directly). A null result
+  // here means either a non-TRANSFER event genuinely missing
+  // app_user_id, or a TRANSFER with a missing/ambiguous transferred_to
+  // (zero or more than one gaining identity) — both fail safe the same
+  // way "no household" already does below: acknowledge so RevenueCat
+  // never retries an event that will never resolve differently, but
+  // never guess at an identity.
+  const appUserId = resolveEventAppUserId(event);
+
+  if (!appUserId) {
+    console.error("REVENUECAT WEBHOOK: could not resolve app_user_id for event type", event.type);
+    return res.json({ ok: true, skipped: "unresolvable_identity" });
+  }
+
   try {
-    const household = await getHouseholdByAuthUserId(event.app_user_id);
+    const household = await getHouseholdByAuthUserId(appUserId);
 
     if (!household) {
       // Acknowledge (200) rather than error — an unmappable app_user_id
@@ -787,11 +804,15 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
       // event for an already-deleted/anonymised household) should never
       // cause RevenueCat to keep retrying an event that will never
       // resolve differently.
-      console.error("REVENUECAT WEBHOOK: no household for app_user_id", event.app_user_id);
+      console.error("REVENUECAT WEBHOOK: no household for app_user_id", appUserId);
       return res.json({ ok: true, skipped: "no_household" });
     }
 
-    const originalTransactionId = resolveOriginalTransactionId(event);
+    // resolveGrantReference is TRANSFER-aware (falls back to the event's
+    // own id, since a transfer has no transaction of its own) and
+    // delegates to the original, unchanged resolveOriginalTransactionId
+    // for every other event type — see services/revenuecatWebhook.js.
+    const originalTransactionId = resolveGrantReference(event);
     const classification = classifyRevenueCatEvent(event.type);
 
     if (classification === "grant") {
