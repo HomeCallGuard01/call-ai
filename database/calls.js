@@ -96,7 +96,35 @@ async function logCall({ callSid, number, status, result, aiModel, processingTim
 // threaded through from riskMonitor — close enough to the real event
 // given termination and stream-stop happen back-to-back, and it avoids
 // carrying a timestamp through the whole call chain for one field.
-async function recordMonitoringOutcome({ callSid, riskScore, decisionReason, warningSent, terminatedBySystem = false, terminationReason = null }) {
+// monitoredDurationSeconds/monitoringLimitReached (cost-protection
+// safeguard) — how long services/liveMonitoring actually ran
+// transcription/scoring for this call, and whether that ended because
+// the configurable per-call safety limit (services/liveMonitoring/
+// monitoringLimit.js) was reached rather than the call itself ending —
+// see migration 034's own comment on both columns.
+//
+// duration_seconds fallback: a red-line-terminated call
+// (terminatedBySystem) is redirected away from its <Dial> to end it,
+// which means the <Dial> action callback that normally records
+// duration_seconds (recordCallDuration, below) never fires for this one
+// case. Rather than leave duration_seconds permanently null for exactly
+// the calls the red-line system existed to catch, this uses
+// monitoredDurationSeconds as a reasonable estimate — monitoring runs
+// for the live duration of the call right up until termination, so the
+// two are effectively the same number here. Only applied when
+// terminatedBySystem is true; every other call's duration_seconds comes
+// exclusively from the real Twilio-reported value via
+// recordCallDuration, never estimated.
+async function recordMonitoringOutcome({
+  callSid,
+  riskScore,
+  decisionReason,
+  warningSent,
+  terminatedBySystem = false,
+  terminationReason = null,
+  monitoredDurationSeconds = null,
+  monitoringLimitReached = false,
+}) {
   if (!supabaseAdmin) {
     console.error("SUPABASE MONITORING OUTCOME ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
     return;
@@ -111,11 +139,40 @@ async function recordMonitoringOutcome({ callSid, riskScore, decisionReason, war
       terminated_by_system: terminatedBySystem,
       termination_reason: terminationReason,
       terminated_at: terminatedBySystem ? new Date().toISOString() : null,
+      monitored_duration_seconds: monitoredDurationSeconds,
+      monitoring_limit_reached: monitoringLimitReached,
+      ...(terminatedBySystem ? { duration_seconds: monitoredDurationSeconds } : {}),
     })
     .eq("call_sid", callSid);
 
   if (error) {
     console.error("SUPABASE MONITORING OUTCOME ERROR:", error);
+  }
+}
+
+// Persists the real, Twilio-reported duration of the dialled leg
+// (DialCallDuration) — called from server.js's <Dial> action callbacks
+// (/call-delivery-failed for client-only, /call-status for client-and-
+// number), which fire for every completed, no-answer, busy, or failed
+// dial, covering normal completion and either party hanging up. Never
+// called for a red-line-terminated call (the redirect that ends that
+// call happens before the action callback can fire) — see
+// recordMonitoringOutcome above for that case's fallback. Fails open
+// (logs, never throws): a duration-recording failure must never affect
+// the TwiML response already being returned to Twilio for this request.
+async function recordCallDuration(callSid, durationSeconds) {
+  if (!supabaseAdmin) {
+    console.error("SUPABASE CALL DURATION ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
+    return;
+  }
+
+  const { error } = await supabaseAdmin
+    .from("calls")
+    .update({ duration_seconds: durationSeconds })
+    .eq("call_sid", callSid);
+
+  if (error) {
+    console.error("SUPABASE CALL DURATION ERROR:", error);
   }
 }
 
@@ -132,6 +189,7 @@ module.exports = {
   getCallsToday,
   getRecentCalls,
   logCall,
+  recordCallDuration,
   recordMonitoringOutcome,
   toClientCall,
 };

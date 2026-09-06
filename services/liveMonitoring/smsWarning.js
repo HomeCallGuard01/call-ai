@@ -13,6 +13,16 @@ const WARNING_BODY = 'Home Call Guard: this call is showing signs of a possible 
 // call has already been ended), not a caution about ongoing risk.
 const RED_LINE_WARNING_BODY = 'Home Call Guard: this call showed clear signs of fraud and was ended automatically. If you shared any details, contact your bank directly using the number on your card.';
 
+// Sent once when the per-call monitoring safety limit is reached
+// (services/liveMonitoring/monitoringLimit.js) — the customer must never
+// be left believing live scam-monitoring is still active on this call
+// once it silently isn't. Deliberately simple and non-alarming: this
+// call itself has not been flagged as risky, monitoring has simply
+// reached its maximum duration and stopped. The underlying phone call
+// is never affected by this — see mediaStreamHandler.js's own comment.
+const MONITORING_LIMIT_ENDED_BODY =
+  'Home Call Guard: This call has exceeded the maximum monitoring time, so active scam monitoring has now ended for this call. If you are unsure about the caller, hang up and contact the organisation using a trusted number.';
+
 /**
  * @param {object} deps
  * @param {{messages: {create: Function}}} deps.client - real or fake Twilio client
@@ -33,4 +43,4 @@ async function sendWarningSms({ client, to, from, callSid, body = WARNING_BODY }
   }
 }
 
-module.exports = { sendWarningSms, WARNING_BODY, RED_LINE_WARNING_BODY };
+module.exports = { sendWarningSms, WARNING_BODY, RED_LINE_WARNING_BODY, MONITORING_LIMIT_ENDED_BODY };

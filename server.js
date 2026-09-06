@@ -32,6 +32,13 @@ const {
   buildActivationInstructions,
 } = require("./services/activationInstructions");
 const { isCallWithinVerificationWindow } = require("./services/activationVerification");
+const {
+  countUnknownCallsToday,
+  countRecentCallsFromSameCaller,
+  resolveDailyUnknownCallAlertThreshold,
+  resolveRepeatCallerWindowMs,
+  resolveRepeatCallerCountThreshold,
+} = require("./services/rapidAbuseDetection");
 const { attachMediaStreamServer } = require("./services/liveMonitoring/mediaStreamServer");
 const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/transcribeChunk");
 const { twilioRestClient } = require("./services/twilioClient");
@@ -226,7 +233,12 @@ function dialHouseholdOrFailClosed(twiml, household) {
   }
 
   if (plan.mode === "client-and-number") {
-    const dial = twiml.dial();
+    // action added (cost-protection safeguard) purely to capture
+    // duration_seconds via /call-status — that route's only job is to
+    // record the duration and hang up, so the caller-facing behaviour
+    // (silent hangup once the Dial ends, whatever the outcome) is
+    // unchanged from before this action existed.
+    const dial = twiml.dial({ action: "/call-status" });
     dial.client(plan.clientIdentity);
     dial.number(plan.number);
     return;
@@ -397,7 +409,35 @@ async function logCall({ callSid, number, status, result, aiModel, processingTim
 // fails closed (logs and continues) exactly like the missing-admin-client
 // branch below; the live call itself is never affected either way, since
 // this is only ever called after the call has already ended.
-async function recordMonitoringOutcome({ callSid, riskScore, decisionReason, warningSent, terminatedBySystem = false, terminationReason = null }) {
+// monitoredDurationSeconds/monitoringLimitReached (cost-protection
+// safeguard) — how long services/liveMonitoring actually ran
+// transcription/scoring for this call, and whether that ended because
+// the configurable per-call safety limit (services/liveMonitoring/
+// monitoringLimit.js) was reached rather than the call itself ending —
+// see migration 034's own comment on both columns.
+//
+// duration_seconds fallback: a red-line-terminated call
+// (terminatedBySystem) is redirected away from its <Dial> to end it,
+// which means the <Dial> action callback that normally records
+// duration_seconds (recordCallDuration, below) never fires for this one
+// case. Rather than leave duration_seconds permanently null for exactly
+// the calls the red-line system existed to catch, this uses
+// monitoredDurationSeconds as a reasonable estimate — monitoring runs
+// for the live duration of the call right up until termination, so the
+// two are effectively the same number here. Only applied when
+// terminatedBySystem is true; every other call's duration_seconds comes
+// exclusively from the real Twilio-reported value via
+// recordCallDuration, never estimated.
+async function recordMonitoringOutcome({
+  callSid,
+  riskScore,
+  decisionReason,
+  warningSent,
+  terminatedBySystem = false,
+  terminationReason = null,
+  monitoredDurationSeconds = null,
+  monitoringLimitReached = false,
+}) {
   if (!supabaseAdmin) {
     console.error("SUPABASE MONITORING OUTCOME ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
     return;
@@ -412,11 +452,37 @@ async function recordMonitoringOutcome({ callSid, riskScore, decisionReason, war
       terminated_by_system: terminatedBySystem,
       termination_reason: terminationReason,
       terminated_at: terminatedBySystem ? new Date().toISOString() : null,
+      monitored_duration_seconds: monitoredDurationSeconds,
+      monitoring_limit_reached: monitoringLimitReached,
+      ...(terminatedBySystem ? { duration_seconds: monitoredDurationSeconds } : {}),
     })
     .eq("call_sid", callSid);
 
   if (error) {
     console.error("SUPABASE MONITORING OUTCOME ERROR:", error);
+  }
+}
+
+// Persists the real, Twilio-reported duration of a completed <Dial> leg
+// (DialCallDuration) — called from the /call-delivery-failed and
+// /call-status action callbacks below, covering normal completion,
+// either party hanging up, no-answer, busy, and failed. Never called for
+// a red-line-terminated call — see recordMonitoringOutcome's own comment
+// for that case's fallback. Fails open: never throws, never affects the
+// TwiML response already being returned to Twilio for this request.
+async function recordCallDuration(callSid, durationSeconds) {
+  if (!supabaseAdmin) {
+    console.error("SUPABASE CALL DURATION ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
+    return;
+  }
+
+  const { error } = await supabaseAdmin
+    .from("calls")
+    .update({ duration_seconds: durationSeconds })
+    .eq("call_sid", callSid);
+
+  if (error) {
+    console.error("SUPABASE CALL DURATION ERROR:", error);
   }
 }
 
@@ -504,6 +570,41 @@ app.post("/voice", async (req, res) => {
       processingTimeMs: 0,
       householdId: household.id,
     }).catch(err => console.error("CALL LOG FAILED:", err.message));
+
+    // Rapid-abuse instrumentation (cost-protection safeguard) — log/alert
+    // only, exactly like logCall above: never blocks, delays, or
+    // otherwise affects this or any future call. Scoped to Unknown
+    // callers only, matching the real cost driver (Known-contact calls
+    // never trigger live monitoring at all).
+    Promise.all([getCallsToday(household.id), getRecentCalls(household.id, 50)])
+      .then(([callsToday, recentCalls]) => {
+        const unknownCallsToday = countUnknownCallsToday(callsToday);
+        if (unknownCallsToday >= resolveDailyUnknownCallAlertThreshold()) {
+          console.error("RAPID ABUSE: unusually high daily Unknown-caller call count", {
+            householdId: household.id,
+            unknownCallsToday,
+          });
+          sendCriticalAlert(
+            "rapid_abuse_daily_call_count",
+            `Household ${household.id} has received ${unknownCallsToday} Unknown-caller calls today`,
+            { householdId: household.id, unknownCallsToday }
+          ).catch(() => {});
+        }
+
+        const repeatCount = countRecentCallsFromSameCaller(recentCalls, caller, new Date(), resolveRepeatCallerWindowMs());
+        if (repeatCount >= resolveRepeatCallerCountThreshold()) {
+          console.error("RAPID ABUSE: same caller number calling repeatedly in a short window", {
+            householdId: household.id,
+            repeatCount,
+          });
+          sendCriticalAlert(
+            "rapid_abuse_repeat_caller",
+            `The same caller has called household ${household.id} ${repeatCount} times in the last ${Math.round(resolveRepeatCallerWindowMs() / 60000)} minutes`,
+            { householdId: household.id, repeatCount }
+          ).catch(() => {});
+        }
+      })
+      .catch(err => console.error("RAPID ABUSE CHECK FAILED:", err.message));
   } else {
     console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
   }
@@ -686,6 +787,17 @@ app.post("/call-delivery-failed", (req, res) => {
   const twiml = new VoiceResponse();
   const dialCallStatus = req.body.DialCallStatus;
 
+  // duration_seconds capture (cost-protection safeguard) — DialCallDuration
+  // is only present once the leg actually connected (dialCallStatus ===
+  // "completed"); a no-answer/busy/failed dial has no meaningful
+  // connected duration, so this leaves it at 0 rather than inventing a
+  // number. Fire-and-forget, exactly like every other calls-table write
+  // in this file — never allowed to affect the TwiML response already
+  // being built below.
+  recordCallDuration(req.body.CallSid, Number(req.body.DialCallDuration) || 0).catch(err =>
+    console.error("CALL DURATION RECORD FAILED:", err.message)
+  );
+
   if (dialCallStatus !== "completed") {
     console.error("CALL DELIVERY FAILED: self_protecting household's Client did not answer", {
       dialCallStatus,
@@ -701,6 +813,28 @@ app.post("/call-delivery-failed", (req, res) => {
       "We're sorry, this call cannot be connected right now. Please try again later."
     );
   }
+
+  twiml.hangup();
+  return res.type("text/xml").send(twiml.toString());
+});
+
+// CALL STATUS (two-number households only)
+//
+// The action callback for a client-and-number <Dial> (dialHouseholdOrFailClosed)
+// — added purely to capture duration_seconds (cost-protection safeguard);
+// this route has no other job and must never diverge from that. Twilio
+// POSTs here once the Dial ends, regardless of outcome, exactly like
+// /call-delivery-failed above, but this mode's household is never
+// self_protecting-gated the same way, so there is no "app unreachable"
+// message to play here — the caller-facing behaviour (silent hangup once
+// the Dial ends) is exactly what happened before this action callback
+// existed.
+app.post("/call-status", (req, res) => {
+  const twiml = new VoiceResponse();
+
+  recordCallDuration(req.body.CallSid, Number(req.body.DialCallDuration) || 0).catch(err =>
+    console.error("CALL DURATION RECORD FAILED:", err.message)
+  );
 
   twiml.hangup();
   return res.type("text/xml").send(twiml.toString());

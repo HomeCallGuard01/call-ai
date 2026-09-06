@@ -23,7 +23,13 @@ function attachMediaStreamServer(httpServer, deps) {
 
   wss.on('connection', ws => {
     ws.on('message', data => {
-      handler.handleMessage(data.toString()).catch(err => {
+      // closeConnection lets handleMessage stop this specific stream's
+      // WebSocket once the per-call monitoring safety limit is reached
+      // (services/liveMonitoring/monitoringLimit.js) — closing our end
+      // stops Twilio sending further Media Streams data/billing for this
+      // call, and has no effect whatsoever on the underlying <Dial>'d
+      // call, which is a completely independent TwiML action.
+      handler.handleMessage(data.toString(), { closeConnection: () => ws.close() }).catch(err => {
         // handleMessage already catches internally; this is a final
         // backstop so a truly unexpected error can never crash the
         // process or the live call it's monitoring.
