@@ -114,6 +114,86 @@ function resolveGrantReference(event) {
   return resolveOriginalTransactionId(event);
 }
 
+// TRANSFER moves an EXISTING subscription — it doesn't create one. If a
+// transferred_from identity resolves to an HCG household, that
+// household's own entitlements row already holds the real
+// original_transaction_id from whenever it was first granted (an
+// earlier INITIAL_PURCHASE/RENEWAL). Reading it here — rather than
+// falling straight to resolveTransferReference's synthetic
+// revenuecat_transfer_<id> — is what lets a future real RENEWAL/
+// EXPIRATION for this subscription correlate correctly against the
+// destination's granted entitlement (expireEntitlementFromRevenueCat
+// requires an exact external_reference match).
+//
+// Also does the actual revocation RevenueCat's own TRANSFER semantics
+// require: every resolvable source household loses its RevenueCat
+// entitlement and Twilio protection, not just "the destination gains
+// it" — the bug this whole function exists to close.
+//
+// Never assumes every transferred_from identity maps to an HCG
+// household (a RevenueCat identity can be anonymous, pre-login, or
+// belong to a different app entirely) — an unresolvable alias is
+// silently skipped, never guessed at, matching this webhook's existing
+// "acknowledge and skip" posture for unmappable identities.
+//
+// Replay-safe by construction, no new dedup table needed: deps.
+// getMostRecentEntitlement reads a source's most recent apple_revenuecat
+// row regardless of status (not filtered to active), so the exact same
+// reference is recoverable on a second delivery even after the first
+// delivery already expired it — expireEntitlementFromRevenueCat's own
+// exact-match requirement then makes a repeated expire attempt a safe,
+// silent no-op (nothing active left to match).
+//
+// deps are the plain, already-existing functions this needs (not a raw
+// Supabase client) — production callers (routes/mobileApi.js) pass the
+// real database/billing.js + services/twilioProvisioning.js functions
+// directly; tests inject fakes. No existing function's own signature
+// changes.
+async function resolveAndRevokeTransferSources(event, deps) {
+  const { getHouseholdByAuthUserId, getMostRecentEntitlement, expireEntitlement, updateTwilioNumberForEntitlementChange } = deps;
+
+  const transferredFrom = Array.isArray(event && event.transferred_from) ? event.transferred_from : [];
+  let resolvedReference = null;
+  const distinctReferencesFound = new Set();
+
+  for (const sourceAppUserId of transferredFrom) {
+    if (!sourceAppUserId) continue;
+
+    const sourceHousehold = await getHouseholdByAuthUserId(sourceAppUserId);
+    if (!sourceHousehold) continue; // not every RevenueCat identity maps to an HCG household
+
+    const mostRecent = await getMostRecentEntitlement(sourceHousehold.id);
+    if (!mostRecent || !mostRecent.external_reference) continue;
+
+    distinctReferencesFound.add(mostRecent.external_reference);
+    if (!resolvedReference) resolvedReference = mostRecent.external_reference;
+
+    if (mostRecent.status === "active") {
+      const revokeResult = await expireEntitlement(sourceHousehold.id, mostRecent.external_reference);
+      if (revokeResult.revoked) {
+        await updateTwilioNumberForEntitlementChange(sourceHousehold, false).catch((err) =>
+          console.error("REVENUECAT WEBHOOK: Twilio deprovisioning after TRANSFER failed:", err.message)
+        );
+      }
+    }
+  }
+
+  // A genuine multi-subscription merge (more than one resolvable source
+  // household, each with its OWN, different real reference) is
+  // genuinely ambiguous from local data alone — every resolvable source
+  // is still correctly revoked above regardless, but which reference
+  // "wins" for the destination can't be determined with certainty here.
+  // Logged for manual review rather than silently guessed at.
+  if (distinctReferencesFound.size > 1) {
+    console.error(
+      "REVENUECAT WEBHOOK: TRANSFER has multiple resolvable source households with differing references — using the first one found; manual review recommended",
+      { eventId: event && event.id, references: [...distinctReferencesFound] }
+    );
+  }
+
+  return resolvedReference;
+}
+
 module.exports = {
   classifyRevenueCatEvent,
   resolveOriginalTransactionId,
@@ -121,6 +201,7 @@ module.exports = {
   resolveEventAppUserId,
   resolveTransferReference,
   resolveGrantReference,
+  resolveAndRevokeTransferSources,
   GRANT_EVENT_TYPES,
   REVOKE_EVENT_TYPES,
 };

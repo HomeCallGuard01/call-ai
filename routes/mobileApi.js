@@ -16,13 +16,14 @@ const { getContacts, insertContacts, updateContact, deleteContact } = require(".
 const {
   getSubscriptionByHouseholdId,
   getActiveEntitlement,
+  getMostRecentRevenueCatEntitlement,
   upsertActiveEntitlementFromRevenueCat,
   expireEntitlementFromRevenueCat,
 } = require("../database/billing");
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
 const { markActivationVerified, getHouseholdByAuthUserId } = require("../database/households");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
-const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference } = require("../services/revenuecatWebhook");
+const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources } = require("../services/revenuecatWebhook");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
@@ -808,11 +809,31 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
       return res.json({ ok: true, skipped: "no_household" });
     }
 
-    // resolveGrantReference is TRANSFER-aware (falls back to the event's
-    // own id, since a transfer has no transaction of its own) and
-    // delegates to the original, unchanged resolveOriginalTransactionId
-    // for every other event type — see services/revenuecatWebhook.js.
-    const originalTransactionId = resolveGrantReference(event);
+    // TRANSFER only: revoke every resolvable source household in
+    // transferred_from (RevenueCat's own semantics — the entitlement is
+    // removed from every one of them, not just added to the
+    // destination) and recover the real original_transaction_id from
+    // whichever source household HCG already had it under, so a future
+    // real RENEWAL/EXPIRATION for this subscription correlates
+    // correctly against the destination's granted entitlement. Falls
+    // back to resolveGrantReference's synthetic reference only when no
+    // source resolves to an HCG household with a real one (e.g. a
+    // genuinely first-ever anonymous-to-identified transfer) — see
+    // services/revenuecatWebhook.js for the full reasoning and the
+    // idempotency/replay guarantee.
+    let originalTransactionId;
+    if (event.type === "TRANSFER") {
+      const resolvedFromSource = await resolveAndRevokeTransferSources(event, {
+        getHouseholdByAuthUserId,
+        getMostRecentEntitlement: getMostRecentRevenueCatEntitlement,
+        expireEntitlement: expireEntitlementFromRevenueCat,
+        updateTwilioNumberForEntitlementChange,
+      });
+      originalTransactionId = resolvedFromSource || resolveGrantReference(event);
+    } else {
+      // Every other event type: completely unchanged.
+      originalTransactionId = resolveGrantReference(event);
+    }
     const classification = classifyRevenueCatEvent(event.type);
 
     if (classification === "grant") {
