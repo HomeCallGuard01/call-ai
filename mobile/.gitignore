@@ -19,6 +19,11 @@ expo-env.d.ts
 *.mobileprovision
 google-services.json
 
+# Firebase service-account keys (private key material — never commit;
+# categorically different/more sensitive than google-services.json above,
+# which is client-side app config, not a secret credential)
+*firebase-adminsdk*.json
+
 # Metro
 .metro-health-check*
 
