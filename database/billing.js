@@ -177,12 +177,19 @@ async function getSubscriptionByHouseholdId(householdId) {
 // active entitlement) expires whatever was active first, preserving the
 // same "at most one active row per household" invariant migration 011's
 // partial unique index enforces for every other source.
-async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTransactionId, expiresAtMs }) {
-  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+// deps.client (default: the real supabaseAdmin) — added purely for
+// testability, same pattern already used by grantComplimentaryEntitlement/
+// revokeComplimentaryEntitlement below. No existing caller passes a
+// third argument, so this is a zero-behavior-change addition: every
+// production call site continues to use the real supabaseAdmin exactly
+// as before.
+async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTransactionId, expiresAtMs }, deps = {}) {
+  const { client = supabaseAdmin } = deps;
+  if (!client) throw new Error("Supabase admin client not configured");
 
   const endsAt = expiresAtMs ? new Date(expiresAtMs).toISOString() : null;
 
-  const { data: existingActive, error: readError } = await supabaseAdmin
+  const { data: existingActive, error: readError } = await client
     .from("entitlements")
     .select("*")
     .eq("household_id", householdId)
@@ -200,7 +207,7 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
     existingActive.external_reference === originalTransactionId
   ) {
     if (existingActive.ends_at !== endsAt) {
-      const { error: updateError } = await supabaseAdmin
+      const { error: updateError } = await client
         .from("entitlements")
         .update({ ends_at: endsAt })
         .eq("id", existingActive.id);
@@ -213,7 +220,7 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
   }
 
   if (existingActive) {
-    const { error: expireError } = await supabaseAdmin
+    const { error: expireError } = await client
       .from("entitlements")
       .update({ status: "expired" })
       .eq("id", existingActive.id);
@@ -223,7 +230,7 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
     }
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await client
     .from("entitlements")
     .insert({
       household_id: householdId,
@@ -379,16 +386,50 @@ async function revokeComplimentaryEntitlement(householdId, deps = {}) {
   return { revoked: true, entitlementId: existingActive.id };
 }
 
+// Reads a household's most recent RevenueCat entitlement row,
+// regardless of status (active or already-expired) — deliberately not
+// scoped to status='active' like getActiveEntitlement above. Used only
+// by TRANSFER handling (services/revenuecatWebhook.js's
+// resolveAndRevokeTransferSources): a TRANSFER event moves an existing
+// subscription, so the source household's own entitlement row already
+// holds the real original_transaction_id from whenever it was first
+// granted — reading it is what lets the destination be granted under
+// the genuine reference instead of a synthetic placeholder. Reading
+// regardless of status (not just active) is what makes this safe to
+// call again on a replayed webhook delivery after the first delivery
+// has already expired the row: the reference is still sitting in it.
+async function getMostRecentRevenueCatEntitlement(householdId, deps = {}) {
+  const { client = supabaseAdmin } = deps;
+  if (!client) return null;
+
+  const { data, error } = await client
+    .from("entitlements")
+    .select("*")
+    .eq("household_id", householdId)
+    .eq("source", "apple_revenuecat")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("SUPABASE ENTITLEMENT READ ERROR (revenuecat most-recent):", error);
+    return null;
+  }
+
+  return data;
+}
+
 // Revokes a household's active entitlement on a genuine RevenueCat
 // EXPIRATION event — only if that active entitlement is actually the one
 // RevenueCat owns (source + external_reference match). A household that
 // cancelled Apple IAP and separately resubscribed via Stripe on the web
 // must never have that Stripe entitlement revoked by a late/retried
 // Apple expiration event — this check is what prevents that.
-async function expireEntitlementFromRevenueCat(householdId, originalTransactionId) {
-  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+async function expireEntitlementFromRevenueCat(householdId, originalTransactionId, deps = {}) {
+  const { client = supabaseAdmin } = deps;
+  if (!client) throw new Error("Supabase admin client not configured");
 
-  const { data: existingActive, error: readError } = await supabaseAdmin
+  const { data: existingActive, error: readError } = await client
     .from("entitlements")
     .select("id, source, external_reference")
     .eq("household_id", householdId)
@@ -408,7 +449,7 @@ async function expireEntitlementFromRevenueCat(householdId, originalTransactionI
     return { revoked: false };
   }
 
-  const { error } = await supabaseAdmin
+  const { error } = await client
     .from("entitlements")
     .update({ status: "expired" })
     .eq("id", existingActive.id);
@@ -426,6 +467,7 @@ module.exports = {
   claimWebhookEvent,
   processWebhookEvent,
   getActiveEntitlement,
+  getMostRecentRevenueCatEntitlement,
   getSubscriptionByHouseholdId,
   upsertActiveEntitlementFromRevenueCat,
   expireEntitlementFromRevenueCat,
