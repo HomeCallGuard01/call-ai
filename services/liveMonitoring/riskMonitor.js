@@ -188,7 +188,14 @@ function createCallMonitor({
     };
   }
 
-  return { handleTranscribedChunk, hasSentWarning: () => warningSent, getSummary };
+  // Exposed (cost-protection safeguard) so mediaStreamHandler.js can send
+  // an unrelated, one-off customer notification (the monitoring-limit
+  // reached message) through the exact same safe path every in-call SMS
+  // already goes through — same to/from resolution, same "no valid
+  // destination" skip, same catch-and-log-never-throw behaviour. Never
+  // sets/reads the warningSent flag itself: that flag is specifically
+  // about the progressive risk-warning SMS, not this one.
+  return { handleTranscribedChunk, hasSentWarning: () => warningSent, getSummary, sendCustomerWarning };
 }
 
 module.exports = { createCallMonitor };
