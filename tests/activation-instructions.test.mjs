@@ -35,8 +35,8 @@ check(
 for (const deviceType of ['iphone', 'android']) {
   const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType });
   check(
-    result.code === '*21*01234567890#',
-    `${deviceType}: produces the standard *21*<number># code`
+    result.code === '**21*01234567890#',
+    `${deviceType}: produces the standards-correct **21*<number># Registration code (2026-09-07 fix — the previous single-asterisk *21*<number># is not a valid 3GPP MMI Registration production and was rejected by a real Android device)`
   );
   check(
     result.cancelCode === '#21#',
@@ -53,8 +53,8 @@ for (const deviceType of ['iphone', 'android']) {
 for (const provider of ['bt', 'talktalk', 'plusnet', 'other']) {
   const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider });
   check(
-    result.code === '*21*01234567890#',
-    `landline/${provider}: standard code, no extra zero`
+    result.code === '**21*01234567890#',
+    `landline/${provider}: standards-correct **21*<number># Registration code, no extra zero`
   );
   check(
     result.requiresPreliminaryCall === false,
@@ -67,12 +67,12 @@ for (const provider of ['bt', 'talktalk', 'plusnet', 'other']) {
 {
   const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider: 'virgin' });
   check(
-    result.code === '*21*001234567890#',
-    'landline/virgin: includes the confirmed extra leading zero'
+    result.code === '**21*001234567890#',
+    'landline/virgin: standards-correct **21*<number># Registration code, including the confirmed extra leading zero'
   );
   check(
     result.cancelCode === '##21#',
-    'landline/virgin: cancellation code is the double-hash variant, not the standard #21#'
+    'landline/virgin: cancellation code is the double-hash Erasure variant, not the standard #21# Deactivation — left unchanged by the 2026-09-07 fix: both are valid MMI procedures (unlike the old single-asterisk registration code), and no research documents a real reason to change it, so it is not touched merely for symmetry'
   );
   check(
     result.requiresPreliminaryCall === true && result.preliminaryCallNumber === '150',
@@ -89,8 +89,8 @@ for (const provider of ['bt', 'talktalk', 'plusnet', 'other']) {
 {
   const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider: 'sky' });
   check(
-    result.code === '*21*01234567890#',
-    'landline/sky: standard code format (no extra zero, unlike Virgin)'
+    result.code === '**21*01234567890#',
+    'landline/sky: standards-correct **21*<number># Registration code (no extra zero, unlike Virgin)'
   );
   check(
     result.requiresPreliminaryCall === true && result.preliminaryCallNumber === '150',
@@ -101,6 +101,40 @@ for (const provider of ['bt', 'talktalk', 'plusnet', 'other']) {
     'landline/sky: preliminary call note mentions the real ~£2.50/month cost'
   );
 }
+
+// --- 2026-09-07 regression: Registration form must be double-asterisk ---
+//
+// Explicit, unmistakable regression test — not just an incidental string
+// match against the assertions above — for the exact defect a real
+// Android device surfaced: *21*<number># (single asterisk) is the GSM
+// Activation form (use an already-registered number, no parameter) and
+// is not valid MMI grammar for registering a NEW number. Android's own
+// telephony stack rejected it as "invalid MMI code."
+
+{
+  const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'android' });
+  check(result.code.startsWith('**21*'), 'the forwarding-registration code uses the double-asterisk Registration prefix (**), not the single-asterisk Activation prefix (*) — registering a new number requires Registration, per 3GPP TS 22.030');
+  check(!result.code.startsWith('*21*'), 'the forwarding-registration code is never the old, standards-incorrect single-asterisk form that a real Android device rejected as an invalid MMI code');
+}
+
+// --- 2026-09-07: cancellation code is deliberately unchanged ---
+//
+// Unlike the registration code above, #21# (Deactivation) and ##21#
+// (Erasure) are BOTH valid, standard MMI procedures for service code 21
+// — this is not a single-vs-double-asterisk defect. No research
+// (docs/mobile-app/APP_DECISION_003 or elsewhere) documents a real
+// reason Virgin needs Erasure specifically rather than Deactivation, but
+// "unresearched" is not "incorrect" — so this stays as it was, not
+// changed merely for symmetry with the registration fix above.
+
+check(
+  buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'android' }).cancelCode === '#21#',
+  'the standard (non-Virgin) cancellation code remains the valid #21# Deactivation form — deliberately not touched by the 2026-09-07 registration-code fix'
+);
+check(
+  buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider: 'virgin' }).cancelCode === '##21#',
+  "Virgin's cancellation code remains the valid ##21# Erasure form — deliberately not touched by the 2026-09-07 registration-code fix, since it is not itself incorrect MMI syntax"
+);
 
 // --- validation ---
 

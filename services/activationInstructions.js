@@ -3,10 +3,15 @@
 // or duplicate the per-provider formatting/caveat logic for — the raw
 // Twilio number itself. Added per docs/mobile-app/APP_DECISION_003's own
 // research (UK GSM forwarding codes are a 3GPP standard shared across
-// mobile carriers; UK landline providers use the identical `*21*<number>#`
-// format, with two confirmed exceptions: Virgin Media needs an extra
-// leading zero, and Sky/Virgin both require a preliminary call to 150 to
-// add "Call Divert" to the account before the code will work at all).
+// mobile carriers; UK landline providers use the identical
+// `**21*<number>#` registration format, with two confirmed exceptions:
+// Virgin Media needs an extra leading zero, and Sky/Virgin both require a
+// preliminary call to 150 to add "Call Divert" to the account before the
+// code will work at all). APP_DECISION_003 itself documented this as
+// `*21*<number>#` (single asterisk) — corrected 2026-09-07 after a real
+// Android device rejected that form as an invalid MMI code; see
+// buildActivationInstructions's own comment on the code line below for
+// the grammar/root-cause detail.
 //
 // This module deliberately never receives or exposes the bare Twilio
 // number to any caller outside routes/mobileApi.js's own request handler
@@ -42,7 +47,27 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider }) {
     ? `0${nationalNumber}`
     : nationalNumber;
 
-  const code = `*21*${dialledNumber}#`;
+  // 3GPP TS 22.030's MMI grammar distinguishes Registration (`**`, supply
+  // a new number) from Activation (`*`, use the number already
+  // registered, no parameter). *21*<number># is not a valid production
+  // of that grammar — registering a genuinely new forwarding destination
+  // requires the double-asterisk Registration form. Confirmed wrong via a
+  // real Android device (2026-09-07): Android's telephony stack validates
+  // this grammar client-side before ever reaching the network and
+  // rejected the single-asterisk form as "invalid MMI code." The
+  // single-asterisk form had only ever been confirmed on one iPhone/
+  // carrier combination (APP_DECISION_003) — Android was explicitly
+  // flagged there as unverified, and this is that verification landing
+  // negative.
+  const code = `**21*${dialledNumber}#`;
+  // Deactivation (`#SC#`, turn off but keep the registered number) and
+  // Erasure (`##SC#`, turn off AND erase it) are BOTH valid, standard
+  // MMI procedures for service code 21 — unlike the registration code
+  // above, there is no invalid-syntax defect here. Left unchanged: no
+  // research (APP_DECISION_003 or elsewhere) documents a real reason
+  // Virgin needs Erasure specifically rather than Deactivation, but
+  // "unresearched" isn't "incorrect," and changing it without a
+  // confirmed reason would be a guess, not a fix.
   const cancelCode = deviceType === "landline" && provider === "virgin" ? "##21#" : "#21#";
 
   // Sky and Virgin both require calling 150 first to add "Call Divert" to
