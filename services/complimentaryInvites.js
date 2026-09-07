@@ -10,6 +10,7 @@
 
 const crypto = require('crypto');
 const { grantComplimentaryEntitlement } = require('../database/billing');
+const { updateTwilioNumberForEntitlementChange } = require('./twilioProvisioning');
 
 function resolveSupabaseAdmin() {
   try {
@@ -181,6 +182,24 @@ async function redeemInvite(token, household, deps = {}) {
   } catch (err) {
     console.error('COMPLIMENTARY INVITES: GRANT ERROR AFTER REDEMPTION:', err.message);
     grantResult = { granted: false, reason: 'grant_error' };
+  }
+
+  // Same updateTwilioNumberForEntitlementChange(household, true) hook
+  // every other entitlement-activation path (admin manual grant, Stripe
+  // checkout, RevenueCat purchase) already calls — this was the one path
+  // that granted an entitlement and never provisioned a number, leaving
+  // every Friends & Family recipient stuck on "Setting up your account"
+  // forever (2026-09-07 incident). Only when a grant genuinely happened —
+  // a refused grant (household already has a real paid entitlement) must
+  // never touch its Twilio number. Fail-open with .catch(), matching
+  // routes/mobileApi.js's RevenueCat webhook call to the same function:
+  // this runs inside the customer-facing /register or /login request, so
+  // a Twilio-side failure here must never break that response the way it
+  // may acceptably surface as an error on the admin-only grant route.
+  if (grantResult.granted) {
+    await updateTwilioNumberForEntitlementChange(household, true).catch(err =>
+      console.error('COMPLIMENTARY INVITES: Twilio provisioning update failed after redemption:', err.message)
+    );
   }
 
   await client

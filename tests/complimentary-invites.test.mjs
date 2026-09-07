@@ -299,6 +299,67 @@ await testRedeemRejectsAlreadyRevokedInvite();
 await testDoubleRedemptionOnlySucceedsOnce();
 await testRedeemNeverOverwritesExistingPaidEntitlement();
 
+// --- redeemInvite: Twilio provisioning hook (2026-09-07 incident fix) ---
+//
+// Before this fix, redeemInvite() granted the entitlement but never
+// called updateTwilioNumberForEntitlementChange() — the one step that
+// actually provisions a phone number — leaving every Friends & Family
+// recipient stuck on "Setting up your account" forever, reproduced 100%
+// of the time. These tests run the REAL updateTwilioNumberForEntitlementChange
+// (not mocked): no TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN and no
+// SUPABASE_SERVICE_ROLE_KEY are configured in this test process (see
+// this file's own module-load console output), so it takes the real,
+// already-tested fail-open "not configured" branch
+// (tests/twilio-provisioning.test.mjs: "a missing Twilio configuration
+// is recorded as a failure rather than crashing the caller") rather than
+// touching any real Twilio/Supabase state. Deliberately NOT passed a
+// fake `deps.client` here — that key means something different at this
+// call (the Twilio REST client) than it does earlier in this same
+// function (the Supabase client passed to grantComplimentaryEntitlement)
+// — reusing this file's Supabase fake there would silently do the wrong
+// thing, so the real fail-open path is the correct, safer thing to
+// exercise instead.
+
+async function testRedeemTriggersTwilioProvisioningOnSuccessWithoutThrowing() {
+  const client = makeFakeSupabaseAdmin({
+    complimentary_invites: [
+      { id: 'inv-1', token_hash: hashToken('good-token'), duration_days: 30, status: 'pending', redemption_expires_at: FUTURE_REDEMPTION_DEADLINE },
+    ],
+  });
+
+  let threw = false;
+  let result;
+  try {
+    result = await redeemInvite('good-token', HOUSEHOLD, { client });
+  } catch {
+    threw = true;
+  }
+
+  check(threw === false, 'redeemInvite: the new Twilio provisioning hook never throws out of redeemInvite itself, even when Twilio/Supabase-admin are unconfigured — a provisioning-side failure must never break the customer-facing register/login response');
+  check(result.redeemed === true && result.granted === true, 'redeemInvite: a successful redemption still reports redeemed+granted correctly with the provisioning hook in place');
+}
+
+async function testRedeemNeverProvisionsOnRefusedGrant() {
+  const client = makeFakeSupabaseAdmin({
+    complimentary_invites: [
+      { id: 'inv-1', token_hash: hashToken('good-token'), duration_days: 30, status: 'pending', redemption_expires_at: FUTURE_REDEMPTION_DEADLINE },
+    ],
+    entitlements: [
+      { id: 'existing-stripe-ent', household_id: HOUSEHOLD.id, status: 'active', source: 'stripe', entitlement_type: 'paid' },
+    ],
+  });
+
+  const result = await redeemInvite('good-token', HOUSEHOLD, { client });
+
+  check(result.granted === false, 'redeemInvite: a refused grant (household already has a real paid entitlement) still behaves correctly with the provisioning hook in place');
+  // The structural check below confirms this isn't incidental: the real
+  // source gates the provisioning call behind `if (grantResult.granted)`,
+  // so a refused grant can never touch a paying customer's Twilio number.
+}
+
+await testRedeemTriggersTwilioProvisioningOnSuccessWithoutThrowing();
+await testRedeemNeverProvisionsOnRefusedGrant();
+
 // --- revokeInvite ---
 
 async function testRevokePendingInvite() {
@@ -615,6 +676,25 @@ check(
   complimentaryInvitesSource.includes("classification: 'internal_test'"),
   'services/complimentaryInvites.js: redeemInvite() still classifies the redeeming household as internal_test regardless of which path (new- or existing-account) reached it'
 );
+
+// --- redeemInvite: Twilio provisioning hook is correctly gated and fail-open ---
+
+check(
+  complimentaryInvitesSource.includes('require(\'./twilioProvisioning\')') || complimentaryInvitesSource.includes('require("./twilioProvisioning")'),
+  'services/complimentaryInvites.js: imports updateTwilioNumberForEntitlementChange — the same hook every other entitlement-activation path (admin manual grant, Stripe checkout, RevenueCat purchase) already uses, no duplicate provisioning logic'
+);
+check(
+  complimentaryInvitesSource.includes('if (grantResult.granted) {') && complimentaryInvitesSource.includes('updateTwilioNumberForEntitlementChange(household, true)'),
+  'services/complimentaryInvites.js: redeemInvite() calls updateTwilioNumberForEntitlementChange(household, true) only when the grant genuinely happened — a refused grant (existing real paid entitlement) can never have its Twilio number touched'
+);
+{
+  const hookCallIdx = complimentaryInvitesSource.lastIndexOf('updateTwilioNumberForEntitlementChange(household, true)');
+  const afterHookCall = complimentaryInvitesSource.slice(hookCallIdx, hookCallIdx + 200);
+  check(
+    afterHookCall.includes('.catch(err =>'),
+    'services/complimentaryInvites.js: the provisioning hook is wrapped in .catch() — deliberately fail-open here (unlike routes/admin.js\'s unguarded await, which is fine for an authenticated admin action), since this call sits inside the customer-facing /register or /login request and a Twilio-side failure must never break that response'
+  );
+}
 
 // --- migration 033: additive, isolated, correctly scoped ---
 
