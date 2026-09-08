@@ -1760,6 +1760,16 @@ app.get("/privacy", (req, res) => {
   res.sendFile(__dirname + "/public/privacy.html");
 });
 
+// Same pattern as /privacy above, for the same reason: App Store
+// Connect's Support URL field has "https://www.homecallguard.co.uk/support"
+// on file (no extension). express.static only ever served the .html
+// variant, so that exact URL 404'd for Apple's reviewer (Guideline 1.5,
+// 2026-09-07 rejection) — confirmed live before this fix. No wording
+// change: this is the exact same public/support.html.
+app.get("/support", (req, res) => {
+  res.sendFile(__dirname + "/public/support.html");
+});
+
 // Auth only, deliberately not requireEntitlement — an unsubscribed
 // household must still be able to reach the dashboard shell to see the
 // "Get Protected Today" prompt and start Checkout from it. The page's own

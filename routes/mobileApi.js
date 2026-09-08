@@ -23,6 +23,7 @@ const {
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
 const { markActivationVerified, getHouseholdByAuthUserId } = require("../database/households");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
+const { deleteOwnAccount } = require("../services/accountDeletion");
 const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources } = require("../services/revenuecatWebhook");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
@@ -429,6 +430,47 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
   } catch (err) {
     console.error("MOBILE DASHBOARD ERROR:", err.message);
     res.status(500).json({ error: "failed" });
+  }
+});
+
+// DELETE /api/v1/me/account
+//
+// Apple Guideline 5.1.1(v): an app that supports account creation must
+// let the customer initiate deletion from inside the app — directing
+// them to email support or visit a website is not sufficient. This is
+// that in-app entry point.
+//
+// Household-isolated by construction, not by an extra check here:
+// requireAuthApi resolves req.household from the verified bearer
+// token's own auth user id (see middleware/requireAuthApi.js) — nothing
+// in this request (no body, no param, no query) ever names which
+// household to delete, so there is no household id for a client to
+// forge in the first place.
+//
+// All the real work (stopping billing per entitlement source, releasing
+// the Twilio number, anonymising the household, deleting the auth user)
+// lives in services/accountDeletion.js's deleteOwnAccount — this route
+// is deliberately thin, matching this file's own stated convention.
+router.delete("/api/v1/me/account", requireAuthApi, async (req, res) => {
+  try {
+    const result = await deleteOwnAccount(req.household);
+    // Every field here is real, not assumed — authUserDeleted and
+    // twilioReleaseError are surfaced (not swallowed) specifically so a
+    // partial failure on either is never hidden behind a bare "ok: true"
+    // that would otherwise read as an unqualified full success.
+    res.json({
+      ok: true,
+      entitlement: result.entitlement,
+      appleManualCancellationRequired: result.appleManualCancellationRequired,
+      authUserDeleted: result.authUserDeleted,
+      twilioReleaseError: result.twilioReleaseError,
+    });
+  } catch (err) {
+    console.error("MOBILE ACCOUNT DELETION ERROR:", req.household?.id, err.message);
+    // err.code (e.g. "stripe_cancel_failed") is only ever set by
+    // deleteOwnAccount's own deliberate fail-closed refusals — never
+    // client input — so it's safe to echo back verbatim.
+    res.status(500).json({ error: err.code || "failed" });
   }
 });
 
