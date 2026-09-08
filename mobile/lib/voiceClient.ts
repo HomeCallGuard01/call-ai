@@ -185,7 +185,7 @@ async function performRegistration(accessToken?: string): Promise<void> {
   registered = true;
 
   // Reports real, successful Voice SDK registration back to the backend
-  // (migration 036, 2026-09-07) — the server-side signal services/
+  // (migration 035, 2026-09-07) — the server-side signal services/
   // callRouting.js's isVoiceClientReachable needs before it will ever
   // offer this household client-only delivery. Fire-and-forget,
   // deliberately not awaited: a failure here must never undo or delay the

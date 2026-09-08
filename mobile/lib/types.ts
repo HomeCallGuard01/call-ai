@@ -92,7 +92,7 @@ export interface ActivationVerifyResponse {
   verifiedAt?: string;
 }
 
-// POST /api/v1/voice/registered (migration 036, 2026-09-07) — called from
+// POST /api/v1/voice/registered (migration 035, 2026-09-07) — called from
 // lib/voiceClient.ts's performRegistration() once voice.register() has
 // genuinely resolved, so services/callRouting.js's isVoiceClientReachable
 // has a real, current signal.

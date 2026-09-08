@@ -233,7 +233,7 @@ export async function fetchVoiceToken(accessToken?: string): Promise<VoiceTokenR
 
 // POST /api/v1/voice/registered — called from lib/voiceClient.ts's
 // performRegistration() once voice.register() has genuinely resolved
-// (migration 036, 2026-09-07), so the backend has a real, current signal
+// (migration 035, 2026-09-07), so the backend has a real, current signal
 // before ever offering this household client-only delivery. Deliberately
 // called on every successful registration, not just once — see
 // markVoiceClientRegistered's own comment (database/households.js) for
