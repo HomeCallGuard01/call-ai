@@ -22,6 +22,7 @@ import type {
   VoiceTokenResponse,
   VoiceRegisteredResponse,
   SyncContactsResponse,
+  DeleteAccountResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -338,4 +339,13 @@ export async function updateContact(
 export async function deleteContact(id: string, accessToken?: string): Promise<{ ok: true }> {
   const response = await authorizedFetch(`/api/v1/contacts/${id}`, { method: "DELETE" }, accessToken);
   return parseJsonOrThrow<{ ok: true }>(response);
+}
+
+// No household id or other identifying payload is ever sent — the
+// backend resolves which household to delete purely from this request's
+// own bearer token (requireAuthApi), the same as every other /api/v1/me/*
+// call here.
+export async function deleteAccount(accessToken?: string): Promise<DeleteAccountResponse> {
+  const response = await authorizedFetch("/api/v1/me/account", { method: "DELETE" }, accessToken);
+  return parseJsonOrThrow<DeleteAccountResponse>(response);
 }

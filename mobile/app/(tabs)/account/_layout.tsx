@@ -16,6 +16,7 @@ export default function AccountLayout() {
       <Stack.Screen name="legal" options={{ title: "Legal" }} />
       <Stack.Screen name="turn-off-protection" options={{ title: "Turn Off Protection" }} />
       <Stack.Screen name="set-up-call-forwarding" options={{ title: "Set Up Call Forwarding" }} />
+      <Stack.Screen name="delete-account" options={{ title: "Delete Account" }} />
     </Stack>
   );
 }

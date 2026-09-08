@@ -126,6 +126,7 @@ export default function Account() {
       <Row label="Support" onPress={() => router.push("/(tabs)/account/support")} />
       <Row label="Legal" onPress={() => router.push("/(tabs)/account/legal")} />
       <Row label="Log out" onPress={handleLogout} destructive />
+      <Row label="Delete Account" onPress={() => router.push("/(tabs)/account/delete-account")} destructive />
     </View>
   );
 }

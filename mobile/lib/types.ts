@@ -101,6 +101,25 @@ export interface VoiceRegisteredResponse {
   registeredAt: string;
 }
 
+// DELETE /api/v1/me/account (services/accountDeletion.js, call-ai repo).
+// appleManualCancellationRequired is true only for an apple_revenuecat
+// entitlement — HCG has no API to cancel an Apple subscription itself
+// (only the subscriber, via Settings, or Apple can), so the UI must
+// tell the customer to do that themselves rather than implying deletion
+// alone stops the Apple charge.
+export interface DeleteAccountResponse {
+  ok: true;
+  entitlement: { source: string | null; action: string };
+  appleManualCancellationRequired: boolean;
+  // Surfaced rather than assumed true — a false here means the household
+  // was genuinely anonymised (no PII, no billing) but the Supabase Auth
+  // credential itself could not be removed; not currently shown in the
+  // UI (the account is functionally empty either way), but available for
+  // support/logging rather than silently dropped.
+  authUserDeleted: boolean;
+  twilioReleaseError: string | null;
+}
+
 // B3's device/provider selection — shared between app/(setup)/
 // device-picker.tsx (where it's chosen) and lib/api.ts (where it's sent
 // to GET /api/v1/activation/instructions), so both stay in sync with
