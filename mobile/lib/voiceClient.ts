@@ -11,7 +11,7 @@
 // this.
 import { Voice, CallInvite, Call, AudioDevice } from "@twilio/voice-react-native-sdk";
 import { Platform, AppState } from "react-native";
-import { fetchVoiceToken } from "./api";
+import { fetchVoiceToken, reportVoiceRegistered } from "./api";
 
 const voice = new Voice();
 
@@ -183,6 +183,20 @@ async function performRegistration(accessToken?: string): Promise<void> {
     throw err;
   }
   registered = true;
+
+  // Reports real, successful Voice SDK registration back to the backend
+  // (migration 036, 2026-09-07) — the server-side signal services/
+  // callRouting.js's isVoiceClientReachable needs before it will ever
+  // offer this household client-only delivery. Fire-and-forget,
+  // deliberately not awaited: a failure here must never undo or delay the
+  // real registration this function already achieved (voice.register()
+  // already succeeded above) — the backend simply won't see this
+  // household as reachable until the next successful report, exactly the
+  // same fail-safe direction as every other gap this signal covers.
+  reportVoiceRegistered(accessToken).catch((err) => {
+    console.error("VOICE REGISTERED REPORT FAILED:", err);
+  });
+
   if (Platform.OS === "android") {
     // Android-only: see selectSpeakerForRinging's own comment for why —
     // AudioSwitch's Earpiece-first default is an Android/AudioSwitch-
@@ -262,4 +276,34 @@ voice.on(Voice.Event.Error, (error) => {
 
 export function getActiveCall(): Call | null {
   return activeCall;
+}
+
+// Fixes a real gap found 2026-09-07 while adding server-side registration
+// reporting (above): `registered` is module-level and was never reset on
+// sign-out — supabase.auth.signOut() had no interaction with this file at
+// all. On a shared device, a second household signing in after the first
+// signs out would hit registerForIncomingCalls()'s `if (registered)
+// return` guard and silently never register under its own identity,
+// meaning it would also never report reachability and would look
+// permanently unreachable with no error anywhere. Called from
+// app/(tabs)/account/index.tsx's sign-out handler.
+//
+// Deliberately does not also call the SDK's own voice.unregister(token) —
+// that call requires the exact token that was originally registered with,
+// which this module doesn't retain past performRegistration() completing
+// (never stored, matching this file's existing minimal-state design).
+// Simply resetting `registered` is sufficient and matches this file's own
+// established precedent: scheduleRefresh's ordinary token-refresh path
+// (above) already does exactly this — reset the flag, then re-register —
+// with no explicit unregister step either. The next registerForIncomingCalls()
+// call (fired by (tabs)/_layout.tsx's session-change effect on the new
+// sign-in) proceeds past the now-false guard and calls voice.register()
+// with the new household's own token, which supersedes any prior
+// registration on the SDK/Twilio side.
+export function resetVoiceRegistrationState(): void {
+  registered = false;
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
 }

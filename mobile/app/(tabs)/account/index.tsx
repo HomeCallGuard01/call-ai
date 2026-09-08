@@ -8,6 +8,7 @@ import { router, useFocusEffect } from "expo-router";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/AuthContext";
 import { fetchDashboard, NotEntitledError } from "../../../lib/api";
+import { resetVoiceRegistrationState } from "../../../lib/voiceClient";
 import type { MembershipStatus } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -74,6 +75,20 @@ export default function Account() {
     }, [session?.access_token])
   );
 
+  // Resets voiceClient.ts's module-level registration state before
+  // signing out (2026-09-07 fix) — otherwise a second household signing
+  // into this same device would hit registerForIncomingCalls()'s
+  // `if (registered) return` guard and silently never register under its
+  // own identity. Called before the actual Supabase sign-out call below:
+  // order doesn't matter functionally (resetVoiceRegistrationState only
+  // touches local module state, not the session), but doing it first
+  // means a slow/failed sign-out network call can never leave this step
+  // skipped.
+  function signOutAndResetVoiceRegistration() {
+    resetVoiceRegistrationState();
+    supabase.auth.signOut();
+  }
+
   function handleLogout() {
     // Alert.alert's multi-button form is a silent no-op on React Native
     // Web (confirmed live, RC1 staging test, 2026-08-02) — the dialog
@@ -83,7 +98,7 @@ export default function Account() {
     // gap has no evidence of affecting.
     if (Platform.OS === "web") {
       if (window.confirm("Log out?")) {
-        supabase.auth.signOut();
+        signOutAndResetVoiceRegistration();
       }
       return;
     }
@@ -92,7 +107,7 @@ export default function Account() {
       {
         text: "Log out",
         style: "destructive",
-        onPress: () => supabase.auth.signOut(),
+        onPress: signOutAndResetVoiceRegistration,
       },
     ]);
   }

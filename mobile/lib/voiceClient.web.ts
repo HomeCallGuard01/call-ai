@@ -13,3 +13,7 @@ export async function registerForIncomingCalls(_accessToken?: string): Promise<v
 export function getActiveCall(): null {
   return null;
 }
+
+export function resetVoiceRegistrationState(): void {
+  // no-op on web
+}
