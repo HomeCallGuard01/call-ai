@@ -36,6 +36,12 @@ import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 const RETURN_URL = "homecallguard://setup/subscribe";
 
+// Apple Guideline 3.1.2: an auto-renewable subscription screen must link
+// Terms of Use (EULA) and Privacy Policy directly, not just somewhere
+// else in the app — same URLs already used by account/legal.tsx (D4),
+// no content duplicated here.
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+
 export default function Subscribe() {
   const { session } = useAuth();
   const [error, setError] = useState<string | null>(null);
@@ -227,6 +233,16 @@ export default function Subscribe() {
           ? "Secure payment via the App Store. You can cancel any time from Account."
           : "Secure payment via Stripe. You can cancel any time from Account."}
       </Text>
+
+      <View style={styles.legalLinks}>
+        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/terms.html`)}>
+          <Text style={styles.legalLinkText}>Terms of Use</Text>
+        </Pressable>
+        <Text style={styles.legalLinkSeparator}>·</Text>
+        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/privacy.html`)}>
+          <Text style={styles.legalLinkText}>Privacy Policy</Text>
+        </Pressable>
+      </View>
     </Screen>
   );
 }
@@ -305,5 +321,21 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.md,
     textAlign: "center",
+  },
+  legalLinks: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  legalLinkText: {
+    ...typography.caption,
+    color: colors.accent,
+    textDecorationLine: "underline",
+  },
+  legalLinkSeparator: {
+    ...typography.caption,
+    color: colors.textMuted,
   },
 });
