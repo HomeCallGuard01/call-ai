@@ -20,6 +20,7 @@ import type {
   DeviceType,
   LandlineProvider,
   VoiceTokenResponse,
+  VoiceRegisteredResponse,
   SyncContactsResponse,
 } from "./types";
 
@@ -228,6 +229,21 @@ export async function fetchVoiceToken(accessToken?: string): Promise<VoiceTokenR
       })
     : await authorizedFetch(`/api/v1/voice/token?platform=${Platform.OS}`);
   return parseJsonOrThrow<VoiceTokenResponse>(response, true);
+}
+
+// POST /api/v1/voice/registered — called from lib/voiceClient.ts's
+// performRegistration() once voice.register() has genuinely resolved
+// (migration 035, 2026-09-07), so the backend has a real, current signal
+// before ever offering this household client-only delivery. Deliberately
+// called on every successful registration, not just once — see
+// markVoiceClientRegistered's own comment (database/households.js) for
+// why this must never be idempotent-once. accessToken is optional,
+// matching fetchVoiceToken's own pattern right above — the caller
+// already has a known-good session token in hand from the same
+// registration flow.
+export async function reportVoiceRegistered(accessToken?: string): Promise<VoiceRegisteredResponse> {
+  const response = await authorizedFetch("/api/v1/voice/registered", { method: "POST" }, accessToken);
+  return parseJsonOrThrow<VoiceRegisteredResponse>(response, true);
 }
 
 export async function verifyActivation(accessToken?: string): Promise<ActivationVerifyResponse> {

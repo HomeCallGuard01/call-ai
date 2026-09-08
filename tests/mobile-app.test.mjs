@@ -23,7 +23,7 @@
 //
 // Run with: node tests/mobile-app.test.mjs
 
-import { deriveLoadOutcome, isSettingUp } from '../mobile/lib/homeStatus.ts';
+import { deriveLoadOutcome, isSettingUp, computeHomeProtectionState } from '../mobile/lib/homeStatus.ts';
 import { computePageIndex, shouldResyncScrollPosition, scrollOffsetForPage } from '../mobile/lib/carousel.ts';
 import {
   addPickedContact,
@@ -167,6 +167,28 @@ function check(condition, message) {
   check(
     isSettingUp({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z' } }) === false,
     'isSettingUp is false once activation is genuinely confirmed by the backend'
+  );
+
+  // --- computeHomeProtectionState (2026-09-07: activationVerifiedAt alone must never produce "protected") ---
+
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: null, fullyProtected: false } }) === 'setting_up',
+    'computeHomeProtectionState: no activation yet is "setting_up", regardless of fullyProtected'
+  );
+
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', fullyProtected: false } }) === 'confirming_delivery',
+    'computeHomeProtectionState: activation verified but no delivery evidence is "confirming_delivery", never "protected" — the exact case this whole change series exists to prevent'
+  );
+
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', fullyProtected: true } }) === 'protected',
+    'computeHomeProtectionState: activation verified AND real delivery evidence is "protected"'
+  );
+
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: null, fullyProtected: true } }) === 'setting_up',
+    'computeHomeProtectionState: fullyProtected true with activation not yet verified is still "setting_up" (defence in depth — should be unreachable in practice, since fullyProtected requires delivery evidence which requires activation first)'
   );
 }
 
@@ -605,6 +627,104 @@ function check(condition, message) {
   check(
     nothingWasSavedIndex !== -1 && setSelectedIndex !== -1 && setSelectedIndex < nothingWasSavedIndex,
     '`selected` is filtered down to what still needs saving BEFORE the "Nothing was saved" message is ever chosen, not after — so the visible contact list and button label can never disagree with the error shown'
+  );
+}
+
+// --- Static structure check: Voice SDK registration reporting + sign-out
+// reset (2026-09-07, migration 036) ---
+//
+// lib/voiceClient.ts imports @twilio/voice-react-native-sdk (a native
+// module), so — like the rest of this file's other native-dependent
+// screens — it's verified by static source/string checks rather than
+// direct import, matching activation-screen-navigation.test.mjs's
+// established two-layer pattern for screens with no rendering harness.
+
+{
+  const voiceClientSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'lib', 'voiceClient.ts'),
+    'utf8'
+  );
+
+  check(
+    voiceClientSource.includes('import { fetchVoiceToken, reportVoiceRegistered } from "./api"'),
+    'voiceClient.ts imports reportVoiceRegistered from lib/api.ts'
+  );
+
+  const registerCallIndex = voiceClientSource.indexOf('await voice.register(token);');
+  const reportCallIndex = voiceClientSource.indexOf('reportVoiceRegistered(accessToken)');
+  check(
+    registerCallIndex !== -1 && reportCallIndex !== -1 && registerCallIndex < reportCallIndex,
+    'reportVoiceRegistered is called after voice.register(token) resolves, not before — only a genuine successful registration is ever reported'
+  );
+
+  check(
+    voiceClientSource.includes('reportVoiceRegistered(accessToken).catch((err) => {'),
+    'reportVoiceRegistered is fire-and-forget (caught, not awaited into the main try/catch) — a reporting failure can never undo or delay the real registration voice.register() already achieved'
+  );
+
+  check(
+    voiceClientSource.includes('export function resetVoiceRegistrationState(): void {') &&
+      voiceClientSource.includes('registered = false;'),
+    'voiceClient.ts exports resetVoiceRegistrationState, which resets the module-level `registered` flag'
+  );
+
+  const resetFnSource = voiceClientSource.slice(voiceClientSource.indexOf('export function resetVoiceRegistrationState'));
+  check(
+    !resetFnSource.slice(0, 400).includes('voice.unregister('),
+    'resetVoiceRegistrationState does not call voice.unregister() (it requires the original token, which this module never retains) — resetting the flag alone is sufficient, matching scheduleRefresh\'s own established precedent'
+  );
+}
+
+{
+  const accountScreenSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'app', '(tabs)', 'account', 'index.tsx'),
+    'utf8'
+  );
+
+  check(
+    accountScreenSource.includes('import { resetVoiceRegistrationState } from "../../../lib/voiceClient"'),
+    'account/index.tsx imports resetVoiceRegistrationState'
+  );
+
+  const signOutFnIndex = accountScreenSource.indexOf('function signOutAndResetVoiceRegistration()');
+  check(signOutFnIndex !== -1, 'account/index.tsx defines a single signOutAndResetVoiceRegistration function, rather than duplicating the reset call at each sign-out site');
+
+  // Exactly one bare `supabase.auth.signOut()` call is expected: inside
+  // signOutAndResetVoiceRegistration itself. If either UI call site (web
+  // window.confirm branch, native Alert.alert branch) called
+  // supabase.auth.signOut() directly instead of going through that
+  // function, this count would be 2 — proving the registration-state
+  // reset would be skipped on that path.
+  const bareSignOutCallCount = (accountScreenSource.match(/supabase\.auth\.signOut\(\)/g) || []).length;
+  check(
+    bareSignOutCallCount === 1,
+    `supabase.auth.signOut() is called from exactly one place (found ${bareSignOutCallCount}) — inside signOutAndResetVoiceRegistration — never directly from either UI sign-out site`
+  );
+
+  check(
+    accountScreenSource.includes('window.confirm("Log out?")) {\n        signOutAndResetVoiceRegistration();'),
+    'the web (window.confirm) sign-out path calls signOutAndResetVoiceRegistration, not a bare supabase.auth.signOut()'
+  );
+
+  check(
+    accountScreenSource.includes('onPress: signOutAndResetVoiceRegistration,'),
+    'the native (Alert.alert) sign-out path calls signOutAndResetVoiceRegistration, not a bare supabase.auth.signOut()'
+  );
+
+  check(
+    signOutFnIndex < accountScreenSource.indexOf('function handleLogout'),
+    'signOutAndResetVoiceRegistration is defined before handleLogout uses it'
+  );
+}
+
+{
+  const voiceClientWebStubSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'lib', 'voiceClient.web.ts'),
+    'utf8'
+  );
+  check(
+    voiceClientWebStubSource.includes('export function resetVoiceRegistrationState(): void {'),
+    'voiceClient.web.ts (the Metro-preferred web stub) also exports resetVoiceRegistrationState, matching the real module — account/index.tsx runs on web too, and Metro would otherwise fail to resolve the import there'
   );
 }
 

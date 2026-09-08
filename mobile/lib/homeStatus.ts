@@ -40,3 +40,25 @@ export function deriveLoadOutcome(params: {
 export function isSettingUp(data: { protection: { activationVerifiedAt: string | null } }): boolean {
   return !data.protection.activationVerifiedAt;
 }
+
+// 2026-09-07 correction: the Home screen's "You're protected" hero text
+// used to be driven by isSettingUp alone — i.e. by activationVerifiedAt
+// alone — which the production incident this closes proved means only
+// that a call reached HCG, never that HCG could deliver one back out
+// (services/callRouting.js's computeProtectionStatus, call-ai backend).
+// A third, honest state is needed between "still setting up" (the
+// customer has concrete steps left — isSettingUp above, still correct
+// and unchanged, still drives resumeSetupAt/the "Finish setup" button)
+// and "protected" (real end-to-end delivery evidence exists): the
+// customer has finished every concrete step, but delivery hasn't been
+// proven yet. This does not require any new customer action — it
+// resolves automatically the next time a real approved call connects.
+export type HomeProtectionState = "setting_up" | "confirming_delivery" | "protected";
+
+export function computeHomeProtectionState(data: {
+  protection: { activationVerifiedAt: string | null; fullyProtected: boolean };
+}): HomeProtectionState {
+  if (isSettingUp(data)) return "setting_up";
+  if (!data.protection.fullyProtected) return "confirming_delivery";
+  return "protected";
+}

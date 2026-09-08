@@ -48,8 +48,18 @@ export default function SetupComplete() {
 
   return (
     <Screen>
-      <Text style={styles.title} accessibilityRole="header">You're protected</Text>
-      <Text style={styles.body}>Home Call Guard is now screening unknown callers.</Text>
+      {/* 2026-09-07 correction: this screen used to unconditionally claim
+          "You're protected" the moment call forwarding was verified — the
+          exact false-assurance gap this change series exists to close
+          (see lib/homeStatus.ts's computeHomeProtectionState, which the
+          Home tab now uses instead of an unconditional claim). This
+          screen has no live dashboard-derived protection state of its
+          own to check (it only fetches contactCount above), so rather
+          than duplicate that logic here, it now describes what's
+          concretely true — forwarding is active — and points to the Home
+          tab for the real, evidence-based status. */}
+      <Text style={styles.title} accessibilityRole="header">Setup complete</Text>
+      <Text style={styles.body}>Your call forwarding is active. Check the Home tab for your current protection status.</Text>
       <Text style={styles.body}>{contactsLine}</Text>
       <Text style={styles.guaranteeNote}>
         {Platform.OS === "ios"

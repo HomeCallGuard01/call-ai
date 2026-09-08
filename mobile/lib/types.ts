@@ -36,6 +36,19 @@ export interface DashboardResponse {
     twilioProvisioningStatus: TwilioProvisioningStatus;
     activationVerifiedAt: string | null;
     recentUnconfirmedCallSeen: boolean;
+    // 2026-09-07 correction (services/callRouting.js's computeProtectionStatus):
+    // activationVerifiedAt alone proves only that a call reached HCG, never
+    // that one can be delivered back out. Any "You're protected" copy must
+    // gate on fullyProtected, never activationVerifiedAt alone — see that
+    // function's own comment for why deliveryReady and
+    // endToEndDeliveryVerified are kept as separate, distinct facts rather
+    // than collapsed into one flag. (A households.device_type-based
+    // landline delivery path was designed alongside this and deferred
+    // before release — this field intentionally carries no
+    // device-classification data.)
+    deliveryReady: boolean;
+    endToEndDeliveryVerified: boolean;
+    fullyProtected: boolean;
   };
   membership: {
     planName: string;
@@ -77,6 +90,15 @@ export interface PortalSessionResponse {
 export interface ActivationVerifyResponse {
   verified: boolean;
   verifiedAt?: string;
+}
+
+// POST /api/v1/voice/registered (migration 035, 2026-09-07) — called from
+// lib/voiceClient.ts's performRegistration() once voice.register() has
+// genuinely resolved, so services/callRouting.js's isVoiceClientReachable
+// has a real, current signal.
+export interface VoiceRegisteredResponse {
+  ok: true;
+  registeredAt: string;
 }
 
 // B3's device/provider selection — shared between app/(setup)/

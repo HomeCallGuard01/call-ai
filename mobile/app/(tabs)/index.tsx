@@ -24,7 +24,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
-import { deriveLoadOutcome, isSettingUp as computeIsSettingUp } from "../../lib/homeStatus";
+import { deriveLoadOutcome, isSettingUp as computeIsSettingUp, computeHomeProtectionState } from "../../lib/homeStatus";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import type { DashboardActivityItem, DashboardResponse } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
@@ -217,6 +217,7 @@ export default function Home() {
   // was positively confirmed by the backend for the current user (or is
   // the last such confirmation, with isStale flagging that explicitly).
   const isSettingUp = computeIsSettingUp(data!);
+  const homeProtectionState = computeHomeProtectionState(data!);
   const hasNoContacts = data!.contacts.length === 0;
 
   // Same decision point B1 uses to skip already-done steps — reused here
@@ -261,7 +262,7 @@ export default function Home() {
 
         {isStale && <Banner variant="notice" message="You're offline — showing your last known status." />}
 
-        {isSettingUp ? (
+        {homeProtectionState === "setting_up" ? (
           <>
             <View style={styles.shieldWrap}>
               <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
@@ -274,6 +275,26 @@ export default function Home() {
               label={finishSetupLabel}
               onPress={() => router.push(resumeRoute as any)}
             />
+          </>
+        ) : homeProtectionState === "confirming_delivery" ? (
+          <>
+            {/* Every concrete setup step is done (contacts added, call
+                forwarding verified) — but no approved call has actually
+                been proven to reach this phone yet, so this is
+                deliberately not "You're protected" (2026-09-07
+                correction). No customer action needed here: this
+                resolves automatically the next time a real call
+                connects, same as the "setting up" -> "protected"
+                transition already does. */}
+            <View style={styles.shieldWrap}>
+              <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
+                <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
+              </View>
+            </View>
+            <Text style={styles.giantTitle} accessibilityRole="header">Almost there</Text>
+            <Text style={styles.statusBody}>
+              Your call forwarding is set up correctly. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.
+            </Text>
           </>
         ) : (
           <>
