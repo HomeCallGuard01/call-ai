@@ -55,15 +55,17 @@ const muteStatsSource = extractBetween(html, 'shouldMuteStatsGrid');
 const onboardingStepSource = extractBetween(html, 'computeOnboardingStep');
 const detectDeviceSource = extractBetween(html, 'detectMobileDeviceType');
 const formatUkPhoneSource = extractBetween(html, 'formatUkPhoneForDisplay');
+const protectionMessageSource = extractBetween(html, 'computeProtectionMessage');
 
-if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource || !onboardingStepSource || !formatUkPhoneSource || !detectDeviceSource) {
+if (!protectionStateSource || !checklistSource || !adminButtonSource || !progressSource || !memberSinceSource || !describeCallSource || !muteStatsSource || !onboardingStepSource || !formatUkPhoneSource || !detectDeviceSource || !protectionMessageSource) {
   console.error('✗ could not find one or more expected TEST-EXTRACT markers in upload.html — test cannot run');
   failures++;
 } else {
-  // Both functions are evaluated together, in the same combined source,
-  // since computeSetupChecklist calls computeProtectionState internally
-  // — matching how they actually run together in the real page.
-  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\n${onboardingStepSource}\n${formatUkPhoneSource}\n${detectDeviceSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid, computeOnboardingStep, formatUkPhoneForDisplay, detectMobileDeviceType };`;
+  // All functions are evaluated together, in the same combined source,
+  // since computeSetupChecklist/computeProtectionMessage both call other
+  // extracted functions internally — matching how they actually run
+  // together in the real page.
+  const combinedSource = `${protectionStateSource}\n${checklistSource}\n${adminButtonSource}\n${progressSource}\n${memberSinceSource}\n${describeCallSource}\n${muteStatsSource}\n${onboardingStepSource}\n${formatUkPhoneSource}\n${detectDeviceSource}\n${protectionMessageSource}\nreturn { computeProtectionState, computeSetupChecklist, shouldShowAdminButton, computeChecklistProgress, formatMemberSince, describeCall, shouldMuteStatsGrid, computeOnboardingStep, formatUkPhoneForDisplay, detectMobileDeviceType, computeProtectionMessage };`;
   const {
     computeProtectionState,
     computeSetupChecklist,
@@ -75,6 +77,7 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
     computeOnboardingStep,
     formatUkPhoneForDisplay,
     detectMobileDeviceType,
+    computeProtectionMessage,
   } = new Function(combinedSource)();
 
   // --- computeProtectionState ---
@@ -323,6 +326,70 @@ if (!protectionStateSource || !checklistSource || !adminButtonSource || !progres
     detectMobileDeviceType(undefined) === null,
     'detectMobileDeviceType: undefined is handled the same as an empty string'
   );
+
+  // --- computeProtectionMessage (2026-09-07: forwarding-verified alone must never produce "You're protected") ---
+
+  const stepsCompleteBase = {
+    phoneNumberAdded: true,
+    twilioProvisioningStatus: 'active',
+    activationVerifiedAt: '2026-09-07T12:00:00.000Z',
+    contactsUploaded: 1,
+  };
+
+  {
+    const data = { ...stepsCompleteBase, protection: { fullyProtected: true } };
+    const message = computeProtectionMessage(data, 'active');
+    check(message.variant === 'protected', 'fully protected: variant is "protected"');
+    check(message.title === "You're protected", 'fully protected: title is the real "You\'re protected" claim');
+  }
+
+  {
+    // The exact case this whole change series exists to prevent: forwarding
+    // reached HCG (activationVerifiedAt set, all steps otherwise complete)
+    // but no evidence exists that an approved call was ever delivered back.
+    const data = { ...stepsCompleteBase, protection: { fullyProtected: false } };
+    const message = computeProtectionMessage(data, 'active');
+    check(message.variant !== 'protected', 'forwarding verified alone: never the "protected" variant');
+    check(message.title !== "You're protected", 'forwarding verified alone: title is never "You\'re protected"');
+    check(message.variant === 'confirming-delivery', 'forwarding verified alone: shown as "confirming delivery", a distinct honest state');
+  }
+
+  {
+    // No protection object at all (e.g. an older cached response shape) —
+    // must fail closed to "not yet protected", never crash or default open.
+    const data = { ...stepsCompleteBase };
+    const message = computeProtectionMessage(data, 'active');
+    check(message.variant !== 'protected', 'missing protection field entirely: never the "protected" variant');
+  }
+
+  {
+    const data = { phoneNumberAdded: false, twilioProvisioningStatus: 'pending', activationVerifiedAt: null, protection: { fullyProtected: false } };
+    const message = computeProtectionMessage(data, 'pending');
+    check(message.variant === 'preparing', 'no steps done yet: variant is "preparing"');
+  }
+
+  {
+    const data = { phoneNumberAdded: true, twilioProvisioningStatus: 'failed', activationVerifiedAt: null, protection: { fullyProtected: false } };
+    const message = computeProtectionMessage(data, 'failed');
+    check(message.variant === 'failed', 'provisioning failed: variant is "failed" regardless of protection state');
+  }
+
+  {
+    const data = { phoneNumberAdded: true, twilioProvisioningStatus: 'active', activationVerifiedAt: null, protection: { fullyProtected: false } };
+    const message = computeProtectionMessage(data, 'active');
+    check(message.variant === 'steps-incomplete', 'number active but forwarding not yet verified: variant is "steps-incomplete", not "confirming-delivery"');
+  }
+
+  {
+    // fullyProtected: true with steps NOT actually complete should be
+    // unreachable in practice (fullyProtected requires delivery evidence,
+    // which requires a real call, which requires forwarding to already
+    // work) — but this proves the message logic itself never trusts
+    // fullyProtected alone without also checking the step state.
+    const data = { phoneNumberAdded: false, twilioProvisioningStatus: 'pending', activationVerifiedAt: null, protection: { fullyProtected: true } };
+    const message = computeProtectionMessage(data, 'pending');
+    check(message.variant !== 'protected', 'fullyProtected true with incomplete steps: still never shown as "protected" (defence in depth)');
+  }
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

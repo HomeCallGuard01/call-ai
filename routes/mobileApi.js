@@ -21,7 +21,12 @@ const {
   expireEntitlementFromRevenueCat,
 } = require("../database/billing");
 const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
-const { markActivationVerified, getHouseholdByAuthUserId } = require("../database/households");
+const {
+  markActivationVerified,
+  getHouseholdByAuthUserId,
+  markVoiceClientRegistered,
+} = require("../database/households");
+const { computeProtectionStatus } = require("../services/callRouting");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources } = require("../services/revenuecatWebhook");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
@@ -392,6 +397,17 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
 
     const activationRecentlyConfirmedByACall = isCallWithinVerificationWindow(recentCalls[0]);
 
+    // 2026-09-07 correction: activationVerifiedAt alone used to be treated
+    // as "protected" by this app's Home tab — proven, by the production
+    // incident this whole change series closes, to prove only that a call
+    // reached HCG, never that HCG could deliver one back out.
+    // computeProtectionStatus (services/callRouting.js) is the single
+    // source of truth for deliveryReady/endToEndDeliveryVerified/
+    // fullyProtected now, shared with the web dashboard's GET
+    // /dashboard-data — the app must use fullyProtected for any
+    // "You're protected" claim, not activationVerifiedAt alone.
+    const protectionStatus = computeProtectionStatus(req.household, new Date());
+
     res.json({
       protection: {
         twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
@@ -400,6 +416,9 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         // hasn't hit /api/v1/activation/verify yet themselves — see that
         // route below for what actually persists this.
         recentUnconfirmedCallSeen: activationRecentlyConfirmedByACall && !req.household.activation_verified_at,
+        deliveryReady: protectionStatus.deliveryReady,
+        endToEndDeliveryVerified: protectionStatus.endToEndDeliveryVerified,
+        fullyProtected: protectionStatus.fullyProtected,
       },
       membership: {
         planName: "Home Call Guard Standard",
@@ -584,6 +603,29 @@ router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req
     res.json({ token, identity, ttlSeconds });
   } catch (err) {
     console.error("VOICE ACCESS TOKEN ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// POST /api/v1/voice/registered
+//
+// Called by mobile/lib/voiceClient.ts's performRegistration() once
+// voice.register() has genuinely resolved (migration 035, 2026-09-07) —
+// stamps households.voice_client_registered_at so services/callRouting.js's
+// isVoiceClientReachable has a real, current signal to check before
+// decideCallDeliveryPlan ever offers this household client-only delivery.
+// Mirrors GET /api/v1/voice/token's own guard shape (requireAuthApi +
+// requireEntitlement): an unsubscribed household has no calls to receive
+// this way, so there's nothing meaningful to record reachability for
+// either. Deliberately called on every successful registration, not just
+// once — see markVoiceClientRegistered's own comment for why this must
+// never be idempotent-once.
+router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, async (req, res) => {
+  try {
+    const registeredAt = await markVoiceClientRegistered(req.household.id);
+    res.json({ ok: true, registeredAt });
+  } catch (err) {
+    console.error("VOICE CLIENT REGISTERED ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });
