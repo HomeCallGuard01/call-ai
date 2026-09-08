@@ -461,6 +461,56 @@ async function expireEntitlementFromRevenueCat(householdId, originalTransactionI
   return { revoked: true };
 }
 
+// Revokes a household's active Stripe-sourced entitlement, for
+// account-deletion use (services/accountDeletion.js). Every other
+// Stripe-driven entitlement change up to now has only ever happened via
+// the real webhook (customer.subscription.* -> process_stripe_webhook_event),
+// because cancellation itself always happened through Stripe's own
+// customer-facing Billing Portal, which fires that webhook naturally.
+// Account deletion needs the DB state updated synchronously in the same
+// request — the household is about to be anonymised immediately after,
+// and migration 020's own anonymize_inactive_household refuses to run
+// while an active entitlement row still exists, so this can't just wait
+// for the webhook to eventually land. The actual Stripe-side
+// cancellation (stopping the real recurring charge) is a separate call
+// the caller makes first — see deleteOwnAccount below — this function
+// only ever updates HCG's own database record of it, exactly like
+// revokeComplimentaryEntitlement/expireEntitlementFromRevenueCat above
+// already do for their own sources.
+async function revokeStripeEntitlementForDeletion(householdId, deps = {}) {
+  const { client = supabaseAdmin } = deps;
+  if (!client) throw new Error("Supabase admin client not configured");
+  if (!householdId) throw new Error("householdId is required");
+
+  const { data: existingActive, error: readError } = await client
+    .from("entitlements")
+    .select("id, source, external_reference")
+    .eq("household_id", householdId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (readError) {
+    console.error("SUPABASE ENTITLEMENT READ ERROR (stripe deletion revoke):", readError);
+    throw readError;
+  }
+
+  if (!existingActive || existingActive.source !== "stripe") {
+    return { revoked: false, reason: "no_active_stripe_entitlement" };
+  }
+
+  const { error } = await client
+    .from("entitlements")
+    .update({ status: "revoked" })
+    .eq("id", existingActive.id);
+
+  if (error) {
+    console.error("SUPABASE ENTITLEMENT REVOKE ERROR (stripe deletion):", error);
+    throw error;
+  }
+
+  return { revoked: true, entitlementId: existingActive.id, stripeSubscriptionId: existingActive.external_reference };
+}
+
 module.exports = {
   setHouseholdStripeCustomerId,
   getHouseholdByStripeCustomerId,
@@ -473,4 +523,5 @@ module.exports = {
   expireEntitlementFromRevenueCat,
   grantComplimentaryEntitlement,
   revokeComplimentaryEntitlement,
+  revokeStripeEntitlementForDeletion,
 };
