@@ -816,6 +816,90 @@ async function main() {
   }
   assert(anonymizeRpcDeniedToAuthenticated, 'authenticated role cannot execute anonymize_inactive_household directly');
 
+  // --- 035: households.voice_client_registered_at + mark_household_voice_client_registered ---
+  await asServiceRole(db);
+  const { rows: [beforeVoiceReg] } = await db.query(
+    `select voice_client_registered_at from public.households where id = $1`,
+    [householdId]
+  );
+  assert(beforeVoiceReg.voice_client_registered_at === null, 'voice_client_registered_at defaults to null');
+
+  const { rows: [firstVoiceReg] } = await db.query(
+    `select public.mark_household_voice_client_registered($1) as result`,
+    [householdId]
+  );
+  assert(!!firstVoiceReg.result, 'mark_household_voice_client_registered returns the new timestamp');
+
+  // Deliberately not idempotent-once (unlike mark_household_activation_verified):
+  // a second call must move the timestamp forward, since staleness is the signal.
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const { rows: [secondVoiceReg] } = await db.query(
+    `select public.mark_household_voice_client_registered($1) as result`,
+    [householdId]
+  );
+  assert(
+    new Date(secondVoiceReg.result).getTime() > new Date(firstVoiceReg.result).getTime(),
+    'mark_household_voice_client_registered moves the timestamp forward on every call, not just the first'
+  );
+
+  let voiceRegNonexistentThrew = false;
+  try {
+    await db.query(`select public.mark_household_voice_client_registered($1)`, ['00000000-0000-0000-0000-000000000000']);
+  } catch {
+    voiceRegNonexistentThrew = true;
+  }
+  assert(voiceRegNonexistentThrew, 'mark_household_voice_client_registered raises for a nonexistent household');
+
+  await asAuthUser(db, userId2, 'c-voice-reg-test@example.com');
+  let voiceRegDeniedToAuthenticated = false;
+  try {
+    await db.query(`select public.mark_household_voice_client_registered($1)`, [householdId]);
+  } catch {
+    voiceRegDeniedToAuthenticated = true;
+  }
+  assert(voiceRegDeniedToAuthenticated, 'authenticated role cannot execute mark_household_voice_client_registered directly');
+
+  // --- 036: households.delivery_verified_at + mark_household_delivery_verified ---
+  await asServiceRole(db);
+  const { rows: [beforeDeliveryVerified] } = await db.query(
+    `select delivery_verified_at from public.households where id = $1`,
+    [householdId]
+  );
+  assert(beforeDeliveryVerified.delivery_verified_at === null, 'delivery_verified_at defaults to null');
+
+  const { rows: [firstDelivery] } = await db.query(
+    `select public.mark_household_delivery_verified($1) as result`,
+    [householdId]
+  );
+  assert(!!firstDelivery.result, 'mark_household_delivery_verified returns the new timestamp');
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const { rows: [secondDelivery] } = await db.query(
+    `select public.mark_household_delivery_verified($1) as result`,
+    [householdId]
+  );
+  assert(
+    new Date(secondDelivery.result).getTime() > new Date(firstDelivery.result).getTime(),
+    'mark_household_delivery_verified moves the timestamp forward on every call (every real completed delivery is fresh evidence)'
+  );
+
+  let deliveryVerifiedNonexistentThrew = false;
+  try {
+    await db.query(`select public.mark_household_delivery_verified($1)`, ['00000000-0000-0000-0000-000000000000']);
+  } catch {
+    deliveryVerifiedNonexistentThrew = true;
+  }
+  assert(deliveryVerifiedNonexistentThrew, 'mark_household_delivery_verified raises for a nonexistent household');
+
+  await asAuthUser(db, userId2, 'c-delivery-verified-test@example.com');
+  let deliveryVerifiedDeniedToAuthenticated = false;
+  try {
+    await db.query(`select public.mark_household_delivery_verified($1)`, [householdId]);
+  } catch {
+    deliveryVerifiedDeniedToAuthenticated = true;
+  }
+  assert(deliveryVerifiedDeniedToAuthenticated, 'authenticated role cannot execute mark_household_delivery_verified directly');
+
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //
   // Discovers every SECURITY DEFINER function in public from pg_proc

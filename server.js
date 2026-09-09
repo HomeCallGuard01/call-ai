@@ -10,7 +10,13 @@ const cookieParser = require("cookie-parser");
 const { createClient } = require("@supabase/supabase-js");
 const { requireAuth, setSessionCookies, clearSessionCookies } = require("./middleware/requireAuth");
 const { requireEntitlement } = require("./middleware/requireEntitlement");
-const { getHouseholdByTwilioNumber, markActivationVerified, getUserRole, getHouseholdByAuthUserId } = require("./database/households");
+const {
+  getHouseholdByTwilioNumber,
+  markActivationVerified,
+  getUserRole,
+  getHouseholdByAuthUserId,
+  markHouseholdDeliveryVerified,
+} = require("./database/households");
 const { redeemInvite } = require("./services/complimentaryInvites");
 const { decidePostLoginRedirect, decideDashboardRouteRedirect } = require("./services/postLoginRouting");
 const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require("./services/acquisitionAnalytics");
@@ -18,7 +24,12 @@ const { getContacts, insertContacts, updateContact, deleteContact } = require(".
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
-const { resolveForwardingDestination, decideCallDeliveryPlan } = require("./services/callRouting");
+const {
+  resolveForwardingDestination,
+  decideCallDeliveryPlan,
+  isVoiceClientReachable,
+  computeProtectionStatus,
+} = require("./services/callRouting");
 const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { sendCriticalAlert } = require("./services/alerting");
@@ -211,20 +222,36 @@ function normaliseNumber(number) {
 // dials a hardcoded/fallback number: a household with no phone_number on
 // file fails closed (a clear message, then hangup) rather than silently
 // routing to the wrong destination.
-// self_protecting (migration 028, 2026-08-23): households.phone_number is,
-// for the single-phone customer this product is primarily built for, the
-// exact same number that's carrier-forwarded to Home Call Guard — dialling
-// it back over PSTN is intercepted by the customer's own still-active
-// forward and re-enters /voice as a brand-new call, an infinite loop
-// (reproduced for real 2026-08-15, confirmed still live and unguarded in
-// production 2026-08-23: Twilio's ForwardedFrom is absent on this carrier
-// path, so no runtime check can ever catch this reliably). The actual
-// decision of which delivery mode applies lives in the pure, unit-tested
-// decideCallDeliveryPlan (services/callRouting.js) — this function only
+// households.self_protecting (migration 028, 2026-08-23) is the fact
+// this function has always enforced: no plan constructed here may ever
+// include a PSTN number, for any household, under any circumstance.
+// households.phone_number may be exactly the number that's carrier-
+// forwarded here, so dialling it back over PSTN is intercepted by the
+// customer's own still-active forward and re-enters /voice as a brand-new
+// call, an infinite loop (reproduced for real 2026-08-15, and again via a
+// different gap — self_protecting defaulting true for 100% of households
+// with no reachability check at all — found in production 2026-09-07).
+// Delivery is exclusively via Twilio Voice SDK <Client>, gated on real,
+// current registration evidence (households.voice_client_registered_at,
+// migration 035) — the actual decision lives in the pure, unit-tested
+// decideCallDeliveryPlan (services/callRouting.js), this function only
 // ever translates that decision into TwiML, never re-derives it.
+//
+// A separate PSTN delivery path for explicitly-classified landline
+// households was designed 2026-09-07/08 and deliberately deferred before
+// release — see decideCallDeliveryPlan's own comment and docs/mobile-app/
+// APP_DECISION_008_call_delivery_architecture.md for the full evidence
+// (Twilio's ForwardedFrom parameter, the only live signal available for
+// proving landline loop safety, was found to carry no usable information
+// on any of 184 real inbound calls checked). Nothing in this function
+// currently has any landline-specific branch.
 function dialHouseholdOrFailClosed(twiml, household) {
   const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
-  const plan = decideCallDeliveryPlan(household, clientIdentity);
+  const voiceClientReachable = isVoiceClientReachable(
+    household && household.voice_client_registered_at,
+    new Date()
+  );
+  const plan = decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable });
 
   if (plan.mode === "client-only") {
     const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20 });
@@ -232,25 +259,43 @@ function dialHouseholdOrFailClosed(twiml, household) {
     return;
   }
 
-  if (plan.mode === "client-and-number") {
-    // action added (cost-protection safeguard) purely to capture
-    // duration_seconds via /call-status — that route's only job is to
-    // record the duration and hang up, so the caller-facing behaviour
-    // (silent hangup once the Dial ends, whatever the outcome) is
-    // unchanged from before this action existed.
-    const dial = twiml.dial({ action: "/call-status" });
-    dial.client(plan.clientIdentity);
-    dial.number(plan.number);
+  if (plan.mode === "self-protecting-unreachable") {
+    // Never PSTN — see the invariant this whole function exists to
+    // enforce, above. Distinct from a normal "app didn't answer": this
+    // fires when there is no current evidence a Voice SDK client is even
+    // registered, so attempting a <Dial><Client> would be a doomed,
+    // silent dead end (Twilio resolves it as an instant no-answer with no
+    // real ring, confirmed against production evidence 2026-09-07) rather
+    // than a real, honestly-failed attempt. Alerted under its own type so
+    // it is never confused with /call-delivery-failed's "app installed,
+    // this one call just wasn't answered" alert.
+    console.error(
+      "CALL DELIVERY: no reachable Voice SDK client registered for self-protecting household — skipping a doomed Client dial",
+      household && household.id
+    );
+    sendCriticalAlert(
+      "self_protecting_no_registered_client",
+      "An approved call could not be delivered — no reachable Voice SDK client is currently registered for this household",
+      { householdId: household && household.id }
+    ).catch(() => {});
+    twiml.say(
+      { voice: "Polly.Amy", language: "en-GB" },
+      "We're sorry, this call cannot be connected right now. Please try again later."
+    );
+    twiml.hangup();
     return;
   }
 
+  // Only remaining trigger for plan.mode === "fail-closed" is a null
+  // household (decideCallDeliveryPlan's own defensive first check) — an
+  // inbound call to a Twilio number that matches no household at all.
   console.error(
-    "CALL ROUTING ERROR: no forwarding number on file for household",
+    "CALL ROUTING ERROR: no household matches the dialled Twilio number",
     household && household.id
   );
   sendCriticalAlert(
     "approved_call_delivery_failed",
-    "An approved call could not be delivered — no forwarding destination on file",
+    "An approved call could not be delivered — no household matches the dialled Twilio number",
     { householdId: household && household.id }
   ).catch(() => {});
   twiml.say(
@@ -419,7 +464,7 @@ async function logCall({ callSid, number, status, result, aiModel, processingTim
 // duration_seconds fallback: a red-line-terminated call
 // (terminatedBySystem) is redirected away from its <Dial> to end it,
 // which means the <Dial> action callback that normally records
-// duration_seconds (recordCallDuration, below) never fires for this one
+// duration_seconds (recordApprovedCallDeliveryOutcome, below) never fires for this one
 // case. Rather than leave duration_seconds permanently null for exactly
 // the calls the red-line system existed to catch, this uses
 // monitoredDurationSeconds as a reasonable estimate — monitoring runs
@@ -427,7 +472,7 @@ async function logCall({ callSid, number, status, result, aiModel, processingTim
 // two are effectively the same number here. Only applied when
 // terminatedBySystem is true; every other call's duration_seconds comes
 // exclusively from the real Twilio-reported value via
-// recordCallDuration, never estimated.
+// recordApprovedCallDeliveryOutcome, never estimated.
 async function recordMonitoringOutcome({
   callSid,
   riskScore,
@@ -463,26 +508,43 @@ async function recordMonitoringOutcome({
   }
 }
 
-// Persists the real, Twilio-reported duration of a completed <Dial> leg
-// (DialCallDuration) — called from the /call-delivery-failed and
-// /call-status action callbacks below, covering normal completion,
-// either party hanging up, no-answer, busy, and failed. Never called for
-// a red-line-terminated call — see recordMonitoringOutcome's own comment
-// for that case's fallback. Fails open: never throws, never affects the
-// TwiML response already being returned to Twilio for this request.
-async function recordCallDuration(callSid, durationSeconds) {
+// Records real, Twilio-reported evidence of an approved call's delivery
+// outcome (migration 036, 2026-09-07). Replaces the earlier duration-only
+// recordCallDuration: persists duration_seconds exactly as before, and
+// additionally stamps households.delivery_verified_at whenever
+// DialCallStatus is genuinely "completed", the one Twilio-reported value
+// that means the dialled leg (Client or PSTN — both /call-delivery-failed
+// and /call-status call this) actually connected. This is deliberately
+// the only source of delivery_verified_at: never a customer self-report,
+// never inferred from activation_verified_at (which only ever proves the
+// inbound leg — see that column's own migration 021 comment and
+// APP_DECISION_008's 2026-09-07 refinement). Fails open: never throws,
+// never affects the TwiML response already being returned to Twilio for
+// this request.
+async function recordApprovedCallDeliveryOutcome(callSid, dialCallStatus, durationSeconds) {
   if (!supabaseAdmin) {
     console.error("SUPABASE CALL DURATION ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
     return;
   }
 
-  const { error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("calls")
     .update({ duration_seconds: durationSeconds })
-    .eq("call_sid", callSid);
+    .eq("call_sid", callSid)
+    .select("household_id")
+    .maybeSingle();
 
   if (error) {
     console.error("SUPABASE CALL DURATION ERROR:", error);
+    return;
+  }
+
+  const householdId = data && data.household_id;
+
+  if (dialCallStatus === "completed" && householdId) {
+    markHouseholdDeliveryVerified(householdId).catch(err =>
+      console.error("DELIVERY VERIFIED RECORD FAILED:", err.message)
+    );
   }
 }
 
@@ -769,14 +831,16 @@ app.post("/red-line-terminate", (req, res) => {
   return res.type("text/xml").send(twiml.toString());
 });
 
-// CALL DELIVERY FAILED (self_protecting households only)
+// CALL DELIVERY FAILED (client-only Voice SDK delivery)
 //
-// The action callback for a self_protecting household's Client-only
-// <Dial> (dialHouseholdOrFailClosed). Twilio POSTs here once that Dial
-// leg ends, regardless of outcome, with DialCallStatus describing what
-// happened. A normally connected-then-ended call is left alone — this
-// message only plays when the Client genuinely never answered (app not
-// installed, not registered, or timed out). Deliberately never falls
+// The action callback for an iphone/android/unclassified household's
+// Client-only <Dial> (dialHouseholdOrFailClosed). Twilio POSTs here once
+// that Dial leg ends, regardless of outcome, with DialCallStatus
+// describing what happened. A genuinely connected call (dialCallStatus
+// === "completed") is real, evidenced delivery — recordApprovedCallDeliveryOutcome
+// below stamps households.delivery_verified_at for it (migration 036);
+// this message only plays when the Client genuinely never answered (app
+// not installed, not registered, or timed out). Deliberately never falls
 // through to a PSTN dial-back to household.phone_number — that's the
 // exact known-forwarded number this whole design exists to never dial.
 // Logging distinctly (not just reusing dialHouseholdOrFailClosed's own
@@ -787,19 +851,22 @@ app.post("/call-delivery-failed", (req, res) => {
   const twiml = new VoiceResponse();
   const dialCallStatus = req.body.DialCallStatus;
 
-  // duration_seconds capture (cost-protection safeguard) — DialCallDuration
-  // is only present once the leg actually connected (dialCallStatus ===
-  // "completed"); a no-answer/busy/failed dial has no meaningful
-  // connected duration, so this leaves it at 0 rather than inventing a
-  // number. Fire-and-forget, exactly like every other calls-table write
-  // in this file — never allowed to affect the TwiML response already
-  // being built below.
-  recordCallDuration(req.body.CallSid, Number(req.body.DialCallDuration) || 0).catch(err =>
-    console.error("CALL DURATION RECORD FAILED:", err.message)
-  );
+  // duration_seconds + delivery-verified capture (cost-protection
+  // safeguard, and now the sole source of real end-to-end delivery
+  // evidence) — DialCallDuration is only present once the leg actually
+  // connected (dialCallStatus === "completed"); a no-answer/busy/failed
+  // dial has no meaningful connected duration, so this leaves it at 0
+  // rather than inventing a number. Fire-and-forget, exactly like every
+  // other calls-table write in this file — never allowed to affect the
+  // TwiML response already being built below.
+  recordApprovedCallDeliveryOutcome(
+    req.body.CallSid,
+    dialCallStatus,
+    Number(req.body.DialCallDuration) || 0
+  ).catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
 
   if (dialCallStatus !== "completed") {
-    console.error("CALL DELIVERY FAILED: self_protecting household's Client did not answer", {
+    console.error("CALL DELIVERY FAILED: household's Voice SDK Client did not answer", {
       dialCallStatus,
       callSid: req.body.CallSid,
     });
@@ -820,21 +887,25 @@ app.post("/call-delivery-failed", (req, res) => {
 
 // CALL STATUS (two-number households only)
 //
-// The action callback for a client-and-number <Dial> (dialHouseholdOrFailClosed)
-// — added purely to capture duration_seconds (cost-protection safeguard);
-// this route has no other job and must never diverge from that. Twilio
-// POSTs here once the Dial ends, regardless of outcome, exactly like
-// /call-delivery-failed above, but this mode's household is never
-// self_protecting-gated the same way, so there is no "app unreachable"
-// message to play here — the caller-facing behaviour (silent hangup once
-// the Dial ends) is exactly what happened before this action callback
-// existed.
+// The action callback for a client-and-number <Dial> — a delivery mode
+// decideCallDeliveryPlan does not currently produce for any household
+// (self_protecting-equivalent behaviour applies unconditionally; see that
+// function's own comment). Unreachable in production today, exactly as
+// it has been since before this change series — kept, not deleted, as
+// the same intentional rollback/extension seam server.js already uses
+// elsewhere (e.g. /process). Uses recordApprovedCallDeliveryOutcome (the
+// same duration + delivery-evidence recorder /call-delivery-failed uses)
+// rather than a separate implementation, so this route is correct by
+// construction if it's ever wired up again — never landline-specific,
+// this helper knows nothing about device classification.
 app.post("/call-status", (req, res) => {
   const twiml = new VoiceResponse();
 
-  recordCallDuration(req.body.CallSid, Number(req.body.DialCallDuration) || 0).catch(err =>
-    console.error("CALL DURATION RECORD FAILED:", err.message)
-  );
+  recordApprovedCallDeliveryOutcome(
+    req.body.CallSid,
+    req.body.DialCallStatus,
+    Number(req.body.DialCallDuration) || 0
+  ).catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
 
   twiml.hangup();
   return res.type("text/xml").send(twiml.toString());
@@ -880,6 +951,16 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
   // customer alone.
   const activationRecentlyConfirmedByACall = isCallWithinVerificationWindow(recentCalls[0]);
 
+  // 2026-09-07 correction: activationVerifiedAt alone used to gate
+  // upload.html's "You're protected" checklist item — proven, by the same
+  // production incident this whole change series closes, to prove only
+  // that a call reached HCG, never that HCG could deliver one back out.
+  // protection.fullyProtected (computeProtectionStatus, services/
+  // callRouting.js) is the one field the UI must use for that claim now;
+  // activationVerifiedAt itself is left exactly as-is for whatever else
+  // already reasonably depends on its original, narrower meaning.
+  const protection = computeProtectionStatus(req.household, new Date());
+
   res.json({
     // req.household already carries this — requireAuth's
     // getHouseholdByAuthUserId does a plain select("*"), so no extra
@@ -898,6 +979,11 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // customer taps the verify button themselves — same field name/
     // meaning as the mobile app's equivalent (routes/mobileApi.js).
     recentUnconfirmedCallSeen: activationRecentlyConfirmedByACall && !req.household.activation_verified_at,
+    // See computeProtectionStatus's own comment for what each field
+    // means and why they're kept separate — deliberately not collapsed
+    // into activationVerifiedAt or any single boolean upload.html already
+    // reads.
+    protection,
     contactsUploaded: contacts.length,
     // Full contact list (id, so Edit/Delete can target the right row,
     // plus name + number — never household_id) for the "Trusted contacts"

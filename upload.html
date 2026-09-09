@@ -1183,8 +1183,8 @@
       </div>
 
       <div id="stepActive" hidden>
-        <h2>✓ Protection active</h2>
-        <p class="field-hint">Calls to your phone are being checked for you.</p>
+        <h2>✓ Call forwarding activated</h2>
+        <p class="field-hint">Your calls are now forwarding to Home Call Guard. See your current protection status above.</p>
         <p class="field-hint"><button type="button" class="secondary-action-button change-number-link" id="changeNumberFromActiveButton">Change where safe calls ring</button></p>
       </div>
 
@@ -1532,6 +1532,74 @@
     }).join("");
   }
 
+  // TEST-EXTRACT-START: computeProtectionMessage
+  // Pure decision of which status-card title/subtitle variant to show —
+  // extracted from renderProtectionStatus (which only ever applies this
+  // to the DOM) so the actual "is this customer told they're protected"
+  // logic is directly unit-testable, matching computeProtectionState/
+  // computeSetupChecklist/computeOnboardingStep's own established
+  // pattern in this file.
+  //
+  // "You're protected" must never show merely because Twilio provisioning
+  // succeeded, or because the customer clicked a self-report checkbox —
+  // it requires computeOnboardingStep to have reached "active" (itself
+  // requiring activationVerifiedAt, a real routed call, never a self-
+  // report) AND data.protection.fullyProtected (2026-09-07 correction):
+  // real evidence — households.delivery_verified_at, migration 036, the
+  // one thing services/callRouting.js's computeProtectionStatus can never
+  // be satisfied by a self-report or by forwarding-only evidence — that
+  // an approved call has actually connected back to this phone, not just
+  // that forwarding reached Home Call Guard. This does not add a new
+  // customer step: fullyProtected becomes true automatically the next
+  // time a real approved call connects, exactly like
+  // callForwardingCompleted already does for activationVerifiedAt.
+  function computeProtectionMessage(data, state) {
+    const allStepsComplete = computeOnboardingStep(data) === "active";
+    const fullyProtected = !!(data && data.protection && data.protection.fullyProtected);
+
+    if (state === "active" && allStepsComplete && fullyProtected) {
+      return {
+        variant: "protected",
+        title: "You're protected",
+        sub: "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.",
+      };
+    }
+
+    if (state === "failed") {
+      return {
+        variant: "failed",
+        title: "We're sorting out one part of your setup",
+        sub: "Your subscription is active and nothing further is needed from you right now — our team has been notified and is on it. If you'd like an update, contact us any time at support@homecallguard.co.uk.",
+      };
+    }
+
+    if (state === "active" && allStepsComplete) {
+      // Call forwarding is confirmed, but no approved call has actually
+      // been delivered back to this phone yet — a genuinely different,
+      // honest fact from "You're protected," not a wording nuance.
+      return {
+        variant: "confirming-delivery",
+        title: "Almost there — confirming your protection",
+        sub: "Your call forwarding is set up correctly. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.",
+      };
+    }
+
+    if (state === "active") {
+      return {
+        variant: "steps-incomplete",
+        title: "Your membership is active — finish setting up your protection",
+        sub: "A few steps are still needed from you below before calls to your phone are protected.",
+      };
+    }
+
+    return {
+      variant: "preparing",
+      title: "We're finishing setting up your protection",
+      sub: "Your subscription is active — this usually only takes a few minutes and happens automatically. This page updates automatically, so you'll see it here the moment your protection is ready.",
+    };
+  }
+  // TEST-EXTRACT-END: computeProtectionMessage
+
   // Renders the protection sub-state (active/pending/failed) onto the
   // main status card — title, subtitle, shield colour (via
   // data-protection-state, styled in <style>). Deliberately separate from
@@ -1559,29 +1627,9 @@
       statsEmptyNote.hidden = !muteStats;
     }
 
-    // "You're protected" must never show merely because Twilio
-    // provisioning succeeded, or because the customer clicked a
-    // self-report checkbox — it requires computeOnboardingStep to have
-    // reached "active", which itself requires activationVerifiedAt (a
-    // real routed call), never a self-report. Deliberately not gated on
-    // contactsUploaded — trusted contacts is an encouraged follow-up, not
-    // a requirement for protection to genuinely be active (see
-    // computeOnboardingStep's own comment).
-    const allStepsComplete = computeOnboardingStep(data) === "active";
-
-    if (state === "active" && allStepsComplete) {
-      if (title) title.textContent = "You're protected";
-      if (sub) sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
-    } else if (state === "failed") {
-      if (title) title.textContent = "We're sorting out one part of your setup";
-      if (sub) sub.textContent = "Your subscription is active and nothing further is needed from you right now — our team has been notified and is on it. If you'd like an update, contact us any time at support@homecallguard.co.uk.";
-    } else if (state === "active") {
-      if (title) title.textContent = "Your membership is active — finish setting up your protection";
-      if (sub) sub.textContent = "A few steps are still needed from you below before calls to your phone are protected.";
-    } else {
-      if (title) title.textContent = "We're finishing setting up your protection";
-      if (sub) sub.textContent = "Your subscription is active — this usually only takes a few minutes and happens automatically. This page updates automatically, so you'll see it here the moment your protection is ready.";
-    }
+    const message = computeProtectionMessage(data, state);
+    if (title) title.textContent = message.title;
+    if (sub) sub.textContent = message.sub;
   }
 
   // True only while the customer has explicitly chosen to change their

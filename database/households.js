@@ -248,6 +248,55 @@ async function markActivationVerified(householdId) {
   return data;
 }
 
+// Records that this household's mobile app genuinely completed Twilio
+// Voice SDK registration (migration 035) — called from POST
+// /api/v1/voice/registered, itself called from mobile/lib/voiceClient.ts's
+// performRegistration() once voice.register() resolves. Deliberately NOT
+// idempotent-once, unlike markActivationVerified above: every real
+// registration event must move this timestamp forward, since staleness
+// (not "was it ever true") is exactly what services/callRouting.js's
+// isVoiceClientReachable checks. Returns the new timestamp.
+async function markVoiceClientRegistered(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("mark_household_voice_client_registered", {
+    p_household_id: householdId,
+  });
+
+  if (error) {
+    console.error("VOICE CLIENT REGISTERED MARK ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+// Records real, Twilio-reported evidence that an approved call actually
+// connected to this household's protected phone (migration 036) — called
+// only from server.js's recordApprovedCallDeliveryOutcome, itself called
+// from the /call-delivery-failed action callback (the currently-reachable
+// client-only delivery path) on a genuine DialCallStatus === "completed".
+// Never a customer
+// self-report, never inferred from activation_verified_at. Deliberately
+// NOT idempotent-once, matching markVoiceClientRegistered's own
+// reasoning: a mobile household's delivery capability can regress after
+// one real success, so every genuine completed delivery is fresh
+// evidence, not just the first. Returns the new timestamp.
+async function markHouseholdDeliveryVerified(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("mark_household_delivery_verified", {
+    p_household_id: householdId,
+  });
+
+  if (error) {
+    console.error("DELIVERY VERIFIED MARK ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
 async function setUserRole(authUserId, role = "household") {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
@@ -285,6 +334,8 @@ module.exports = {
   assignHouseholdTwilioNumber,
   recordTwilioProvisioningFailure,
   markActivationVerified,
+  markVoiceClientRegistered,
+  markHouseholdDeliveryVerified,
   markTwilioNumberPendingRelease,
   cancelTwilioNumberPendingRelease,
   releaseHouseholdTwilioNumber,

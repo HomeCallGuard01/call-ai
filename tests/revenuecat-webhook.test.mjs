@@ -720,9 +720,20 @@ check(
   'routes/mobileApi.js: the entire grant/revoke classification, entitlement upsert/expiry, and Twilio provisioning hook block is completely untouched — proves existing non-TRANSFER RevenueCat events (INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION, etc.) go through exactly the same code path as before this fix'
 );
 
+// 2026-09-07 update: Voice-SDK-reachability logic now legitimately exists
+// in this file — deliberately re-authored against current origin/main
+// (migration 036, POST /api/v1/voice/registered) as its own dedicated,
+// separately-scoped change, not brought across from commit a6d00c1's
+// abandoned base. The isolation property this test actually cares about
+// — that the RevenueCat TRANSFER fix above and Voice-SDK reachability
+// are two independent, uncoupled concerns — still holds and is checked
+// here directly, rather than by banning reachability code from the file
+// altogether (which would now be testing something false).
 check(
-  !routeSource.includes('isVoiceClientReachable') && !routeSource.includes('voiceClientReachable') && !routeSource.includes('markVoiceClientRegistered') && !routeSource.includes('/api/v1/voice/registered'),
-  'routes/mobileApi.js: no Voice-SDK-reachability logic was brought across from commit a6d00c1\'s base — this fix was isolated cleanly onto current origin/main, which never had that abandoned work'
+  !grantRevokeBlock.includes('voiceClientReachable') &&
+    !grantRevokeBlock.includes('isVoiceClientReachable') &&
+    !grantRevokeBlock.includes('markVoiceClientRegistered'),
+  'routes/mobileApi.js: the RevenueCat grant/revoke classification block has no Voice-SDK-reachability coupling — the two features remain independent'
 );
 
 // --- Structural: database/billing.js's new getMostRecentRevenueCatEntitlement
