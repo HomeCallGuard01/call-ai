@@ -675,6 +675,105 @@ function check(condition, message) {
   );
 }
 
+// --- Static structure check: earliest-possible PushKit initialization
+// (2026-09-09, Twilio GitHub issue #668 / Build 9 locked-screen crash) ---
+//
+// iOS requires a VoIP push to be reported to CallKit in the same run loop
+// as the native PushKit callback; the native PKPushRegistry that receives
+// that callback doesn't exist until voice.initializePushRegistry() has
+// run at least once. This must happen independently of any session/auth
+// state, and as early in the JS lifecycle as this app's entry point
+// allows — not gated behind (tabs)/_layout.tsx mounting.
+
+{
+  const voiceClientSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'lib', 'voiceClient.ts'),
+    'utf8'
+  );
+  const rootLayoutSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'app', '_layout.tsx'),
+    'utf8'
+  );
+
+  check(
+    voiceClientSource.includes('export function initializePushKitEarly(): Promise<void> {'),
+    'voiceClient.ts exports initializePushKitEarly'
+  );
+
+  // Must be reachable with zero arguments — proves it depends on no
+  // session/token/identity, unlike registerForIncomingCalls(accessToken?).
+  check(
+    /function initializePushKitEarly\(\)\s*:/.test(voiceClientSource),
+    'initializePushKitEarly takes no parameters — it must not depend on any session/auth state to run'
+  );
+
+  // The real proof this isn't dependent on (tabs)/_layout.tsx mounting:
+  // an unconditional, top-level (module-scope) call exists in
+  // voiceClient.ts itself, so merely importing this module triggers it —
+  // independent of whether any React component, screen, or the (tabs)
+  // route group ever mounts at all.
+  const fnBodyEnd = voiceClientSource.indexOf('\n}', voiceClientSource.indexOf('export function initializePushKitEarly'));
+  const afterFnDeclaration = voiceClientSource.slice(fnBodyEnd);
+  const topLevelCallIndex = afterFnDeclaration.search(/^initializePushKitEarly\(\);$/m);
+  check(
+    topLevelCallIndex !== -1,
+    'a bare, unconditional, module-scope call to initializePushKitEarly() exists (not inside any function/component) — importing voiceClient.ts alone triggers it'
+  );
+
+  // Idempotency: a shared/cached promise, not a boolean re-checked on
+  // each call — so a concurrent caller (e.g. performRegistration's own
+  // defensive call, below) awaits the exact same in-flight attempt
+  // rather than returning early before the real native call resolves.
+  check(
+    voiceClientSource.includes('let pushRegistryInitPromise: Promise<void> | null = null;') &&
+      voiceClientSource.includes('if (!pushRegistryInitPromise) {'),
+    'initializePushKitEarly caches a single shared promise — calling it more than once (module re-evaluation, or performRegistration\'s own call) never triggers a second native voice.initializePushRegistry() call'
+  );
+
+  // performRegistration must route through the shared function, not call
+  // the native SDK directly a second time — otherwise the early call and
+  // the authenticated flow could each create their own registration. The
+  // one legitimate call site is inside initializePushKitEarly itself.
+  const nativeCallCount = (voiceClientSource.match(/await voice\.initializePushRegistry\(\);/g) || []).length;
+  check(
+    nativeCallCount === 1,
+    `voice.initializePushRegistry() (the real native call) appears exactly once, inside initializePushKitEarly only (found ${nativeCallCount}) — performRegistration must go through that same shared, idempotent function, never call the SDK directly itself`
+  );
+  check(
+    voiceClientSource.includes('await initializePushKitEarly();'),
+    'performRegistration() calls initializePushKitEarly() (idempotently) as its own safety net, rather than assuming the early module-level call already completed'
+  );
+
+  // app/_layout.tsx — the actual earliest Expo Router entry point in this
+  // app (mounted before (auth)/(setup)/(tabs) and before AuthProvider) —
+  // must import voiceClient.ts, and as its first import, so this fires
+  // before Supabase session hydration and before any navigation.
+  check(
+    rootLayoutSource.includes('import "../lib/voiceClient";'),
+    'the root app/_layout.tsx imports lib/voiceClient.ts'
+  );
+
+  const voiceClientImportIndex = rootLayoutSource.indexOf('import "../lib/voiceClient";');
+  const authProviderImportIndex = rootLayoutSource.indexOf('import { AuthProvider }');
+  check(
+    voiceClientImportIndex !== -1 &&
+      authProviderImportIndex !== -1 &&
+      voiceClientImportIndex < authProviderImportIndex,
+    'voiceClient.ts is imported before AuthContext in app/_layout.tsx — its module-level PushKit init runs before Supabase session hydration can even begin, not after'
+  );
+
+  // And the negative case that made this a real bug: (tabs)/_layout.tsx
+  // is not part of this import chain at all — app/_layout.tsx (the root)
+  // never imports the (tabs) group directly (Expo Router resolves routes
+  // by file convention, not by explicit import), so this early
+  // initialization is provably independent of whether the user ever
+  // reaches the (tabs) group.
+  check(
+    !rootLayoutSource.includes('(tabs)/_layout'),
+    'app/_layout.tsx has no dependency on (tabs)/_layout.tsx — the early PushKit init cannot be gated on that screen mounting, because nothing here references it'
+  );
+}
+
 {
   const accountScreenSource = readFileSync(
     path.join(__dirname, '..', 'mobile', 'app', '(tabs)', 'account', 'index.tsx'),
