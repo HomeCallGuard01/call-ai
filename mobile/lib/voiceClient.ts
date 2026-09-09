@@ -19,6 +19,68 @@ let activeCall: Call | null = null;
 let registered = false;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Establishes the native PKPushRegistry + delegate as early as possible in
+// the app's lifecycle (2026-09-09) — triggered purely by importing this
+// module (see the unconditional top-level call at the bottom of this
+// section, and app/_layout.tsx's own top-level import of this file, before
+// any component renders). Twilio's own official React Native reference
+// app does the equivalent via a top-level import in its own index.js
+// (`import './src/util/voice'`) — this mirrors that as closely as Expo
+// Router's managed entry point allows; there's no earlier JS hook
+// available without ejecting to a custom native entry file.
+//
+// Why this matters: iOS requires a VoIP push to be reported to CallKit
+// "in the same run loop... without delay" as the native PushKit delegate
+// callback, or the OS SIGABRTs the app (confirmed against Twilio's own
+// open GitHub issue #668, twilio/twilio-voice-react-native — the exact
+// crash signature and mechanism HCG hit on Build 9's locked-screen test).
+// The native PKPushRegistry + delegate that receives that callback does
+// not exist at all until voice.initializePushRegistry() has been called
+// at least once — previously that only happened deep inside
+// (tabs)/_layout.tsx's own effect, gated behind Supabase session
+// hydration and navigation reaching the (tabs) group, which is far too
+// late if the app process was suspended/killed in the background and a
+// VoIP push needs to cold-launch it fresh. Deliberately independent of
+// any session/auth state — establishing the native registry itself needs
+// no HCG-specific identity, only the later voice.register(token) call
+// does (unchanged below).
+//
+// Idempotent by construction, matching this file's own existing
+// inFlightRegistration pattern: a shared, cached promise (not just a
+// boolean) so every caller — the unconditional module-level trigger
+// below, and performRegistration()'s own defensive call — always awaits
+// the exact same underlying attempt rather than racing a second one or
+// returning before the first has actually finished.
+let pushRegistryInitPromise: Promise<void> | null = null;
+
+export function initializePushKitEarly(): Promise<void> {
+  if (Platform.OS !== "ios") return Promise.resolve();
+
+  if (!pushRegistryInitPromise) {
+    pushRegistryInitPromise = (async () => {
+      try {
+        beacon("early-pushRegistry-start");
+        await voice.initializePushRegistry();
+        beacon("early-pushRegistry-done");
+      } catch (err) {
+        // Never throw out of a module-level side effect — a failure here
+        // must not prevent the app from starting. performRegistration()
+        // below still attempts this same call (idempotently, via this
+        // same shared promise) as part of its own existing error
+        // handling/beacon trail, so a genuine failure is still surfaced
+        // through the authenticated flow, just not here.
+        beacon(
+          "early-pushRegistry-error",
+          err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+        );
+        console.error("EARLY PUSH REGISTRY INIT FAILED:", err);
+      }
+    })();
+  }
+
+  return pushRegistryInitPromise;
+}
+
 // Guards against two concurrent registration attempts — proven necessary
 // 2026-08-23 on a real device: the (tabs) layout's session-gated effect
 // and this file's own AppState "active" listener (below) both call
@@ -162,8 +224,15 @@ async function performRegistration(accessToken?: string): Promise<void> {
       // iOS CallKit framework" per Twilio's own getting-started-ios.md, and
       // this is the one call needed to opt into that integration from the
       // JS side.
+      //
+      // Routed through initializePushKitEarly() (above), not called
+      // directly — that same call almost always already ran (and
+      // resolved) well before this point, triggered at module-import
+      // time rather than here. This await is the safety net for the rare
+      // case this authenticated flow somehow runs before that; it's the
+      // exact same shared promise either way, never a second native call.
       beacon("pushRegistry-start");
-      await voice.initializePushRegistry();
+      await initializePushKitEarly();
       beacon("pushRegistry-done");
     }
 
@@ -208,6 +277,15 @@ async function performRegistration(accessToken?: string): Promise<void> {
   }
   scheduleRefresh(ttlSeconds);
 }
+
+// Fires the moment this module is first imported — app/_layout.tsx does
+// exactly that, as its very first import, before any component renders.
+// See initializePushKitEarly's own comment above for why this can't wait
+// for (tabs)/_layout.tsx or any authenticated flow. Not awaited here:
+// this is a fire-and-forget module-level side effect, the same as the
+// event listeners immediately below — nothing in this file's module
+// scope can usefully block on a promise anyway.
+initializePushKitEarly();
 
 // A backgrounded/suspended app's JS timers don't reliably fire on
 // schedule (iOS especially suspends JS execution entirely) — re-checking

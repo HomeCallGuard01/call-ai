@@ -1,3 +1,18 @@
+// Triggers lib/voiceClient.ts's module-level PushKit initialization as
+// the very first thing this app does — before Supabase session hydration,
+// before any navigation, before any component renders. See that file's
+// own initializePushKitEarly() comment for why: iOS requires a VoIP push
+// to be reported to CallKit in the same run loop as the native PushKit
+// callback, and the native registry that receives that callback doesn't
+// exist until this has run at least once. Twilio's own official React
+// Native reference app does the equivalent via a top-level import in its
+// own index.js (`import './src/util/voice'`) — this is the closest
+// equivalent Expo Router's managed entry point allows, since there's no
+// earlier JS hook available without ejecting to a custom native entry
+// file. Side-effect-only import — nothing here needs any of its exports
+// (Metro resolves this to lib/voiceClient.web.ts, a no-op stub, on web).
+import "../lib/voiceClient";
+
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
