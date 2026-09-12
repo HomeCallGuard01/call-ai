@@ -12,6 +12,7 @@ const {
   markTwilioNumberQuarantineReleased,
 } = require("../database/twilioQuarantine");
 const { sendCriticalAlert } = require("./alerting");
+const { isProductionSupabaseRef } = require("./serverConfig");
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
@@ -291,15 +292,40 @@ async function releaseTwilioNumberImmediately(household, deps = {}) {
 // here even though findConfirmedUnreleasedQuarantine's own query already
 // filters for this, so a bad/future caller can never accidentally
 // release an unconfirmed number through this function.
+//
+// Staging safety hardening (2026-09-12, PR #30 staging audit): this is
+// the single real-Twilio-release choke point in the whole codebase, and
+// there is no separate staging Twilio subaccount (confirmed in the
+// audit) — a real .remove() call here is against the same real account
+// regardless of which Supabase project the process happens to be
+// pointed at. isProductionEnvironment is fail-closed by design: it
+// checks the actual resolved SUPABASE_URL, not a self-reported APP_ENV
+// flag, so it can't be fooled by a process that forgot to set
+// APP_ENV=staging but is still pointed at the wrong database — exactly
+// the mismatch class the audit found had already happened once. A
+// blocked call is never silently treated as success: it returns
+// `blocked: true` and never marks the row released, so a later real
+// production run can still process it correctly. Never itself creates
+// any automatic-release mechanism — it only ever gates the existing one.
 async function releaseQuarantinedTwilioNumber(quarantineRow, deps = {}) {
   const {
     client = twilioRestClient,
     findSid = findTwilioIncomingNumberSid,
     markReleased = markTwilioNumberQuarantineReleased,
+    isProductionEnvironment = () => isProductionSupabaseRef(process.env.SUPABASE_URL),
   } = deps;
 
   if (!quarantineRow || !quarantineRow.deactivation_confirmed || quarantineRow.released_at) {
     return { released: false };
+  }
+
+  if (!isProductionEnvironment()) {
+    console.error(
+      "TWILIO NUMBER RELEASE BLOCKED — refusing real Twilio release: environment is not confirmed production",
+      quarantineRow.household_id,
+      quarantineRow.twilio_number
+    );
+    return { released: false, blocked: true, reason: "not_production_environment" };
   }
 
   try {

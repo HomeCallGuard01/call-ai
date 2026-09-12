@@ -779,14 +779,19 @@ async function run() {
 
   {
     // confirmed deactivation IS eligible for the defined release pathway
-    // — Twilio's real API is genuinely called here, only here.
+    // — Twilio's real API is genuinely called here, only here. Explicitly
+    // declares isProductionEnvironment: () => true (2026-09-12 staging
+    // safety hardening) — this is the "production release behaviour
+    // remains available under the correct production configuration" case;
+    // see tests/staging-environment-guard.test.mjs for the fail-closed
+    // (non-production) counterpart.
     const client = makeFakeReleaseClient();
     const markReleasedCalls = [];
     const markReleased = async (id) => { markReleasedCalls.push(id); };
 
     const result = await releaseQuarantinedTwilioNumber(
       { id: 'q-3', household_id: 'household-22', twilio_number: '+447700900052', deactivation_confirmed: true, released_at: null },
-      { client, markReleased }
+      { client, markReleased, isProductionEnvironment: () => true }
     );
 
     check(
@@ -823,7 +828,7 @@ async function run() {
 
     const result = await releaseQuarantinedTwilioNumber(
       { id: 'q-4', household_id: null, twilio_number: '+447700900053', twilio_sid: 'PN_captured_up_front', deactivation_confirmed: true, released_at: null },
-      { client, markReleased }
+      { client, markReleased, isProductionEnvironment: () => true }
     );
 
     check(result.released === true, 'a row with a pre-captured SID and a null household_id (e.g. after a future household hard-delete) still releases correctly');

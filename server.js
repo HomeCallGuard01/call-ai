@@ -59,7 +59,18 @@ const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
 const mobileApiRoutes = require("./routes/mobileApi");
-const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
+const { resolvePort, validateProductionEnv, validateStagingEnv, describeEnvironmentIdentity } = require("./services/serverConfig");
+
+// Printed unconditionally, before any validation, so a misconfigured run
+// is visible immediately in the logs regardless of which check (if any)
+// ends up failing — names/derived-mode only, never a secret value (see
+// describeEnvironmentIdentity's own comment).
+{
+  const identity = describeEnvironmentIdentity(process.env);
+  console.log(
+    `ENVIRONMENT: appEnv=${identity.appEnv} nodeEnv=${identity.nodeEnv} supabaseRef=${identity.supabaseRef} stripeMode=${identity.stripeMode} appUrl=${identity.appUrl}`
+  );
+}
 
 // Fail fast and clearly in production rather than starting in a silently
 // broken or insecure state (e.g. a missing STRIPE_WEBHOOK_SECRET would
@@ -72,6 +83,27 @@ if (process.env.NODE_ENV === "production") {
   const problems = validateProductionEnv(process.env);
   if (problems.length > 0) {
     console.error("FATAL: invalid production configuration:");
+    for (const problem of problems) {
+      console.error(` - ${problem}`);
+    }
+    process.exit(1);
+  }
+}
+
+// Staging safety hardening (2026-09-12, PR #30 staging audit) — a process
+// deliberately launched in staging mode (APP_ENV=staging, set by
+// scripts/start-staging.js, never by production) must prove it is
+// actually pointed at the staging Supabase project and Stripe test-mode
+// keys before anything else runs — no route is registered, no scheduler
+// is armed, no external call is possible yet at this point in the file.
+// Fail-closed: an unparseable or wrong SUPABASE_URL (including
+// production's own) refuses to boot rather than silently proceeding
+// against the wrong database, exactly the class of mistake the staging
+// audit found had already happened once (see CURRENT_STATE.md).
+if (process.env.APP_ENV === "staging") {
+  const problems = validateStagingEnv(process.env);
+  if (problems.length > 0) {
+    console.error("FATAL: invalid staging configuration — refusing to start:");
     for (const problem of problems) {
       console.error(` - ${problem}`);
     }
