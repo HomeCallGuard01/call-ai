@@ -7,6 +7,10 @@ const {
   releaseHouseholdTwilioNumber,
   releaseHouseholdTwilioNumberImmediately,
 } = require("../database/households");
+const {
+  quarantineHouseholdTwilioNumber,
+  markTwilioNumberQuarantineReleased,
+} = require("../database/twilioQuarantine");
 const { sendCriticalAlert } = require("./alerting");
 
 const DEFAULT_MAX_ATTEMPTS = 5;
@@ -171,23 +175,38 @@ async function findTwilioIncomingNumberSid(client, phoneNumber) {
   return match ? match.sid : null;
 }
 
-// Grace-period release path (see migrations/017's header for the
-// cancellation-vs-deletion policy this implements). The database RPC is
-// the sole authority on eligibility — it atomically checks the number
-// still matches, a deadline was set, and that deadline has passed, and
-// only then clears it — so this function releases the number via
-// Twilio's API *after* confirming the database write succeeded, not
-// before. That ordering is deliberate: if the Twilio-side release fails
+// Grace-period QUARANTINE path (see migrations/017's header for the
+// cancellation-vs-deletion policy this implements, and migration 037's
+// header for the quarantine correction layered on top of it, 2026-09-10).
+// The database RPC is the sole authority on eligibility — it atomically
+// checks the number still matches, a deadline was set, and that deadline
+// has passed, and only then clears it — so this function only quarantines
+// the number *after* confirming the database write succeeded, not
+// before. That ordering is deliberate: if the quarantine insert fails
 // after a successful database clear, the result is a harmless (if
 // wasteful) orphaned Twilio resource nothing references anymore; the
-// reverse ordering — releasing from Twilio first — risks the opposite
-// failure instead, where a database error leaves our records still
-// pointing at a number Twilio has already given to someone else, which
-// is the real hazard (misrouted calls), not idle cost.
+// reverse ordering risks the opposite failure instead, where a database
+// error leaves our records still pointing at a number that's already
+// been handed off elsewhere — the real hazard (misrouted calls), not
+// idle cost.
+//
+// IMPORTANT — this function no longer calls Twilio's real
+// incomingPhoneNumbers(sid).remove() at all. Per the corrected quarantine
+// design (migration 037), a number is never returned to Twilio's pool
+// just because this grace period elapsed — it moves into quarantine,
+// unconfirmed, and stays there until a human confirms deactivation. The
+// genuine Twilio release only happens via releaseQuarantinedTwilioNumber,
+// below, for confirmed rows. The one Twilio call this function still
+// makes (findSid, a read-only .list() lookup) exists only to capture the
+// resource's SID onto the quarantine row up front — see migration 037's
+// own header on why relying solely on a phone-number search again later
+// is not the only mechanism any more; a failure here is non-fatal (SID
+// stays null, resolved lazily at release time from the fallback search).
 async function releaseExpiredTwilioNumber(household, deps = {}) {
   const {
     client = twilioRestClient,
     release = releaseHouseholdTwilioNumber,
+    quarantine = quarantineHouseholdTwilioNumber,
     findSid = findTwilioIncomingNumberSid,
   } = deps;
 
@@ -202,33 +221,40 @@ async function releaseExpiredTwilioNumber(household, deps = {}) {
       return { released: false };
     }
 
-    if (client) {
-      const sid = await findSid(client, household.twilio_number);
-      if (sid) {
-        await client.incomingPhoneNumbers(sid).remove();
-      } else {
-        console.warn(
-          "TWILIO NUMBER RELEASE: no matching Twilio resource found for",
-          household.twilio_number
-        );
-      }
-    }
+    const sid = client
+      ? await findSid(client, household.twilio_number).catch(() => null)
+      : null;
 
-    console.log("TWILIO NUMBER RELEASED (grace period expired):", household.id, household.twilio_number);
-    return { released: true, twilioNumber: household.twilio_number };
+    await quarantine(household.id, household.twilio_number, "subscription_grace_expired", sid);
+
+    console.log(
+      "TWILIO NUMBER QUARANTINED (grace period expired, deactivation not yet confirmed):",
+      household.id,
+      household.twilio_number
+    );
+    return { released: false, quarantined: true, twilioNumber: household.twilio_number };
   } catch (err) {
-    console.error("TWILIO NUMBER RELEASE FAILED:", household.id, err.message);
+    console.error("TWILIO NUMBER QUARANTINE FAILED:", household.id, err.message);
     return { released: false, error: err.message };
   }
 }
 
-// Immediate-release path — intended for a future account-deletion
-// feature (none exists in this codebase yet). Same database-first
-// ordering rationale as releaseExpiredTwilioNumber above.
+// Immediate-QUARANTINE path — used by services/accountDeletion.js. Same
+// database-first ordering rationale as releaseExpiredTwilioNumber above,
+// and the same 2026-09-10 correction: account deletion is a deliberate,
+// explicit customer action, but that does not establish that carrier-level
+// forwarding has actually been removed — the same misdirected-call risk
+// applies, so this path also quarantines rather than genuinely releasing.
+// This does not weaken Apple Guideline 5.1.1(v) compliance: the customer's
+// account (auth user, household row, personal data) is still fully and
+// immediately deleted by deleteOwnAccount — only the underlying Twilio
+// phone-number *resource*, a backend infrastructure concern the customer
+// never sees, is held back from actually returning to Twilio's pool.
 async function releaseTwilioNumberImmediately(household, deps = {}) {
   const {
     client = twilioRestClient,
     releaseImmediately = releaseHouseholdTwilioNumberImmediately,
+    quarantine = quarantineHouseholdTwilioNumber,
     findSid = findTwilioIncomingNumberSid,
   } = deps;
 
@@ -241,19 +267,69 @@ async function releaseTwilioNumberImmediately(household, deps = {}) {
       return { released: false };
     }
 
+    const sid = client
+      ? await findSid(client, releasedNumber).catch(() => null)
+      : null;
+
+    await quarantine(household.id, releasedNumber, "account_deletion", sid);
+
+    console.log(
+      "TWILIO NUMBER QUARANTINED (account deletion, deactivation not yet confirmed):",
+      household.id,
+      releasedNumber
+    );
+    return { released: false, quarantined: true, twilioNumber: releasedNumber };
+  } catch (err) {
+    console.error("TWILIO NUMBER IMMEDIATE QUARANTINE FAILED:", household.id, err.message);
+    return { released: false, error: err.message };
+  }
+}
+
+// Stage 2 — the only path in this codebase that still calls Twilio's real
+// incomingPhoneNumbers(sid).remove(). Only ever acts on a quarantine row
+// that is BOTH confirmed and not yet released — re-checked defensively
+// here even though findConfirmedUnreleasedQuarantine's own query already
+// filters for this, so a bad/future caller can never accidentally
+// release an unconfirmed number through this function.
+async function releaseQuarantinedTwilioNumber(quarantineRow, deps = {}) {
+  const {
+    client = twilioRestClient,
+    findSid = findTwilioIncomingNumberSid,
+    markReleased = markTwilioNumberQuarantineReleased,
+  } = deps;
+
+  if (!quarantineRow || !quarantineRow.deactivation_confirmed || quarantineRow.released_at) {
+    return { released: false };
+  }
+
+  try {
     if (client) {
-      const sid = await findSid(client, releasedNumber);
+      // Prefers the SID captured on the row at quarantine time (migration
+      // 037) — falls back to searching Twilio by phone number only for a
+      // row where that wasn't available, so this never depends on the
+      // household record still existing (household_id can be null by
+      // then — see migration 037's own header on the CASCADE correction).
+      const sid = quarantineRow.twilio_sid || (await findSid(client, quarantineRow.twilio_number));
       if (sid) {
         await client.incomingPhoneNumbers(sid).remove();
       } else {
-        console.warn("TWILIO NUMBER IMMEDIATE RELEASE: no matching Twilio resource found for", releasedNumber);
+        console.warn(
+          "TWILIO NUMBER QUARANTINE RELEASE: no matching Twilio resource found for",
+          quarantineRow.twilio_number
+        );
       }
     }
 
-    console.log("TWILIO NUMBER RELEASED (immediate):", household.id, releasedNumber);
-    return { released: true, twilioNumber: releasedNumber };
+    await markReleased(quarantineRow.id);
+
+    console.log(
+      "TWILIO NUMBER RELEASED (quarantine, deactivation confirmed):",
+      quarantineRow.household_id,
+      quarantineRow.twilio_number
+    );
+    return { released: true, twilioNumber: quarantineRow.twilio_number };
   } catch (err) {
-    console.error("TWILIO NUMBER IMMEDIATE RELEASE FAILED:", household.id, err.message);
+    console.error("TWILIO NUMBER QUARANTINE RELEASE FAILED:", quarantineRow.household_id, err.message);
     return { released: false, error: err.message };
   }
 }
@@ -428,6 +504,7 @@ module.exports = {
   findTwilioIncomingNumberSid,
   releaseExpiredTwilioNumber,
   releaseTwilioNumberImmediately,
+  releaseQuarantinedTwilioNumber,
   updateTwilioNumberForEntitlementChange,
   isQualifyingSubscriptionStatus,
   handleWebhookProvisioningDecision,

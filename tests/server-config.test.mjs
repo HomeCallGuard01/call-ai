@@ -32,6 +32,7 @@ function validEnv(overrides = {}) {
     STRIPE_SECRET_KEY: 'sk_live_example',
     STRIPE_PRICE_ID: 'price_example',
     STRIPE_WEBHOOK_SECRET: 'whsec_example',
+    TWILIO_AUTH_TOKEN: 'twilio-auth-token-example',
     ...overrides,
   };
 }

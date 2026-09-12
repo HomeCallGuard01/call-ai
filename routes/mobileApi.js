@@ -510,7 +510,7 @@ router.delete("/api/v1/me/account", requireAuthApi, async (req, res) => {
 // preliminary 150 call — live in exactly one place, never duplicated in
 // client code).
 router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement, async (req, res) => {
-  const { deviceType, provider, protectedNumber } = req.query;
+  const { deviceType, provider, protectedNumber, carrier } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -559,11 +559,15 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
       twilioNumber: req.household.twilio_number,
       deviceType,
       provider,
+      carrier: typeof carrier === "string" ? carrier : undefined,
     });
 
     res.json({
       code: instructions.code,
       cancelCode: instructions.cancelCode,
+      cancelCodeMethod: instructions.cancelCodeMethod,
+      cancelCodeConfidence: instructions.cancelCodeConfidence,
+      cancelCodeNote: instructions.cancelCodeNote,
       requiresPreliminaryCall: instructions.requiresPreliminaryCall,
       preliminaryCallNumber: instructions.preliminaryCallNumber,
       preliminaryCallNote: instructions.preliminaryCallNote,
