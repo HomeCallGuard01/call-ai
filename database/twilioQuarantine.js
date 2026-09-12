@@ -83,6 +83,53 @@ async function findConfirmedUnreleasedQuarantine() {
   return data || [];
 }
 
+// Finds the most recent unconfirmed, unreleased quarantine row for one
+// household — what the admin confirm-deactivation action (routes/admin.js)
+// looks up before calling confirmTwilioNumberDeactivation. This is a
+// lookup, not a write: returns null (never throws) when Supabase isn't
+// configured, on any query error, or when nothing matches — "nothing to
+// confirm" is a normal, expected state for a household that was never
+// quarantined, or whose deactivation is already confirmed, matching
+// database/households.js's getHouseholdByTwilioNumber read-path
+// convention rather than confirmTwilioNumberDeactivation's own
+// throw-on-error convention (which is a write and should surface
+// failures loudly).
+//
+// deps.admin is injectable for tests (see tests/twilio-quarantine.test.mjs),
+// matching services/twilioProvisioning.js's existing deps convention —
+// this module's other functions use the module-level supabaseAdmin
+// directly; only this new function needed to be testable without a real
+// Supabase connection, so only this one gained the injection point.
+//
+// Uses `'admin' in deps` rather than `deps.admin || supabaseAdmin` (the
+// pattern elsewhere in this codebase, e.g. services/householdPhoneNumber.js)
+// specifically so a test can pass `{ admin: null }` to exercise the
+// not-configured path without silently falling through to the real
+// module-level client and making a genuine network call — caught during
+// this batch's own test run, where the naive pattern reached this
+// project's real configured Supabase instance.
+async function findUnconfirmedQuarantineForHousehold(householdId, deps = {}) {
+  const admin = "admin" in deps ? deps.admin : supabaseAdmin;
+  if (!admin) return null;
+
+  const { data, error } = await admin
+    .from("twilio_number_quarantine")
+    .select("*")
+    .eq("household_id", householdId)
+    .eq("deactivation_confirmed", false)
+    .is("released_at", null)
+    .order("quarantined_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("TWILIO NUMBER QUARANTINE LOOKUP ERROR:", error);
+    return null;
+  }
+
+  return data || null;
+}
+
 async function markTwilioNumberQuarantineReleased(quarantineId) {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
@@ -101,5 +148,6 @@ module.exports = {
   quarantineHouseholdTwilioNumber,
   confirmTwilioNumberDeactivation,
   findConfirmedUnreleasedQuarantine,
+  findUnconfirmedQuarantineForHousehold,
   markTwilioNumberQuarantineReleased,
 };

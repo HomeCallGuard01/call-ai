@@ -297,6 +297,30 @@ async function markHouseholdDeliveryVerified(householdId) {
   return data;
 }
 
+// Persists a household's mobile-carrier selection captured during
+// onboarding, via set_household_carrier_compatibility (migration 038).
+// Deliberately stores only the raw provider/tariff selection, never a
+// derived compatibility verdict — see that migration's own header and
+// services/providerPolicy.js's evaluateHouseholdCheckoutEligibility,
+// which is the only place a verdict is ever computed, evaluated fresh
+// every time it's needed rather than trusted from a stored value.
+async function setHouseholdCarrierCompatibility(householdId, providerKey, tariffType) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("set_household_carrier_compatibility", {
+    p_household_id: householdId,
+    p_provider_key: providerKey,
+    p_tariff_type: tariffType || null,
+  });
+
+  if (error) {
+    console.error("SET HOUSEHOLD CARRIER COMPATIBILITY ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
 async function setUserRole(authUserId, role = "household") {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
@@ -340,6 +364,7 @@ module.exports = {
   cancelTwilioNumberPendingRelease,
   releaseHouseholdTwilioNumber,
   releaseHouseholdTwilioNumberImmediately,
+  setHouseholdCarrierCompatibility,
   setUserRole,
   getUserRole,
 };

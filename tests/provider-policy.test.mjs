@@ -13,6 +13,7 @@ const {
   getProviderPolicy,
   evaluateProviderCompatibility,
   getMobileDeactivationInstructions,
+  evaluateHouseholdCheckoutEligibility,
   PROVIDER_POLICY,
 } = require('../services/providerPolicy.js');
 
@@ -244,6 +245,53 @@ function check(condition, message) {
       check(!entry.deactivationCode, `${key} (${entry.status}): never carries a deactivation code — there is nothing to deactivate on a network that isn't compatible`);
     }
   }
+}
+
+// --- evaluateHouseholdCheckoutEligibility (P0 Batch 1 continuation:
+// wiring the gate into checkout, 2026-09-11) ---
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'o2' });
+  check(result.status === 'compatible', 'household on O2: status is compatible');
+  check(result.canProceedToPayment === true, 'household on O2: may proceed to checkout');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'tesco' });
+  check(result.status === 'incompatible', 'household on Tesco: status is incompatible');
+  check(result.canProceedToPayment === false, 'household on Tesco: checkout is blocked');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'vodafone', carrier_tariff_type: 'payg' });
+  check(result.status === 'incompatible', 'household on Vodafone PAYG: status is incompatible (existing tariff-dependent policy preserved)');
+  check(result.canProceedToPayment === false, 'household on Vodafone PAYG: checkout is blocked');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'vodafone', carrier_tariff_type: 'pay_monthly' });
+  check(result.canProceedToPayment === true, 'household on Vodafone Pay Monthly: checkout is allowed (tariff-dependent policy still applies correctly)');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'some_unknown_mvno_xyz' });
+  check(result.status === 'unverified', 'household on an unrecognised carrier: status is unverified');
+  check(result.canProceedToPayment === false, 'household on an unrecognised carrier: checkout is blocked, never treated as compatible by default');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({});
+  check(result.canProceedToPayment === false, 'household with no carrier captured yet: checkout is blocked, not silently allowed through');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility(null);
+  check(result.canProceedToPayment === false, 'evaluateHouseholdCheckoutEligibility never throws on a null household — fails closed');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility(undefined);
+  check(result.canProceedToPayment === false, 'evaluateHouseholdCheckoutEligibility never throws on an undefined household — fails closed');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

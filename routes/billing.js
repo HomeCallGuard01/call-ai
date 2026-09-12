@@ -16,6 +16,7 @@ const {
   handleProcessedWebhookEvent,
 } = require("../services/twilioProvisioning");
 const { recordAcquisitionEvent } = require("../services/acquisitionAnalytics");
+const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
 
 const router = express.Router();
 
@@ -190,6 +191,16 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
   if (!process.env.STRIPE_PRICE_ID) {
     console.error("CHECKOUT SESSION ERROR: STRIPE_PRICE_ID not configured");
     return res.redirect("/dashboard?checkout=error");
+  }
+
+  // P0 Batch 1 continuation (2026-09-11): same gate as the mobile
+  // equivalent below (routes/mobileApi.js's /api/v1/billing/create-checkout-session)
+  // — see services/providerPolicy.js's evaluateHouseholdCheckoutEligibility.
+  // A household with no carrier captured yet is blocked, not assumed
+  // compatible.
+  const eligibility = evaluateHouseholdCheckoutEligibility(req.household);
+  if (!eligibility.canProceedToPayment) {
+    return res.redirect("/dashboard?checkout=carrier_incompatible");
   }
 
   try {

@@ -1041,6 +1041,109 @@ async function main() {
     'the Twilio number, SID, and release reason are all still fully intact after the household is gone — exactly the fields that must survive'
   );
 
+  // --- 038: household carrier-compatibility capture (P0 Batch 1 continuation) ---
+  await asServiceRole(db);
+
+  const { rows: [beforeCarrier] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type, carrier_compatibility_captured_at
+       from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    beforeCarrier.carrier_provider_key === null &&
+      beforeCarrier.carrier_tariff_type === null &&
+      beforeCarrier.carrier_compatibility_captured_at === null,
+    'all three carrier-compatibility columns default to null'
+  );
+
+  const { rows: [firstCapture] } = await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3) as result`,
+    [householdId, 'vodafone', 'pay_monthly']
+  );
+  assert(!!firstCapture.result, 'set_household_carrier_compatibility returns the new captured-at timestamp');
+
+  const { rows: [afterFirstCapture] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterFirstCapture.carrier_provider_key === 'vodafone' && afterFirstCapture.carrier_tariff_type === 'pay_monthly',
+    'the exact provider and tariff values passed in are persisted, unaltered'
+  );
+
+  // Deliberately not idempotent-once (unlike mark_household_activation_verified)
+  // — a customer can change their selection (corrected a mistake, actually
+  // switched carrier), and the most recent capture is what matters. Matches
+  // mark_household_voice_client_registered/mark_household_delivery_verified's
+  // own established "always move forward" precedent, not
+  // mark_household_activation_verified's "first time only" one.
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const { rows: [secondCapture] } = await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3) as result`,
+    [householdId, 'tesco', null]
+  );
+  assert(
+    new Date(secondCapture.result).getTime() > new Date(firstCapture.result).getTime(),
+    'a later call moves carrier_compatibility_captured_at forward, not idempotent-once'
+  );
+
+  const { rows: [afterSecondCapture] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterSecondCapture.carrier_provider_key === 'tesco' && afterSecondCapture.carrier_tariff_type === null,
+    'a corrected/changed selection overwrites the previous one — the most recent capture wins, and a genuinely absent tariff persists as null, not a stale previous value'
+  );
+
+  // No CHECK constraint on carrier_provider_key — deliberate, per migration
+  // 038's own header: PROVIDER_POLICY's key set is expected to grow, and an
+  // unrecognised key is already handled safely by getProviderPolicy's
+  // fallback to 'other' (unverified, blocked) in application code, not by
+  // a database constraint that would need updating in lockstep with it.
+  // This proves the ACTUAL constraint (none) rather than inventing one.
+  let junkValueRejected = false;
+  try {
+    await db.query(
+      `select public.set_household_carrier_compatibility($1, $2, $3)`,
+      [householdId, 'some-completely-made-up-provider-xyz', 'not-a-real-tariff-either']
+    );
+  } catch {
+    junkValueRejected = true;
+  }
+  assert(
+    !junkValueRejected,
+    'an unrecognised provider/tariff value is accepted at the database level, not rejected — validation is deliberately owned entirely by services/providerPolicy.js (getProviderPolicy\'s fallback to \'other\'), never duplicated as a database constraint'
+  );
+  const { rows: [afterJunkValue] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterJunkValue.carrier_provider_key === 'some-completely-made-up-provider-xyz',
+    'the junk value is stored verbatim, exactly as the application layer\'s own fallback-to-unverified logic expects to receive it'
+  );
+
+  let carrierCompatNonexistentThrew = false;
+  try {
+    await db.query(
+      `select public.set_household_carrier_compatibility($1, $2, $3)`,
+      ['00000000-0000-0000-0000-000000000000', 'o2', null]
+    );
+  } catch {
+    carrierCompatNonexistentThrew = true;
+  }
+  assert(carrierCompatNonexistentThrew, 'set_household_carrier_compatibility raises for a nonexistent household');
+
+  await asAuthUser(db, userId2, 'c-carrier-compat-test@example.com');
+  let carrierCompatDeniedToAuthenticated = false;
+  try {
+    await db.query(`select public.set_household_carrier_compatibility($1, $2, $3)`, [householdId, 'o2', null]);
+  } catch {
+    carrierCompatDeniedToAuthenticated = true;
+  }
+  assert(carrierCompatDeniedToAuthenticated, 'authenticated role cannot execute set_household_carrier_compatibility directly — grants/security match every other households-lifecycle RPC in this codebase');
+
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //
   // Discovers every SECURITY DEFINER function in public from pg_proc

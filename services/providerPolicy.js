@@ -263,6 +263,31 @@ function getMobileDeactivationInstructions(providerKey) {
   };
 }
 
+// P0 Batch 1 continuation (2026-09-11): the missing "before payment" half
+// of this file — evaluateProviderCompatibility above existed already,
+// fully tested, but had zero callers anywhere in the app (see the
+// carrier-compatibility audit). This is the one function both checkout
+// routes (routes/billing.js, routes/mobileApi.js) call to decide whether
+// Stripe Checkout may even be started.
+//
+// Takes a household-shaped object rather than a bare provider string, so
+// callers never have to know which two household columns this depends on
+// (supabase/migrations/038_household_carrier_compatibility.sql). A
+// household with no carrier captured yet — every household that existed
+// before this migration, or one that hasn't reached the onboarding
+// carrier step yet — has carrier_provider_key === null/undefined, which
+// getProviderPolicy resolves to PROVIDER_POLICY.other: 'unverified',
+// blocked. There is no separate "no data yet" case to special-case here;
+// it is already handled correctly by the exact same fallback an
+// unrecognised provider string gets. Never throws — a null/undefined
+// household argument resolves the same way.
+function evaluateHouseholdCheckoutEligibility(household) {
+  return evaluateProviderCompatibility(
+    household && household.carrier_provider_key,
+    household && household.carrier_tariff_type
+  );
+}
+
 module.exports = {
   PROVIDER_POLICY_VERSION,
   PROVIDER_POLICY,
@@ -270,4 +295,5 @@ module.exports = {
   getProviderPolicy,
   evaluateProviderCompatibility,
   getMobileDeactivationInstructions,
+  evaluateHouseholdCheckoutEligibility,
 };

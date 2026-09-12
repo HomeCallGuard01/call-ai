@@ -25,7 +25,9 @@ const {
   markActivationVerified,
   getHouseholdByAuthUserId,
   markVoiceClientRegistered,
+  setHouseholdCarrierCompatibility,
 } = require("../database/households");
+const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
 const { computeProtectionStatus } = require("../services/callRouting");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
@@ -112,6 +114,50 @@ router.use((req, res, next) => {
   next();
 });
 
+// POST /api/v1/onboarding/carrier-compatibility { provider, tariffType }
+//
+// P0 Batch 1 continuation (2026-09-11): the missing "before payment" half
+// of services/providerPolicy.js's gate — evaluateProviderCompatibility
+// existed already, fully tested, but had zero callers anywhere in the
+// app (see the carrier-compatibility audit). Deliberately requireAuthApi
+// only, NOT requireEntitlement — an unsubscribed household must be able
+// to reach this before ever seeing a Subscribe button, same exception-list
+// reasoning as /api/v1/billing/create-checkout-session just below.
+//
+// Persists only the raw provider/tariff selection (never a derived
+// verdict — see database/households.js's setHouseholdCarrierCompatibility
+// and migration 038's own header) and returns the live evaluation, so the
+// app can show "works with your provider" / "isn't compatible yet"
+// immediately — before checkout is ever attempted, not just at the point
+// checkout would otherwise fail.
+router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (req, res) => {
+  const { provider, tariffType } = req.body || {};
+
+  if (typeof provider !== "string" || !provider.trim()) {
+    return res.status(400).json({ error: "invalid_input", message: "provider is required" });
+  }
+
+  const normalisedTariffType = typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
+
+  try {
+    await setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType);
+
+    const evaluation = evaluateHouseholdCheckoutEligibility({
+      carrier_provider_key: provider,
+      carrier_tariff_type: normalisedTariffType,
+    });
+
+    res.json({
+      status: evaluation.status,
+      canProceedToPayment: evaluation.canProceedToPayment,
+      reason: evaluation.reason,
+    });
+  } catch (err) {
+    console.error("SET CARRIER COMPATIBILITY ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 // POST /api/v1/billing/create-checkout-session
 //
 // Mobile equivalent of routes/billing.js's /billing/create-checkout-session
@@ -134,6 +180,24 @@ router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (re
   if (!process.env.STRIPE_PRICE_ID) {
     console.error("MOBILE CHECKOUT SESSION ERROR: STRIPE_PRICE_ID not configured");
     return res.status(500).json({ error: "not_configured" });
+  }
+
+  // P0 Batch 1 continuation (2026-09-11): carrier compatibility must be
+  // established before payment wherever reasonably possible — see
+  // services/providerPolicy.js's evaluateHouseholdCheckoutEligibility.
+  // A household that hasn't captured a carrier yet (carrier_provider_key
+  // null) is evaluated identically to an unrecognised provider —
+  // 'unverified', blocked — never silently treated as compatible by
+  // default. This is the actual enforcement point; the onboarding route
+  // above only ever gives an early, non-authoritative preview of this
+  // same evaluation.
+  const eligibility = evaluateHouseholdCheckoutEligibility(req.household);
+  if (!eligibility.canProceedToPayment) {
+    return res.status(403).json({
+      error: "carrier_incompatible",
+      status: eligibility.status,
+      reason: eligibility.reason,
+    });
   }
 
   try {
