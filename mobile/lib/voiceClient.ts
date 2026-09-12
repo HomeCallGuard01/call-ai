@@ -11,7 +11,7 @@
 // this.
 import { Voice, CallInvite, Call, AudioDevice } from "@twilio/voice-react-native-sdk";
 import { Platform, AppState } from "react-native";
-import { fetchVoiceToken, reportVoiceRegistered } from "./api";
+import { fetchVoiceToken, reportVoiceRegistered, reportCallQuality } from "./api";
 
 const voice = new Voice();
 
@@ -232,6 +232,93 @@ function beacon(stage: string, detail?: string): void {
   }
 }
 
+// Objective call-quality diagnostics (2026-09-12 audio-quality
+// investigation follow-up; reworked same day after security review — the
+// original version of this posted to an unauthenticated /debug/* route,
+// same pattern as beacon() above, but that's wrong for genuine call
+// telemetry: an anonymous endpoint on the public internet can be spammed
+// to fill Railway's logs with junk, unlike a plain progress string).
+// Posts through lib/api.ts's authenticated reportCallQuality (POST
+// /api/v1/voice/call-quality, gated by requireAuthApi + requireEntitlement
+// on the backend), the same authenticated-mobile-API pattern already used
+// for every other real signal this file reports (see
+// reportVoiceRegistered above) — no new auth mechanism invented.
+//
+// Authenticated reporting IS practical here despite this firing well
+// after any explicit login/registration action: lib/api.ts's
+// authorizedFetch already falls back to supabase.auth.getSession() for
+// exactly this situation (see its own comment) — the Supabase client
+// keeps the session refreshed in SecureStore independently of anything
+// this file does, so a fresh access token is available for as long as
+// the household remains signed in, which it must be for a Voice-SDK-
+// delivered call to exist at all (decideCallDeliveryPlan never routes a
+// call to a signed-out household's client). If no session happens to be
+// available (session expired mid-call, an edge case), authorizedFetch
+// throws a 401 ApiError — caught below and simply dropped: telemetry
+// failure must never affect the real call, and a missing report this one
+// time is an acceptable, expected degradation, never a fallback to
+// sending the report unauthenticated instead.
+function sendCallQualityReport(payload: {
+  stage: string;
+  callSid?: string;
+  codec?: string | null;
+  jitter?: number | null;
+  packetsLost?: number | null;
+  roundTripTime?: number | null;
+  mos?: number | null;
+  warnings?: string[];
+}): void {
+  try {
+    reportCallQuality({ ...payload, platform: Platform.OS }).catch(() => {});
+  } catch {
+    // never let diagnostics break the real call
+  }
+}
+
+// Extracts the handful of technical fields this investigation actually
+// needs from the SDK's own RTCStats.StatsReport shape (confirmed against
+// the installed SDK's type/RTCStats.d.ts) — remoteAudioTrackStats is the
+// call partner's audio as received by this device (what the customer
+// actually hears), which is where jitter/packetsLost/codec/mos live;
+// localAudioTrackStats is the only place roundTripTime is reported.
+// Returns null fields rather than throwing when a stats array is empty
+// (e.g. stats requested too early in the call).
+function extractQualityFields(stats: {
+  localAudioTrackStats?: Array<{ codec?: string; roundTripTime?: number }>;
+  remoteAudioTrackStats?: Array<{ codec?: string; jitter?: number; packetsLost?: number; mos?: number }>;
+}): { codec: string | null; jitter: number | null; packetsLost: number | null; roundTripTime: number | null; mos: number | null } {
+  const remote = stats.remoteAudioTrackStats && stats.remoteAudioTrackStats[0];
+  const local = stats.localAudioTrackStats && stats.localAudioTrackStats[0];
+  return {
+    codec: (remote && remote.codec) || (local && local.codec) || null,
+    jitter: (remote && remote.jitter) ?? null,
+    packetsLost: (remote && remote.packetsLost) ?? null,
+    roundTripTime: (local && local.roundTripTime) ?? null,
+    mos: (remote && remote.mos) ?? null,
+  };
+}
+
+// Called once, a few seconds after a call connects — long enough for the
+// underlying WebRTC stats to have stabilised past the initial handshake,
+// short enough to still reflect the start of the call. getStats()
+// rejecting or the SDK returning empty arrays must never propagate —
+// this is a diagnostics-only read, never awaited by any real call logic.
+function reportPostConnectStats(call: Call): void {
+  setTimeout(() => {
+    call
+      .getStats()
+      .then((stats) => {
+        const fields = extractQualityFields(stats);
+        sendCallQualityReport({ stage: "post-connect-stats", callSid: call.getSid(), ...fields });
+      })
+      .catch((err) => {
+        if (__DEV__) {
+          console.warn("VOICE DEBUG: call.getStats() failed (diagnostics only, call unaffected):", err);
+        }
+      });
+  }, 5000);
+}
+
 export async function registerForIncomingCalls(accessToken?: string): Promise<void> {
   console.log("VOICE DEBUG: registerForIncomingCalls called, registered=", registered);
   beacon("start");
@@ -398,6 +485,35 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
       });
     });
   }
+
+  // Objective call-quality diagnostics (2026-09-12 audio-quality
+  // investigation follow-up) — a second, independent listener on the same
+  // Accepted event, both platforms. Deliberately separate from the
+  // Android-only Earpiece-routing listener above: this block only reads
+  // and reports technical call telemetry, never touches audio routing,
+  // so it cannot change existing registration/ringing/earpiece behaviour.
+  // Multiple listeners on the same SDK event are independent and both
+  // fire normally (standard EventEmitter behaviour) — see the SDK's own
+  // Call.d.ts, which declares Call as extending EventEmitter.
+  callInvite.on(CallInvite.Event.Accepted, (call: Call) => {
+    call.on(Call.Event.Connected, () => {
+      reportPostConnectStats(call);
+    });
+
+    call.on(Call.Event.QualityWarningsChanged, (currentWarnings: Call.QualityWarning[]) => {
+      try {
+        sendCallQualityReport({
+          stage: "quality-warning",
+          callSid: call.getSid(),
+          warnings: currentWarnings.map(String),
+        });
+      } catch (err) {
+        if (__DEV__) {
+          console.warn("VOICE DEBUG: failed to handle QualityWarningsChanged (diagnostics only, call unaffected):", err);
+        }
+      }
+    });
+  });
 });
 
 voice.on(Voice.Event.Registered, () => {

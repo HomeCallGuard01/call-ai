@@ -744,8 +744,8 @@ function check(condition, message) {
   );
 
   check(
-    voiceClientSource.includes('import { fetchVoiceToken, reportVoiceRegistered } from "./api"'),
-    'voiceClient.ts imports reportVoiceRegistered from lib/api.ts'
+    voiceClientSource.includes('import { fetchVoiceToken, reportVoiceRegistered, reportCallQuality } from "./api"'),
+    'voiceClient.ts imports reportVoiceRegistered and reportCallQuality from lib/api.ts'
   );
 
   const registerCallIndex = voiceClientSource.indexOf('await voice.register(token);');
@@ -842,6 +842,171 @@ function check(condition, message) {
     acceptedListenerIndex !== -1 &&
       voiceClientSource.slice(Math.max(0, acceptedListenerIndex - 200), acceptedListenerIndex).includes('Platform.OS === "android"'),
     'the CallInvite.Event.Accepted / Call.Event.Connected / Earpiece-switch wiring is gated behind Platform.OS === "android" — iOS behaviour is completely unchanged'
+  );
+}
+
+// --- Static structure check: objective call-quality diagnostics
+// (2026-09-12 audio-quality investigation follow-up; reworked same day
+// after security review to require authentication) ---
+//
+// Confirms the diagnostics wiring (QualityWarningsChanged + getStats())
+// is additive and isolated: a second, independent listener on the same
+// CallInvite.Event.Accepted event, present on both platforms, that never
+// touches audio routing, never captures audio/transcript content, posts
+// only through the authenticated lib/api.ts helper (never an anonymous
+// fetch), and never lets a getStats()/handler/reporting failure
+// propagate.
+
+{
+  const voiceClientSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'lib', 'voiceClient.ts'),
+    'utf8'
+  );
+
+  check(
+    voiceClientSource.includes('function sendCallQualityReport(payload:') &&
+      voiceClientSource.includes('function reportPostConnectStats(call: Call):'),
+    'voiceClient.ts defines sendCallQualityReport and reportPostConnectStats for objective call-quality diagnostics'
+  );
+
+  // --- authenticated requests only: reporting goes through the imported,
+  // authenticated api.ts helper (reportCallQuality, which itself uses
+  // authorizedFetch — the same Bearer-token pattern as every other real
+  // signal this file reports), never a raw/anonymous fetch() call. ---
+  // The function's own parameter type is an inline object literal (its
+  // own "}): void {" closes it) — the real body starts there, so the
+  // search for the body's closing "\n}" must start after that marker,
+  // not from the function's own opening line.
+  const sendCallQualityReportSigStart = voiceClientSource.indexOf('function sendCallQualityReport(payload: {');
+  const sendCallQualityReportBodyStart = voiceClientSource.indexOf('}): void {', sendCallQualityReportSigStart);
+  const sendCallQualityReportBodyEnd = voiceClientSource.indexOf('\n}', sendCallQualityReportBodyStart);
+  const sendCallQualityReportFnSource =
+    sendCallQualityReportSigStart !== -1 && sendCallQualityReportBodyEnd !== -1
+      ? voiceClientSource.slice(sendCallQualityReportSigStart, sendCallQualityReportBodyEnd)
+      : '';
+
+  check(
+    sendCallQualityReportFnSource.includes('reportCallQuality({ ...payload, platform: Platform.OS })'),
+    'sendCallQualityReport posts through the imported, authenticated reportCallQuality (lib/api.ts) — never a raw fetch() call'
+  );
+  check(
+    Boolean(sendCallQualityReportFnSource) && !sendCallQualityReportFnSource.includes('fetch('),
+    'sendCallQualityReport itself contains no direct fetch() call — no anonymous request path exists here, unlike the plain beacon() helper above it'
+  );
+  check(
+    !voiceClientSource.includes('/debug/call-quality-beacon'),
+    'the old unauthenticated /debug/call-quality-beacon endpoint is no longer referenced anywhere in voiceClient.ts'
+  );
+
+  // --- telemetry failure cannot affect the call: a rejection from the
+  // authenticated call (e.g. a 401 ApiError when no session is available)
+  // is caught and dropped, both by the inner .catch() and the outer
+  // try/catch around the call that constructs it. ---
+  check(
+    sendCallQualityReportFnSource.includes('try {') &&
+      sendCallQualityReportFnSource.includes('.catch(() => {});') &&
+      sendCallQualityReportFnSource.includes('} catch {'),
+    'sendCallQualityReport both catches a rejected authenticated request and wraps the call itself in try/catch — an expired/missing session mid-call is silently dropped, never thrown, never falls back to sending the report unauthenticated'
+  );
+
+  // --- diagnostics only start after a real call exists: getStats() is
+  // only ever called from inside reportPostConnectStats, which is only
+  // ever invoked from inside a Call.Event.Connected listener — never
+  // eagerly, never before a Call object exists. ---
+  const reportPostConnectStatsFnStart = voiceClientSource.indexOf('function reportPostConnectStats(call: Call): void {');
+  const reportPostConnectStatsFnEnd = voiceClientSource.indexOf('\n}', reportPostConnectStatsFnStart);
+  check(
+    reportPostConnectStatsFnStart !== -1 &&
+      reportPostConnectStatsFnEnd !== -1 &&
+      voiceClientSource.slice(reportPostConnectStatsFnStart, reportPostConnectStatsFnEnd).includes('.getStats()'),
+    'call.getStats() is called exactly where reportPostConnectStats defines it'
+  );
+
+  // The one real invocation is "reportPostConnectStats(call);" — the
+  // function's own declaration line ("function reportPostConnectStats(call: Call): void {")
+  // deliberately excluded from this search so it isn't mistaken for a call site.
+  const reportPostConnectStatsCallIndex = voiceClientSource.indexOf('reportPostConnectStats(call);');
+  check(
+    reportPostConnectStatsCallIndex !== -1 &&
+      voiceClientSource.slice(0, reportPostConnectStatsCallIndex).includes('call.on(Call.Event.Connected, () => {'),
+    'reportPostConnectStats is only ever invoked from inside a Call.Event.Connected listener — diagnostics never start before a real call exists'
+  );
+  const beforeCallInviteHandler = voiceClientSource
+    .slice(0, voiceClientSource.indexOf('voice.on(Voice.Event.CallInvite'))
+    .replace('function reportPostConnectStats(call: Call): void {', '');
+  check(
+    !beforeCallInviteHandler.includes('reportPostConnectStats('),
+    'reportPostConnectStats is never called eagerly at module scope — it is only ever wired inside the CallInvite handler'
+  );
+
+  // --- getStats() failure cannot affect the call: the promise chain has
+  // its own .catch(), and nothing downstream of it is awaited by any real
+  // call-handling code path. ---
+  const reportPostConnectStatsFnMatch = voiceClientSource.match(
+    /function reportPostConnectStats\(call: Call\): void \{[\s\S]*?\n\}/
+  );
+  check(
+    Boolean(reportPostConnectStatsFnMatch) && reportPostConnectStatsFnMatch[0].includes('.catch((err) => {'),
+    'reportPostConnectStats catches a getStats() rejection — a diagnostics failure can never throw back into real call handling'
+  );
+
+  // --- quality-warning events are handled safely: the listener body
+  // itself is wrapped in try/catch, so even a malformed/unexpected event
+  // payload can never throw out of the SDK's own event-emission path. ---
+  const qualityWarningsListenerMatch = voiceClientSource.match(
+    /call\.on\(Call\.Event\.QualityWarningsChanged, \(currentWarnings: Call\.QualityWarning\[\]\) => \{[\s\S]*?\n    \}\);/
+  );
+  check(
+    Boolean(qualityWarningsListenerMatch) && qualityWarningsListenerMatch[0].includes('try {') && qualityWarningsListenerMatch[0].includes('} catch (err) {'),
+    'the Call.Event.QualityWarningsChanged listener body is wrapped in try/catch — a reporting failure never propagates'
+  );
+
+  // --- no audio or transcript content is ever included: the diagnostics
+  // functions only ever reference the named technical fields (codec,
+  // jitter, packetsLost, roundTripTime, mos, warnings, callSid, stage) —
+  // never anything shaped like audio, a transcript, or a phone number. ---
+  const diagnosticsSectionStart = voiceClientSource.indexOf('function sendCallQualityReport(payload:');
+  const diagnosticsSectionEnd = voiceClientSource.indexOf('\n}', voiceClientSource.indexOf('function reportPostConnectStats(call: Call): void {')) + 2;
+  const diagnosticsSection = voiceClientSource.slice(diagnosticsSectionStart, diagnosticsSectionEnd);
+  check(
+    diagnosticsSectionStart !== -1 && diagnosticsSectionEnd > diagnosticsSectionStart,
+    'sanity check: the diagnostics section (sendCallQualityReport through reportPostConnectStats) is found in voiceClient.ts'
+  );
+  check(
+    !/transcript|audio-?base64|recording/i.test(diagnosticsSection),
+    'the diagnostics section never references a transcript, base64 audio payload, or recording — only technical WebRTC/RTP fields'
+  );
+  check(
+    !/householdId|household_id/i.test(diagnosticsSection),
+    'the diagnostics section never reads or sends a household id from the client — the backend resolves it server-side from the authenticated session, so none can be spoofed through the request'
+  );
+
+  // --- additive, isolated wiring: a second, independent listener on the
+  // same Accepted event, present on BOTH platforms (not nested inside the
+  // existing Android-only Earpiece block), so it cannot change existing
+  // registration/ringing/earpiece behaviour. ---
+  const firstAcceptedListenerIndex = voiceClientSource.indexOf('callInvite.on(CallInvite.Event.Accepted');
+  const earpieceCallIndex = voiceClientSource.indexOf('selectEarpieceForConnectedCall();');
+  const secondAcceptedListenerIndex = voiceClientSource.indexOf(
+    'callInvite.on(CallInvite.Event.Accepted',
+    firstAcceptedListenerIndex + 1
+  );
+  check(
+    secondAcceptedListenerIndex !== -1 && secondAcceptedListenerIndex > firstAcceptedListenerIndex,
+    'a second, distinct CallInvite.Event.Accepted listener exists for diagnostics, independent of the Android-only Earpiece-routing listener'
+  );
+  check(
+    earpieceCallIndex !== -1 && secondAcceptedListenerIndex !== -1 && earpieceCallIndex < secondAcceptedListenerIndex,
+    'the diagnostics listener is registered after the existing Earpiece-routing block\'s own selectEarpieceForConnectedCall() call site, not nested inside it'
+  );
+  const nearestAndroidGuardBeforeSecondListener = voiceClientSource.lastIndexOf('if (Platform.OS === "android")', secondAcceptedListenerIndex);
+  check(
+    // The nearest preceding Android guard closes (a '}' appears) before the
+    // second listener starts — i.e. the diagnostics listener sits OUTSIDE
+    // any Android-only guard, so it runs on iOS too.
+    secondAcceptedListenerIndex !== -1 &&
+      voiceClientSource.slice(nearestAndroidGuardBeforeSecondListener, secondAcceptedListenerIndex).includes('}'),
+    'the diagnostics listener is not gated behind Platform.OS === "android" — it runs on both platforms, unlike the Earpiece-routing listener'
   );
 }
 
