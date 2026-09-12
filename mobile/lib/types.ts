@@ -101,6 +101,15 @@ export interface VoiceRegisteredResponse {
   registeredAt: string;
 }
 
+// POST /api/v1/voice/call-quality (2026-09-12 audio-quality investigation
+// follow-up) — objective Voice SDK call-quality diagnostics. See
+// lib/voiceClient.ts's reportCallQuality/CallQualityPayload for the exact
+// fields sent; this is deliberately the only response shape, never
+// echoing anything back.
+export interface CallQualityResponse {
+  ok: true;
+}
+
 // DELETE /api/v1/me/account (services/accountDeletion.js, call-ai repo).
 // appleManualCancellationRequired is true only for an apple_revenuecat
 // entitlement — HCG has no API to cancel an Apple subscription itself

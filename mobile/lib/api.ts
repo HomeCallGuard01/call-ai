@@ -21,6 +21,7 @@ import type {
   LandlineProvider,
   VoiceTokenResponse,
   VoiceRegisteredResponse,
+  CallQualityResponse,
   SyncContactsResponse,
   DeleteAccountResponse,
 } from "./types";
@@ -245,6 +246,39 @@ export async function fetchVoiceToken(accessToken?: string): Promise<VoiceTokenR
 export async function reportVoiceRegistered(accessToken?: string): Promise<VoiceRegisteredResponse> {
   const response = await authorizedFetch("/api/v1/voice/registered", { method: "POST" }, accessToken);
   return parseJsonOrThrow<VoiceRegisteredResponse>(response, true);
+}
+
+// POST /api/v1/voice/call-quality (2026-09-12 audio-quality investigation
+// follow-up; reworked same day after security review to require
+// authentication like every other /api/v1 route here, rather than the
+// unauthenticated /debug/*-beacon pattern used elsewhere in this file).
+// Mirrors reportVoiceRegistered's own shape exactly — accessToken
+// optional, same authorizedFetch plumbing, same 401-on-no-session
+// behaviour. The caller (lib/voiceClient.ts) is expected to catch a
+// failure here and drop the report silently: telemetry must never affect
+// the real call, and an expired/missing session mid-call is a real,
+// expected case (see that file's own comment on why authenticated
+// reporting is still practical there).
+export async function reportCallQuality(
+  payload: {
+    stage: string;
+    platform?: string;
+    callSid?: string;
+    codec?: string | null;
+    jitter?: number | null;
+    packetsLost?: number | null;
+    roundTripTime?: number | null;
+    mos?: number | null;
+    warnings?: string[];
+  },
+  accessToken?: string
+): Promise<CallQualityResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/voice/call-quality",
+    { method: "POST", body: JSON.stringify(payload) },
+    accessToken
+  );
+  return parseJsonOrThrow<CallQualityResponse>(response);
 }
 
 export async function verifyActivation(accessToken?: string): Promise<ActivationVerifyResponse> {
