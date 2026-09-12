@@ -5,6 +5,9 @@ node_modules/
 # Exception: this is a template with placeholder values only, meant to be
 # committed — see docs/LAUNCH_READINESS.md's production-readiness section.
 !.env.example
+# Same exception, staging counterpart (2026-09-12 staging audit) —
+# placeholder values only, see .env.staging.example's own header.
+!.env.staging.example
 uploads/
 
 # Logs
