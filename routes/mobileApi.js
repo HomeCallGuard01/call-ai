@@ -672,6 +672,85 @@ router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, asyn
   }
 });
 
+// POST /api/v1/voice/call-quality
+//
+// Objective call-quality diagnostics from the Voice SDK's own
+// Call.Event.QualityWarningsChanged and call.getStats() (2026-09-12
+// audio-quality investigation follow-up; reworked 2026-09-12 to require
+// authentication after security review — the original /debug/*-beacon
+// endpoints in this file are unauthenticated by design, which is fine for
+// registration/purchase progress strings but wrong for something an
+// unauthenticated caller could spam to fill Railway's logs). Mirrors
+// POST /api/v1/voice/registered's own guard shape exactly (requireAuthApi
+// + requireEntitlement): only a household that can actually receive a
+// Voice-SDK-delivered call has any real diagnostics to report, so the
+// same "unsubscribed household has nothing meaningful to record" logic
+// applies here too.
+//
+// req.household.id comes from requireAuthApi's own server-side lookup of
+// the verified bearer token (middleware/requireAuthApi.js) — the request
+// body is never asked for a household id, so none can ever be spoofed
+// through it. Every other field is whitelisted, type-checked, and
+// length/array-capped below specifically so this endpoint can't be used
+// for arbitrary log injection even by a legitimate, authenticated caller
+// sending a malformed payload. Console-logged only (visible in Railway
+// logs), never written to the database — this is a debugging aid for a
+// specific investigation, not an audit trail or a metrics pipeline.
+// Every technical field (codec name, jitter, packet loss, round-trip
+// time, MOS, quality-warning names) is sourced from the SDK's own
+// RTCStats.StatsReport — never audio, never transcript content, never a
+// phone number or email. callSid is Twilio's own opaque call identifier,
+// used only to correlate a report with server-side call logs.
+// Malformed/oversized fields are dropped individually rather than
+// rejecting the whole request — a diagnostic must never be able to throw
+// an error back into the calling app, let alone affect the call it's
+// reporting on. Always responds { ok: true } and never echoes anything
+// back, so it can't be used to probe server or household state.
+const ALLOWED_PLATFORMS = new Set(["ios", "android"]);
+
+function sanitizeCallQualityStage(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 50 ? value : null;
+}
+
+function sanitizeCallQualityPlatform(value) {
+  return ALLOWED_PLATFORMS.has(value) ? value : null;
+}
+
+function sanitizeCallQualityString(value, maxLength) {
+  return typeof value === "string" && value.length <= maxLength ? value : null;
+}
+
+function sanitizeCallQualityNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function sanitizeCallQualityWarnings(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(w => typeof w === "string" && w.length <= 50).slice(0, 10);
+}
+
+router.post("/api/v1/voice/call-quality", requireAuthApi, requireEntitlement, (req, res) => {
+  const body = req.body || {};
+
+  const stage = sanitizeCallQualityStage(body.stage);
+  if (stage) {
+    console.log("CALL QUALITY:", {
+      householdId: req.household.id,
+      stage,
+      platform: sanitizeCallQualityPlatform(body.platform),
+      callSid: sanitizeCallQualityString(body.callSid, 100),
+      codec: sanitizeCallQualityString(body.codec, 30),
+      jitter: sanitizeCallQualityNumber(body.jitter),
+      packetsLost: sanitizeCallQualityNumber(body.packetsLost),
+      roundTripTime: sanitizeCallQualityNumber(body.roundTripTime),
+      mos: sanitizeCallQualityNumber(body.mos),
+      warnings: sanitizeCallQualityWarnings(body.warnings),
+    });
+  }
+
+  res.json({ ok: true });
+});
+
 // POST /api/v1/activation/verify
 //
 // Checks for a real routed call within the verification window and, if

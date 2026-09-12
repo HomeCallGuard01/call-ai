@@ -347,7 +347,14 @@ function attachLiveMonitoring(twiml, { household, twilioNumber }) {
   const destination = resolveForwardingDestination(household);
 
   const start = twiml.start();
-  const stream = start.stream({ url: buildMediaStreamUrl(APP_URL) });
+  // Explicit hygiene fix (2026-09-12 audio-quality investigation): track
+  // was previously left unset, relying on Twilio's undocumented-in-repo
+  // default. HCG's monitor only ever needs the caller's speech (see
+  // services/liveMonitoring/mediaStreamHandler.js's transcription-only
+  // use of the payload), so inbound_track is the correct, minimal fork —
+  // never both_tracks, which would also fork the household side's audio
+  // to the monitoring socket for no monitoring benefit.
+  const stream = start.stream({ url: buildMediaStreamUrl(APP_URL), track: "inbound_track" });
   stream.parameter({ name: "householdId", value: household.id });
   if (destination.canForward) {
     stream.parameter({ name: "toNumber", value: destination.number });
