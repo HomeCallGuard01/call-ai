@@ -24,7 +24,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
-import { deriveLoadOutcome, isSettingUp as computeIsSettingUp, computeHomeProtectionState } from "../../lib/homeStatus";
+import { deriveLoadOutcome, isSettingUp as computeIsSettingUp, computeHomeProtectionState, hasProvenActivation } from "../../lib/homeStatus";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import type { DashboardActivityItem, DashboardResponse } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
@@ -228,7 +228,7 @@ export default function Home() {
   const resumeTarget = resumeSetupAt({
     isEntitled: true,
     contactCount: data!.contacts.length,
-    isActivationVerified: !!data!.protection.activationVerifiedAt,
+    isActivationProven: hasProvenActivation(data!),
   });
   // No "subscribe" entry: `isEntitled: true` above is hardcoded, not
   // read from `data`, because `state === "ready"` is only reachable once
@@ -294,6 +294,29 @@ export default function Home() {
             <Text style={styles.giantTitle} accessibilityRole="header">Almost there</Text>
             <Text style={styles.statusBody}>
               Your call forwarding is set up correctly. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.
+            </Text>
+          </>
+        ) : homeProtectionState === "reconnect_needed" ? (
+          <>
+            {/* 2026-09-12: a real approved call has already been
+                delivered successfully at least once (endToEndDeliveryVerified),
+                so call forwarding itself is genuinely working — the app
+                just isn't currently reachable (e.g. not opened in a
+                while, so the Voice SDK registration has expired). This
+                must never send the customer back through device-picker/
+                MMI setup — nothing about their carrier-level forwarding
+                needs to change, only this app's own registration, which
+                recovers automatically. Also never claims "You're
+                protected" — the existing fail-safe (fullyProtected
+                requires current reachability) still applies. */}
+            <View style={styles.shieldWrap}>
+              <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
+                <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
+              </View>
+            </View>
+            <Text style={styles.giantTitle} accessibilityRole="header">Reconnecting</Text>
+            <Text style={styles.statusBody}>
+              Home Call Guard has protected you before — we just can't currently reach this app. Keep it open for a moment to reconnect. You don't need to redo call forwarding.
             </Text>
           </>
         ) : (

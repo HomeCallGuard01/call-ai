@@ -16,7 +16,17 @@ export type SetupStepName = (typeof SETUP_STEPS)[number];
 export interface SetupResumeState {
   isEntitled: boolean;
   contactCount: number;
-  isActivationVerified: boolean;
+  // Renamed from isActivationVerified (2026-09-12, physical-test finding):
+  // a real successful end-to-end delivery is at least as strong a proof
+  // that setup is done as the legacy activation_verified_at flag — see
+  // lib/homeStatus.ts's hasProvenActivation, which callers must use to
+  // compute this rather than reading activationVerifiedAt alone. Without
+  // this, a household with fully proven, currently-working delivery (real
+  // production case, 2026-09-12) was sent back through this same
+  // device-picker/MMI flow forever, because activation_verified_at alone
+  // never gets set for a customer who dialled the forwarding code
+  // manually or whose only proof is a real delivered call.
+  isActivationProven: boolean;
 }
 
 export type SetupResumeTarget =
@@ -33,7 +43,7 @@ export type SetupResumeTarget =
 export function resumeSetupAt(state: SetupResumeState): SetupResumeTarget {
   if (!state.isEntitled) return { screen: "subscribe" };
   if (state.contactCount === 0) return { screen: "contacts" };
-  if (!state.isActivationVerified) return { screen: "device-picker" };
+  if (!state.isActivationProven) return { screen: "device-picker" };
   return { screen: "complete" };
 }
 
