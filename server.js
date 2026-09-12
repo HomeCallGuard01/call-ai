@@ -254,7 +254,19 @@ function dialHouseholdOrFailClosed(twiml, household) {
   const plan = decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable });
 
   if (plan.mode === "client-only") {
-    const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20 });
+    // ringTone: "uk" (2026-09-13, physical-test finding) — confirmed via
+    // the installed Twilio SDK's own type definitions
+    // (node_modules/twilio/lib/twiml/VoiceResponse.d.ts): "Ringtone
+    // allows you to override the ringback tone that Twilio will play
+    // back to the caller while executing the Dial." A <Dial><Client>
+    // target has no real telephony leg to relay a ring signal from, so
+    // Twilio synthesizes one — left unset, that default is not
+    // UK-styled, and a real physical test (giffgaff/Android, 2026-09-12)
+    // reported it as "noticeably different/international-style". Purely
+    // cosmetic: only changes what the caller hears while waiting for the
+    // Client leg to connect — no effect on routing, timeout, answer
+    // behaviour, or anything decideCallDeliveryPlan decides.
+    const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk" });
     dial.client(plan.clientIdentity);
     return;
   }
