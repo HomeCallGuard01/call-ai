@@ -39,7 +39,7 @@ export default function TurnOffProtection() {
             setState("no_device_on_record");
             return;
           }
-          return fetchActivationInstructions(device.deviceType, device.provider, undefined, session?.access_token)
+          return fetchActivationInstructions(device.deviceType, device.provider, session?.access_token)
             .then(result => {
               if (cancelled) return;
               setCancelCode(result.cancelCode);

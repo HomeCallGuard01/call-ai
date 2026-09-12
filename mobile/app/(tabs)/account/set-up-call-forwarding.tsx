@@ -19,6 +19,7 @@ import { fetchActivationInstructions } from "../../../lib/api";
 import { useAuth } from "../../../lib/AuthContext";
 import { loadActivationDevice } from "../../../lib/activationDeviceStorage";
 import { canAutoOpenDialer, buildDialerUrl } from "../../../lib/dialerLink";
+import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../../lib/forwardingNumber";
 import type { ActivationInstructionsResponse } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -45,7 +46,7 @@ export default function SetUpCallForwarding() {
             return;
           }
           setDeviceType(device.deviceType);
-          return fetchActivationInstructions(device.deviceType, device.provider, undefined, session?.access_token)
+          return fetchActivationInstructions(device.deviceType, device.provider, session?.access_token)
             .then(result => {
               if (cancelled) return;
               setInstructions(result);
@@ -108,6 +109,12 @@ export default function SetUpCallForwarding() {
   }
 
   const canAutoDial = canAutoOpenDialer(deviceType ?? "");
+  // 2026-09-12 fix (physical-test finding): the actual HCG number was
+  // previously only ever visible embedded inside the MMI code below —
+  // never as a plain value the customer could recognise or reference
+  // without parsing a technical string. Derived client-side from the
+  // same code already returned; no backend change needed.
+  const forwardingNumber = instructions ? extractForwardingNumberFromCode(instructions.code) : null;
 
   return (
     <Screen>
@@ -115,6 +122,13 @@ export default function SetUpCallForwarding() {
       <Text style={styles.explanation}>
         Call forwarding is what sends your calls to Home Call Guard to be checked, before they reach you.
       </Text>
+
+      {forwardingNumber && (
+        <View style={styles.numberBox}>
+          <Text style={styles.numberLabel}>Your Home Call Guard number</Text>
+          <Text style={styles.numberValue} selectable>{formatUkPhoneForDisplay(forwardingNumber)}</Text>
+        </View>
+      )}
 
       <View style={styles.codeBox} accessibilityRole="text" accessibilityLabel={`Your call forwarding code is ${instructions?.code}`}>
         <Text style={styles.code} selectable>{instructions?.code}</Text>
@@ -163,6 +177,24 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textMuted,
     marginBottom: spacing.lg,
+  },
+  numberBox: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  numberLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  numberValue: {
+    ...typography.title,
+    color: colors.text,
+    fontWeight: "700",
   },
   codeBox: {
     minHeight: MIN_TOUCH_TARGET * 1.5,

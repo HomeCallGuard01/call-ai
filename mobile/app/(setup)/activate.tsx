@@ -31,6 +31,7 @@ import { fetchActivationInstructions, fetchDashboard, ApiError, NotEntitledError
 import { useAuth } from "../../lib/AuthContext";
 import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
 import { saveActivationDevice } from "../../lib/activationDeviceStorage";
+import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../lib/forwardingNumber";
 import {
   computeProvisioningStages,
   shouldAutoAdvance,
@@ -42,10 +43,9 @@ import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 export default function Activate() {
   const { session } = useAuth();
-  const params = useLocalSearchParams<{ deviceType: DeviceType; provider?: LandlineProvider; protectedNumber?: string }>();
+  const params = useLocalSearchParams<{ deviceType: DeviceType; provider?: LandlineProvider }>();
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [forwardingLoopError, setForwardingLoopError] = useState<string | null>(null);
   const [notProvisioned, setNotProvisioned] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -88,9 +88,8 @@ export default function Activate() {
     const thisLoadId = ++loadId.current;
     setIsLoading(true);
     setError(null);
-    setForwardingLoopError(null);
     setNotProvisioned(false);
-    fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber, session?.access_token)
+    fetchActivationInstructions(params.deviceType, params.provider, session?.access_token)
       .then(result => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
         setInstructions(result);
@@ -101,10 +100,6 @@ export default function Activate() {
       })
       .catch(err => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
-        if (err instanceof ApiError && err.code === "forwarding_loop") {
-          setForwardingLoopError(err.message);
-          return;
-        }
         if (err instanceof ApiError && err.code === "not_provisioned") {
           // Still setting up server-side (the household's Twilio number
           // isn't assigned yet) — not an error, just not ready yet. This
@@ -148,7 +143,7 @@ export default function Activate() {
       });
   }
 
-  useEffect(load, [params.deviceType, params.provider, params.protectedNumber, session?.access_token]);
+  useEffect(load, [params.deviceType, params.provider, session?.access_token]);
 
   // Real iPhone testing (2026-08-08) found the old "Still setting up your
   // line" / "Check again" state a dead end — the customer had to manually
@@ -188,6 +183,8 @@ export default function Activate() {
       clearInterval(interval);
     };
   }, [notProvisioned, session?.access_token]);
+
+  const forwardingNumber = instructions ? extractForwardingNumberFromCode(instructions.code) : null;
 
   async function handleCopy() {
     if (!instructions) return;
@@ -229,19 +226,6 @@ export default function Activate() {
           <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Loading your activation code" />
           <BackToDashboardLink />
         </View>
-      </Screen>
-    );
-  }
-
-  if (forwardingLoopError) {
-    return (
-      <Screen>
-        <SetupProgress currentStep={3} />
-        <BackLink />
-        <BackToDashboardLink />
-        <Text style={styles.title} accessibilityRole="header">Choose a different number</Text>
-        <Banner variant="error" message={forwardingLoopError} />
-        <PrimaryButton label="Change device" variant="secondary" onPress={() => router.replace("/(setup)/device-picker")} />
       </Screen>
     );
   }
@@ -308,6 +292,21 @@ export default function Activate() {
       <BackLink />
       <BackToDashboardLink />
       <Text style={styles.title} accessibilityRole="header">Turn on call forwarding</Text>
+
+      {/* 2026-09-12 fix (physical-test finding): the actual HCG number was
+          previously only ever visible embedded inside the MMI code below
+          — a real customer had no way to identify it as "a number" at
+          all, and no way to look it up again without redoing this whole
+          screen. Shown here as its own plain value, separately from the
+          carrier dialling instruction that follows — derived client-side
+          from the same code already returned, no backend change needed. */}
+      {forwardingNumber && (
+        <View style={styles.numberBox}>
+          <Text style={styles.numberLabel}>Your Home Call Guard number</Text>
+          <Text style={styles.numberValue} selectable>{formatUkPhoneForDisplay(forwardingNumber)}</Text>
+        </View>
+      )}
+
       <Text style={styles.explanation}>
         {canAutoDial
           ? "Tap Activate protection to open your Phone app with the code ready — just press the call button, then come straight back here."
@@ -514,6 +513,24 @@ const styles = StyleSheet.create({
   },
   stageLabelPending: {
     color: colors.textMuted,
+  },
+  numberBox: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  numberLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  numberValue: {
+    ...typography.title,
+    color: colors.text,
+    fontWeight: "700",
   },
   codeBox: {
     minHeight: MIN_TOUCH_TARGET * 1.5,

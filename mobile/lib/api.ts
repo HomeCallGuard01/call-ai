@@ -255,20 +255,27 @@ export async function verifyActivation(accessToken?: string): Promise<Activation
 // Throws ApiError with code "not_provisioned" (409) if the household's
 // Twilio number isn't assigned yet — B4 should route back to a
 // "still setting up" state rather than show a broken screen in that case.
-// protectedNumber is optional: when passed (iPhone/Android setup, where
-// the customer confirms the number of the phone actually being
-// forwarded), the backend blocks with a "forwarding_loop" ApiError if it
-// matches the household's own destination number — see
-// routes/mobileApi.js and services/phone.js's wouldCreateForwardingLoop.
+//
+// protectedNumber removed (2026-09-12, physical-test finding): this used
+// to optionally carry the customer's own phone number so the backend
+// could block a PSTN forwarding-loop risk (services/phone.js's
+// wouldCreateForwardingLoop). That risk belonged to the old PSTN
+// dual-dial delivery architecture — the current client-only Voice SDK
+// delivery path (services/callRouting.js's decideCallDeliveryPlan) never
+// constructs a PSTN target for any household, so the scenario this
+// guarded against is no longer possible, and the check was instead
+// producing a real, confirmed false-positive block (a genuine customer's
+// own number legitimately matching households.phone_number, a field this
+// app no longer needs to ask about at all). The backend route already
+// treats this parameter as fully optional — omitting it is safe and
+// already-supported, not a new server-side change.
 export async function fetchActivationInstructions(
   deviceType: DeviceType,
   provider?: LandlineProvider,
-  protectedNumber?: string,
   accessToken?: string
 ): Promise<ActivationInstructionsResponse> {
   const params = new URLSearchParams({ deviceType });
   if (provider) params.set("provider", provider);
-  if (protectedNumber) params.set("protectedNumber", protectedNumber);
 
   const response = await authorizedFetch(`/api/v1/activation/instructions?${params.toString()}`, {}, accessToken);
   // allow402: this route is requireEntitlement-gated, and a customer can

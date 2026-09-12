@@ -23,7 +23,8 @@
 //
 // Run with: node tests/mobile-app.test.mjs
 
-import { deriveLoadOutcome, isSettingUp, computeHomeProtectionState } from '../mobile/lib/homeStatus.ts';
+import { deriveLoadOutcome, isSettingUp, computeHomeProtectionState, hasProvenActivation } from '../mobile/lib/homeStatus.ts';
+import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from '../mobile/lib/forwardingNumber.ts';
 import { computePageIndex, shouldResyncScrollPosition, scrollOffsetForPage } from '../mobile/lib/carousel.ts';
 import {
   addPickedContact,
@@ -160,35 +161,118 @@ function check(condition, message) {
   );
 
   check(
-    isSettingUp({ protection: { activationVerifiedAt: null } }) === true,
-    'isSettingUp is true when activation has never been verified'
+    isSettingUp({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false } }) === true,
+    'isSettingUp is true when activation has never been verified and no real delivery has ever been proven'
   );
 
   check(
-    isSettingUp({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z' } }) === false,
+    isSettingUp({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: false } }) === false,
     'isSettingUp is false once activation is genuinely confirmed by the backend'
   );
 
-  // --- computeHomeProtectionState (2026-09-07: activationVerifiedAt alone must never produce "protected") ---
+  // --- hasProvenActivation (2026-09-12: a real delivered call is
+  // equally valid proof that setup is done, added after a real physical
+  // test proved endToEndDeliveryVerified can be true while
+  // activationVerifiedAt stays permanently null — see
+  // mobile/lib/homeStatus.ts's own comment for the full mechanism) ---
 
   check(
-    computeHomeProtectionState({ protection: { activationVerifiedAt: null, fullyProtected: false } }) === 'setting_up',
-    'computeHomeProtectionState: no activation yet is "setting_up", regardless of fullyProtected'
+    hasProvenActivation({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false } }) === false,
+    'hasProvenActivation: neither fact present is not proven'
+  );
+  check(
+    hasProvenActivation({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: false } }) === true,
+    'hasProvenActivation: the legacy activationVerifiedAt fact alone is still sufficient'
+  );
+  check(
+    hasProvenActivation({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: true } }) === true,
+    'hasProvenActivation: real delivery evidence alone is sufficient, even with activationVerifiedAt still null — the exact real-world case (2026-09-12 physical test) this exists to cover'
+  );
+  check(
+    hasProvenActivation({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: true } }) === true,
+    'hasProvenActivation: both facts present is obviously still proven'
+  );
+
+  // --- computeHomeProtectionState (2026-09-07: activationVerifiedAt alone must never produce "protected";
+  // 2026-09-12: a genuinely fullyProtected household must never be told to "Finish setup") ---
+
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false, deliveryReady: false, fullyProtected: false } }) === 'setting_up',
+    'computeHomeProtectionState: no activation and no delivery evidence at all is "setting_up" — a genuinely new/unproven household can still enter required setup'
   );
 
   check(
-    computeHomeProtectionState({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', fullyProtected: false } }) === 'confirming_delivery',
+    computeHomeProtectionState({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: false, deliveryReady: true, fullyProtected: false } }) === 'confirming_delivery',
     'computeHomeProtectionState: activation verified but no delivery evidence is "confirming_delivery", never "protected" — the exact case this whole change series exists to prevent'
   );
 
   check(
-    computeHomeProtectionState({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', fullyProtected: true } }) === 'protected',
+    computeHomeProtectionState({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: true, deliveryReady: true, fullyProtected: true } }) === 'protected',
     'computeHomeProtectionState: activation verified AND real delivery evidence is "protected"'
   );
 
+  // 2026-09-12 correction: this used to assert "setting_up" as "defence
+  // in depth... should be unreachable in practice" — a real physical
+  // test (giffgaff/Android, 2026-09-12) proved this state IS reachable
+  // (a customer who dials the forwarding code manually, outside the
+  // in-app guided flow, gets real delivery proof with activation_verified_at
+  // still null) and that the old "setting_up" result was the actual bug:
+  // it factually contradicted the backend's own fullyProtected:true,
+  // sending an already-fully-working customer back through device-picker.
   check(
-    computeHomeProtectionState({ protection: { activationVerifiedAt: null, fullyProtected: true } }) === 'setting_up',
-    'computeHomeProtectionState: fullyProtected true with activation not yet verified is still "setting_up" (defence in depth — should be unreachable in practice, since fullyProtected requires delivery evidence which requires activation first)'
+    computeHomeProtectionState({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: true, deliveryReady: true, fullyProtected: true } }) === 'protected',
+    'computeHomeProtectionState: a household with fullyProtected:true must never see "setting_up"/be routed to device-picker, even with the legacy activationVerifiedAt field still null — real case, 2026-09-12 physical test'
+  );
+
+  // --- "reconnect_needed" (2026-09-12): historical delivery proof, but
+  // currently-stale Voice SDK reachability, must not be told to redo
+  // call forwarding — distinct from "never proven" (setting_up) ---
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: true, deliveryReady: false, fullyProtected: false } }) === 'reconnect_needed',
+    'computeHomeProtectionState: delivery proven before but the Voice SDK client is not currently reachable is "reconnect_needed", never "setting_up" — the app recovering registration is all that is needed, not redoing MMI setup'
+  );
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: true, deliveryReady: false, fullyProtected: false } }) === 'reconnect_needed',
+    'computeHomeProtectionState: reconnect_needed applies identically regardless of the legacy activationVerifiedAt value, as long as real delivery was once proven and current reachability has lapsed'
+  );
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false, deliveryReady: false, fullyProtected: false } }) !== 'reconnect_needed',
+    'computeHomeProtectionState: a household that has never had delivery proven at all is "setting_up", never "reconnect_needed" — these are genuinely distinct states'
+  );
+}
+
+// --- forwardingNumber (2026-09-12 physical-test finding): the customer
+// must never have to parse the HCG number out of an MMI string ---
+
+{
+  check(
+    extractForwardingNumberFromCode('**21*01389317533#') === '01389317533',
+    'extractForwardingNumberFromCode: parses the plain national number out of a standard mobile activation code'
+  );
+  check(
+    extractForwardingNumberFromCode('**21*001389317533#') === '001389317533',
+    'extractForwardingNumberFromCode: also handles the Virgin landline extra-leading-zero variant (one more digit, same shape)'
+  );
+  check(
+    extractForwardingNumberFromCode('#61#') === null,
+    'extractForwardingNumberFromCode: a code with no embedded number (e.g. a deactivation-only code) returns null, never a wrong guess'
+  );
+  check(
+    extractForwardingNumberFromCode('') === null,
+    'extractForwardingNumberFromCode: an empty string returns null, never throws'
+  );
+
+  check(
+    formatUkPhoneForDisplay('01389317533') === '01389 317533',
+    'formatUkPhoneForDisplay: groups an 11-digit UK number as 5+6, matching the web dashboard\'s own formatUkPhoneForDisplay convention — the underlying number is never altered, only its display grouping'
+  );
+  check(
+    formatUkPhoneForDisplay('01389317533').replace(' ', '') === '01389317533',
+    'formatUkPhoneForDisplay: the formatted output contains exactly the same digits as the input, just with one space inserted — never alters the actual number'
+  );
+  check(
+    formatUkPhoneForDisplay('123') === '123',
+    'formatUkPhoneForDisplay: an unexpected length falls back to the raw digits rather than producing a visibly wrong split'
   );
 }
 
@@ -417,28 +501,42 @@ function check(condition, message) {
   // contacts-before-activation order, not the old one.
 
   check(
-    resumeSetupAt({ isEntitled: false, contactCount: 0, isActivationVerified: false }).screen === 'subscribe',
+    resumeSetupAt({ isEntitled: false, contactCount: 0, isActivationProven: false }).screen === 'subscribe',
     'resumeSetupAt: no entitlement at all sends the customer to Subscribe first'
   );
 
   check(
-    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationVerified: false }).screen === 'contacts',
+    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationProven: false }).screen === 'contacts',
     'resumeSetupAt: entitled but zero contacts sends the customer to Trusted Contacts next - this is the core reordering this redesign makes'
   );
 
   check(
-    resumeSetupAt({ isEntitled: true, contactCount: 1, isActivationVerified: false }).screen === 'device-picker',
-    'resumeSetupAt: contacts already added but not yet activated sends the customer to the device picker'
+    resumeSetupAt({ isEntitled: true, contactCount: 1, isActivationProven: false }).screen === 'device-picker',
+    'resumeSetupAt: contacts already added but activation not yet proven (neither legacy verification nor real delivery) sends the customer to the device picker — a genuinely new/unproven household can still enter required setup'
   );
 
   check(
-    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationVerified: true }).screen === 'complete',
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: true }).screen === 'complete',
     'resumeSetupAt: everything done sends the customer to the completion screen, not back through steps already finished'
   );
 
   check(
-    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationVerified: true }).screen === 'contacts',
-    'resumeSetupAt: activation verified but somehow zero contacts (e.g. the honest "skip for now" path) still surfaces the contacts step as unfinished, not "complete"'
+    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationProven: true }).screen === 'contacts',
+    'resumeSetupAt: activation proven but somehow zero contacts (e.g. the honest "skip for now" path) still surfaces the contacts step as unfinished, not "complete"'
+  );
+
+  // 2026-09-12: isActivationProven must be computed via
+  // hasProvenActivation (activationVerifiedAt OR endToEndDeliveryVerified)
+  // by the caller, not activationVerifiedAt alone — this is what stops a
+  // household with real delivery proof but a null legacy field from
+  // being sent back to device-picker forever.
+  check(
+    resumeSetupAt({
+      isEntitled: true,
+      contactCount: 3,
+      isActivationProven: hasProvenActivation({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: true } }),
+    }).screen === 'complete',
+    'resumeSetupAt: a household proven only via real delivery evidence (activationVerifiedAt null) reaches "complete", not "device-picker" — real case, 2026-09-12 physical test'
   );
 
   check(
