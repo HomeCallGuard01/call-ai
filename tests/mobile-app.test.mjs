@@ -773,6 +773,78 @@ function check(condition, message) {
   );
 }
 
+// --- Static structure check: audio-quality fix — Speaker for ringing,
+// Earpiece once connected (2026-09-13, physical-test finding) ---
+//
+// The real getAudioDevices()/.select() API and Call/CallInvite event
+// wiring are native-dependent, same reasoning as the block above — this
+// is checked structurally against the real source, not executed.
+
+{
+  const voiceClientSource = readFileSync(
+    path.join(__dirname, '..', 'mobile', 'lib', 'voiceClient.ts'),
+    'utf8'
+  );
+
+  // Registration/ringing still selects Speaker (unchanged) — proves this
+  // fix didn't regress the original audibility fix.
+  check(
+    voiceClientSource.includes('async function selectSpeakerForRinging(): Promise<void> {') &&
+      voiceClientSource.includes('device.type === AudioDevice.Type.Speaker'),
+    'selectSpeakerForRinging still exists and still selects the Speaker device for ringing — unchanged by the connected-call Earpiece fix'
+  );
+
+  const speakerCallIndex = voiceClientSource.indexOf('await selectSpeakerForRinging();');
+  const nearestAndroidGuardBeforeSpeakerCall = voiceClientSource.lastIndexOf('if (Platform.OS === "android")', speakerCallIndex);
+  check(
+    speakerCallIndex !== -1 &&
+      nearestAndroidGuardBeforeSpeakerCall !== -1 &&
+      // No closing brace between the guard and the call — still the same block.
+      !voiceClientSource.slice(nearestAndroidGuardBeforeSpeakerCall, speakerCallIndex).includes('}'),
+    'selectSpeakerForRinging is still only called on Android, at registration time, unaffected by the new connected-call handling'
+  );
+
+  // Answered/connected call selects Earpiece.
+  check(
+    voiceClientSource.includes('async function selectEarpieceForConnectedCall(): Promise<void> {') &&
+      voiceClientSource.includes('device.type === AudioDevice.Type.Earpiece'),
+    'a new selectEarpieceForConnectedCall function exists and selects the Earpiece device'
+  );
+
+  // The switch does not happen before connection: selectEarpieceForConnectedCall
+  // must be called from inside a Call.Event.Connected listener, itself
+  // registered inside a CallInvite.Event.Accepted listener — never called
+  // directly from the top-level CallInvite handler or from
+  // selectSpeakerForRinging's own ringing-time code path.
+  const acceptedListenerIndex = voiceClientSource.indexOf('callInvite.on(CallInvite.Event.Accepted');
+  const connectedListenerIndex = voiceClientSource.indexOf('call.on(Call.Event.Connected');
+  const earpieceCallIndex = voiceClientSource.indexOf('selectEarpieceForConnectedCall();');
+  check(
+    acceptedListenerIndex !== -1 && connectedListenerIndex !== -1 && earpieceCallIndex !== -1 &&
+      acceptedListenerIndex < connectedListenerIndex && connectedListenerIndex < earpieceCallIndex,
+    'selectEarpieceForConnectedCall is only ever invoked from inside a Call.Event.Connected listener, itself only ever registered inside a CallInvite.Event.Accepted listener — the switch cannot fire before the call is genuinely connected'
+  );
+  check(
+    !voiceClientSource.slice(0, acceptedListenerIndex).includes('selectEarpieceForConnectedCall();'),
+    'selectEarpieceForConnectedCall is never called anywhere before the CallInvite.Event.Accepted wiring — no earlier/eager call path exists'
+  );
+  const selectSpeakerFnStart = voiceClientSource.indexOf('async function selectSpeakerForRinging(): Promise<void> {');
+  const selectSpeakerFnEnd = voiceClientSource.indexOf('\n}', selectSpeakerFnStart);
+  check(
+    selectSpeakerFnStart !== -1 && selectSpeakerFnEnd !== -1 &&
+      !voiceClientSource.slice(selectSpeakerFnStart, selectSpeakerFnEnd).includes('selectEarpieceForConnectedCall'),
+    'selectSpeakerForRinging\'s own function body never references the Earpiece switch — the two are genuinely separate, independently-triggered steps'
+  );
+
+  // iOS is untouched: the whole Accepted/Connected/Earpiece wiring block
+  // is Android-only, matching selectSpeakerForRinging's own scoping.
+  check(
+    acceptedListenerIndex !== -1 &&
+      voiceClientSource.slice(Math.max(0, acceptedListenerIndex - 200), acceptedListenerIndex).includes('Platform.OS === "android"'),
+    'the CallInvite.Event.Accepted / Call.Event.Connected / Earpiece-switch wiring is gated behind Platform.OS === "android" — iOS behaviour is completely unchanged'
+  );
+}
+
 // --- Static structure check: earliest-possible PushKit initialization
 // (2026-09-09, Twilio GitHub issue #668 / Build 9 locked-screen crash) ---
 //
