@@ -58,6 +58,7 @@ const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
 const mobileApiRoutes = require("./routes/mobileApi");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
+const { shouldBypassMonitoringForTest } = require("./services/monitoringTestBypass");
 
 // Fail fast and clearly in production rather than starting in a silently
 // broken or insecure state (e.g. a missing STRIPE_WEBHOOK_SECRET would
@@ -343,6 +344,18 @@ function buildRedLineTerminateUrl(appUrl) {
 
 function attachLiveMonitoring(twiml, { household, twilioNumber }) {
   if (!household) return;
+
+  // TEST-ONLY diagnostic bypass (2026-09-12 Media Streams A/B/C audio-
+  // quality experiment) — see services/monitoringTestBypass.js's own
+  // header for the full two-condition, fail-closed design. Only ever
+  // skips THIS function's <Start><Stream> for one explicitly-designated
+  // test household; screening, <Say>, <Dial><Client>, and Voice SDK
+  // delivery all remain completely untouched — they are separate call
+  // sites in /voice, never reached through this function at all.
+  if (shouldBypassMonitoringForTest(household.id, process.env)) {
+    console.error("TEST MONITORING BYPASS: skipping live monitoring for diagnostic test household", household.id);
+    return;
+  }
 
   const destination = resolveForwardingDestination(household);
 
