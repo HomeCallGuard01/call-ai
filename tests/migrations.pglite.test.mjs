@@ -900,6 +900,250 @@ async function main() {
   }
   assert(deliveryVerifiedDeniedToAuthenticated, 'authenticated role cannot execute mark_household_delivery_verified directly');
 
+  // --- 037: twilio_number_quarantine (P0 Batch 1, component D) ---
+  await asServiceRole(db);
+
+  const { rows: [quarantineRow] } = await db.query(
+    `insert into public.twilio_number_quarantine (household_id, twilio_number, twilio_sid, release_reason)
+     values ($1, $2, $3, 'subscription_grace_expired') returning *`,
+    [householdId, '+447700900321', 'PN_test_sid_321']
+  );
+  assert(
+    quarantineRow.deactivation_confirmed === false &&
+      quarantineRow.deactivation_confirmed_at === null &&
+      quarantineRow.released_at === null,
+    'a freshly quarantined number starts unconfirmed and unreleased — this is the foundation of the "never auto-release an unconfirmed number" correction'
+  );
+  assert(quarantineRow.twilio_sid === 'PN_test_sid_321', 'the Twilio SID captured at quarantine time is stored on the row');
+
+  let invalidReleaseReasonRejected = false;
+  try {
+    await db.query(
+      `insert into public.twilio_number_quarantine (household_id, twilio_number, release_reason)
+       values ($1, $2, 'not_a_real_reason')`,
+      [householdId, '+447700900322']
+    );
+  } catch {
+    invalidReleaseReasonRejected = true;
+  }
+  assert(invalidReleaseReasonRejected, 'release_reason is constrained to the two known values — an invalid value is rejected at the database level');
+
+  // authenticated (a real customer's own session) has no access at all —
+  // this table is purely internal, matching acquisition_events'
+  // established precedent (migration 032).
+  await asAuthUser(db, userId2, 'c-quarantine-test@example.com');
+  let quarantineSelectDeniedToAuthenticated = false;
+  try {
+    await db.query(`select * from public.twilio_number_quarantine where id = $1`, [quarantineRow.id]);
+  } catch {
+    quarantineSelectDeniedToAuthenticated = true;
+  }
+  assert(quarantineSelectDeniedToAuthenticated, 'authenticated cannot read twilio_number_quarantine at all — no policy grants it access');
+
+  let quarantineInsertDeniedToAuthenticated = false;
+  try {
+    await db.query(
+      `insert into public.twilio_number_quarantine (household_id, twilio_number, release_reason)
+       values ($1, $2, 'account_deletion')`,
+      [householdId, '+447700900323']
+    );
+  } catch {
+    quarantineInsertDeniedToAuthenticated = true;
+  }
+  assert(quarantineInsertDeniedToAuthenticated, 'authenticated cannot insert into twilio_number_quarantine — a customer session can never quarantine (or fabricate a release of) any number directly');
+
+  // --- confirming deactivation and marking released are both service-role-only, additive updates ---
+  await asServiceRole(db);
+  const { rows: [confirmed] } = await db.query(
+    `update public.twilio_number_quarantine
+       set deactivation_confirmed = true, deactivation_confirmed_at = now(), deactivation_confirmed_method = 'manual_support_review'
+       where id = $1
+       returning *`,
+    [quarantineRow.id]
+  );
+  assert(
+    confirmed.deactivation_confirmed === true && confirmed.released_at === null,
+    'confirming deactivation marks it confirmed without touching released_at — confirmation and release remain two distinct steps'
+  );
+
+  const { rows: [released] } = await db.query(
+    `update public.twilio_number_quarantine set released_at = now() where id = $1 returning released_at`,
+    [quarantineRow.id]
+  );
+  assert(released.released_at !== null, 'a confirmed quarantine row can be marked released');
+
+  // --- confirmed-but-not-yet-released IS selected; unconfirmed never is —
+  // this is the actual proof that "confirmed quarantine becomes eligible
+  // for the existing safe release path" (no real Twilio API is ever
+  // touched by this test — this only exercises the database query shape
+  // services/twilioNumberReleaseRunner.js's runConfirmedQuarantineRelease
+  // uses to find candidates, via database/twilioQuarantine.js's
+  // findConfirmedUnreleasedQuarantine) ---
+  const { rows: [confirmedNotYetReleasedRow] } = await db.query(
+    `insert into public.twilio_number_quarantine (household_id, twilio_number, release_reason, deactivation_confirmed, deactivation_confirmed_at, deactivation_confirmed_method)
+     values ($1, $2, 'subscription_grace_expired', true, now(), 'manual_support_review') returning id`,
+    [householdId, '+447700900325']
+  );
+  const { rows: [unconfirmedRow] } = await db.query(
+    `insert into public.twilio_number_quarantine (household_id, twilio_number, release_reason)
+     values ($1, $2, 'subscription_grace_expired') returning id`,
+    [householdId, '+447700900324']
+  );
+  const { rows: readyForRelease } = await db.query(
+    `select id from public.twilio_number_quarantine where deactivation_confirmed = true and released_at is null`
+  );
+  assert(
+    readyForRelease.some((r) => r.id === confirmedNotYetReleasedRow.id),
+    'a confirmed, not-yet-released quarantine row DOES appear in the confirmed-and-unreleased query — this is what makes it genuinely eligible for the existing safe release path'
+  );
+  assert(
+    !readyForRelease.some((r) => r.id === unconfirmedRow.id),
+    'an unconfirmed quarantine row never appears in the confirmed-and-unreleased query the release runner uses — it is never selected for release no matter how long it has been sitting there'
+  );
+
+  // --- deleting the household SETS NULL, never CASCADEs — corrected
+  // 2026-09-10 after review: the whole point of this table is to retain
+  // the quarantine record (Twilio number/SID, reason, timestamps,
+  // confirmation state, release state) for as long as the number itself
+  // remains un-released, specifically INCLUDING after the customer's own
+  // household/auth data is gone. A CASCADE would silently delete the one
+  // record proving an un-recycled number still exists — backwards for a
+  // safety mechanism whose job is "never forget about this number."
+  // households.id is never actually hard-deleted anywhere in this
+  // codebase today (anonymize_inactive_household anonymises in place,
+  // never deletes the row) — this plain DELETE, via the bootstrap/
+  // superuser connection (service_role only has SELECT on households,
+  // migration 009), exists purely to exercise the foreign-key behaviour
+  // itself, defensively, against a hypothetical future hard-delete.
+  await db.exec('reset role;');
+  const { rows: [cascadeHousehold] } = await db.query(
+    `insert into public.households (auth_user_id, email, phone_number) values (null, $1, $2) returning id`,
+    ['quarantine-cascade-test@example.com', '+447700900950']
+  );
+  await asServiceRole(db);
+  const { rows: [survivingRow] } = await db.query(
+    `insert into public.twilio_number_quarantine (household_id, twilio_number, twilio_sid, release_reason)
+     values ($1, $2, $3, 'account_deletion') returning id, twilio_number, twilio_sid, release_reason, quarantined_at`,
+    [cascadeHousehold.id, '+447700900951', 'PN_test_sid_951']
+  );
+  await db.exec('reset role;');
+  await db.query(`delete from public.households where id = $1`, [cascadeHousehold.id]);
+  const { rows: [afterDelete] } = await db.query(
+    `select * from public.twilio_number_quarantine where id = $1`,
+    [survivingRow.id]
+  );
+  assert(!!afterDelete, 'the quarantine row survives deletion of its household — it is not cascaded away');
+  assert(afterDelete.household_id === null, 'household_id is set null once the household is gone');
+  assert(
+    afterDelete.twilio_number === survivingRow.twilio_number &&
+      afterDelete.twilio_sid === survivingRow.twilio_sid &&
+      afterDelete.release_reason === survivingRow.release_reason,
+    'the Twilio number, SID, and release reason are all still fully intact after the household is gone — exactly the fields that must survive'
+  );
+
+  // --- 038: household carrier-compatibility capture (P0 Batch 1 continuation) ---
+  await asServiceRole(db);
+
+  const { rows: [beforeCarrier] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type, carrier_compatibility_captured_at
+       from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    beforeCarrier.carrier_provider_key === null &&
+      beforeCarrier.carrier_tariff_type === null &&
+      beforeCarrier.carrier_compatibility_captured_at === null,
+    'all three carrier-compatibility columns default to null'
+  );
+
+  const { rows: [firstCapture] } = await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3) as result`,
+    [householdId, 'vodafone', 'pay_monthly']
+  );
+  assert(!!firstCapture.result, 'set_household_carrier_compatibility returns the new captured-at timestamp');
+
+  const { rows: [afterFirstCapture] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterFirstCapture.carrier_provider_key === 'vodafone' && afterFirstCapture.carrier_tariff_type === 'pay_monthly',
+    'the exact provider and tariff values passed in are persisted, unaltered'
+  );
+
+  // Deliberately not idempotent-once (unlike mark_household_activation_verified)
+  // — a customer can change their selection (corrected a mistake, actually
+  // switched carrier), and the most recent capture is what matters. Matches
+  // mark_household_voice_client_registered/mark_household_delivery_verified's
+  // own established "always move forward" precedent, not
+  // mark_household_activation_verified's "first time only" one.
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const { rows: [secondCapture] } = await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3) as result`,
+    [householdId, 'tesco', null]
+  );
+  assert(
+    new Date(secondCapture.result).getTime() > new Date(firstCapture.result).getTime(),
+    'a later call moves carrier_compatibility_captured_at forward, not idempotent-once'
+  );
+
+  const { rows: [afterSecondCapture] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterSecondCapture.carrier_provider_key === 'tesco' && afterSecondCapture.carrier_tariff_type === null,
+    'a corrected/changed selection overwrites the previous one — the most recent capture wins, and a genuinely absent tariff persists as null, not a stale previous value'
+  );
+
+  // No CHECK constraint on carrier_provider_key — deliberate, per migration
+  // 038's own header: PROVIDER_POLICY's key set is expected to grow, and an
+  // unrecognised key is already handled safely by getProviderPolicy's
+  // fallback to 'other' (unverified, blocked) in application code, not by
+  // a database constraint that would need updating in lockstep with it.
+  // This proves the ACTUAL constraint (none) rather than inventing one.
+  let junkValueRejected = false;
+  try {
+    await db.query(
+      `select public.set_household_carrier_compatibility($1, $2, $3)`,
+      [householdId, 'some-completely-made-up-provider-xyz', 'not-a-real-tariff-either']
+    );
+  } catch {
+    junkValueRejected = true;
+  }
+  assert(
+    !junkValueRejected,
+    'an unrecognised provider/tariff value is accepted at the database level, not rejected — validation is deliberately owned entirely by services/providerPolicy.js (getProviderPolicy\'s fallback to \'other\'), never duplicated as a database constraint'
+  );
+  const { rows: [afterJunkValue] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterJunkValue.carrier_provider_key === 'some-completely-made-up-provider-xyz',
+    'the junk value is stored verbatim, exactly as the application layer\'s own fallback-to-unverified logic expects to receive it'
+  );
+
+  let carrierCompatNonexistentThrew = false;
+  try {
+    await db.query(
+      `select public.set_household_carrier_compatibility($1, $2, $3)`,
+      ['00000000-0000-0000-0000-000000000000', 'o2', null]
+    );
+  } catch {
+    carrierCompatNonexistentThrew = true;
+  }
+  assert(carrierCompatNonexistentThrew, 'set_household_carrier_compatibility raises for a nonexistent household');
+
+  await asAuthUser(db, userId2, 'c-carrier-compat-test@example.com');
+  let carrierCompatDeniedToAuthenticated = false;
+  try {
+    await db.query(`select public.set_household_carrier_compatibility($1, $2, $3)`, [householdId, 'o2', null]);
+  } catch {
+    carrierCompatDeniedToAuthenticated = true;
+  }
+  assert(carrierCompatDeniedToAuthenticated, 'authenticated role cannot execute set_household_carrier_compatibility directly — grants/security match every other households-lifecycle RPC in this codebase');
+
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //
   // Discovers every SECURITY DEFINER function in public from pg_proc

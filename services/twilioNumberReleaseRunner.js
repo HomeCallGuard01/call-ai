@@ -29,12 +29,22 @@ async function findHouseholdsPendingRelease(supabaseAdmin, now = new Date()) {
 // behaviour. Only a failure to even list candidates (a genuine DB
 // connectivity problem) propagates, since there is nothing useful to do
 // without that list.
+//
+// Since migration 037 (quarantine), releaseExpiredTwilioNumber's success
+// path no longer genuinely releases anything via Twilio — it quarantines
+// (result.quarantined: true), never result.released. `released` is kept
+// as its own counter for a case that no longer occurs through this
+// runner (a real .remove() only happens via runConfirmedQuarantineRelease
+// below now) rather than removed, so this stays accurate if that ever
+// changes again; `quarantined` is the count that actually matters here
+// today.
 async function runExpiredTwilioNumberRelease(deps) {
   const { supabaseAdmin, releaseExpiredTwilioNumber, now } = deps;
 
   const households = await findHouseholdsPendingRelease(supabaseAdmin, now);
 
   let released = 0;
+  let quarantined = 0;
   let skipped = 0;
   const errors = [];
 
@@ -42,6 +52,8 @@ async function runExpiredTwilioNumberRelease(deps) {
     const result = await releaseExpiredTwilioNumber(household);
     if (result.released) {
       released += 1;
+    } else if (result.quarantined) {
+      quarantined += 1;
     } else {
       skipped += 1;
       if (result.error) {
@@ -50,7 +62,45 @@ async function runExpiredTwilioNumberRelease(deps) {
     }
   }
 
-  return { found: households.length, released, skipped, errors };
+  return { found: households.length, released, quarantined, skipped, errors };
 }
 
-module.exports = { findHouseholdsPendingRelease, runExpiredTwilioNumberRelease };
+// Stage 2 of the quarantine lifecycle (migration 037) — finds quarantine
+// rows a human has explicitly confirmed deactivation for, and actually
+// releases them via Twilio's real API
+// (services/twilioProvisioning.js's releaseQuarantinedTwilioNumber).
+// Unconfirmed rows are never returned by deps.findConfirmed regardless of
+// how long they've been quarantined — see database/twilioQuarantine.js's
+// findConfirmedUnreleasedQuarantine and migration 037's own header. In
+// practice, until something in a future batch actually calls
+// confirmTwilioNumberDeactivation, this finds zero candidates — that is
+// the correct, intended behaviour for this foundation, not a bug.
+async function runConfirmedQuarantineRelease(deps) {
+  const { findConfirmed, releaseQuarantinedTwilioNumber } = deps;
+
+  const rows = await findConfirmed();
+
+  let released = 0;
+  let skipped = 0;
+  const errors = [];
+
+  for (const row of rows) {
+    const result = await releaseQuarantinedTwilioNumber(row);
+    if (result.released) {
+      released += 1;
+    } else {
+      skipped += 1;
+      if (result.error) {
+        errors.push({ quarantineId: row.id, householdId: row.household_id, error: result.error });
+      }
+    }
+  }
+
+  return { found: rows.length, released, skipped, errors };
+}
+
+module.exports = {
+  findHouseholdsPendingRelease,
+  runExpiredTwilioNumberRelease,
+  runConfirmedQuarantineRelease,
+};

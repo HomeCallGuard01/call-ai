@@ -23,6 +23,7 @@ const {
   findTwilioIncomingNumberSid,
   releaseExpiredTwilioNumber,
   releaseTwilioNumberImmediately,
+  releaseQuarantinedTwilioNumber,
   updateTwilioNumberForEntitlementChange,
 } = require('../services/twilioProvisioning.js');
 
@@ -576,7 +577,8 @@ async function run() {
     check(missingSid === null, 'findTwilioIncomingNumberSid returns null when no resource matches');
   }
 
-  // --- releaseExpiredTwilioNumber ---
+  // --- releaseExpiredTwilioNumber (P0 Batch 1, component D: now
+  // QUARANTINES rather than genuinely releasing — see migration 037) ---
 
   function makeFakeReleaseClient() {
     const calls = { remove: [] };
@@ -590,80 +592,243 @@ async function run() {
   {
     // household not actually eligible (no pending deadline at all) — must
     // not even ask the database, since there's nothing to do.
-    const client = makeFakeReleaseClient();
     const release = async () => { throw new Error('should not be called'); };
+    const quarantine = async () => { throw new Error('should not be called'); };
 
     const result = await releaseExpiredTwilioNumber(
       { id: 'household-10', twilio_number: '+447700900001', twilio_number_pending_release_at: null },
-      { client, release }
+      { release, quarantine }
     );
 
     check(result.released === false, 'a household with no pending-release deadline is left alone');
   }
 
   {
-    // database says not yet eligible (deadline hasn't passed) — Twilio is
-    // never touched.
-    const client = makeFakeReleaseClient();
+    // database says not yet eligible (deadline hasn't passed) — nothing
+    // is quarantined.
     const release = async () => false;
+    const quarantineCalls = [];
+    const quarantine = async (...args) => { quarantineCalls.push(args); };
 
     const result = await releaseExpiredTwilioNumber(
       { id: 'household-11', twilio_number: '+447700900001', twilio_number_pending_release_at: new Date(Date.now() + 86400000).toISOString() },
-      { client, release }
+      { release, quarantine }
     );
 
     check(
-      result.released === false && client.calls.remove.length === 0,
-      'the database is the sole authority on eligibility — Twilio is never called when it says not yet'
+      result.released === false && quarantineCalls.length === 0,
+      'the database is the sole authority on eligibility — nothing is quarantined when it says not yet'
     );
   }
 
   {
-    // database confirms eligibility — the number is actually released via Twilio.
-    const client = makeFakeReleaseClient();
+    // database confirms eligibility — quarantine begins correctly. This
+    // is the explicit correction (2026-09-10): the number must NOT be
+    // released to Twilio just because the grace period elapsed — it
+    // must never call Twilio's real .remove() at this stage at all.
+    const quarantineCalls = [];
     const release = async () => true;
+    const quarantine = async (householdId, twilioNumber, releaseReason, sid) => {
+      quarantineCalls.push({ householdId, twilioNumber, releaseReason, sid });
+    };
 
     const result = await releaseExpiredTwilioNumber(
       { id: 'household-12', twilio_number: '+447700900001', twilio_number_pending_release_at: new Date(Date.now() - 1000).toISOString() },
-      { client, release }
+      { release, quarantine, client: undefined }
     );
 
     check(
-      result.released === true && client.calls.remove.length === 1 && client.calls.remove[0] === 'SID-+447700900001',
-      'once the database confirms eligibility, the matching Twilio resource is actually released'
+      result.released === false && result.quarantined === true && result.twilioNumber === '+447700900001',
+      'once the database confirms eligibility, the number is quarantined (result.quarantined), never genuinely released (result.released stays false)'
+    );
+    check(
+      quarantineCalls.length === 1 &&
+        quarantineCalls[0].householdId === 'household-12' &&
+        quarantineCalls[0].twilioNumber === '+447700900001' &&
+        quarantineCalls[0].releaseReason === 'subscription_grace_expired',
+      'the quarantine insert is called exactly once, with the correct household, number, and release reason'
     );
   }
 
-  // --- releaseTwilioNumberImmediately ---
+  {
+    // .remove() must never be called from this path — findSid (a
+    // read-only .list() lookup, to capture the SID onto the quarantine
+    // row up front, migration 037) is allowed and best-effort; a failure
+    // there is swallowed and never blocks the quarantine itself.
+    const release = async () => true;
+    const quarantineCalls = [];
+    const quarantine = async (householdId, twilioNumber, releaseReason, sid) => {
+      quarantineCalls.push({ sid });
+      return { id: 'q-1' };
+    };
+    const client = {
+      incomingPhoneNumbers: Object.assign(
+        () => { throw new Error('.remove() must never be reachable from this path'); },
+        { list: async ({ phoneNumber }) => [{ sid: `SID-${phoneNumber}` }] }
+      ),
+    };
+
+    const result = await releaseExpiredTwilioNumber(
+      { id: 'household-12b', twilio_number: '+447700900001', twilio_number_pending_release_at: new Date(Date.now() - 1000).toISOString() },
+      { release, quarantine, client }
+    );
+
+    check(result.quarantined === true, 'quarantining still succeeds when a real client is present and findSid succeeds');
+    check(quarantineCalls[0].sid === 'SID-+447700900001', 'the SID found via the read-only lookup is passed through to the quarantine insert, captured up front rather than relying solely on a later re-search');
+  }
 
   {
-    const client = makeFakeReleaseClient();
+    // the SID lookup itself failing (e.g. Twilio API briefly down) must
+    // never block the quarantine — the DB-first write already succeeded,
+    // and the SID can still be found later via the release-time fallback
+    // search (see releaseQuarantinedTwilioNumber's own test below).
+    const release = async () => true;
+    const quarantineCalls = [];
+    const quarantine = async (householdId, twilioNumber, releaseReason, sid) => {
+      quarantineCalls.push({ sid });
+    };
+    const client = {
+      incomingPhoneNumbers: Object.assign(
+        () => { throw new Error('.remove() must never be reachable from this path'); },
+        { list: async () => { throw new Error('Twilio API unavailable'); } }
+      ),
+    };
+
+    const result = await releaseExpiredTwilioNumber(
+      { id: 'household-12c', twilio_number: '+447700900001', twilio_number_pending_release_at: new Date(Date.now() - 1000).toISOString() },
+      { release, quarantine, client }
+    );
+
+    check(result.quarantined === true, 'a failed SID lookup never blocks quarantining the number');
+    check(quarantineCalls[0].sid === null, 'the SID is simply null when the lookup failed, not a thrown error');
+  }
+
+  // --- releaseTwilioNumberImmediately (used by services/accountDeletion.js
+  // — also now QUARANTINES rather than genuinely releasing, closing the
+  // same unsafe-release gap for account deletion, not just subscription
+  // cancellation) ---
+
+  {
     const releaseImmediately = async () => null;
+    const quarantine = async () => { throw new Error('should not be called'); };
 
     const result = await releaseTwilioNumberImmediately(
       { id: 'household-13', twilio_number: null },
-      { client, releaseImmediately }
+      { releaseImmediately, quarantine }
     );
 
     check(
-      result.released === false && client.calls.remove.length === 0,
-      'immediate release on a household with nothing to release never calls Twilio'
+      result.released === false,
+      'immediate release on a household with nothing to release never quarantines anything'
     );
   }
 
   {
-    const client = makeFakeReleaseClient();
+    const quarantineCalls = [];
     const releaseImmediately = async () => '+447700900042';
+    const quarantine = async (householdId, twilioNumber, releaseReason, sid) => {
+      quarantineCalls.push({ householdId, twilioNumber, releaseReason, sid });
+    };
 
     const result = await releaseTwilioNumberImmediately(
       { id: 'household-14', twilio_number: '+447700900042' },
-      { client, releaseImmediately }
+      { releaseImmediately, quarantine, client: undefined }
     );
 
     check(
-      result.released === true && result.twilioNumber === '+447700900042' && client.calls.remove.length === 1,
-      'immediate release (e.g. for a future account-deletion flow) releases the number via Twilio once the database confirms it'
+      result.released === false && result.quarantined === true && result.twilioNumber === '+447700900042',
+      'account deletion: the number is quarantined, never genuinely released via Twilio at this stage — an explicit, deliberate account-deletion request does not by itself prove carrier-level forwarding was removed'
     );
+    check(
+      quarantineCalls.length === 1 && quarantineCalls[0].releaseReason === 'account_deletion',
+      'the quarantine row is tagged with release_reason "account_deletion", distinguishing it from the subscription-cancellation path'
+    );
+  }
+
+  // --- releaseQuarantinedTwilioNumber: stage 2 — the ONLY path that may
+  // still call Twilio's real .remove() ---
+
+  {
+    // unconfirmed deactivation must NEVER be released, no matter how the
+    // function is called — this is the core safety property of the whole
+    // quarantine design, re-checked defensively even though the caller
+    // (findConfirmedUnreleasedQuarantine) already filters for this.
+    const client = makeFakeReleaseClient();
+    const result = await releaseQuarantinedTwilioNumber(
+      { id: 'q-1', household_id: 'household-20', twilio_number: '+447700900050', deactivation_confirmed: false, released_at: null },
+      { client }
+    );
+    check(
+      result.released === false && client.calls.remove.length === 0,
+      'an UNCONFIRMED quarantine row is never released, even when passed directly to the release function — Twilio is never called'
+    );
+  }
+
+  {
+    // already-released rows are never released twice.
+    const client = makeFakeReleaseClient();
+    const result = await releaseQuarantinedTwilioNumber(
+      { id: 'q-2', household_id: 'household-21', twilio_number: '+447700900051', deactivation_confirmed: true, released_at: '2026-09-01T00:00:00.000Z' },
+      { client }
+    );
+    check(
+      result.released === false && client.calls.remove.length === 0,
+      'an already-released quarantine row is never released again'
+    );
+  }
+
+  {
+    // confirmed deactivation IS eligible for the defined release pathway
+    // — Twilio's real API is genuinely called here, only here.
+    const client = makeFakeReleaseClient();
+    const markReleasedCalls = [];
+    const markReleased = async (id) => { markReleasedCalls.push(id); };
+
+    const result = await releaseQuarantinedTwilioNumber(
+      { id: 'q-3', household_id: 'household-22', twilio_number: '+447700900052', deactivation_confirmed: true, released_at: null },
+      { client, markReleased }
+    );
+
+    check(
+      result.released === true && client.calls.remove.length === 1 && client.calls.remove[0] === 'SID-+447700900052',
+      'a CONFIRMED, not-yet-released quarantine row is genuinely released via Twilio\'s real API'
+    );
+    check(
+      markReleasedCalls.length === 1 && markReleasedCalls[0] === 'q-3',
+      'the quarantine row is marked released in the database after the Twilio call succeeds'
+    );
+  }
+
+  {
+    // a null/missing row is handled defensively, never throws.
+    const result = await releaseQuarantinedTwilioNumber(null, {});
+    check(result.released === false, 'a null quarantine row is handled defensively — never released, never throws');
+  }
+
+  {
+    // when the row already carries a twilio_sid (captured up front at
+    // quarantine time, migration 037), it is used directly — the
+    // phone-number search (findSid/.list()) is never even attempted, so
+    // this genuinely does not depend on household_id or the household
+    // row still existing at all.
+    const listCalls = [];
+    const removeCalls = [];
+    const client = {
+      incomingPhoneNumbers: Object.assign(
+        (sid) => ({ remove: async () => { removeCalls.push(sid); return true; } }),
+        { list: async (args) => { listCalls.push(args); return []; } }
+      ),
+    };
+    const markReleased = async () => {};
+
+    const result = await releaseQuarantinedTwilioNumber(
+      { id: 'q-4', household_id: null, twilio_number: '+447700900053', twilio_sid: 'PN_captured_up_front', deactivation_confirmed: true, released_at: null },
+      { client, markReleased }
+    );
+
+    check(result.released === true, 'a row with a pre-captured SID and a null household_id (e.g. after a future household hard-delete) still releases correctly');
+    check(removeCalls.length === 1 && removeCalls[0] === 'PN_captured_up_front', 'the pre-captured SID is used directly for the Twilio .remove() call');
+    check(listCalls.length === 0, 'no phone-number search is performed at all when the SID is already known — this never depends on the household record');
   }
 
   // --- updateTwilioNumberForEntitlementChange: the single policy switchboard ---
