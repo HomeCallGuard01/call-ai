@@ -1067,13 +1067,86 @@
     </svg>
     <div class="status-title" id="statusTitle">Checking protection status…</div>
     <p class="status-sub" id="statusSub">We're loading your live protection status.</p>
-    <p class="price-note" id="priceNote" hidden>£4.99 per month. Cancel anytime.</p>
 
     <div class="spinner" id="confirmingSpinner" hidden aria-hidden="true"></div>
 
+    <!-- Carrier compatibility must be confirmed before payment — mirrors
+         mobile/app/(setup)/device-picker.tsx exactly: ask device type,
+         then (mobile only) network, then (only if the backend says it
+         affects eligibility) tariff. No carrier classification logic
+         lives here — every verdict comes from POST/GET
+         /billing/carrier-compatibility, which calls the same
+         services/providerPolicy.js the mobile app uses. Shown instead of
+         subscribeForm while state === "unsubscribed"; subscribeForm only
+         appears once a compatible carrier (or landline) is confirmed. -->
+    <div id="carrierCheckSection" hidden>
+      <h3 class="field-hint-heading">What are we protecting?</h3>
+      <div id="carrierDeviceRow" role="radiogroup" aria-label="Device type">
+        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceMobile" value="mobile" checked> Mobile phone</label>
+        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceLandline" value="landline"> Landline</label>
+      </div>
+
+      <div id="carrierNetworkRow">
+        <label for="carrierNetworkSelect">Which mobile network do you use?</label>
+        <select id="carrierNetworkSelect">
+          <option value="">Choose one…</option>
+          <option value="ee">EE</option>
+          <option value="o2">O2</option>
+          <option value="vodafone">Vodafone</option>
+          <option value="three">Three</option>
+          <option value="giffgaff">giffgaff</option>
+          <option value="tesco">Tesco Mobile</option>
+          <option value="sky">Sky Mobile</option>
+          <option value="id_mobile">iD Mobile</option>
+          <option value="smarty">SMARTY</option>
+          <option value="voxi">VOXI</option>
+          <option value="lebara">Lebara</option>
+          <option value="lyca">Lyca Mobile</option>
+          <option value="talkmobile">Talkmobile</option>
+          <option value="asda">ASDA Mobile</option>
+          <option value="1pmobile">1pMobile</option>
+          <option value="other">Other / not listed</option>
+        </select>
+      </div>
+
+      <div id="carrierTariffRow" hidden>
+        <label for="carrierTariffSelect">Pay monthly or pay as you go?</label>
+        <select id="carrierTariffSelect">
+          <option value="">Choose one…</option>
+          <option value="pay_monthly">Pay monthly (contract)</option>
+          <option value="payg">Pay as you go</option>
+        </select>
+      </div>
+
+      <p id="carrierCheckError" class="error-banner" role="alert" hidden></p>
+      <p id="carrierBlockedMessage" class="error-banner" role="alert" hidden></p>
+      <button type="button" id="checkCarrierButton">Continue</button>
+    </div>
+
+    <!-- Terms/consent — separate from the cooling-off checkbox, per the
+         approved mobile design (mobile/app/(setup)/subscribe.tsx). Shown
+         once carrier compatibility is confirmed (or immediately for
+         landline). Recorded via POST /billing/terms-acceptance
+         immediately before the real Stripe redirect, never earlier. -->
+    <div id="termsConsentSection" hidden>
+      <p class="price-note" id="priceNote">£4.99/month, including VAT. This is a recurring monthly subscription
+        that renews automatically every month until you cancel — cancel anytime.</p>
+
+      <p class="legal-links">
+        <a href="/terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
+        ·
+        <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
+      </p>
+
+      <label class="consent-row"><input type="checkbox" id="agreeTermsCheckbox"> I agree to the Terms &amp; Conditions and acknowledge the Privacy Policy.</label>
+      <label class="consent-row"><input type="checkbox" id="startImmediatelyCheckbox"> I'd like my protection to start right away. I understand I still have 30 days to change my mind either way.</label>
+
+      <p id="termsConsentError" class="error-banner" role="alert" hidden></p>
+    </div>
+
     <form class="subscribe-button" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
       <button type="submit">
-        Start protection
+        Subscribe &amp; pay £4.99/month now
       </button>
     </form>
 
@@ -2447,11 +2520,12 @@
     const sub = document.getElementById("statusSub");
     const subscribeForm = document.getElementById("subscribeForm");
     const protectedContent = document.getElementById("protectedContent");
-    const priceNote = document.getElementById("priceNote");
     const stripeReassurance = document.getElementById("stripeReassurance");
     const confirmingSpinner = document.getElementById("confirmingSpinner");
     const successActions = document.getElementById("successActions");
     const delayedActions = document.getElementById("delayedActions");
+    const carrierCheckSection = document.getElementById("carrierCheckSection");
+    const termsConsentSection = document.getElementById("termsConsentSection");
 
     if (!card || !title || !sub) {
       return;
@@ -2482,14 +2556,30 @@
       sub.textContent = "We're loading your live protection status.";
     }
 
-    if (subscribeForm) {
-      subscribeForm.hidden = state !== "unsubscribed";
+    // Carrier compatibility must be confirmed (and Terms accepted) before
+    // the payment button ever appears — mirrors the mobile app's
+    // device-picker.tsx-before-subscribe.tsx ordering. setStatus itself
+    // never reveals subscribeForm/termsConsentSection directly; only
+    // handleCarrierCheckSuccess() below does, once the carrier check has
+    // actually passed. Outside "unsubscribed" they're always force-hidden
+    // here, same safety property as before (never shown to an already-
+    // subscribed or mid-flow customer). carrierCheckSection itself is
+    // re-derived from whether termsConsentSection is already visible —
+    // not a separate flag — so a dashboard re-poll while still
+    // "unsubscribed" doesn't re-show the carrier form on top of an
+    // already-completed one.
+    if (subscribeForm && state !== "unsubscribed") {
+      subscribeForm.hidden = true;
     }
-    if (priceNote) {
-      priceNote.hidden = state !== "unsubscribed";
+    if (termsConsentSection && state !== "unsubscribed") {
+      termsConsentSection.hidden = true;
     }
-    if (stripeReassurance) {
-      stripeReassurance.hidden = state !== "unsubscribed";
+    if (carrierCheckSection) {
+      const alreadyPassed = !!(termsConsentSection && !termsConsentSection.hidden);
+      carrierCheckSection.hidden = state !== "unsubscribed" || alreadyPassed;
+    }
+    if (stripeReassurance && state !== "unsubscribed") {
+      stripeReassurance.hidden = true;
     }
     if (confirmingSpinner) {
       confirmingSpinner.hidden = state !== "confirming";
@@ -2544,10 +2634,180 @@
   }
   // TEST-EXTRACT-END: handleSubscribeFormSubmit
 
+  // --- Carrier compatibility check (before payment) ---
+  //
+  // Mirrors mobile/app/(setup)/device-picker.tsx exactly: device type
+  // (mobile/landline) -> (mobile only) network -> (only if the backend
+  // says it affects eligibility) tariff. No carrier classification logic
+  // lives in this file — every verdict comes from
+  // POST /billing/carrier-compatibility (services/providerPolicy.js).
+  // Landline retains its own existing journey (deviceTypeSelect further
+  // down this page, used for the activation code after payment) and
+  // never goes through this network/tariff check at all.
+  const carrierCheckSectionEl = document.getElementById("carrierCheckSection");
+  const carrierDeviceMobileEl = document.getElementById("carrierDeviceMobile");
+  const carrierNetworkRowEl = document.getElementById("carrierNetworkRow");
+  const carrierNetworkSelectEl = document.getElementById("carrierNetworkSelect");
+  const carrierTariffRowEl = document.getElementById("carrierTariffRow");
+  const carrierTariffSelectEl = document.getElementById("carrierTariffSelect");
+  const carrierCheckErrorEl = document.getElementById("carrierCheckError");
+  const carrierBlockedMessageEl = document.getElementById("carrierBlockedMessage");
+  const checkCarrierButtonEl = document.getElementById("checkCarrierButton");
+  const termsConsentSectionEl = document.getElementById("termsConsentSection");
+  const agreeTermsCheckboxEl = document.getElementById("agreeTermsCheckbox");
+  const startImmediatelyCheckboxEl = document.getElementById("startImmediatelyCheckbox");
+  const termsConsentErrorEl = document.getElementById("termsConsentError");
   const subscribeFormEl = document.getElementById("subscribeForm");
+  const stripeReassuranceEl = document.getElementById("stripeReassurance");
+
+  document.querySelectorAll('input[name="carrierDeviceType"]').forEach(function (radio) {
+    radio.addEventListener("change", function () {
+      const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
+      if (carrierNetworkRowEl) carrierNetworkRowEl.hidden = !isMobile;
+      if (carrierTariffRowEl) carrierTariffRowEl.hidden = true;
+    });
+  });
+
+  // Reveals payment (termsConsentSection + subscribeForm) once carrier
+  // compatibility is confirmed. Landline is unaffected by
+  // providerPolicy.js entirely and proceeds straight through.
+  function handleCarrierCheckSuccess() {
+    if (carrierCheckSectionEl) carrierCheckSectionEl.hidden = true;
+    if (termsConsentSectionEl) termsConsentSectionEl.hidden = false;
+    if (subscribeFormEl) subscribeFormEl.hidden = false;
+    if (stripeReassuranceEl) stripeReassuranceEl.hidden = false;
+  }
+
+  async function evaluateCarrierCompatibility() {
+    if (carrierCheckErrorEl) carrierCheckErrorEl.hidden = true;
+    if (carrierBlockedMessageEl) carrierBlockedMessageEl.hidden = true;
+
+    const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
+    if (!isMobile) {
+      handleCarrierCheckSuccess();
+      return;
+    }
+
+    const provider = carrierNetworkSelectEl ? carrierNetworkSelectEl.value : "";
+    if (!provider) {
+      if (carrierCheckErrorEl) {
+        carrierCheckErrorEl.textContent = "Please choose your mobile network.";
+        carrierCheckErrorEl.hidden = false;
+      }
+      return;
+    }
+
+    const tariffType = carrierTariffRowEl && !carrierTariffRowEl.hidden && carrierTariffSelectEl
+      ? carrierTariffSelectEl.value
+      : undefined;
+
+    try {
+      const response = await fetch("/billing/carrier-compatibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: provider, tariffType: tariffType }),
+      });
+      const result = await response.json();
+
+      if (result.reason === "tariff_type_required") {
+        if (carrierTariffRowEl) carrierTariffRowEl.hidden = false;
+        return;
+      }
+
+      if (result.canProceedToPayment) {
+        handleCarrierCheckSuccess();
+        return;
+      }
+
+      if (carrierBlockedMessageEl) {
+        carrierBlockedMessageEl.textContent =
+          result.reason ||
+          "We're still confirming support for your network. We don't want to take payment until we're sure Home Call Guard will work for you. Contact support for help.";
+        carrierBlockedMessageEl.hidden = false;
+      }
+    } catch (err) {
+      if (carrierCheckErrorEl) {
+        carrierCheckErrorEl.textContent = "We couldn't check your network. Please check your connection and try again.";
+        carrierCheckErrorEl.hidden = false;
+      }
+    }
+  }
+
+  if (checkCarrierButtonEl) {
+    checkCarrierButtonEl.addEventListener("click", evaluateCarrierCompatibility);
+  }
+
+  // Only ever used on the rare defense-in-depth-blocked/network-error
+  // path above (handleSubscribeFormSubmit itself is never un-done on the
+  // normal path — a real navigation to Stripe follows immediately, so
+  // there's nothing to reset).
+  function resetSubscribeButton() {
+    const btn = subscribeFormEl && subscribeFormEl.querySelector("button[type=submit]");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Subscribe & pay £4.99/month now";
+    }
+  }
+
   if (subscribeFormEl) {
-    subscribeFormEl.addEventListener("submit", function () {
+    subscribeFormEl.addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      if (termsConsentErrorEl) termsConsentErrorEl.hidden = true;
+
+      if (!agreeTermsCheckboxEl || !agreeTermsCheckboxEl.checked) {
+        if (termsConsentErrorEl) {
+          termsConsentErrorEl.textContent = "Please agree to the Terms & Conditions and Privacy Policy before continuing.";
+          termsConsentErrorEl.hidden = false;
+        }
+        return;
+      }
+      if (!startImmediatelyCheckboxEl || !startImmediatelyCheckboxEl.checked) {
+        if (termsConsentErrorEl) {
+          termsConsentErrorEl.textContent = "Please confirm you'd like your protection to start right away before continuing.";
+          termsConsentErrorEl.hidden = false;
+        }
+        return;
+      }
+
       handleSubscribeFormSubmit(subscribeFormEl);
+
+      // Defense-in-depth re-check immediately before the real Stripe
+      // redirect (same reasoning as the mobile app's own re-check in
+      // subscribe.tsx) + record Terms acceptance, then let the real
+      // navigation to /billing/create-checkout-session proceed. Both are
+      // fire-and-forget from the browser's perspective in the sense that
+      // create-checkout-session performs its own authoritative carrier
+      // check server-side regardless — this just avoids sending an
+      // already-known-ineligible household through a Stripe round trip
+      // only to bounce back.
+      fetch("/billing/carrier-compatibility")
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.canProceedToPayment) {
+            resetSubscribeButton();
+            if (termsConsentErrorEl) {
+              termsConsentErrorEl.textContent =
+                result.reason || "Your network isn't supported yet. Please go back and check your network.";
+              termsConsentErrorEl.hidden = false;
+            }
+            return;
+          }
+          fetch("/billing/terms-acceptance", { method: "POST" }).catch(function () {}).finally(function () {
+            subscribeFormEl.submit();
+          });
+        })
+        .catch(function () {
+          // Couldn't re-verify — fail closed rather than silently
+          // skipping the check; create-checkout-session still enforces
+          // this server-side either way, but don't pretend this
+          // succeeded.
+          resetSubscribeButton();
+          if (termsConsentErrorEl) {
+            termsConsentErrorEl.textContent = "We couldn't confirm your network. Please check your connection and try again.";
+            termsConsentErrorEl.hidden = false;
+          }
+        });
     });
   }
 
@@ -2572,6 +2832,13 @@
     } else if (kind === "already_active") {
       el.textContent = "You're already subscribed — no need to check out again.";
       el.classList.remove("checkout-banner-error");
+      el.hidden = false;
+    } else if (kind === "carrier_incompatible") {
+      // Belt-and-braces only — normally caught by the carrier check
+      // before the button is ever shown; this covers the rare case of
+      // reaching create-checkout-session directly (e.g. a stale tab).
+      el.textContent = "We can't take payment yet — your network hasn't been confirmed as compatible. Please check your network again below.";
+      el.classList.add("checkout-banner-error");
       el.hidden = false;
     } else if (kind === "membership_error") {
       el.textContent = "We couldn't open your membership settings just now. Please try again.";
