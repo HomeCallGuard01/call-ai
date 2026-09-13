@@ -562,6 +562,17 @@ function toClientCall(call) {
     status: call.status,
     result: call.result,
     time: call.created_at,
+    // 2026-09-13: exposes the same fact database/calls.js's
+    // recordMonitoringOutcome already persists (terminated_by_system) —
+    // a call that connected as "SAFE" can still be terminated later by
+    // live monitoring once real risk is detected mid-call, and `result`
+    // is deliberately never retroactively rewritten (see
+    // recordMonitoringOutcome's own comment). Until now no client ever
+    // saw this second fact at all, so a genuinely-terminated call looked
+    // identical to an ordinary all-clear one. Purely additive — every
+    // existing field/semantic above is unchanged, and this is a plain
+    // boolean derived from the same row, never new detection logic.
+    terminatedBySystem: Boolean(call.terminated_by_system),
   };
 }
 
