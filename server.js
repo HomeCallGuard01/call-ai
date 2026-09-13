@@ -27,7 +27,7 @@ const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const {
   resolveForwardingDestination,
   decideCallDeliveryPlan,
-  isVoiceClientReachable,
+  hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
 } = require("./services/callRouting");
 const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
@@ -247,9 +247,15 @@ function normaliseNumber(number) {
 // currently has any landline-specific branch.
 function dialHouseholdOrFailClosed(twiml, household) {
   const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
-  const voiceClientReachable = isVoiceClientReachable(
-    household && household.voice_client_registered_at,
-    new Date()
+  // 2026-09-13: renamed from isVoiceClientReachable — no longer a
+  // time-windowed check. See services/callRouting.js's
+  // hasVoiceClientRegistrationHistory for the full architecture
+  // correction (Twilio's push-registration binding lasts ~1 year,
+  // independent of the ~1-hour Access Token used to establish it; a
+  // household that registered hours or days ago must still be dialled
+  // normally, not pre-emptively refused).
+  const voiceClientReachable = hasVoiceClientRegistrationHistory(
+    household && household.voice_client_registered_at
   );
   const plan = decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable });
 
