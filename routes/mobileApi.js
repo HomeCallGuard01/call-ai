@@ -26,8 +26,10 @@ const {
   getHouseholdByAuthUserId,
   markVoiceClientRegistered,
   setHouseholdCarrierCompatibility,
+  recordTermsAcceptance,
 } = require("../database/households");
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
+const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus } = require("../services/callRouting");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
@@ -158,6 +160,51 @@ router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (r
   }
 });
 
+// GET /api/v1/onboarding/carrier-compatibility
+//
+// Read-only re-evaluation of whatever carrier/tariff is already stored
+// for this household (no body, nothing written) — the defense-in-depth
+// check subscribe.tsx runs immediately before EITHER purchase path
+// (Stripe or iOS RevenueCat/StoreKit). Android/web already has a real
+// server-side block at the point of payment (create-checkout-session's
+// own eligibility check below); iOS has no equivalent, since Apple's
+// StoreKit purchase can't be intercepted server-side beforehand — this
+// route exists so the client can apply the same gate to both platforms
+// at the actual moment of purchase, not just rely on screen order being
+// impossible to bypass (which real app-navigation edge cases — killed-
+// and-resumed mid-flow, back/forward — don't reliably guarantee).
+router.get("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (req, res) => {
+  const evaluation = evaluateHouseholdCheckoutEligibility(req.household);
+  res.json({
+    status: evaluation.status,
+    canProceedToPayment: evaluation.canProceedToPayment,
+    reason: evaluation.reason,
+  });
+});
+
+// POST /api/v1/onboarding/terms-acceptance
+//
+// Durable evidence that the customer actively agreed to the Terms &
+// Conditions / acknowledged the Privacy Policy before payment — see
+// migration 039's header for why this is a separate append-only table
+// rather than a households column. requireAuthApi only, same reasoning
+// as the carrier-compatibility route above: must be reachable before
+// the household is entitled.
+router.post("/api/v1/onboarding/terms-acceptance", requireAuthApi, async (req, res) => {
+  try {
+    const acceptedAt = await recordTermsAcceptance(
+      req.household.id,
+      TERMS_VERSION,
+      PRIVACY_VERSION,
+      "subscription_terms"
+    );
+    res.json({ acceptedAt, termsVersion: TERMS_VERSION, privacyVersion: PRIVACY_VERSION });
+  } catch (err) {
+    console.error("RECORD TERMS ACCEPTANCE ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 // POST /api/v1/billing/create-checkout-session
 //
 // Mobile equivalent of routes/billing.js's /billing/create-checkout-session
@@ -188,9 +235,11 @@ router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (re
   // A household that hasn't captured a carrier yet (carrier_provider_key
   // null) is evaluated identically to an unrecognised provider —
   // 'unverified', blocked — never silently treated as compatible by
-  // default. This is the actual enforcement point; the onboarding route
-  // above only ever gives an early, non-authoritative preview of this
-  // same evaluation.
+  // default. This is the actual enforcement point for Android/web; the
+  // onboarding route above only ever gives an early, non-authoritative
+  // preview of this same evaluation. (iOS purchases don't reach this
+  // route at all — see mobile/app/(setup)/subscribe.tsx's own
+  // pre-purchase eligibility check for how iOS is gated instead.)
   const eligibility = evaluateHouseholdCheckoutEligibility(req.household);
   if (!eligibility.canProceedToPayment) {
     return res.status(403).json({

@@ -179,6 +179,51 @@ export interface SyncContactsResponse {
   message: string;
 }
 
+// Mirrors services/providerPolicy.js's PROVIDER_POLICY key set (backend
+// is the single source of truth for compatibility verdicts — this list
+// exists only to render the picker; an unrecognised/omitted key already
+// resolves safely server-side to PROVIDER_POLICY.other, unverified,
+// blocked). Update this list if providerPolicy.js's keys change; nothing
+// breaks if it drifts, a stale key just falls back to "other" instead of
+// showing its own label.
+export type MobileCarrierKey =
+  | "ee"
+  | "o2"
+  | "vodafone"
+  | "three"
+  | "giffgaff"
+  | "tesco"
+  | "sky"
+  | "id_mobile"
+  | "smarty"
+  | "voxi"
+  | "lebara"
+  | "lyca"
+  | "talkmobile"
+  | "asda"
+  | "1pmobile"
+  | "other";
+
+export type TariffType = "pay_monthly" | "payg";
+
+// POST /api/v1/onboarding/carrier-compatibility — always 200, never
+// throws (see routes/mobileApi.js): the "isn't compatible" case is a
+// normal, expected response shape, not an error. reason === "tariff_type_required"
+// is the one sentinel the client acts on directly — the backend, not a
+// client-side copy of providerPolicy.js, decides when tariff matters.
+export interface CarrierCompatibilityResponse {
+  status: "compatible" | "provider_specific" | "incompatible" | "unverified";
+  canProceedToPayment: boolean;
+  reason: string | null;
+}
+
+// POST /api/v1/onboarding/terms-acceptance
+export interface TermsAcceptanceResponse {
+  acceptedAt: string;
+  termsVersion: string;
+  privacyVersion: string;
+}
+
 export interface ApiErrorResponse {
   error: string;
   message?: string;

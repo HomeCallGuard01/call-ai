@@ -544,14 +544,14 @@ function check(condition, message) {
     'stepIndexForScreen: subscribe and contacts map to their own distinct macro-steps'
   );
   check(
-    stepIndexForScreen('device-picker') === 3 &&
-      stepIndexForScreen('activate') === 3 &&
-      stepIndexForScreen('verify') === 3,
-    'stepIndexForScreen: device-picker, activate, and verify all collapse into the same visible "Activate" macro-step'
+    stepIndexForScreen('activate') === 3 && stepIndexForScreen('verify') === 3,
+    'stepIndexForScreen: activate and verify collapse into the same visible "Activate" macro-step'
   );
   check(
-    stepIndexForScreen('welcome') === null && stepIndexForScreen('complete') === null,
-    'stepIndexForScreen: screens outside the guided flow (welcome, complete) have no step number at all'
+    stepIndexForScreen('welcome') === null &&
+      stepIndexForScreen('complete') === null &&
+      stepIndexForScreen('device-picker') === null,
+    'stepIndexForScreen: screens outside the guided numbered flow (welcome, complete, and device-picker — now a pre-payment eligibility check, not a numbered step) have no step number at all'
   );
   check(SETUP_STEPS.length === 3, 'SETUP_STEPS: exactly three macro-steps are shown, matching the progress indicator');
 

@@ -23,6 +23,10 @@ import type {
   VoiceRegisteredResponse,
   SyncContactsResponse,
   DeleteAccountResponse,
+  MobileCarrierKey,
+  TariffType,
+  CarrierCompatibilityResponse,
+  TermsAcceptanceResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -172,6 +176,50 @@ export async function resendConfirmationEmail(email: string): Promise<ResendConf
     body: JSON.stringify({ email }),
   });
   return parseJsonOrThrow<ResendConfirmationResponse>(response);
+}
+
+// POST /api/v1/onboarding/carrier-compatibility — always 200 (see
+// CarrierCompatibilityResponse), never throws for "isn't compatible".
+// Called twice when the backend reports reason === "tariff_type_required":
+// once with just provider to discover that, once more with tariffType
+// once the customer has answered. Persists the raw selection server-side
+// on every call (see services/providerPolicy.js), so re-calling with a
+// corrected answer is always safe.
+export async function checkCarrierCompatibility(
+  provider: MobileCarrierKey,
+  tariffType?: TariffType,
+  accessToken?: string
+): Promise<CarrierCompatibilityResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/onboarding/carrier-compatibility",
+    { method: "POST", body: JSON.stringify({ provider, tariffType }) },
+    accessToken
+  );
+  return parseJsonOrThrow<CarrierCompatibilityResponse>(response);
+}
+
+// GET /api/v1/onboarding/carrier-compatibility — read-only re-evaluation
+// of whatever was already captured, no body. Used by subscribe.tsx as a
+// defense-in-depth check immediately before either purchase path — see
+// that route's own comment in routes/mobileApi.js for why this matters
+// specifically for iOS, which has no server-side equivalent to
+// create-checkout-session's own block.
+export async function fetchCarrierCompatibility(accessToken?: string): Promise<CarrierCompatibilityResponse> {
+  const response = await authorizedFetch("/api/v1/onboarding/carrier-compatibility", {}, accessToken);
+  return parseJsonOrThrow<CarrierCompatibilityResponse>(response);
+}
+
+// POST /api/v1/onboarding/terms-acceptance — durable evidence write, see
+// migration 029. Called once, right before either purchase path is
+// triggered from Subscribe, never before (no acceptance record should
+// exist for a purchase the customer never actually attempted).
+export async function acceptTerms(accessToken?: string): Promise<TermsAcceptanceResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/onboarding/terms-acceptance",
+    { method: "POST" },
+    accessToken
+  );
+  return parseJsonOrThrow<TermsAcceptanceResponse>(response);
 }
 
 // "already_active" (409) is a normal, expected outcome (e.g. the

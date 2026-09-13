@@ -155,8 +155,8 @@ check(
 );
 
 check(
-  source.includes('fetchActivationInstructions(params.deviceType, params.provider, session?.access_token)'),
-  'fetchActivationInstructions is called with exactly deviceType, provider, and the access token — the removed protectedNumber argument is gone from the call site, not just unused'
+  source.includes('fetchActivationInstructions(resolvedDevice.deviceType, resolvedDevice.provider, session?.access_token)'),
+  'fetchActivationInstructions is called with exactly the resolved deviceType, provider, and the access token (resolvedDevice, not route params — 2026-09-13: device-picker.tsx is no longer adjacent to this screen) — the removed protectedNumber argument is gone from the call site, not just unused'
 );
 
 check(
@@ -233,9 +233,31 @@ check(
   'device-picker.tsx no longer collects, validates, or sends a protectedNumber for the (now-obsolete) forwarding-loop check'
 );
 
+// --- 2026-09-13 (carrier-onboarding-gate): device-picker.tsx relocated
+// to run BEFORE Subscribe — iPhone/Android now goes to a mobile-carrier
+// step (not straight to activate.tsx), and only reaches Subscribe once
+// services/providerPolicy.js confirms the carrier can proceed to
+// payment. Landline is unaffected (no carrier policy applies to it) and
+// still goes straight to Subscribe after picking a provider. ---
+
 check(
-  devicePickerSource.includes('router.push({ pathname: "/(setup)/activate", params: { deviceType: type } })'),
-  'selecting iPhone or Android navigates straight to the activation screen with just deviceType — no intermediate number-entry step, mirroring how landline already goes straight to activate after picking a provider'
+  !devicePickerSource.includes('router.push({ pathname: "/(setup)/activate", params: { deviceType: type } })'),
+  'selecting iPhone/Android no longer navigates straight to activate.tsx — it now goes to the mobile-carrier check first (this is the actual carrier-onboarding-gate redesign, not a regression)'
+);
+
+check(
+  devicePickerSource.includes('checkCarrierCompatibility') && devicePickerSource.includes('MOBILE_CARRIERS'),
+  'device-picker.tsx calls the real carrier-compatibility endpoint and renders the full launch carrier list for iPhone/Android, rather than skipping the check'
+);
+
+check(
+  devicePickerSource.includes('router.push("/(setup)/subscribe")'),
+  'a compatible carrier (or a landline provider) proceeds to Subscribe — carrier compatibility is established before payment, not after'
+);
+
+check(
+  devicePickerSource.includes('tariff_type_required'),
+  'device-picker.tsx only asks the tariff question when the backend says it actually affects eligibility, never unconditionally'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

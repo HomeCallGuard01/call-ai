@@ -84,7 +84,12 @@ export default function SetupWelcome() {
         <Step number={3} label="Activate" detail="Turn on call forwarding — we'll confirm it's working" />
       </View>
 
-      <PrimaryButton label="Let's get started" onPress={() => router.push("/(setup)/subscribe")} />
+      {/* device-picker (device + carrier/tariff check) now runs before
+          Subscribe, not after — carrier compatibility must be established
+          before payment. A NotEntitledError above means this customer has
+          no active subscription yet, so their carrier hasn't been
+          captured either; start there rather than at Subscribe. */}
+      <PrimaryButton label="Let's get started" onPress={() => router.push("/(setup)/device-picker")} />
     </Screen>
   );
 }

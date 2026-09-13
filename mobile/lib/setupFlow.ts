@@ -49,12 +49,14 @@ export function resumeSetupAt(state: SetupResumeState): SetupResumeTarget {
 
 // Which macro-step (1-indexed, matching SETUP_STEPS) a given setup
 // screen belongs to, for the progress indicator. Screens not part of
-// the guided flow (welcome, confirmation, complete) return null —
-// the indicator simply isn't shown on those.
+// the guided flow (welcome, confirmation, complete) return null — the
+// indicator simply isn't shown on those. device-picker moved here
+// (2026-09-13) too: it now runs before Subscribe as a pre-flight
+// device/carrier-compatibility check, not as part of the numbered
+// "Activate" step — see that screen's own header comment.
 const STEP_BY_SCREEN: Record<string, number> = {
   subscribe: 1,
   contacts: 2,
-  "device-picker": 3,
   activate: 3,
   verify: 3,
 };
