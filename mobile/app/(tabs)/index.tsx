@@ -35,13 +35,27 @@ import { colors, spacing, typography } from "../../lib/theme";
 // protection status we don't actually have. Fail closed, not open.
 type ScreenState = "loading" | "ready" | "unavailable" | "not_entitled";
 
-// Plain-English translation of the two raw fields the backend returns for
-// an activity row (status: "Known"/"Unknown", result: "SAFE"/"SCAM"/null)
-// — never shown as jargon, never a technical term. `isWarning` drives the
-// one bit of colour-coding on the row.
+// Plain-English translation of the raw fields the backend returns for an
+// activity row (status: "Known"/"Unknown", result: "SAFE"/"SCAM"/null,
+// terminatedBySystem: boolean) — never shown as jargon, never a technical
+// term, never the actual detection signal/keywords. `isWarning` drives
+// the one bit of colour-coding on the row.
+//
+// terminatedBySystem is checked BEFORE result (2026-09-13 fix): a call
+// live monitoring stopped mid-call for detected risk still has
+// result: "SAFE" (the pre-monitoring optimistic value — see backend's
+// database/calls.js recordMonitoringOutcome, which deliberately never
+// rewrites result), so checking result alone previously mislabelled a
+// genuinely-stopped high-risk call as "all clear". Missing/undefined
+// terminatedBySystem (a historic row, or an older cached response) is
+// treated the same as false — falls through to the existing checks
+// exactly as before this fix.
 function describeActivity(item: DashboardActivityItem): { label: string; isWarning: boolean } {
   if (item.status === "Known") {
     return { label: "Trusted contact called", isWarning: false };
+  }
+  if (item.terminatedBySystem === true) {
+    return { label: "High risk — call stopped", isWarning: true };
   }
   if (item.result === "SCAM") {
     return { label: "Blocked a suspected scam call", isWarning: true };

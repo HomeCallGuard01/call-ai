@@ -29,6 +29,15 @@ export interface DashboardActivityItem {
   status: string;
   result: string | null;
   time: string;
+  // 2026-09-13: true when live monitoring terminated this call mid-call
+  // for detected risk. `result` is deliberately never rewritten by that
+  // termination (still "SAFE", its pre-monitoring value — see backend's
+  // database/calls.js recordMonitoringOutcome), so this is the only field
+  // that distinguishes a genuinely-stopped high-risk call from an
+  // ordinary all-clear one. Optional so a historic/cached response
+  // missing this field is still valid — treat missing/undefined the same
+  // as false, never a crash.
+  terminatedBySystem?: boolean;
 }
 
 export interface DashboardResponse {

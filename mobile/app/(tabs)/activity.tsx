@@ -13,9 +13,21 @@ import { useAuth } from "../../lib/AuthContext";
 import type { DashboardActivityItem } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
 
+// terminatedBySystem is checked BEFORE result (2026-09-13 fix) — same
+// reasoning and precedence as lib/app/(tabs)/index.tsx's own
+// describeActivity: result stays "SAFE" even for a call live monitoring
+// genuinely stopped mid-call, so result alone previously mislabelled a
+// stopped high-risk call as "no concerns". Uses the same "High risk —
+// call stopped" wording as the Home screen so a customer sees a
+// consistent description of the same call on either screen. Missing/
+// undefined terminatedBySystem (a historic row) falls through exactly as
+// before this fix.
 function describeOutcome(item: DashboardActivityItem): { text: string; tone: "neutral" | "positive" | "warning" } {
   if (item.status === "Known") {
     return { text: "Rang straight through", tone: "neutral" };
+  }
+  if (item.terminatedBySystem === true) {
+    return { text: "High risk — call stopped", tone: "warning" };
   }
   if (item.result === "SCAM") {
     return { text: "Screened — high risk, call ended", tone: "warning" };
