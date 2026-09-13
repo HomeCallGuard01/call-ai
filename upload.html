@@ -2230,8 +2230,22 @@
   // Safari does not enable it for real customers, so on every other
   // browser this option simply never appears, rather than showing
   // something broken or unavailable.
+  // TEST-EXTRACT-START: shouldShowPhoneContactPicker
+  // Pure decision, extracted so a regression test can assert it directly
+  // rather than only by inspecting page markup. Feature-detected per
+  // MDN's own recommended check ("contacts" in navigator) — matches
+  // Chrome's own developer docs for the Contact Picker API. iOS Safari
+  // does not implement this API at all (confirmed against MDN/caniuse,
+  // not assumed), so hasContactsApi is false there and this must return
+  // false — never true "just in case," since a true here directly
+  // controls whether a real customer is shown a control that would
+  // silently fail if tapped.
+  function shouldShowPhoneContactPicker(hasContactsApi) {
+    return !!hasContactsApi;
+  }
+  // TEST-EXTRACT-END: shouldShowPhoneContactPicker
   const pickPhoneContactsOptionEl = document.getElementById("pickPhoneContactsOption");
-  if (pickPhoneContactsOptionEl && "contacts" in navigator) {
+  if (pickPhoneContactsOptionEl && shouldShowPhoneContactPicker("contacts" in navigator)) {
     pickPhoneContactsOptionEl.hidden = false;
   }
 
