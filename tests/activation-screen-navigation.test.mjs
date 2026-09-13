@@ -1,0 +1,242 @@
+// Coverage for the Activation screen's provisioning-wait UX (2026-08-08),
+// second pass — a real iPhone test found the first pass (the polling
+// stage-list screen) still trapped the customer: a genuinely "failed"
+// Twilio provisioning status routed to an entirely separate screen with
+// no path back to the dashboard, only "Change device" (which just
+// returns to the device picker, still mid-setup).
+//
+// Two layers, matching this repo's established pattern for React Native
+// screens with no rendering harness available (see
+// contact-picker-feature-detection.test.mjs for the same approach
+// applied to upload.html):
+//   1. Pure decision logic (provisioningExplanation,
+//      computeProvisioningStages, shouldShowManualRetry), imported
+//      directly and exercised with real inputs.
+//   2. A static check of the real screen's source, confirming the
+//      structural properties a renderer would otherwise verify: the
+//      dashboard link appears on every state, the old dead-end failed
+//      screen is gone, the stage list is rendered once (not duplicated
+//      per state), and "Check again" only ever appears behind the
+//      polling-failure guard.
+//
+// Run with: node tests/activation-screen-navigation.test.mjs
+
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  computeProvisioningStages,
+  provisioningExplanation,
+  shouldShowManualRetry,
+  PROVISIONING_EXPLANATION_NORMAL,
+  PROVISIONING_EXPLANATION_SLOW_OR_FAILED,
+} from '../mobile/lib/provisioningStages.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let failures = 0;
+
+function check(condition, message) {
+  if (condition) {
+    console.log(`✓ ${message}`);
+  } else {
+    console.error(`✗ ${message}`);
+    failures++;
+  }
+}
+
+// --- Pure logic: wording adapts, stage list does not ---
+
+check(
+  provisioningExplanation(null) === PROVISIONING_EXPLANATION_NORMAL,
+  'provisioningExplanation: before the first poll resolves (null), uses the normal "you don\'t need to do anything" wording, not an alarming one'
+);
+check(
+  provisioningExplanation('pending') === PROVISIONING_EXPLANATION_NORMAL,
+  'provisioningExplanation: pending uses the normal wording'
+);
+check(
+  provisioningExplanation('active') === PROVISIONING_EXPLANATION_NORMAL,
+  'provisioningExplanation: active (about to auto-advance) still uses the normal wording'
+);
+check(
+  provisioningExplanation('failed') === PROVISIONING_EXPLANATION_SLOW_OR_FAILED,
+  'provisioningExplanation: failed switches to "taking a little longer than usual" — never a separate "something is wrong" message'
+);
+
+const pendingStages = computeProvisioningStages('pending');
+const failedStages = computeProvisioningStages('failed');
+check(
+  JSON.stringify(pendingStages) === JSON.stringify(failedStages),
+  'computeProvisioningStages: pending and failed produce the exact same stage list — the blocked step stays visibly ⏳ either way, never a different or missing stage list for a failed status'
+);
+check(
+  failedStages.find(s => s.key === 'number').state === 'in_progress',
+  'computeProvisioningStages: a failed status never marks the blocked stage "done" — stays truthfully in progress'
+);
+
+check(shouldShowManualRetry(0) === false, 'shouldShowManualRetry: no manual retry while polling itself is working, regardless of provisioning status');
+check(shouldShowManualRetry(1) === false, 'shouldShowManualRetry: one dropped poll is not enough to show a manual retry');
+check(shouldShowManualRetry(2) === true, 'shouldShowManualRetry: repeated poll failures are the one case a manual retry is shown');
+
+// --- Static structure check of the real screen source ---
+
+const source = readFileSync(
+  path.join(__dirname, '..', 'mobile', 'app', '(setup)', 'activate.tsx'),
+  'utf8'
+);
+
+const backToDashboardUsages = (source.match(/<BackToDashboardLink\s*\/>/g) || []).length;
+check(
+  backToDashboardUsages >= 4,
+  `BackToDashboardLink is rendered on every screen state — loading, waiting/failed, error, and ready (found ${backToDashboardUsages} usages, expected at least 4)`
+);
+
+check(
+  source.includes('router.replace("/(tabs)")'),
+  'BackToDashboardLink navigates to the real Home dashboard route, not just back within the setup flow'
+);
+
+check(
+  !source.includes("We're sorting out one part of your setup"),
+  'the old separate, dead-end "failed" screen (no stage list, no dashboard link, only Change device) no longer exists'
+);
+
+const stageListRenders = (source.match(/stages\.map\(/g) || []).length;
+check(
+  stageListRenders === 1,
+  `the stage list is rendered from exactly one place, shared by both waiting and failed states, not duplicated per state (found ${stageListRenders})`
+);
+
+const checkAgainUsages = (source.match(/label="Check again"/g) || []).length;
+check(
+  checkAgainUsages === 1,
+  `"Check again" appears exactly once in the whole screen (found ${checkAgainUsages})`
+);
+
+const pollingBrokenGuardIndex = source.indexOf('pollingBroken &&');
+const checkAgainIndex = source.indexOf('label="Check again"');
+const between = pollingBrokenGuardIndex !== -1 && checkAgainIndex !== -1
+  ? source.slice(pollingBrokenGuardIndex, checkAgainIndex)
+  : '';
+check(
+  pollingBrokenGuardIndex !== -1 &&
+    checkAgainIndex > pollingBrokenGuardIndex &&
+    between.length < 500 &&
+    !between.includes('function ') &&
+    !between.includes('return ('),
+  '"Check again" is only ever reachable behind the pollingBroken guard — never shown during normal provisioning, only when polling itself is failing'
+);
+
+// --- Fail-safe #1 (2026-08-08/09): undo code shown ---
+
+check(
+  source.includes('UndoForwardingSection') && source.includes('instructions.cancelCode'),
+  'the real cancel code from the backend response is shown on the activation screen — never a hardcoded/invented universal code'
+);
+
+// --- Obsolete forwarding-loop check removed (2026-09-12 physical-test
+// finding): the "What's this phone's number?" screen and its
+// forwarding_loop block belonged to the old PSTN dual-dial delivery
+// architecture. The current client-only Voice SDK delivery path never
+// constructs a PSTN target for any household, so the loop this
+// protected against is no longer possible — and the check was producing
+// a real, confirmed false-positive block. The customer must never need
+// a second/different number to reach this screen. ---
+
+check(
+  !source.includes('forwardingLoopError') && !source.includes('err.code === "forwarding_loop"'),
+  'the obsolete forwarding_loop error state no longer exists on this screen — it belonged to the PSTN dual-dial architecture PR #24 already removed'
+);
+
+check(
+  !source.includes('protectedNumber'),
+  'the screen no longer reads or sends a protectedNumber param at all — no second/different callback number is required by the setup flow'
+);
+
+check(
+  source.includes('fetchActivationInstructions(params.deviceType, params.provider, session?.access_token)'),
+  'fetchActivationInstructions is called with exactly deviceType, provider, and the access token — the removed protectedNumber argument is gone from the call site, not just unused'
+);
+
+check(
+  !source.includes('Choose a different number'),
+  'the obsolete "Choose a different number" screen no longer exists'
+);
+
+// --- The allocated HCG number is shown as its own plain value (2026-09-12) ---
+
+check(
+  source.includes('extractForwardingNumberFromCode') && source.includes('formatUkPhoneForDisplay'),
+  'the screen derives and displays the plain HCG forwarding number from the activation code, rather than only ever showing it embedded in the raw MMI string'
+);
+
+check(
+  source.includes('Your Home Call Guard number'),
+  'the plain forwarding number is shown under a clear, non-technical label'
+);
+
+{
+  const numberLabelIndex = source.indexOf('Your Home Call Guard number');
+  const codeBoxIndex = source.indexOf('styles.codeBox');
+  check(
+    numberLabelIndex !== -1 && codeBoxIndex !== -1 && numberLabelIndex < codeBoxIndex,
+    'the plain HCG number is presented before/separately from the carrier activation code, not mixed into it'
+  );
+}
+
+check(
+  source.includes('saveActivationDevice'),
+  'the activation screen persists which device/provider was used, so the cancel code stays reachable after setup (Account tab) rather than only existing on this one-time screen'
+);
+
+// --- Entitlement-timing race (2026-08-30, found during Build 8 production
+// testing): "We couldn't load your activation code" was shown for a
+// customer who had genuinely subscribed but whose entitlement hadn't
+// landed server-side yet — a 402 not_entitled, indistinguishable from a
+// real failure before this fix. Reuses the existing notProvisioned
+// state/polling machinery rather than adding a second, near-identical one. ---
+
+check(
+  source.includes('NotEntitledError') && source.includes('err instanceof NotEntitledError'),
+  'the screen recognises NotEntitledError as its own case, not a generic error'
+);
+
+const notEntitledIndex = source.indexOf('err instanceof NotEntitledError');
+const setNotProvisionedCalls = source.match(/setNotProvisioned\(true\)/g) || [];
+check(
+  notEntitledIndex !== -1 && setNotProvisionedCalls.length === 2,
+  `NotEntitledError reuses the same setNotProvisioned(true) state as not_provisioned, rather than introducing a separate screen (found ${setNotProvisionedCalls.length} call(s) to setNotProvisioned(true), expected 2: one for not_provisioned, one for NotEntitledError)`
+);
+
+const genericErrorIndex = source.indexOf('We couldn\'t load your activation code');
+check(
+  notEntitledIndex !== -1 && genericErrorIndex !== -1 && notEntitledIndex < genericErrorIndex,
+  'the NotEntitledError check is placed before the generic fallback error, so it actually intercepts this case rather than the fallback firing first'
+);
+
+// --- device-picker.tsx: the obsolete "What's this phone's number?"
+// screen is gone for iPhone/Android (2026-09-12 physical-test finding) ---
+
+const devicePickerSource = readFileSync(
+  path.join(__dirname, '..', 'mobile', 'app', '(setup)', 'device-picker.tsx'),
+  'utf8'
+);
+
+check(
+  !devicePickerSource.includes('accessibilityRole="header">What\'s this phone\'s number?'),
+  'device-picker.tsx no longer renders the "What\'s this phone\'s number?" screen — the customer never needs a second/different number to reach activation (the phrase may still appear in an explanatory code comment about why it was removed)'
+);
+
+check(
+  !devicePickerSource.includes('protectedNumber') && !devicePickerSource.includes('looksLikePhoneNumber'),
+  'device-picker.tsx no longer collects, validates, or sends a protectedNumber for the (now-obsolete) forwarding-loop check'
+);
+
+check(
+  devicePickerSource.includes('router.push({ pathname: "/(setup)/activate", params: { deviceType: type } })'),
+  'selecting iPhone or Android navigates straight to the activation screen with just deviceType — no intermediate number-entry step, mirroring how landline already goes straight to activate after picking a provider'
+);
+
+console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
+process.exitCode = failures === 0 ? 0 : 1;
