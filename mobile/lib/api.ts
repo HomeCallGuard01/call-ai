@@ -210,7 +210,7 @@ export async function fetchCarrierCompatibility(accessToken?: string): Promise<C
 }
 
 // POST /api/v1/onboarding/terms-acceptance — durable evidence write, see
-// migration 029. Called once, right before either purchase path is
+// migration 039. Called once, right before either purchase path is
 // triggered from Subscribe, never before (no acceptance record should
 // exist for a purchase the customer never actually attempted).
 export async function acceptTerms(accessToken?: string): Promise<TermsAcceptanceResponse> {

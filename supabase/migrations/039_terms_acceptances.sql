@@ -12,6 +12,20 @@
 --
 -- STATUS: DRAFT — NOT APPLIED.
 --
+-- Renumbered 029 → 039 (2026-09-13, canonical-release-base reconciliation):
+-- the carrier-onboarding-gate work was originally authored against a
+-- branch whose migration history stopped at 027, and picked the next
+-- two free numbers (028/029) without knowing that origin/main's own
+-- lineage — via PR #24 and the p0-batch1-carrier-policy-quarantine
+-- branch — had already claimed 028 (household_self_protecting), 029
+-- (anonymize_household_deletes_contacts_and_calls), and, crucially, 038
+-- for the functionally-identical household_carrier_compatibility
+-- migration this one depends on. This file is the only genuinely new
+-- migration from that work once reconciled against the correct lineage
+-- — the carrier-compatibility migration itself was dropped as a
+-- duplicate of the existing 038. See the release-lineage reconciliation
+-- analysis (2026-09-13) for the full migration table.
+--
 -- Deliberately minimal — no device fingerprinting, IP address, or other
 -- personal data beyond what's already collected elsewhere in this app.
 -- household_id is enough to identify who accepted; accepted_at + the two
@@ -90,7 +104,7 @@ begin
     select 1 from information_schema.tables
     where table_schema = 'public' and table_name = 'terms_acceptances'
   ) then
-    raise exception 'MIGRATION 029 VERIFICATION FAILED: terms_acceptances table missing';
+    raise exception 'MIGRATION 039 VERIFICATION FAILED: terms_acceptances table missing';
   end if;
 
   if not exists (
@@ -98,7 +112,7 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'record_terms_acceptance'
   ) then
-    raise exception 'MIGRATION 029 VERIFICATION FAILED: record_terms_acceptance function missing';
+    raise exception 'MIGRATION 039 VERIFICATION FAILED: record_terms_acceptance function missing';
   end if;
 end
 $$;

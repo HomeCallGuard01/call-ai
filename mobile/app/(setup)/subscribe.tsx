@@ -30,7 +30,7 @@
 // acceptance, and deliberately stays separate rather than being merged
 // into one tickbox covering two different legal facts). Unticked by
 // default; acceptTerms() (POST /api/v1/onboarding/terms-acceptance)
-// writes a durable, append-only evidence row (migration 029) the moment
+// writes a durable, append-only evidence row (migration 039) the moment
 // before either purchase path is triggered — never earlier, so no
 // acceptance record exists for a purchase the customer never attempted.
 import { useState, useRef, useEffect } from "react";
@@ -204,7 +204,7 @@ export default function Subscribe() {
         return;
       }
 
-      // Durable evidence write — see migration 029. Written once both
+      // Durable evidence write — see migration 039. Written once both
       // consent checkboxes are confirmed ticked and carrier eligibility
       // is confirmed, immediately before either purchase path actually
       // starts.

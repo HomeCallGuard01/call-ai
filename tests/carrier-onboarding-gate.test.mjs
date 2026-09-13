@@ -140,13 +140,13 @@ check(
 check(
   householdsSource.includes('async function setHouseholdCarrierCompatibility(householdId, providerKey, tariffType)') &&
     householdsSource.includes('supabaseAdmin.rpc("set_household_carrier_compatibility"'),
-  'setHouseholdCarrierCompatibility calls the real SECURITY DEFINER RPC (migration 028), not a direct table write'
+  'setHouseholdCarrierCompatibility calls the real SECURITY DEFINER RPC (migration 038, ported from p0-batch1-carrier-policy-quarantine), not a direct table write'
 );
 
 check(
   householdsSource.includes('async function recordTermsAcceptance(householdId, termsVersion, privacyVersion, acceptanceType)') &&
     householdsSource.includes('supabaseAdmin.rpc("record_terms_acceptance"'),
-  'recordTermsAcceptance calls the real SECURITY DEFINER RPC (migration 029), not a direct table write — every call inserts a new row, no update path exists'
+  'recordTermsAcceptance calls the real SECURITY DEFINER RPC (migration 039), not a direct table write — every call inserts a new row, no update path exists'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

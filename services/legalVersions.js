@@ -3,7 +3,7 @@
 // public/terms.html or public/privacy.html materially changes (a change
 // that affects what the customer is agreeing to — pricing, cancellation,
 // data handling — not a typo fix). Recorded verbatim into
-// terms_acceptances (migration 029) at the moment of acceptance, so a
+// terms_acceptances (migration 039) at the moment of acceptance, so a
 // later version bump never rewrites what an earlier customer actually
 // agreed to.
 const TERMS_VERSION = "2026-09-13";
