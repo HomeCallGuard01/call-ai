@@ -1,0 +1,34 @@
+-- Grant service_role UPDATE on calls — closes the recordMonitoringOutcome
+-- persistence gap found live on production, 2026-08-15.
+--
+-- STATUS: APPLIED — staging (tigwgmayeuisrxjjykqd) and production
+-- (psbzynxplxfbyrbdidmn), 2026-08-15. Verified on both via
+-- information_schema.role_table_grants, and on staging via a real
+-- insert-update-select-delete round trip using recordMonitoringOutcome's
+-- exact field shape (risk_score, decision_reason, warning_sent,
+-- terminated_by_system, termination_reason, terminated_at) — see
+-- docs/operations/HANDOVER_2026-08-15.md.
+--
+-- Root cause: migration 009_service_role_minimum_app_privileges.sql
+-- deliberately granted service_role only SELECT, INSERT on public.calls,
+-- because at the time no reachable code path updated calls via
+-- supabaseAdmin — the least-privilege rationale documented there was
+-- correct when written. That's no longer true: server.js's
+-- recordMonitoringOutcome() (added as part of the live-monitoring
+-- protection engine, commit f404e53) runs a real UPDATE on calls once a
+-- monitored call ends, to persist risk_score/decision_reason/
+-- warning_sent/terminated_by_system/termination_reason/terminated_at
+-- (migrations 024/025). Confirmed live in production Railway logs,
+-- 2026-08-15: every real call today failed this UPDATE with Postgres
+-- 42501 "permission denied for table calls" — the call itself is
+-- unaffected (recordMonitoringOutcome fails closed, logs and continues,
+-- exactly as its own code comment describes), but none of today's real
+-- calls' monitoring evidence has been persisted.
+--
+-- Scope deliberately narrow: UPDATE only, matching migration 009's own
+-- least-privilege model — recordMonitoringOutcome is the only new
+-- reachable supabaseAdmin code path on calls since that audit, and it
+-- only ever calls .update(), never .delete() or anything requiring
+-- DELETE/TRUNCATE/TRIGGER/REFERENCES.
+
+grant update on public.calls to service_role;
