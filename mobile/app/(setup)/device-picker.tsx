@@ -1,17 +1,44 @@
-// B3 — Device & provider picker. Per APP_VISUAL_SPECIFICATION.md: large
-// tappable icon-cards (not a dropdown — a visual, one-glance choice
-// reads as more premium and is faster to scan, regardless of who's
-// using it), auto-advances on selection. Purely a local routing
-// decision — no backend call needed, the choice only determines which
-// copy B4 shows.
+// Device + carrier-compatibility check. Relocated (2026-09-13) to run
+// BEFORE Subscribe/payment, not after — carrier compatibility must be
+// established before a customer is ever asked to pay (see the carrier-
+// onboarding-gate audit: this was previously step 3, well after payment,
+// which meant the checkout-time backend gate in routes/mobileApi.js was
+// the ONLY enforcement, surfaced to the customer as a generic "couldn't
+// start checkout" error with no real explanation).
+//
+// Still the same device-type/landline-provider UI as before (large
+// tappable cards, per APP_VISUAL_SPECIFICATION.md) — landline is
+// unaffected by any of this (providerPolicy.js only covers UK mobile
+// networks; landline forwarding is a completely separate mechanism, see
+// services/activationInstructions.js's LANDLINE_PROVIDERS). iPhone/
+// Android now additionally ask which mobile network, and — only when
+// services/providerPolicy.js says it actually matters (today: Vodafone
+// only) — which tariff, before ever reaching Subscribe.
+//
+// No SetupProgress bar here, matching welcome/confirmation/complete —
+// this is a pre-flight eligibility check, not one of the three numbered
+// setup steps (see lib/setupFlow.ts).
+//
+// Device/provider selection is persisted immediately via
+// activationDeviceStorage (the same mechanism activate.tsx and the
+// Account-tab "Turn off protection"/"Set up call forwarding" screens
+// already rely on) rather than carried through route params — this
+// screen is no longer adjacent to activate.tsx in the flow, so params
+// alone would not survive the Subscribe → Confirmation → Contacts hops
+// in between.
 import { useState } from "react";
-import { Text, View, Pressable, StyleSheet } from "react-native";
+import { Text, View, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
-import { SetupProgress } from "../../components/SetupProgress";
+import { Banner } from "../../components/Banner";
+import { PrimaryButton } from "../../components/PrimaryButton";
+import { checkCarrierCompatibility, ApiError } from "../../lib/api";
+import { useAuth } from "../../lib/AuthContext";
+import { saveActivationDevice } from "../../lib/activationDeviceStorage";
+import { MOBILE_CARRIERS } from "../../lib/carriers";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
-import type { DeviceType, LandlineProvider } from "../../lib/types";
+import type { DeviceType, LandlineProvider, MobileCarrierKey, TariffType } from "../../lib/types";
 
 const DEVICE_OPTIONS: { type: DeviceType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { type: "iphone", label: "iPhone", icon: "logo-apple" },
@@ -28,41 +55,77 @@ const LANDLINE_PROVIDERS: { provider: LandlineProvider; label: string }[] = [
   { provider: "other", label: "Not sure / another provider" },
 ];
 
-export default function DevicePicker() {
-  const [deviceType, setDeviceType] = useState<DeviceType | null>(null);
+const TARIFF_OPTIONS: { type: TariffType; label: string }[] = [
+  { type: "pay_monthly", label: "Pay monthly (contract)" },
+  { type: "payg", label: "Pay as you go" },
+];
 
-  // 2026-09-12 fix (physical-test finding): iPhone/Android used to stop
-  // here for a "What's this phone's number?" screen whose only purpose
-  // was a forwarding-loop check (services/phone.js's
-  // wouldCreateForwardingLoop, comparing it against households.phone_number
-  // — a field from the old PSTN dual-dial delivery architecture). The
-  // current client-only Voice SDK delivery path
-  // (services/callRouting.js's decideCallDeliveryPlan) never constructs a
-  // PSTN target for any household, so the loop that check protects
-  // against is no longer possible — and the check was producing a real,
-  // confirmed false-positive block (a genuine customer's own number
-  // legitimately matching households.phone_number, a field this flow
-  // never needs to ask about). iPhone/Android now go straight to the
-  // activation code, exactly like landline already goes straight to
-  // activate after picking a provider — no second number, no loop
-  // question, nothing to get wrong.
+type Step =
+  | { name: "device" }
+  | { name: "landline-provider" }
+  | { name: "carrier" }
+  | { name: "tariff"; provider: MobileCarrierKey }
+  | { name: "checking" }
+  | { name: "blocked"; reason: string | null };
+
+export default function DevicePicker() {
+  const { session } = useAuth();
+  const [deviceType, setDeviceType] = useState<DeviceType | null>(null);
+  const [step, setStep] = useState<Step>({ name: "device" });
+  const [error, setError] = useState<string | null>(null);
+
   function selectDevice(type: DeviceType) {
+    setDeviceType(type);
     if (type === "landline") {
-      setDeviceType(type);
+      setStep({ name: "landline-provider" });
       return;
     }
-    router.push({ pathname: "/(setup)/activate", params: { deviceType: type } });
+    setStep({ name: "carrier" });
   }
 
-  function selectProvider(provider: LandlineProvider) {
-    router.push({ pathname: "/(setup)/activate", params: { deviceType: "landline", provider } });
+  function selectLandlineProvider(provider: LandlineProvider) {
+    saveActivationDevice({ deviceType: "landline", provider });
+    router.push("/(setup)/subscribe");
   }
 
-  if (deviceType === "landline") {
+  async function evaluate(provider: MobileCarrierKey, tariffType?: TariffType) {
+    setStep({ name: "checking" });
+    setError(null);
+    try {
+      const result = await checkCarrierCompatibility(provider, tariffType, session?.access_token);
+      if (result.reason === "tariff_type_required") {
+        setStep({ name: "tariff", provider });
+        return;
+      }
+      if (result.canProceedToPayment) {
+        // deviceType is guaranteed set here (only reachable via the
+        // iPhone/Android branch of selectDevice) — carrier itself lives
+        // server-side (households.carrier_provider_key, already written
+        // by checkCarrierCompatibility above), so only deviceType needs
+        // persisting locally for activate.tsx/the Account-tab screens.
+        saveActivationDevice({ deviceType: deviceType as DeviceType });
+        router.push("/(setup)/subscribe");
+        return;
+      }
+      setStep({ name: "blocked", reason: result.reason });
+    } catch (err) {
+      setError(err instanceof ApiError ? "We couldn't check your network. Please try again." : "Something went wrong.");
+      setStep({ name: "carrier" });
+    }
+  }
+
+  function selectCarrier(provider: MobileCarrierKey) {
+    evaluate(provider);
+  }
+
+  function selectTariff(provider: MobileCarrierKey, tariffType: TariffType) {
+    evaluate(provider, tariffType);
+  }
+
+  if (step.name === "landline-provider") {
     return (
       <Screen>
-        <SetupProgress currentStep={3} />
-        <Pressable onPress={() => setDeviceType(null)} accessibilityRole="button" style={styles.backLink}>
+        <Pressable onPress={() => setStep({ name: "device" })} accessibilityRole="button" style={styles.backLink}>
           <Text style={styles.backLinkText}>‹ Back</Text>
         </Pressable>
         <Text style={styles.title} accessibilityRole="header">Which landline provider do you have?</Text>
@@ -71,7 +134,7 @@ export default function DevicePicker() {
           {LANDLINE_PROVIDERS.map(({ provider, label }) => (
             <Pressable
               key={provider}
-              onPress={() => selectProvider(provider)}
+              onPress={() => selectLandlineProvider(provider)}
               style={({ pressed }) => [styles.listItem, pressed && styles.listItemPressed]}
               accessibilityRole="button"
               accessibilityLabel={label}
@@ -84,9 +147,92 @@ export default function DevicePicker() {
     );
   }
 
+  if (step.name === "carrier") {
+    return (
+      <Screen>
+        <Pressable onPress={() => setStep({ name: "device" })} accessibilityRole="button" style={styles.backLink}>
+          <Text style={styles.backLinkText}>‹ Back</Text>
+        </Pressable>
+        <Text style={styles.title} accessibilityRole="header">Which mobile network do you use?</Text>
+        <Text style={styles.subtitle}>We need to check your network supports call forwarding before you subscribe.</Text>
+        {error && <Banner variant="error" message={error} />}
+        <View style={styles.list}>
+          {MOBILE_CARRIERS.map(({ key, label }) => (
+            <Pressable
+              key={key}
+              onPress={() => selectCarrier(key)}
+              style={({ pressed }) => [styles.listItem, pressed && styles.listItemPressed]}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+            >
+              <Text style={styles.listItemText}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Screen>
+    );
+  }
+
+  if (step.name === "tariff") {
+    const { provider } = step;
+    return (
+      <Screen>
+        <Pressable onPress={() => setStep({ name: "carrier" })} accessibilityRole="button" style={styles.backLink}>
+          <Text style={styles.backLinkText}>‹ Back</Text>
+        </Pressable>
+        <Text style={styles.title} accessibilityRole="header">Pay monthly or pay as you go?</Text>
+        <Text style={styles.subtitle}>Call forwarding works differently depending on your tariff.</Text>
+        {error && <Banner variant="error" message={error} />}
+        <View style={styles.list}>
+          {TARIFF_OPTIONS.map(({ type, label }) => (
+            <Pressable
+              key={type}
+              onPress={() => selectTariff(provider, type)}
+              style={({ pressed }) => [styles.listItem, pressed && styles.listItemPressed]}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+            >
+              <Text style={styles.listItemText}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Screen>
+    );
+  }
+
+  if (step.name === "checking") {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Checking your network" />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (step.name === "blocked") {
+    return (
+      <Screen>
+        <Text style={styles.title} accessibilityRole="header">We can't protect this network yet</Text>
+        <Banner
+          variant="notice"
+          message={
+            step.reason ||
+            "We're still confirming support for your network. We don't want to take payment until we're sure Home Call Guard will work for you."
+          }
+        />
+        <PrimaryButton label="Try a different network" onPress={() => setStep({ name: "carrier" })} />
+        <PrimaryButton
+          label="Contact support"
+          variant="secondary"
+          onPress={() => router.push("/(tabs)/account/support")}
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
-      <SetupProgress currentStep={3} />
       <Text style={styles.title} accessibilityRole="header">What are we setting up protection on?</Text>
       <Text style={styles.subtitle}>Pick the phone whose calls you want screened.</Text>
       <View style={styles.cards}>
@@ -108,6 +254,11 @@ export default function DevicePicker() {
 }
 
 const styles = StyleSheet.create({
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   backLink: {
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",

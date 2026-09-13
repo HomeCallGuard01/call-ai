@@ -279,6 +279,46 @@ async function getUserRole(authUserId) {
   return data ? data.role : "household";
 }
 
+// Ported from branch p0-batch1-carrier-policy-quarantine (migration 028
+// here, 038 there) — persists only the household's raw carrier/tariff
+// selection, never a derived verdict. See migration 028's header for why.
+async function setHouseholdCarrierCompatibility(householdId, providerKey, tariffType) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("set_household_carrier_compatibility", {
+    p_household_id: householdId,
+    p_provider_key: providerKey,
+    p_tariff_type: tariffType || null,
+  });
+
+  if (error) {
+    console.error("SET HOUSEHOLD CARRIER COMPATIBILITY ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
+// Durable evidence write — see migration 029's header. Never overwrites
+// a prior acceptance; every call inserts a new row.
+async function recordTermsAcceptance(householdId, termsVersion, privacyVersion, acceptanceType) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("record_terms_acceptance", {
+    p_household_id: householdId,
+    p_terms_version: termsVersion,
+    p_privacy_version: privacyVersion,
+    p_acceptance_type: acceptanceType || "subscription_terms",
+  });
+
+  if (error) {
+    console.error("RECORD TERMS ACCEPTANCE ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
 module.exports = {
   getHouseholdByAuthUserId,
   getHouseholdByTwilioNumber,
@@ -292,4 +332,6 @@ module.exports = {
   markActivationVerified,
   setUserRole,
   getUserRole,
+  setHouseholdCarrierCompatibility,
+  recordTermsAcceptance,
 };

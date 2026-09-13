@@ -30,7 +30,7 @@ import { SetupProgress } from "../../components/SetupProgress";
 import { fetchActivationInstructions, fetchDashboard, ApiError, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
-import { saveActivationDevice } from "../../lib/activationDeviceStorage";
+import { saveActivationDevice, loadActivationDevice } from "../../lib/activationDeviceStorage";
 import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../lib/forwardingNumber";
 import {
   computeProvisioningStages,
@@ -43,7 +43,7 @@ import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 export default function Activate() {
   const { session } = useAuth();
-  const params = useLocalSearchParams<{ deviceType: DeviceType; provider?: LandlineProvider }>();
+  const params = useLocalSearchParams<{ deviceType?: DeviceType; provider?: LandlineProvider }>();
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notProvisioned, setNotProvisioned] = useState(false);
@@ -53,7 +53,35 @@ export default function Activate() {
   const [provisioningStatus, setProvisioningStatus] = useState<TwilioProvisioningStatus | null>(null);
   const [pollFailures, setPollFailures] = useState(0);
 
-  const canAutoDial = canAutoOpenDialer(params.deviceType);
+  // device-picker no longer sits directly before this screen (it now
+  // runs pre-payment, several screens earlier — see its own header
+  // comment) — route params from an adjacent screen are the exception
+  // now, not the rule. Falls back to whatever was persisted at selection
+  // time via lib/activationDeviceStorage.ts, which already existed
+  // purely to survive exactly this kind of non-adjacency (previously
+  // only needed by the Account-tab screens). Route params are still
+  // honoured first when present (e.g. "Change device" below still
+  // navigates here directly with params) so nothing else has to change.
+  const [resolvedDevice, setResolvedDevice] = useState<{ deviceType: DeviceType; provider?: LandlineProvider } | null | undefined>(
+    params.deviceType ? { deviceType: params.deviceType, provider: params.provider } : undefined
+  );
+
+  useEffect(() => {
+    if (params.deviceType) {
+      setResolvedDevice({ deviceType: params.deviceType, provider: params.provider });
+      return;
+    }
+    let cancelled = false;
+    loadActivationDevice().then(stored => {
+      if (cancelled) return;
+      setResolvedDevice(stored ? { deviceType: stored.deviceType, provider: stored.provider } : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [params.deviceType, params.provider]);
+
+  const canAutoDial = canAutoOpenDialer(resolvedDevice?.deviceType ?? "");
 
   // Retry ("Try again") re-runs load() while a previous attempt might
   // still be in flight, and the params effect below can also re-fire
@@ -85,18 +113,23 @@ export default function Activate() {
   }, []);
 
   function load() {
+    if (!resolvedDevice) return;
     const thisLoadId = ++loadId.current;
     setIsLoading(true);
     setError(null);
     setNotProvisioned(false);
-    fetchActivationInstructions(params.deviceType, params.provider, session?.access_token)
+    fetchActivationInstructions(resolvedDevice.deviceType, resolvedDevice.provider, session?.access_token)
       .then(result => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
         setInstructions(result);
         // Best-effort, non-blocking — see lib/activationDeviceStorage.ts
         // for why this exists: the cancel code otherwise has nowhere to
         // live once this one-time setup screen is behind the customer.
-        saveActivationDevice({ deviceType: params.deviceType, provider: params.provider });
+        // Already saved once at selection time (device-picker.tsx) too —
+        // re-saving here is harmless and keeps this screen correct even
+        // if it's ever reached with route params instead (e.g. "Change
+        // device" below).
+        saveActivationDevice({ deviceType: resolvedDevice.deviceType, provider: resolvedDevice.provider });
       })
       .catch(err => {
         if (thisLoadId !== loadId.current || !isMounted.current) return;
@@ -143,7 +176,7 @@ export default function Activate() {
       });
   }
 
-  useEffect(load, [params.deviceType, params.provider, session?.access_token]);
+  useEffect(load, [resolvedDevice, session?.access_token]);
 
   // Real iPhone testing (2026-08-08) found the old "Still setting up your
   // line" / "Check again" state a dead end — the customer had to manually
@@ -219,7 +252,26 @@ export default function Activate() {
     }
   }
 
-  if (isLoading) {
+  // resolvedDevice === null means the pre-payment carrier-check screen
+  // was never actually reached (or its selection somehow didn't persist)
+  // — genuinely unexpected at this point in the flow, since Subscribe
+  // itself is unreachable without it. Route back rather than show a
+  // permanent spinner (isLoading never gets set false by load() in this
+  // case, since load() itself refuses to run without a resolved device).
+  if (resolvedDevice === null) {
+    return (
+      <Screen>
+        <SetupProgress currentStep={3} />
+        <Banner
+          variant="notice"
+          message="We don't have a record of your phone or network yet — let's pick that again."
+        />
+        <PrimaryButton label="Choose your phone and network" onPress={() => router.replace("/(setup)/device-picker")} />
+      </Screen>
+    );
+  }
+
+  if (isLoading || resolvedDevice === undefined) {
     return (
       <Screen scroll={false}>
         <View style={styles.centered}>

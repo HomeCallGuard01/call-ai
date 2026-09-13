@@ -21,6 +21,18 @@
 // checkbox and its copy are a reasonable working draft, not a legal
 // sign-off; flagged in this session's report as needing a real legal
 // review pass before launch, same as the exact guarantee terms text.
+//
+// A SEPARATE Terms & Conditions / Privacy Policy agreement checkbox was
+// added 2026-09-13 (carrier-onboarding-gate audit finding: this screen
+// linked Terms/Privacy but recorded no evidence anyone had actually
+// agreed to them, and had no dedicated agreement control at all — the
+// existing checkbox above is about cooling-off timing, not Terms
+// acceptance, and deliberately stays separate rather than being merged
+// into one tickbox covering two different legal facts). Unticked by
+// default; acceptTerms() (POST /api/v1/onboarding/terms-acceptance)
+// writes a durable, append-only evidence row (migration 029) the moment
+// before either purchase path is triggered — never earlier, so no
+// acceptance record exists for a purchase the customer never attempted.
 import { useState, useRef, useEffect } from "react";
 import { Text, View, Pressable, StyleSheet, Platform } from "react-native";
 import { router } from "expo-router";
@@ -29,7 +41,7 @@ import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
-import { createCheckoutSession, fetchDashboard, ApiError } from "../../lib/api";
+import { createCheckoutSession, fetchDashboard, fetchCarrierCompatibility, acceptTerms, ApiError } from "../../lib/api";
 import { fetchHcgPackage, purchaseHcgPackage, isEntitled, PurchasesNotConfiguredError } from "../../lib/purchases";
 import { useAuth } from "../../lib/AuthContext";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
@@ -47,6 +59,7 @@ export default function Subscribe() {
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [startImmediately, setStartImmediately] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // openAuthSessionAsync can stay open for minutes (Stripe Checkout is a
   // real payment form, not a quick redirect) — long enough that the
@@ -158,6 +171,11 @@ export default function Subscribe() {
   async function handleSubscribe() {
     setError(null);
 
+    if (!agreedToTerms) {
+      setError("Please agree to the Terms & Conditions and Privacy Policy before continuing.");
+      return;
+    }
+
     if (!startImmediately) {
       setError("Please confirm you'd like your protection to start right away before continuing.");
       return;
@@ -165,14 +183,45 @@ export default function Subscribe() {
 
     setIsProcessing(true);
     try {
+      // Defense-in-depth carrier-compatibility check, applied identically
+      // to both purchase paths, right here at the actual moment of
+      // purchase — not just relying on device-picker.tsx running earlier
+      // in the flow (real app-navigation edge cases, e.g. the app being
+      // killed and resumed mid-flow, don't reliably guarantee that).
+      // Android/web also has a genuine server-side block inside
+      // create-checkout-session itself; iOS has none (Apple's StoreKit
+      // purchase can't be intercepted server-side beforehand), which is
+      // exactly why this check has to live here, before either branch,
+      // rather than only inside handleSubscribeStripe.
+      const eligibility = await fetchCarrierCompatibility(session?.access_token);
+      if (!eligibility.canProceedToPayment) {
+        if (isMounted.current) {
+          setError(
+            eligibility.reason ||
+              "We can't take payment yet — your network hasn't been confirmed as compatible. Please go back and check your network."
+          );
+        }
+        return;
+      }
+
+      // Durable evidence write — see migration 029. Written once both
+      // consent checkboxes are confirmed ticked and carrier eligibility
+      // is confirmed, immediately before either purchase path actually
+      // starts.
+      await acceptTerms(session?.access_token);
+
       if (Platform.OS === "ios") {
         await handleSubscribeIOS();
       } else {
         await handleSubscribeStripe();
       }
-    } catch {
+    } catch (err) {
       if (isMounted.current) {
-        setError("We couldn't start checkout. Please check your connection and try again.");
+        if (err instanceof ApiError && err.code === "carrier_incompatible") {
+          setError("Your network isn't supported yet. Please go back and check your network in setup.");
+        } else {
+          setError("We couldn't start checkout. Please check your connection and try again.");
+        }
       }
     } finally {
       if (isMounted.current) setIsProcessing(false);
@@ -184,10 +233,10 @@ export default function Subscribe() {
       <SetupProgress currentStep={1} />
 
       <Text style={styles.title} accessibilityRole="header">Home Call Guard Standard</Text>
-      <Text style={styles.price}>£4.99 per month</Text>
+      <Text style={styles.price}>£4.99/month, including VAT</Text>
       <Text style={styles.body}>
-        AI-powered call protection and unlimited trusted contacts. Simple monthly membership — cancel
-        anytime.
+        AI-powered call protection and unlimited trusted contacts. This is a recurring monthly
+        subscription that renews automatically every month until you cancel — cancel anytime.
       </Text>
 
       <View style={styles.guaranteeBox}>
@@ -210,6 +259,29 @@ export default function Subscribe() {
 
       {error && <Banner variant="error" message={error} />}
 
+      <View style={styles.legalLinks}>
+        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/terms.html`)}>
+          <Text style={styles.legalLinkText}>Terms & Conditions</Text>
+        </Pressable>
+        <Text style={styles.legalLinkSeparator}>·</Text>
+        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/privacy.html`)}>
+          <Text style={styles.legalLinkText}>Privacy Policy</Text>
+        </Pressable>
+      </View>
+
+      <Pressable
+        onPress={() => setAgreedToTerms(v => !v)}
+        style={styles.consentRow}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: agreedToTerms }}
+        accessibilityLabel="I agree to the Terms and Conditions and acknowledge the Privacy Policy"
+      >
+        <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
+          {agreedToTerms && <Text style={styles.checkboxTick}>✓</Text>}
+        </View>
+        <Text style={styles.consentText}>I agree to the Terms & Conditions and acknowledge the Privacy Policy.</Text>
+      </Pressable>
+
       <Pressable
         onPress={() => setStartImmediately(v => !v)}
         style={styles.consentRow}
@@ -226,23 +298,13 @@ export default function Subscribe() {
         </Text>
       </Pressable>
 
-      <PrimaryButton label="Subscribe — £4.99/month" onPress={handleSubscribe} loading={isProcessing} />
+      <PrimaryButton label="Subscribe & pay £4.99/month now" onPress={handleSubscribe} loading={isProcessing} />
 
       <Text style={styles.smallprint}>
         {Platform.OS === "ios"
           ? "Secure payment via the App Store. You can cancel any time from Account."
           : "Secure payment via Stripe. You can cancel any time from Account."}
       </Text>
-
-      <View style={styles.legalLinks}>
-        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/terms.html`)}>
-          <Text style={styles.legalLinkText}>Terms of Use</Text>
-        </Pressable>
-        <Text style={styles.legalLinkSeparator}>·</Text>
-        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/privacy.html`)}>
-          <Text style={styles.legalLinkText}>Privacy Policy</Text>
-        </Pressable>
-      </View>
     </Screen>
   );
 }

@@ -193,7 +193,7 @@ export default function SetupContacts() {
 
     const stillNeedsSaveKeys = contactsStillNeedingSave(results);
     if (stillNeedsSaveKeys.length === 0) {
-      router.push("/(setup)/device-picker");
+      router.push("/(setup)/activate");
       return;
     }
 
