@@ -29,10 +29,9 @@ const require = createRequire(import.meta.url);
 const {
   resolveForwardingDestination,
   decideCallDeliveryPlan,
-  isVoiceClientReachable,
+  hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
 } = require('../services/callRouting.js');
-const { DEFAULT_TTL_SECONDS } = require('../services/voiceAccessToken.js');
 
 let failures = 0;
 
@@ -107,42 +106,61 @@ const householdB = { id: 'household-b', phone_number: '+442222222222' };
   check(result.canForward === false, 'household itself is null: fails closed rather than throwing');
 }
 
-// --- isVoiceClientReachable ---
+// --- hasVoiceClientRegistrationHistory ---
+//
+// 2026-09-13 architecture correction: this used to be
+// isVoiceClientReachable, gating on registeredAt being no older than the
+// Access Token's ~1-hour TTL plus a 15-minute grace window. Confirmed
+// directly against Twilio's own current Voice Mobile SDK documentation:
+// the push-registration binding this timestamp represents has a TTL of
+// roughly ONE YEAR of idle time, entirely independent of the Access
+// Token used to establish it. A household that registered minutes, hours,
+// or days ago must all be treated identically — only "never registered
+// at all" is a genuinely different case. This directly regression-tests
+// the real incident: a real household registered ~2 hours earlier was
+// incorrectly refused a <Dial><Client> attempt by the old time-windowed check.
 
 {
-  const now = new Date('2026-09-07T12:00:00.000Z');
-  check(isVoiceClientReachable(null, now) === false, 'null registeredAt: never reachable');
-  check(isVoiceClientReachable(undefined, now) === false, 'undefined registeredAt: never reachable');
+  check(hasVoiceClientRegistrationHistory(null) === false, 'null registeredAt: never-registered household, no registration history');
+  check(hasVoiceClientRegistrationHistory(undefined) === false, 'undefined registeredAt: never-registered household, no registration history');
+  check(hasVoiceClientRegistrationHistory('') === false, 'empty-string registeredAt: treated the same as no registration history');
 }
 
 {
   const now = new Date('2026-09-07T12:00:00.000Z');
-  const justRegistered = new Date(now.getTime() - 5_000).toISOString();
-  check(isVoiceClientReachable(justRegistered, now) === true, 'registered 5 seconds ago: reachable');
+  const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+  check(hasVoiceClientRegistrationHistory(tenMinutesAgo) === true, 'registered 10 minutes ago: has registration history');
+}
+
+{
+  // The exact real-world incident this fix closes: a registration from
+  // ~2 hours ago (well past the old 75-minute window) must still count.
+  const now = new Date('2026-09-07T12:00:00.000Z');
+  const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+  check(
+    hasVoiceClientRegistrationHistory(twoHoursAgo) === true,
+    'registered 2 hours ago (past the old 75-minute window): still has registration history — the stale-timestamp-alone regression this fix closes'
+  );
 }
 
 {
   const now = new Date('2026-09-07T12:00:00.000Z');
-  // Exactly at the TTL + grace boundary — still reachable (inclusive).
-  const atBoundary = new Date(now.getTime() - (DEFAULT_TTL_SECONDS + 15 * 60) * 1000).toISOString();
-  check(isVoiceClientReachable(atBoundary, now) === true, 'registered exactly at the TTL+grace boundary: still reachable (inclusive)');
+  const severalDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
+  check(
+    hasVoiceClientRegistrationHistory(severalDaysAgo) === true,
+    'registered several days ago: still has registration history — a stale timestamp alone can no longer produce self-protecting-unreachable'
+  );
 }
 
 {
-  const now = new Date('2026-09-07T12:00:00.000Z');
-  // One second past the TTL + grace boundary — no longer reachable.
-  const pastBoundary = new Date(now.getTime() - ((DEFAULT_TTL_SECONDS + 15 * 60) * 1000 + 1000)).toISOString();
-  check(isVoiceClientReachable(pastBoundary, now) === false, 'registered one second past the TTL+grace boundary: no longer reachable');
-}
-
-{
-  const now = new Date('2026-09-07T12:00:00.000Z');
-  const inTheFuture = new Date(now.getTime() + 60_000).toISOString();
-  check(isVoiceClientReachable(inTheFuture, now) === false, 'a registeredAt somehow in the future is never treated as reachable');
-}
-
-{
-  check(isVoiceClientReachable('not-a-real-date', new Date()) === false, 'an unparseable registeredAt fails closed rather than throwing');
+  // A registeredAt in the future is a malformed/clock-skew input, not a
+  // meaningful "not registered" signal — this function only asks "does a
+  // registration timestamp exist at all," so a genuinely present (if odd)
+  // value still counts. Fail-closed behaviour for bad input is handled by
+  // the caller resolving voice_client_registered_at from a real database
+  // column, not by this function second-guessing the value's plausibility.
+  const inTheFuture = new Date(Date.now() + 60_000).toISOString();
+  check(hasVoiceClientRegistrationHistory(inTheFuture) === true, 'a non-null registeredAt (even one somehow in the future) still counts as registration history');
 }
 
 // --- decideCallDeliveryPlan: reachable -> client-only ---
@@ -266,15 +284,19 @@ const householdB = { id: 'household-b', phone_number: '+442222222222' };
 }
 
 {
-  // Proven once, but no longer currently reachable.
+  // 2026-09-13 architecture correction: a long-old registration timestamp
+  // (previously treated as "stale" past the 75-minute window) must now
+  // still count as registration history — Twilio's real push-registration
+  // binding lasts ~1 year, so this is no longer a meaningful regression
+  // signal on its own. This directly regression-tests the real incident.
   const now = new Date('2026-09-07T12:00:00.000Z');
   const household = {
     voice_client_registered_at: '2026-01-01T00:00:00.000Z',
     delivery_verified_at: '2026-01-01T00:05:00.000Z',
   };
   const status = computeProtectionStatus(household, now);
-  check(status.deliveryReady === false, 'evidence exists but registration is long stale: deliveryReady false');
-  check(status.fullyProtected === false, 'stale registration despite past delivery evidence: fullyProtected false — delivery capability can regress after one real success');
+  check(status.deliveryReady === true, 'evidence exists and registration is long old (months): deliveryReady is still true — a stale timestamp alone no longer regresses this');
+  check(status.fullyProtected === true, 'long-old registration with real past delivery evidence: fullyProtected true — no longer incorrectly regressed by elapsed time alone');
 }
 
 {
