@@ -79,7 +79,7 @@ module.exports = {
         "expo-contacts",
         {
           contactsPermission:
-            "Home Call Guard uses your contacts so you can choose trusted callers. Only the contacts you choose to add are saved to Home Call Guard.",
+            "Home Call Guard checks your contacts to recognise trusted callers — for example, if your daughter calls from a number already in your contacts, her call rings straight through without being screened. Only the contacts you choose to add are saved to Home Call Guard.",
         },
       ],
     ],

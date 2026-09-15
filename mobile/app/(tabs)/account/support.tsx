@@ -9,7 +9,7 @@
 // (a standard, expected pattern), with the whole row tappable rather
 // than a small chevron.
 import { useState } from "react";
-import { Text, View, Pressable, Linking, StyleSheet } from "react-native";
+import { Text, View, Pressable, Linking, StyleSheet, Platform } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../../components/Screen";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
@@ -29,7 +29,11 @@ const FAQ_ITEMS = [
   {
     question: "How do I let Home Call Guard access my contacts?",
     answer:
-      "When you tap Sync contacts, your phone will ask for permission. Choosing Full Access makes syncing easiest, both now and every time you sync again in future. If you'd rather share only some contacts, that's fine too — on iPhone this is called Limited Access, and you can add more at any time by tapping \"Add more contacts\" on the sync screen, or later via Settings > Home Call Guard > Contacts > Edit Selected Contacts. On Android, go to Settings > Apps > Home Call Guard > Permissions > Contacts to change access. Whichever you choose, Home Call Guard only ever stores the name and phone number needed to recognise a trusted caller — never any other information from your address book.",
+      "When you tap Sync contacts, your phone will ask for permission. Choosing Full Access makes syncing easiest, both now and every time you sync again in future. If you'd rather share only some contacts, that's fine too" +
+      (Platform.OS === "android"
+        ? ", and you can add more at any time by tapping \"Add more contacts\" on the sync screen, or later via Settings > Apps > Home Call Guard > Permissions > Contacts to change access."
+        : " — on iPhone this is called Limited Access, and you can add more at any time by tapping \"Add more contacts\" on the sync screen, or later via Settings > Home Call Guard > Contacts > Edit Selected Contacts.") +
+      " Whichever you choose, Home Call Guard only ever stores the name and phone number needed to recognise a trusted caller — never any other information from your address book.",
   },
   {
     question: "Is my phone number changing?",

@@ -5,18 +5,21 @@
 // list, since that's the exact window a genuine family member could be
 // screened as a stranger the moment call forwarding activates.
 //
-// Not a hard, unskippable wall, though — "Skip for now" remains
-// available, explicitly explained rather than hidden, because trapping
-// someone who genuinely can't add a contact right now inside an app
-// they've just paid for would be a worse outcome than a gentle,
-// persistent nudge later (see the Home dashboard's trusted-contacts
-// banner). This is the same native single-contact-picker loop as the
-// Contacts tab's own flow (Contacts.presentContactPickerAsync — no bulk
-// address-book access ever granted), with manual entry folded into the
-// same screen instead of a separate one, and framed for setup rather
-// than tab-navigation context.
+// No dismiss/bypass action of any kind on this screen (removed
+// 2026-09-15, Apple review remediation, Guideline 5.1.1(iv)): Apple's
+// own rule is that a custom pre-permission screen must always lead to
+// the native permission request, never be dismissable around it — this
+// screen's message and primary action qualify as exactly that, so no
+// action here may leave without pickOne() having asked. Manual entry
+// remains as a genuinely different fallback (not a dismissal of the
+// message) for anyone who taps Don't Allow in Apple's dialogue: this is
+// the same native single-contact-picker loop as the Contacts tab's own
+// flow (Contacts.presentContactPickerAsync — no bulk address-book
+// access ever granted), with manual entry folded into the same screen
+// instead of a separate one, and framed for setup rather than tab-
+// navigation context.
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Text, View, Pressable, StyleSheet, Alert, ActivityIndicator, Platform } from "react-native";
+import { Text, View, Pressable, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import * as Contacts from "expo-contacts";
 import { Screen } from "../../components/Screen";
@@ -57,8 +60,8 @@ export default function SetupContacts() {
   const [manualNumberError, setManualNumberError] = useState<string | null>(null);
 
   // presentContactPickerAsync/addContact are all async work that can
-  // outlive this screen (back button, Skip, or a fast double-tap through
-  // to the next step while a save is still in flight) — every setState
+  // outlive this screen (back button, or a fast double-tap through to
+  // the next step while a save is still in flight) — every setState
   // after an await checks this first so we never warn-or-leak by setting
   // state on an unmounted screen.
   const isMounted = useRef(true);
@@ -78,13 +81,26 @@ export default function SetupContacts() {
     setError(null);
 
     try {
-      if (Platform.OS === "android") {
-        const { status } = await Contacts.requestPermissionsAsync();
-        if (!isMounted.current) return;
-        if (status !== "granted") {
-          setError("Home Call Guard needs permission to open your contacts. You can still add someone manually below.");
-          return;
-        }
+      // Unconditional on both platforms (2026-09-15, Apple review
+      // remediation, Guideline 5.1.1(iv)): this is the screen's primary
+      // action, and tapping it must always lead to Apple's own native
+      // permission dialogue — the customer's grant/deny decision has to
+      // be made there, not implied by which button they tapped in our
+      // UI. Previously Android-only: presentContactPickerAsync() below
+      // doesn't itself require Contacts permission on iOS (Apple's own
+      // picker runs out-of-process and hands back only the one contact
+      // chosen), which is why this call used to be skipped there — but
+      // skipping it meant an iOS reviewer could reach this screen's
+      // "choose a contact" action and never see the system prompt at
+      // all. Asking first, on every platform, is what Apple's rule
+      // actually requires; if the customer taps Don't Allow, they still
+      // reach the same "add manually" fallback below, so the app keeps
+      // working either way.
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (!isMounted.current) return;
+      if (status !== "granted") {
+        setError("Home Call Guard needs permission to open your contacts. You can still add someone manually below.");
+        return;
       }
 
       let picked: Contacts.Contact | null;
@@ -226,17 +242,6 @@ export default function SetupContacts() {
     }
   }
 
-  function handleSkip() {
-    Alert.alert(
-      "Skip for now?",
-      "You can add trusted contacts any time from the Contacts tab. Until you do, calls from family and friends may be screened the same as an unknown caller.",
-      [
-        { text: "Go back", style: "cancel" },
-        { text: "Skip anyway", style: "destructive", onPress: () => router.push("/(setup)/device-picker") },
-      ]
-    );
-  }
-
   return (
     <Screen scroll={false}>
       <View style={styles.container}>
@@ -326,9 +331,6 @@ export default function SetupContacts() {
                 onPress={handleContinue}
                 disabled={selected.length === 0}
               />
-              <Pressable onPress={handleSkip} style={styles.skipLink} accessibilityRole="button">
-                <Text style={styles.skipLinkText}>Skip for now</Text>
-              </Pressable>
             </>
           )}
         </View>
@@ -433,15 +435,5 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingTop: spacing.sm,
-  },
-  skipLink: {
-    alignSelf: "center",
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-  },
-  skipLinkText: {
-    color: colors.textMuted,
-    fontSize: 14,
   },
 });
