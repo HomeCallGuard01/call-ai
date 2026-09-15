@@ -21,7 +21,7 @@
 // paying for a network that then cannot forward calls has already been
 // observed for real (Tesco Mobile). See evaluateProviderCompatibility.
 
-const PROVIDER_POLICY_VERSION = "2026-09-10-v1";
+const PROVIDER_POLICY_VERSION = "2026-09-16-v2";
 
 // status:
 //   'compatible'        — forwarding confirmed to work, no known caveats
@@ -164,10 +164,45 @@ const PROVIDER_POLICY = {
     reason:
       "VOXI's own support account disclaims providing forwarding (\"set up on your device... or give your manufacturer a shout\") — leaning incompatible but not confirmed either way",
   },
+  // Upgraded from "unverified" to "compatible" 2026-09-16, superseding the
+  // earlier secondary-sourced-only entry below this comment. Basis: a
+  // real, physical HCG test performed by the founder on a genuine Lebara
+  // SIM — call forwarding was successfully activated (the same universal
+  // **21*<number># registration code every customer is shown) and a
+  // forwarded call was successfully answered through HCG end-to-end. This
+  // is first-party, physical-device evidence — the strongest evidence
+  // category this policy recognises — and takes precedence over the
+  // earlier "conflicting secondary sources" note, which was itself never
+  // more than a documentation-confidence downgrade, not a confirmed
+  // failure. Record this basis explicitly, here, so a future audit that
+  // only re-checks public documentation (which may remain unclear or
+  // silent on Lebara) does not re-downgrade this entry for lack of a
+  // public source — the source is this physical test, not a webpage.
+  //
+  // Deactivation is deliberately NOT set here: only the activation/
+  // forwarding-works fact was physically verified. Inventing a
+  // deactivation code from this alone would be exactly the kind of
+  // unverified-fact-shipped-as-confirmed this file's header warns
+  // against. Leave deactivationCode/deactivationConfidence null (honest
+  // "unknown, check native settings / contact support") until the
+  // removal side is itself physically verified.
   lebara: {
+    status: "compatible",
+    method: "mmi",
+    deactivationCode: null,
+    deactivationConfidence: null,
+    deactivationSource:
+      "Activation/forwarding confirmed working via a real physical HCG test by the founder on a genuine Lebara SIM (2026-09-16) — forwarding activated with the standard **21*<number># code, and a forwarded call was successfully answered through HCG. Deactivation code specifically was not part of this test and remains unconfirmed; do not infer one from the activation result.",
+  },
+  // Present in the onboarding dropdown but never audited — explicit entry
+  // so it resolves to the same honest "not yet confirmed" path as any
+  // other genuinely unverified provider, rather than silently falling
+  // through PROVIDER_POLICY.other with no record that this was a known,
+  // deliberate gap (2026-09-16).
+  asda: {
     status: "unverified",
     method: null,
-    reason: "Conflicting secondary sources; Lebara's own device-help page exists but direct fetch was blocked (HTTP 403)",
+    reason: "ASDA Mobile is offered as a selectable network but has not yet been audited — genuinely unknown, not assumed incompatible or compatible.",
   },
   other: {
     status: "unverified",
@@ -183,10 +218,33 @@ function getProviderPolicy(providerKey) {
   return PROVIDER_POLICY[key] || PROVIDER_POLICY.other;
 }
 
+// Pure. Maps the internal four-value `status` to the three customer-
+// facing states used by onboarding copy (2026-09-16). The PAYMENT gate
+// itself stays exactly the two-way proceed/stop decision described
+// above — this mapping never changes canProceedToPayment, it only tells
+// the frontend which of three honest messages to show for a stopped
+// household:
+//   'supported'             — compatible or provider_specific
+//   'not_currently_supported' — incompatible (a confirmed, first-party
+//                              "this doesn't work" fact — e.g. Tesco
+//                              Mobile, 1pMobile, Vodafone PAYG)
+//   'needs_confirmation'    — unverified (genuinely unknown — must never
+//                              be shown the same "doesn't work" wording
+//                              as a confirmed incompatibility, and must
+//                              always offer a real help route rather than
+//                              a dead end)
+function getCustomerFacingState(status) {
+  if (status === "incompatible") return "not_currently_supported";
+  if (status === "compatible" || status === "provider_specific") return "supported";
+  return "needs_confirmation";
+}
+
 // Pure. The single source of truth for "may this household proceed to
 // payment" — see this file's header for why the gate is two-way
 // (proceed / stop), never a three-way "proceed with a warning" for an
-// unverified network.
+// unverified network. customerState (see getCustomerFacingState above)
+// is the separate, purely-presentational three-way split for what the
+// stopped household is actually told.
 //
 // tariffType is required whenever the resolved provider is
 // tariffDependent (currently only Vodafone: PAYG has no forwarding at
@@ -200,6 +258,7 @@ function evaluateProviderCompatibility(providerKey, tariffType) {
     if (!tariffType || !TARIFF_TYPES.has(tariffType)) {
       return {
         status: "unverified",
+        customerState: getCustomerFacingState("unverified"),
         canProceedToPayment: false,
         reason: "tariff_type_required",
         policy,
@@ -208,8 +267,13 @@ function evaluateProviderCompatibility(providerKey, tariffType) {
     if (tariffType === policy.incompatibleTariff) {
       return {
         status: "incompatible",
+        customerState: getCustomerFacingState("incompatible"),
         canProceedToPayment: false,
-        reason: `${providerKey} ${tariffType} does not support call forwarding`,
+        // Plain, customer-readable wording (2026-09-16) — the previous
+        // `${providerKey} ${tariffType} does not support call forwarding`
+        // was internal-debug phrasing (lowercase key names, no article),
+        // never meant to be read by a non-technical customer directly.
+        reason: "Pay As You Go plans on this network don't support call forwarding, so Home Call Guard can't work on your current plan.",
         policy,
       };
     }
@@ -219,6 +283,7 @@ function evaluateProviderCompatibility(providerKey, tariffType) {
 
   return {
     status: policy.status,
+    customerState: getCustomerFacingState(policy.status),
     canProceedToPayment,
     reason: policy.reason || null,
     policy,
@@ -293,6 +358,7 @@ module.exports = {
   PROVIDER_POLICY,
   TARIFF_TYPES,
   getProviderPolicy,
+  getCustomerFacingState,
   evaluateProviderCompatibility,
   getMobileDeactivationInstructions,
   evaluateHouseholdCheckoutEligibility,

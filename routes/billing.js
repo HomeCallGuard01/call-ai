@@ -208,6 +208,7 @@ router.post("/billing/carrier-compatibility", requireAuth, express.json(), async
 
     res.json({
       status: evaluation.status,
+      customerState: evaluation.customerState,
       canProceedToPayment: evaluation.canProceedToPayment,
       reason: evaluation.reason,
     });
@@ -226,6 +227,7 @@ router.get("/billing/carrier-compatibility", requireAuth, async (req, res) => {
   const evaluation = evaluateHouseholdCheckoutEligibility(req.household);
   res.json({
     status: evaluation.status,
+    customerState: evaluation.customerState,
     canProceedToPayment: evaluation.canProceedToPayment,
     reason: evaluation.reason,
   });

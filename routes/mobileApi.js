@@ -51,6 +51,7 @@ const {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
   buildActivationInstructions,
+  buildDeactivationInstructions,
 } = require("../services/activationInstructions");
 const { setHouseholdPhoneNumber } = require("../services/householdPhoneNumber");
 const { buildVoiceAccessToken } = require("../services/voiceAccessToken");
@@ -151,6 +152,7 @@ router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (r
 
     res.json({
       status: evaluation.status,
+      customerState: evaluation.customerState,
       canProceedToPayment: evaluation.canProceedToPayment,
       reason: evaluation.reason,
     });
@@ -177,6 +179,7 @@ router.get("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (re
   const evaluation = evaluateHouseholdCheckoutEligibility(req.household);
   res.json({
     status: evaluation.status,
+    customerState: evaluation.customerState,
     canProceedToPayment: evaluation.canProceedToPayment,
     reason: evaluation.reason,
   });
@@ -688,6 +691,54 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
     });
   } catch (err) {
     console.error("MOBILE ACTIVATION INSTRUCTIONS ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// GET /api/v1/deactivation/instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other&carrier=<mobile network key>
+//
+// 2026-09-16 — mobile counterpart of the web /deactivation-instructions
+// route: cancellation-safety fix, see that route's own header for the
+// full reasoning. Deliberately requireAuthApi ONLY, no requireEntitlement
+// — a customer who has already cancelled (or is mid-cancellation) must
+// still be able to see how to remove forwarding from their own phone.
+// Never touches the Twilio number; never provisions or activates
+// anything.
+router.get("/api/v1/deactivation/instructions", requireAuthApi, async (req, res) => {
+  const { deviceType, provider, carrier } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  try {
+    const instructions = buildDeactivationInstructions({
+      deviceType,
+      provider,
+      carrier: typeof carrier === "string" ? carrier : undefined,
+    });
+
+    res.json({
+      cancelCode: instructions.cancelCode,
+      cancelCodeMethod: instructions.cancelCodeMethod,
+      cancelCodeConfidence: instructions.cancelCodeConfidence,
+      cancelCodeNote: instructions.cancelCodeNote,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+    });
+  } catch (err) {
+    console.error("MOBILE DEACTIVATION INSTRUCTIONS ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });

@@ -3,9 +3,12 @@
 // chosen is always decided server-side by services/providerPolicy.js
 // (POST /api/v1/onboarding/carrier-compatibility), never inferred here.
 // Keep in sync with MobileCarrierKey (lib/types.ts) and the launch
-// carrier matrix; a carrier missing from PROVIDER_POLICY (e.g. ASDA
-// Mobile today) still works correctly here — it just always evaluates to
-// "unverified" server-side via getProviderPolicy's fallback.
+// carrier matrix. ASDA Mobile now has its own explicit "unverified"
+// PROVIDER_POLICY entry (2026-09-16) — previously it had none and simply
+// fell through to the generic 'other' fallback; a carrier genuinely
+// missing from PROVIDER_POLICY still resolves safely the same way
+// (getProviderPolicy's fallback to 'other'/unverified), this is just no
+// longer the case for ASDA specifically.
 import type { MobileCarrierKey } from "./types";
 
 export const MOBILE_CARRIERS: { key: MobileCarrierKey; label: string }[] = [
@@ -24,5 +27,5 @@ export const MOBILE_CARRIERS: { key: MobileCarrierKey; label: string }[] = [
   { key: "talkmobile", label: "Talkmobile" },
   { key: "asda", label: "ASDA Mobile" },
   { key: "1pmobile", label: "1pMobile" },
-  { key: "other", label: "Other / not listed" },
+  { key: "other", label: "Other / Not sure" },
 ];

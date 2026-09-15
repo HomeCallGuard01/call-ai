@@ -1,7 +1,11 @@
 -- Safe Twilio-number quarantine foundation (P0 Batch 1, component D).
 --
--- STATUS: NOT APPLIED to any database (staging or production) — proposed
--- only, per this batch's explicit instruction. Review before applying.
+-- STATUS (corrected 2026-09-16, was stale — see migrations 038/039 for the
+-- same correction): APPLIED to staging (tigwgmayeuisrxjjykqd), verified
+-- read-only against the live staging schema. NOT yet applied to
+-- production. See docs/launch/ (or the accompanying migration plan) for
+-- the approved production application order and pre-flight checks
+-- before running this against production.
 --
 -- Confirmed real risk (carrier/activation audit, 2026-09-10): both
 -- existing release paths -- releaseExpiredTwilioNumber (30-day grace
