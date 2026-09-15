@@ -11,6 +11,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   getProviderPolicy,
+  getCustomerFacingState,
   evaluateProviderCompatibility,
   getMobileDeactivationInstructions,
   evaluateHouseholdCheckoutEligibility,
@@ -82,8 +83,37 @@ function check(condition, message) {
 }
 
 {
+  // Upgraded 2026-09-16: a real physical HCG test by the founder on a
+  // genuine Lebara SIM confirmed forwarding activation and a successful
+  // forwarded call through HCG — first-party physical-device evidence,
+  // the strongest category this policy recognises. This is now a
+  // 'compatible' entry, unlike VOXI/Lyca/'other' below, which remain
+  // genuinely unverified.
   const result = evaluateProviderCompatibility('lebara');
-  check(result.status === 'unverified' && result.canProceedToPayment === false, 'Lebara: unverified, blocked before payment');
+  check(result.status === 'compatible', 'Lebara: compatible — physically tested (activation + forwarded call) by the founder, not merely inferred from public documentation');
+  check(result.canProceedToPayment === true, 'Lebara: may proceed to payment');
+  check(result.customerState === 'supported', 'Lebara: customer-facing state is supported');
+}
+
+{
+  // The activation/forwarding fact was physically verified; the
+  // deactivation code specifically was not — must remain honestly
+  // unconfirmed, never inferred from the activation result.
+  const result = getMobileDeactivationInstructions('lebara');
+  check(result.code === null, 'Lebara: no deactivation code is shipped — only activation/forwarding was physically verified, not removal');
+  check(result.method !== 'native_settings', 'Lebara: method is not native_settings (unlike Three) — the audit never found MMI broken on Lebara, only that removal is unconfirmed');
+}
+
+{
+  // ASDA Mobile appears in the onboarding dropdown but was never audited
+  // — must resolve to an explicit, documented 'unverified' entry of its
+  // own, not silently fall through PROVIDER_POLICY.other with no record
+  // that this was a known gap.
+  const result = evaluateProviderCompatibility('asda');
+  check(result.status === 'unverified', 'ASDA Mobile: unverified — offered as a dropdown option but never audited');
+  check(result.canProceedToPayment === false, 'ASDA Mobile: blocked before payment until evidence exists either way');
+  check(result.customerState === 'needs_confirmation', 'ASDA Mobile: customer-facing state is needs_confirmation, never falsely labelled unsupported');
+  check(PROVIDER_POLICY.asda !== PROVIDER_POLICY.other, 'ASDA Mobile has its own explicit policy entry, distinct from the generic "other" fallback');
 }
 
 {
@@ -292,6 +322,78 @@ function check(condition, message) {
 {
   const result = evaluateHouseholdCheckoutEligibility(undefined);
   check(result.canProceedToPayment === false, 'evaluateHouseholdCheckoutEligibility never throws on an undefined household — fails closed');
+}
+
+// ============================================================
+// Three-way customer-facing state (2026-09-16) — the exact household-
+// level scenarios required by the website onboarding + cancellation
+// redesign. getCustomerFacingState never changes canProceedToPayment
+// (still strictly two-way); it only decides which of three honest
+// messages a stopped household sees.
+// ============================================================
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'vodafone', carrier_tariff_type: 'pay_monthly' });
+  check(result.customerState === 'supported', 'Mobile -> Vodafone -> Pay Monthly: supported');
+  check(result.canProceedToPayment === true, 'Mobile -> Vodafone -> Pay Monthly: payment allowed');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'vodafone', carrier_tariff_type: 'payg' });
+  check(result.customerState === 'not_currently_supported', 'Mobile -> Vodafone -> PAYG: not_currently_supported, not needs_confirmation — this is a confirmed fact, not an unknown');
+  check(result.canProceedToPayment === false, 'Mobile -> Vodafone -> PAYG: payment blocked');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'lebara' });
+  check(result.customerState === 'supported', 'Mobile -> Lebara: supported');
+  check(result.canProceedToPayment === true, 'Mobile -> Lebara: payment allowed');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'tesco' });
+  check(result.customerState === 'not_currently_supported', 'Mobile -> Tesco Mobile: not_currently_supported');
+  check(result.canProceedToPayment === false, 'Mobile -> Tesco Mobile: payment blocked');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: '1pmobile' });
+  check(result.customerState === 'not_currently_supported', 'Mobile -> 1pMobile: not_currently_supported');
+  check(result.canProceedToPayment === false, 'Mobile -> 1pMobile: payment blocked');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'other' });
+  check(result.customerState === 'needs_confirmation', 'Mobile -> Other: needs_confirmation, never falsely labelled unsupported');
+  check(result.canProceedToPayment === false, 'Mobile -> Other: payment blocked until confirmed');
+}
+
+{
+  // "Not sure" is not itself a PROVIDER_POLICY key — the frontend never
+  // sends an empty/absent provider to the compatibility endpoint (the
+  // "Please choose your mobile network" validation blocks that before
+  // the request is ever made), so the only way to reach this state is a
+  // genuinely unrecognised string, which resolves the same as 'other'.
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'not_sure' });
+  check(result.customerState === 'needs_confirmation', 'Mobile -> an unrecognised/"not sure" value: needs_confirmation, never falsely labelled unsupported');
+  check(result.canProceedToPayment === false, 'Mobile -> "not sure": payment blocked until confirmed');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'asda' });
+  check(result.customerState === 'needs_confirmation', 'Mobile -> ASDA Mobile: needs_confirmation unless/until evidence establishes otherwise');
+  check(result.canProceedToPayment === false, 'Mobile -> ASDA Mobile: payment blocked');
+}
+
+{
+  // getCustomerFacingState never collapses a confirmed incompatibility
+  // and a genuine unknown into the same customer-facing message, even
+  // though both currently block payment identically.
+  check(getCustomerFacingState('compatible') === 'supported', "getCustomerFacingState('compatible') === 'supported'");
+  check(getCustomerFacingState('provider_specific') === 'supported', "getCustomerFacingState('provider_specific') === 'supported'");
+  check(getCustomerFacingState('incompatible') === 'not_currently_supported', "getCustomerFacingState('incompatible') === 'not_currently_supported'");
+  check(getCustomerFacingState('unverified') === 'needs_confirmation', "getCustomerFacingState('unverified') === 'needs_confirmation'");
+  check(getCustomerFacingState('anything-else') === 'needs_confirmation', 'an unrecognised internal status defaults to needs_confirmation, never supported');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

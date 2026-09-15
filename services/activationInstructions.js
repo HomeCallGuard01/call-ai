@@ -39,6 +39,92 @@ function toNationalDialingFormat(e164Number) {
 // deferred P1 mobile-screen item), so in practice every current call site
 // passes carrier as undefined and gets the honest "not confirmed"
 // fallback below, never a fabricated universal code.
+// Pure, and deliberately independent of the Twilio number — deactivation
+// never needs it (the customer is removing a diversion already set up on
+// their own phone, not registering a new one). Extracted 2026-09-16 so
+// this can be offered to a household with NO active entitlement (a
+// customer who has already cancelled, or is mid-cancellation) without
+// ever needing requireEntitlement — see routes using this directly for
+// cancellation guidance, as distinct from buildActivationInstructions'
+// own use of it below for the full activation response.
+//
+// Deactivation code — landline vs mobile are handled completely
+// separately, per the carrier audit's Task B finding.
+//
+// Landline: unchanged from before. Deactivation (`#SC#`) and Erasure
+// (`##SC#`) are BOTH valid, standard MMI procedures for service code
+// 21 — unlike the registration code above, there is no invalid-syntax
+// defect here. Left unchanged: no research documents a real reason
+// Virgin needs Erasure specifically rather than Deactivation, but
+// "unresearched" isn't "incorrect," and changing it without a
+// confirmed reason would be a guess, not a fix. This branch never
+// reads `carrier` — landline and mobile provider data are always
+// kept separate, and a landline customer is NEVER shown a mobile
+// GSM/MMI carrier code.
+//
+// Mobile (iphone/android): the 2026-09-07-era code hardcoded #21# for
+// every mobile network regardless of carrier. The carrier audit
+// (2026-09-10) found this assumption is itself wrong — Vodafone's and
+// SMARTY's own first-party docs show the real "cancel everything" code
+// is ##002# for most networks, #21#/##21# being specific to the
+// unconditional-forwarding *service class* rather than a universal
+// cancel-all, and Sky uses a different code family (#61#) entirely.
+// There is no confirmed code that is safe to show every mobile
+// customer, so there is no fallback default here at all — an unknown
+// or not-yet-confirmed carrier gets an honest "not confirmed, check
+// native settings / contact support" response
+// (getMobileDeactivationInstructions), never a guessed code.
+function buildDeactivationInstructions({ deviceType, provider, carrier }) {
+  if (!DEVICE_TYPES.has(deviceType)) {
+    throw new Error(`buildDeactivationInstructions: invalid deviceType "${deviceType}"`);
+  }
+
+  if (deviceType === "landline" && !LANDLINE_PROVIDERS.has(provider)) {
+    throw new Error(`buildDeactivationInstructions: invalid landline provider "${provider}"`);
+  }
+
+  let cancelCode;
+  let cancelCodeMethod;
+  let cancelCodeConfidence = null;
+  let cancelCodeNote = null;
+
+  if (deviceType === "landline") {
+    cancelCode = provider === "virgin" ? "##21#" : "#21#";
+    cancelCodeMethod = "mmi";
+  } else {
+    const deactivation = getMobileDeactivationInstructions(carrier);
+    cancelCode = deactivation.code;
+    cancelCodeMethod = deactivation.method;
+    cancelCodeConfidence = deactivation.confidence;
+    cancelCodeNote = deactivation.note;
+  }
+
+  const requiresPreliminaryCall = deviceType === "landline" && (provider === "sky" || provider === "virgin");
+
+  return {
+    cancelCode,
+    cancelCodeMethod,
+    cancelCodeConfidence,
+    cancelCodeNote,
+    requiresPreliminaryCall,
+    preliminaryCallNumber: requiresPreliminaryCall ? "150" : null,
+    preliminaryCallNote:
+      provider === "sky"
+        ? "Call 150 from your landline first to add Call Divert to your account (this may cost around £2.50/month)."
+        : provider === "virgin"
+          ? "Call 150 from your landline first to add Call Divert to your account."
+          : null,
+  };
+}
+
+// Pure — directly unit-testable, no Supabase/Twilio/Express involved.
+// carrier is the mobile network key (services/providerPolicy.js's
+// PROVIDER_POLICY keys, e.g. 'o2', 'vodafone') — landline-only, ignored
+// for deviceType 'landline'. Optional: today no route/household field
+// actually captures it yet (P0 Batch 1 scope — carrier capture is a
+// deferred P1 mobile-screen item), so in practice every current call site
+// passes carrier as undefined and gets the honest "not confirmed"
+// fallback below, never a fabricated universal code.
 function buildActivationInstructions({ twilioNumber, deviceType, provider, carrier }) {
   if (!DEVICE_TYPES.has(deviceType)) {
     throw new Error(`buildActivationInstructions: invalid deviceType "${deviceType}"`);
@@ -70,67 +156,11 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider, carri
   // negative.
   const code = `**21*${dialledNumber}#`;
 
-  // Deactivation code — landline vs mobile are handled completely
-  // separately, per the carrier audit's Task B finding.
-  //
-  // Landline: unchanged from before. Deactivation (`#SC#`) and Erasure
-  // (`##SC#`) are BOTH valid, standard MMI procedures for service code
-  // 21 — unlike the registration code above, there is no invalid-syntax
-  // defect here. Left unchanged: no research documents a real reason
-  // Virgin needs Erasure specifically rather than Deactivation, but
-  // "unresearched" isn't "incorrect," and changing it without a
-  // confirmed reason would be a guess, not a fix. This branch never
-  // reads `carrier` — landline and mobile provider data are always
-  // kept separate.
-  //
-  // Mobile (iphone/android): the 2026-09-07-era code hardcoded #21# for
-  // every mobile network regardless of carrier. The carrier audit
-  // (2026-09-10) found this assumption is itself wrong — Vodafone's and
-  // SMARTY's own first-party docs show the real "cancel everything" code
-  // is ##002# for most networks, #21#/##21# being specific to the
-  // unconditional-forwarding *service class* rather than a universal
-  // cancel-all, and Sky uses a different code family (#61#) entirely.
-  // There is no confirmed code that is safe to show every mobile
-  // customer, so there is no fallback default here at all — an unknown
-  // or not-yet-confirmed carrier gets an honest "not confirmed, check
-  // native settings / contact support" response
-  // (getMobileDeactivationInstructions), never a guessed code.
-  let cancelCode;
-  let cancelCodeMethod;
-  let cancelCodeConfidence = null;
-  let cancelCodeNote = null;
-
-  if (deviceType === "landline") {
-    cancelCode = provider === "virgin" ? "##21#" : "#21#";
-    cancelCodeMethod = "mmi";
-  } else {
-    const deactivation = getMobileDeactivationInstructions(carrier);
-    cancelCode = deactivation.code;
-    cancelCodeMethod = deactivation.method;
-    cancelCodeConfidence = deactivation.confidence;
-    cancelCodeNote = deactivation.note;
-  }
-
-  // Sky and Virgin both require calling 150 first to add "Call Divert" to
-  // the account before the code will work — confirmed via research this
-  // engagement (APP_DECISION_003). Every other provider/device type works
-  // with the code alone, no preliminary step.
-  const requiresPreliminaryCall = deviceType === "landline" && (provider === "sky" || provider === "virgin");
+  const deactivation = buildDeactivationInstructions({ deviceType, provider, carrier });
 
   return {
     code,
-    cancelCode,
-    cancelCodeMethod,
-    cancelCodeConfidence,
-    cancelCodeNote,
-    requiresPreliminaryCall,
-    preliminaryCallNumber: requiresPreliminaryCall ? "150" : null,
-    preliminaryCallNote:
-      provider === "sky"
-        ? "Call 150 from your landline first to add Call Divert to your account (this may cost around £2.50/month)."
-        : provider === "virgin"
-          ? "Call 150 from your landline first to add Call Divert to your account."
-          : null,
+    ...deactivation,
   };
 }
 
@@ -138,5 +168,6 @@ module.exports = {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
   toNationalDialingFormat,
+  buildDeactivationInstructions,
   buildActivationInstructions,
 };

@@ -43,6 +43,7 @@ const {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
   buildActivationInstructions,
+  buildDeactivationInstructions,
 } = require("./services/activationInstructions");
 const { isCallWithinVerificationWindow, stampActivationVerifiedOnRealCall } = require("./services/activationVerification");
 const {
@@ -1188,6 +1189,60 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, async (req,
     });
   } catch (err) {
     console.error("WEB ACTIVATION INSTRUCTIONS ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// GET /deactivation-instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other&carrier=<mobile network key>
+//
+// 2026-09-16 — the cancellation-safety fix: cancelling a subscription
+// does NOT itself turn off call forwarding on the customer's own phone,
+// and the customer needs to be told how to remove it themselves. The
+// existing /activation-instructions route can't be reused for this —
+// it's requireEntitlement-gated, so a customer who has already cancelled
+// (or is in the middle of cancelling) would be locked out of it at
+// exactly the moment they need removal instructions most. Deliberately
+// requireAuth ONLY: this route never touches the Twilio number (it calls
+// buildDeactivationInstructions directly, not buildActivationInstructions
+// — see services/activationInstructions.js's own header on why
+// deactivation guidance never needed the Twilio number in the first
+// place) and never provisions/activates anything, so there is nothing
+// here that requires an active entitlement to see safely.
+app.get("/deactivation-instructions", requireAuth, async (req, res) => {
+  const { deviceType, provider, carrier } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  try {
+    const instructions = buildDeactivationInstructions({
+      deviceType,
+      provider,
+      carrier: typeof carrier === "string" ? carrier : undefined,
+    });
+
+    res.json({
+      cancelCode: instructions.cancelCode,
+      cancelCodeMethod: instructions.cancelCodeMethod,
+      cancelCodeConfidence: instructions.cancelCodeConfidence,
+      cancelCodeNote: instructions.cancelCodeNote,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+    });
+  } catch (err) {
+    console.error("WEB DEACTIVATION INSTRUCTIONS ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });

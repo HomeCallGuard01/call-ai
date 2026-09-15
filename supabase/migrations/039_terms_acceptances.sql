@@ -10,7 +10,10 @@
 -- including if the customer accepts again later (e.g. re-subscribing
 -- after cancelling, or a materially updated Terms version).
 --
--- STATUS: DRAFT — NOT APPLIED.
+-- STATUS (corrected 2026-09-16, was stale "DRAFT — NOT APPLIED"):
+-- APPLIED to staging (tigwgmayeuisrxjjykqd), verified read-only against
+-- the live staging schema — the terms_acceptances table exists there.
+-- NOT yet applied to production.
 --
 -- Renumbered 029 → 039 (2026-09-13, canonical-release-base reconciliation):
 -- the carrier-onboarding-gate work was originally authored against a

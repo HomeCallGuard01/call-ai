@@ -10,7 +10,11 @@
 -- only the storage; the gating logic itself stays entirely in
 -- providerPolicy.js, never duplicated here.
 --
--- STATUS: DRAFT — NOT APPLIED.
+-- STATUS (corrected 2026-09-16, was stale "DRAFT — NOT APPLIED"):
+-- APPLIED to staging (tigwgmayeuisrxjjykqd), verified read-only against
+-- the live staging schema — households.carrier_provider_key/
+-- carrier_tariff_type/carrier_compatibility_captured_at all exist there.
+-- NOT yet applied to production.
 --
 -- Deliberately stores only the household's RAW carrier/tariff selection,
 -- never a derived compatibility verdict (no "status" or "can_pay" column

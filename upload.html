@@ -1105,7 +1105,7 @@
           <option value="talkmobile">Talkmobile</option>
           <option value="asda">ASDA Mobile</option>
           <option value="1pmobile">1pMobile</option>
-          <option value="other">Other / not listed</option>
+          <option value="other">Other / Not sure</option>
         </select>
       </div>
 
@@ -1119,7 +1119,25 @@
       </div>
 
       <p id="carrierCheckError" class="error-banner" role="alert" hidden></p>
-      <p id="carrierBlockedMessage" class="error-banner" role="alert" hidden></p>
+
+      <!-- Three explicit, distinct customer states (2026-09-16) — never
+           collapsed into one generic "blocked" message. SUPPORTED
+           proceeds silently (no message needed, straight to Terms/
+           payment). NOT_CURRENTLY_SUPPORTED is a confirmed fact — plain,
+           simple wording, no false hope, no help-route confusion.
+           NEEDS_CONFIRMATION is a genuine unknown — must never say
+           "not supported," must always offer a real way to reach a
+           person. Which one renders is decided entirely by the
+           backend's customerState field; nothing here hardcodes a
+           per-carrier verdict. -->
+      <div id="carrierNotSupportedMessage" class="error-banner" role="alert" hidden>
+        <p id="carrierNotSupportedText"></p>
+      </div>
+      <div id="carrierNeedsConfirmationMessage" class="error-banner" role="alert" hidden>
+        <p>We're still confirming Home Call Guard works with your network. We don't want to take your payment until we're sure it will work for you.</p>
+        <p>Please <a href="mailto:support@homecallguard.co.uk">contact our support team</a> and we'll help confirm this for you.</p>
+      </div>
+
       <button type="button" id="checkCarrierButton">Continue</button>
     </div>
 
@@ -1160,6 +1178,25 @@
 
     <div id="delayedActions" hidden>
       <button type="button" class="secondary-action-button" id="checkStatusButton">Check status again</button>
+    </div>
+
+    <!-- 2026-09-16 cancellation-safety fix: shown whenever state is
+         "unsubscribed" — which covers both a brand-new customer AND a
+         customer whose protection has just lapsed. GET /dashboard-data
+         is requireEntitlement-gated, so once lapsed the frontend has no
+         way to tell these two apart — showing this to a new customer
+         too is a harmless extra link; hiding it from a lapsed customer
+         would leave them with forwarding still silently pointed at a
+         now-inactive number. Never shows an invented code — see
+         renderDeactivationResult. -->
+    <div id="unsubscribedDeactivationHelp" hidden>
+      <p class="field-hint">
+        <strong>Previously had Home Call Guard, or just cancelled?</strong>
+        Cancelling your subscription does not automatically turn off call forwarding on your phone —
+        you need to turn it off yourself, or calls may not reach you.
+      </p>
+      <button type="button" class="secondary-action-button" id="unsubscribedShowDeactivationButton">Show me how to turn off call forwarding</button>
+      <div id="unsubscribedDeactivationWidget" hidden></div>
     </div>
   </section>
 
@@ -1212,13 +1249,24 @@
 
         <div id="callForwardingSetupForm">
           <p class="field-hint">Tell us what you're forwarding calls from to get your activation code.</p>
-          <label for="deviceTypeSelect">What are you forwarding calls from?</label>
-          <select id="deviceTypeSelect">
-            <option value="">Choose one…</option>
-            <option value="iphone">iPhone</option>
-            <option value="android">Android phone</option>
-            <option value="landline">Home landline</option>
-          </select>
+
+          <!-- Hidden when we already know the answer from the Mobile/
+               Landline choice made before payment (2026-09-16) — see
+               applyRememberedDeviceToManualForm. Falls back to asking
+               fresh, exactly as before, whenever that isn't available. -->
+          <div id="deviceTypeQuestionRow">
+            <label for="deviceTypeSelect">What are you forwarding calls from?</label>
+            <select id="deviceTypeSelect">
+              <option value="">Choose one…</option>
+              <option value="iphone">iPhone</option>
+              <option value="android">Android phone</option>
+              <option value="landline">Home landline</option>
+            </select>
+          </div>
+          <p class="field-hint" id="deviceTypeRememberedRow" hidden>
+            <span id="deviceTypeRememberedText"></span>
+            <button type="button" class="secondary-action-button" id="deviceTypeChangeButton">Change</button>
+          </p>
 
           <div id="landlineProviderRow" hidden>
             <label for="landlineProviderSelect">Who's your landline provider?</label>
@@ -1369,6 +1417,16 @@
       </form>
       <p class="account-support-note">This takes you to Stripe, our secure payment provider, where you can update your card details or cancel your subscription.</p>
       <p class="account-support-note" id="membershipNotManageableNote" hidden>To make changes to your membership, contact us at <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a>.</p>
+
+      <!-- Only shown once membership.status === "cancelled" (see
+           renderMembership) — the moment cancellation is confirmed is
+           exactly when the customer needs this, before protection has
+           even ended yet. -->
+      <div id="membershipDeactivationHelp" hidden>
+        <p class="field-hint"><strong>Turn off call forwarding</strong></p>
+        <button type="button" class="secondary-action-button" id="membershipShowDeactivationButton">Show me how to turn off call forwarding</button>
+        <div id="membershipDeactivationWidget" hidden></div>
+      </div>
     </section>
 
     <section class="card">
@@ -1759,13 +1817,26 @@
   let forceManualActivation = false;
 
   function renderActivateStep() {
-    const detected = detectMobileDeviceType(navigator.userAgent);
+    // 2026-09-16: a customer who told us pre-payment they were protecting
+    // a LANDLINE must never be shown the one-tap mobile-dialer flow just
+    // because the browser completing setup happens to be running on an
+    // iPhone/Android — that would set up forwarding on the wrong phone
+    // entirely (the one browsing, not the landline being protected). The
+    // remembered pre-payment answer always overrides user-agent
+    // detection for this specific case; user-agent detection is only
+    // trusted when we don't already know better.
+    const rememberedCategory = getRememberedDeviceCategory();
+    const detected = rememberedCategory === "landline" ? null : detectMobileDeviceType(navigator.userAgent);
     const showMobileFlow = !!detected && !forceManualActivation;
 
     const mobileFlow = document.getElementById("activateMobileFlow");
     const manualForm = document.getElementById("callForwardingSetupForm");
     if (mobileFlow) mobileFlow.hidden = !showMobileFlow;
     if (manualForm) manualForm.hidden = showMobileFlow;
+
+    if (!showMobileFlow) {
+      applyRememberedDeviceToManualForm(rememberedCategory);
+    }
 
     if (showMobileFlow) {
       detectedMobileDeviceType = detected;
@@ -1906,13 +1977,25 @@
       if (dateLabelEl) dateLabelEl.textContent = "Protected until";
       if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.accessUntil);
       if (statusMessageEl) {
-        statusMessageEl.textContent = "Cancelling your membership stops future payments. Your protection remains active until the end of your paid period.";
+        // 2026-09-16 cancellation-safety fix: the previous wording only
+        // described the billing/payment consequence of cancelling —
+        // never that call forwarding on the customer's own phone is a
+        // separate thing HCG cannot turn off remotely, and stays on
+        // until the customer removes it themselves.
+        statusMessageEl.textContent =
+          "Cancelling your membership stops future payments. Your protection remains active until the end of your paid period. " +
+          "Important: cancelling does NOT automatically turn off call forwarding on your phone — once your protection ends, " +
+          "you'll need to turn it off yourself, or calls may not reach you. See \"Turn off call forwarding\" below.";
         statusMessageEl.hidden = false;
       }
+      const cancelledHelpEl = document.getElementById("membershipDeactivationHelp");
+      if (cancelledHelpEl) cancelledHelpEl.hidden = false;
     } else {
       if (dateLabelEl) dateLabelEl.textContent = "Next payment";
       if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.nextBillingDate);
       if (statusMessageEl) statusMessageEl.hidden = true;
+      const cancelledHelpEl = document.getElementById("membershipDeactivationHelp");
+      if (cancelledHelpEl) cancelledHelpEl.hidden = true;
     }
 
     if (manageButtonEl) {
@@ -1930,8 +2013,62 @@
   // activation against a genuine routed call rather than trusting a
   // self-report (see /activation-verify and services/activationVerification.js).
   const deviceTypeSelectEl = document.getElementById("deviceTypeSelect");
+  const deviceTypeQuestionRowEl = document.getElementById("deviceTypeQuestionRow");
+  const deviceTypeRememberedRowEl = document.getElementById("deviceTypeRememberedRow");
+  const deviceTypeRememberedTextEl = document.getElementById("deviceTypeRememberedText");
+  const deviceTypeChangeButtonEl = document.getElementById("deviceTypeChangeButton");
   const landlineProviderRowEl = document.getElementById("landlineProviderRow");
   const landlineProviderSelectEl = document.getElementById("landlineProviderSelect");
+
+  // Applies the pre-payment Mobile/Landline answer to this second,
+  // finer-grained question (2026-09-16) — never re-asks "mobile or
+  // landline" when we already know, while still asking iPhone vs Android
+  // where that's genuinely new information (only landline was answered
+  // pre-payment, never iPhone/Android specifically). A remembered
+  // 'landline' answer skips straight to the landline-provider question;
+  // a remembered 'mobile' answer removes "Home landline" from the
+  // dropdown (already ruled out) but still asks iPhone vs Android;
+  // unknown/absent (different browser/session, or this page reached
+  // directly) falls back to asking fresh, exactly as before this change.
+  function applyRememberedDeviceToManualForm(rememberedCategory) {
+    if (!deviceTypeSelectEl) return;
+
+    if (rememberedCategory === "landline") {
+      deviceTypeSelectEl.value = "landline";
+      if (landlineProviderRowEl) landlineProviderRowEl.hidden = false;
+      if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = true;
+      if (deviceTypeRememberedTextEl) deviceTypeRememberedTextEl.textContent = "Forwarding calls from: Home landline";
+      if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = false;
+      return;
+    }
+
+    if (rememberedCategory === "mobile") {
+      const landlineOption = deviceTypeSelectEl.querySelector('option[value="landline"]');
+      if (landlineOption) landlineOption.hidden = true;
+      // Still asking iPhone vs Android — genuinely new information, not
+      // a repeat of the pre-payment Mobile/Landline question — so the
+      // full question row stays visible here, just without the
+      // already-ruled-out landline option cluttering it.
+      if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
+      if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
+      return;
+    }
+
+    // No remembered answer — unchanged, original three-way question.
+    if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
+    if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
+  }
+
+  if (deviceTypeChangeButtonEl) {
+    deviceTypeChangeButtonEl.addEventListener("click", function () {
+      const landlineOption = deviceTypeSelectEl && deviceTypeSelectEl.querySelector('option[value="landline"]');
+      if (landlineOption) landlineOption.hidden = false;
+      if (deviceTypeSelectEl) deviceTypeSelectEl.value = "";
+      if (landlineProviderRowEl) landlineProviderRowEl.hidden = true;
+      if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
+      if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
+    });
+  }
   const getForwardingCodeButtonEl = document.getElementById("getForwardingCodeButton");
   const callForwardingErrorEl = document.getElementById("callForwardingError");
   const callForwardingInstructionsEl = document.getElementById("callForwardingInstructions");
@@ -2593,6 +2730,10 @@
     if (protectedContent) {
       protectedContent.hidden = state !== "protected";
     }
+    const unsubscribedDeactivationHelp = document.getElementById("unsubscribedDeactivationHelp");
+    if (unsubscribedDeactivationHelp) {
+      unsubscribedDeactivationHelp.hidden = state !== "unsubscribed";
+    }
   }
   // TEST-EXTRACT-END: setStatus
 
@@ -2634,6 +2775,267 @@
   }
   // TEST-EXTRACT-END: handleSubscribeFormSubmit
 
+  // --- Remembered device/network selection (2026-09-16) ---
+  //
+  // Removes the duplicate "what are you forwarding calls from" question:
+  // before this, the pre-payment carrier check (Mobile/Landline) and the
+  // post-payment "Turn on protection" step (iPhone/Android/landline) were
+  // two completely disconnected UI elements, so a landline customer was
+  // asked to confirm "landline" twice, and renderActivateStep()'s
+  // user-agent auto-detect could show the one-tap mobile dialer flow to
+  // a customer who had already told us they were protecting a landline.
+  //
+  // Deliberately client-side only (localStorage), not a new database
+  // column — matches this codebase's existing, deliberate decision not
+  // to persist device type server-side (see migration 035's own scope
+  // note: "a separate households.device_type column... was designed
+  // alongside this one, then deferred before release"), and mirrors how
+  // the mobile app already solves this exact problem (device-picker.tsx
+  // passes deviceType via navigation params + AsyncStorage-backed
+  // saveActivationDevice, never a server round trip). A cleared/private
+  // browser, or finishing setup on a different device, simply falls back
+  // to today's existing full-question behaviour — never a regression,
+  // only a convenience when it's available.
+  const DEVICE_CATEGORY_STORAGE_KEY = "hcg_device_category";
+  const MOBILE_NETWORK_STORAGE_KEY = "hcg_mobile_network";
+
+  function rememberDeviceCategory(category) {
+    try {
+      localStorage.setItem(DEVICE_CATEGORY_STORAGE_KEY, category);
+    } catch (err) {
+      // Private browsing / storage disabled — fine, this is a pure
+      // convenience, never required for the flow to work.
+    }
+  }
+
+  function rememberMobileNetwork(provider) {
+    try {
+      localStorage.setItem(MOBILE_NETWORK_STORAGE_KEY, provider);
+    } catch (err) {
+      // Same as above — safe to ignore.
+    }
+  }
+
+  function getRememberedDeviceCategory() {
+    try {
+      const value = localStorage.getItem(DEVICE_CATEGORY_STORAGE_KEY);
+      return value === "mobile" || value === "landline" ? value : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function getRememberedMobileNetwork() {
+    try {
+      return localStorage.getItem(MOBILE_NETWORK_STORAGE_KEY) || null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // --- Turn off call forwarding (2026-09-16, cancellation-safety fix) ---
+  //
+  // Shared by two locations: the Membership card (once cancelled) and
+  // the lapsed/unsubscribed status card. Deliberately calls
+  // GET /deactivation-instructions (requireAuth only, no entitlement
+  // required — see server.js's own comment on that route) rather than
+  // the existing /activation-instructions, which is requireEntitlement-
+  // gated and would 402 a customer who has already lapsed, at exactly
+  // the moment they need this most.
+  //
+  // Never shows an invented code: if the backend returns cancelCode:
+  // null (an unconfirmed network), this renders the honest "check your
+  // phone's native settings, or contact support" note instead — the
+  // exact same wording the backend itself provides, never a fallback
+  // guess written here. Landline never reaches the mobile network
+  // question at all — a completely separate branch, matching
+  // services/activationInstructions.js's own separation.
+  const MOBILE_NETWORK_OPTIONS = [
+    ["ee", "EE"], ["o2", "O2"], ["vodafone", "Vodafone"], ["three", "Three"],
+    ["giffgaff", "giffgaff"], ["tesco", "Tesco Mobile"], ["sky", "Sky Mobile"],
+    ["id_mobile", "iD Mobile"], ["smarty", "SMARTY"], ["voxi", "VOXI"],
+    ["lebara", "Lebara"], ["lyca", "Lyca Mobile"], ["talkmobile", "Talkmobile"],
+    ["asda", "ASDA Mobile"], ["1pmobile", "1pMobile"], ["other", "Other / Not sure"],
+  ];
+  const LANDLINE_PROVIDER_OPTIONS = [
+    ["bt", "BT"], ["sky", "Sky"], ["virgin", "Virgin Media"],
+    ["talktalk", "TalkTalk"], ["plusnet", "Plusnet"], ["other", "Other"],
+  ];
+
+  function buildSelect(options, placeholder) {
+    const select = document.createElement("select");
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = placeholder;
+    select.appendChild(blank);
+    options.forEach(function (pair) {
+      const opt = document.createElement("option");
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      select.appendChild(opt);
+    });
+    return select;
+  }
+
+  async function fetchDeactivationInstructions(deviceType, provider, carrier) {
+    const params = new URLSearchParams({ deviceType: deviceType });
+    if (deviceType === "landline") params.set("provider", provider);
+    if (deviceType !== "landline" && carrier) params.set("carrier", carrier);
+    const res = await fetch("/deactivation-instructions?" + params.toString());
+    if (!res.ok) throw new Error("request failed");
+    return res.json();
+  }
+
+  function renderDeactivationResult(container, instructions) {
+    container.innerHTML = "";
+
+    if (instructions.requiresPreliminaryCall && instructions.preliminaryCallNote) {
+      const note = document.createElement("p");
+      note.className = "field-hint";
+      note.textContent = instructions.preliminaryCallNote;
+      container.appendChild(note);
+    }
+
+    if (instructions.cancelCode) {
+      const codeLine = document.createElement("p");
+      codeLine.textContent = "On the phone, dial:";
+      container.appendChild(codeLine);
+      const code = document.createElement("p");
+      code.className = "forwarding-code";
+      code.textContent = instructions.cancelCode;
+      container.appendChild(code);
+      if (instructions.cancelCodeConfidence === "medium") {
+        const caveat = document.createElement("p");
+        caveat.className = "field-hint";
+        caveat.textContent = "This should work, but if it doesn't, check your phone's native call forwarding settings or contact support.";
+        container.appendChild(caveat);
+      }
+    } else if (instructions.cancelCodeMethod === "native_settings") {
+      const note = document.createElement("p");
+      note.className = "field-hint";
+      note.textContent = "Use your phone's own call forwarding settings (in the Phone app, or under Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network.";
+      container.appendChild(note);
+    } else {
+      // Honest fallback — never a guessed code (2026-09-16 core fix for
+      // the previously-shipped universal, confirmed-wrong #21#).
+      const note = document.createElement("p");
+      note.className = "field-hint";
+      note.textContent = "We don't have a confirmed removal code for your network yet. Check your phone's native call forwarding settings, or contact us at support@homecallguard.co.uk and we'll help.";
+      container.appendChild(note);
+    }
+  }
+
+  function initDeactivationWidget(widgetEl) {
+    widgetEl.innerHTML = "";
+
+    const deviceLabel = document.createElement("label");
+    deviceLabel.textContent = "What are you forwarding calls from?";
+    widgetEl.appendChild(deviceLabel);
+    const deviceSelect = buildSelect(
+      [["iphone", "iPhone"], ["android", "Android phone"], ["landline", "Home landline"]],
+      "Choose one…"
+    );
+    widgetEl.appendChild(deviceSelect);
+
+    const networkRow = document.createElement("div");
+    const networkLabel = document.createElement("label");
+    networkLabel.textContent = "Which mobile network do you use?";
+    const networkSelect = buildSelect(MOBILE_NETWORK_OPTIONS, "Choose one…");
+    networkRow.appendChild(networkLabel);
+    networkRow.appendChild(networkSelect);
+    networkRow.hidden = true;
+    widgetEl.appendChild(networkRow);
+
+    const landlineRow = document.createElement("div");
+    const landlineLabel = document.createElement("label");
+    landlineLabel.textContent = "Who's your landline provider?";
+    const landlineSelect = buildSelect(LANDLINE_PROVIDER_OPTIONS, "Choose one…");
+    landlineRow.appendChild(landlineLabel);
+    landlineRow.appendChild(landlineSelect);
+    landlineRow.hidden = true;
+    widgetEl.appendChild(landlineRow);
+
+    const errorEl = document.createElement("p");
+    errorEl.className = "error-banner";
+    errorEl.hidden = true;
+    widgetEl.appendChild(errorEl);
+
+    const goButton = document.createElement("button");
+    goButton.type = "button";
+    goButton.textContent = "Show my removal instructions";
+    widgetEl.appendChild(goButton);
+
+    const resultEl = document.createElement("div");
+    widgetEl.appendChild(resultEl);
+
+    deviceSelect.addEventListener("change", function () {
+      networkRow.hidden = deviceSelect.value !== "iphone" && deviceSelect.value !== "android";
+      landlineRow.hidden = deviceSelect.value !== "landline";
+    });
+
+    // Pre-fill from the same remembered pre-payment answer used to
+    // de-duplicate the setup-time question, where available — a
+    // convenience only, never required (falls back to asking fresh).
+    const remembered = getRememberedDeviceCategory();
+    if (remembered === "mobile") {
+      const rememberedNetwork = getRememberedMobileNetwork();
+      if (rememberedNetwork) networkSelect.value = rememberedNetwork;
+    }
+
+    goButton.addEventListener("click", async function () {
+      errorEl.hidden = true;
+      resultEl.innerHTML = "";
+
+      const deviceType = deviceSelect.value;
+      if (!deviceType) {
+        errorEl.textContent = "Please choose what you're forwarding calls from.";
+        errorEl.hidden = false;
+        return;
+      }
+      if (deviceType === "landline" && !landlineSelect.value) {
+        errorEl.textContent = "Please choose your landline provider.";
+        errorEl.hidden = false;
+        return;
+      }
+
+      goButton.disabled = true;
+      try {
+        const instructions = await fetchDeactivationInstructions(
+          deviceType,
+          deviceType === "landline" ? landlineSelect.value : undefined,
+          deviceType !== "landline" ? networkSelect.value : undefined
+        );
+        renderDeactivationResult(resultEl, instructions);
+      } catch (err) {
+        errorEl.textContent = "We couldn't load your removal instructions just now. Please try again, or contact support@homecallguard.co.uk.";
+        errorEl.hidden = false;
+      } finally {
+        goButton.disabled = false;
+      }
+    });
+  }
+
+  function wireDeactivationHelpButton(buttonId, widgetId) {
+    const button = document.getElementById(buttonId);
+    const widget = document.getElementById(widgetId);
+    if (!button || !widget) return;
+    button.addEventListener("click", function () {
+      const showing = !widget.hidden;
+      if (showing) {
+        widget.hidden = true;
+        return;
+      }
+      if (!widget.dataset.initialised) {
+        initDeactivationWidget(widget);
+        widget.dataset.initialised = "true";
+      }
+      widget.hidden = false;
+    });
+  }
+
+  wireDeactivationHelpButton("unsubscribedShowDeactivationButton", "unsubscribedDeactivationWidget");
+  wireDeactivationHelpButton("membershipShowDeactivationButton", "membershipDeactivationWidget");
+
   // --- Carrier compatibility check (before payment) ---
   //
   // Mirrors mobile/app/(setup)/device-picker.tsx exactly: device type
@@ -2651,7 +3053,9 @@
   const carrierTariffRowEl = document.getElementById("carrierTariffRow");
   const carrierTariffSelectEl = document.getElementById("carrierTariffSelect");
   const carrierCheckErrorEl = document.getElementById("carrierCheckError");
-  const carrierBlockedMessageEl = document.getElementById("carrierBlockedMessage");
+  const carrierNotSupportedMessageEl = document.getElementById("carrierNotSupportedMessage");
+  const carrierNotSupportedTextEl = document.getElementById("carrierNotSupportedText");
+  const carrierNeedsConfirmationMessageEl = document.getElementById("carrierNeedsConfirmationMessage");
   const checkCarrierButtonEl = document.getElementById("checkCarrierButton");
   const termsConsentSectionEl = document.getElementById("termsConsentSection");
   const agreeTermsCheckboxEl = document.getElementById("agreeTermsCheckbox");
@@ -2680,9 +3084,11 @@
 
   async function evaluateCarrierCompatibility() {
     if (carrierCheckErrorEl) carrierCheckErrorEl.hidden = true;
-    if (carrierBlockedMessageEl) carrierBlockedMessageEl.hidden = true;
+    if (carrierNotSupportedMessageEl) carrierNotSupportedMessageEl.hidden = true;
+    if (carrierNeedsConfirmationMessageEl) carrierNeedsConfirmationMessageEl.hidden = true;
 
     const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
+    rememberDeviceCategory(isMobile ? "mobile" : "landline");
     if (!isMobile) {
       handleCarrierCheckSuccess();
       return;
@@ -2715,15 +3121,24 @@
       }
 
       if (result.canProceedToPayment) {
+        rememberMobileNetwork(provider);
         handleCarrierCheckSuccess();
         return;
       }
 
-      if (carrierBlockedMessageEl) {
-        carrierBlockedMessageEl.textContent =
-          result.reason ||
-          "We're still confirming support for your network. We don't want to take payment until we're sure Home Call Guard will work for you. Contact support for help.";
-        carrierBlockedMessageEl.hidden = false;
+      // Three distinct customer states, never collapsed into one generic
+      // "blocked" message (2026-09-16) — see carrierNotSupportedMessage/
+      // carrierNeedsConfirmationMessage's own markup comment. The backend
+      // (services/providerPolicy.js's customerState) is the only source
+      // of which one applies; nothing here decides it per-carrier.
+      if (result.customerState === "needs_confirmation") {
+        if (carrierNeedsConfirmationMessageEl) carrierNeedsConfirmationMessageEl.hidden = false;
+      } else {
+        if (carrierNotSupportedTextEl) {
+          carrierNotSupportedTextEl.textContent =
+            result.reason || "Home Call Guard isn't currently supported on your network.";
+        }
+        if (carrierNotSupportedMessageEl) carrierNotSupportedMessageEl.hidden = false;
       }
     } catch (err) {
       if (carrierCheckErrorEl) {

@@ -130,8 +130,8 @@ check(
 // the option exists but resolves to the same backend-decided verdict as
 // any other unrecognised provider (PROVIDER_POLICY.other, unverified).
 check(
-  html.includes('value="other">Other / not listed<'),
-  'an "Other/not listed" option exists and is sent through the exact same backend evaluation as every named carrier — it cannot silently bypass the check since there is no client-side special case for it'
+  html.includes('value="other">Other / Not sure<'),
+  'an "Other/Not sure" option exists and is sent through the exact same backend evaluation as every named carrier — it cannot silently bypass the check since there is no client-side special case for it'
 );
 
 // Terms consent — separate checkboxes, unticked by default, exact wording.
