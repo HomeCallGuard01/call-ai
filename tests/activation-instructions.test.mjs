@@ -31,6 +31,16 @@ check(
 );
 
 // --- buildActivationInstructions: mobile (iPhone/Android) ---
+//
+// 2026-09-10 (P0 Batch 1, component B): the previous universal #21#
+// cancellation code for every mobile network was itself confirmed wrong
+// by the carrier audit (Vodafone/SMARTY's real cancel-all code is
+// ##002#; Sky uses #61# entirely). cancelCode is now provider-policy-
+// driven (services/providerPolicy.js) and carrier-dependent — with no
+// carrier supplied (every current real customer, since carrier capture
+// doesn't exist yet), there is no safe universal fallback, so cancelCode
+// is honestly null rather than any single guessed code. See the
+// dedicated carrier-specific block further down for the populated case.
 
 for (const deviceType of ['iphone', 'android']) {
   const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType });
@@ -39,13 +49,43 @@ for (const deviceType of ['iphone', 'android']) {
     `${deviceType}: produces the standards-correct **21*<number># Registration code (2026-09-07 fix — the previous single-asterisk *21*<number># is not a valid 3GPP MMI Registration production and was rejected by a real Android device)`
   );
   check(
-    result.cancelCode === '#21#',
-    `${deviceType}: produces the standard #21# cancellation code`
+    result.cancelCode === null,
+    `${deviceType}: with no carrier supplied, cancelCode is honestly null — never a guessed universal code`
+  );
+  check(
+    result.cancelCodeMethod === 'unknown' && typeof result.cancelCodeNote === 'string' && result.cancelCodeNote.length > 0,
+    `${deviceType}: cancelCodeMethod is honestly 'unknown' with an explanatory note, not silently defaulted to 'mmi'`
   );
   check(
     result.requiresPreliminaryCall === false && result.preliminaryCallNumber === null,
     `${deviceType}: no preliminary call required`
   );
+}
+
+// --- buildActivationInstructions: mobile, carrier-specific deactivation code ---
+
+for (const deviceType of ['iphone', 'android']) {
+  {
+    const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType, carrier: 'vodafone' });
+    check(
+      result.cancelCode === '##002#' && result.cancelCodeMethod === 'mmi',
+      `${deviceType}/vodafone: cancelCode is the correct, first-party-confirmed ##002#, not #21#`
+    );
+  }
+  {
+    const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType, carrier: 'sky' });
+    check(
+      result.cancelCode === '#61#',
+      `${deviceType}/sky (mobile): cancelCode is #61# — a different service code entirely from the landline #21#/##21# family`
+    );
+  }
+  {
+    const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType, carrier: 'three' });
+    check(
+      result.cancelCode === null && result.cancelCodeMethod === 'native_settings',
+      `${deviceType}/three: no MMI code — native Settings is required, MMI is reportedly broken network-wide on Three`
+    );
+  }
 }
 
 // --- buildActivationInstructions: landline, standard providers ---
@@ -117,23 +157,31 @@ for (const provider of ['bt', 'talktalk', 'plusnet', 'other']) {
   check(!result.code.startsWith('*21*'), 'the forwarding-registration code is never the old, standards-incorrect single-asterisk form that a real Android device rejected as an invalid MMI code');
 }
 
-// --- 2026-09-07: cancellation code is deliberately unchanged ---
+// --- landline cancellation code: deliberately unchanged by the mobile fix ---
 //
-// Unlike the registration code above, #21# (Deactivation) and ##21#
-// (Erasure) are BOTH valid, standard MMI procedures for service code 21
-// — this is not a single-vs-double-asterisk defect. No research
-// (docs/mobile-app/APP_DECISION_003 or elsewhere) documents a real
-// reason Virgin needs Erasure specifically rather than Deactivation, but
-// "unresearched" is not "incorrect" — so this stays as it was, not
-// changed merely for symmetry with the registration fix above.
+// #21# (Deactivation) and ##21# (Erasure) are BOTH valid, standard MMI
+// procedures for service code 21 for LANDLINE providers — this file's
+// mobile-only cancelCode fix (2026-09-10, provider-policy-driven) does
+// not touch the landline branch at all; landline and mobile provider
+// data are kept structurally separate throughout
+// services/activationInstructions.js.
 
 check(
-  buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'android' }).cancelCode === '#21#',
-  'the standard (non-Virgin) cancellation code remains the valid #21# Deactivation form — deliberately not touched by the 2026-09-07 registration-code fix'
+  buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider: 'bt' }).cancelCode === '#21#',
+  'landline/bt: cancellation code remains the valid #21# Deactivation form, untouched by the mobile carrier-policy fix'
 );
 check(
   buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider: 'virgin' }).cancelCode === '##21#',
-  "Virgin's cancellation code remains the valid ##21# Erasure form — deliberately not touched by the 2026-09-07 registration-code fix, since it is not itself incorrect MMI syntax"
+  "Virgin's cancellation code remains the valid ##21# Erasure form — deliberately not touched by the mobile carrier-policy fix, since it is not itself incorrect MMI syntax and is a landline provider, not a mobile network"
+);
+
+// --- landline does not receive mobile MMI instructions when a mobile
+// carrier happens to be passed in (defensive — carrier must never leak
+// into the landline branch) ---
+
+check(
+  buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider: 'bt', carrier: 'vodafone' }).cancelCode === '#21#',
+  'landline/bt: a stray mobile `carrier` value has no effect on the landline branch — cancelCode is still the landline #21#, never the mobile ##002#'
 );
 
 // --- validation ---

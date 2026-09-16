@@ -1,5 +1,3 @@
-const { DEFAULT_TTL_SECONDS } = require("./voiceAccessToken");
-
 // Resolves where a passthrough call (known contact, or a screened-safe
 // unknown caller) should actually be dialled to. Pure and directly
 // testable — no Twilio/Express involved — so the routing decision itself
@@ -19,32 +17,36 @@ function resolveForwardingDestination(household) {
   return { canForward: false, number: null };
 }
 
-// A registered-at timestamp is only meaningful for roughly as long as the
-// Access Token it came from is valid, plus a grace window for the app's
-// own re-registration to actually complete (network latency, a briefly
-// backgrounded app catching up on its next foreground/refresh cycle) —
-// not indefinitely. Reuses voiceAccessToken.js's real TTL rather than a
-// second, potentially-drifting constant. 15 minutes of grace is
-// deliberately generous relative to mobile/lib/voiceClient.ts's own
-// 5-minute pre-expiry refresh margin and 60s failure-retry — a genuinely
-// still-registered app should never sit this close to the edge under
-// normal operation; this window exists for "briefly can't reach the
-// backend to refresh," not as the expected steady state.
-const REACHABILITY_GRACE_SECONDS = 15 * 60;
-
-// Pure, directly unit-testable — no Twilio/Express/Date.now() ambiguity
-// (now is passed in, never read internally) — matches this codebase's
-// existing convention of pure/injectable time-dependent functions.
-function isVoiceClientReachable(registeredAt, now) {
-  if (!registeredAt) return false;
-
-  const registeredMs = new Date(registeredAt).getTime();
-  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
-
-  if (!Number.isFinite(registeredMs) || !Number.isFinite(nowMs)) return false;
-
-  const ageSeconds = (nowMs - registeredMs) / 1000;
-  return ageSeconds >= 0 && ageSeconds <= DEFAULT_TTL_SECONDS + REACHABILITY_GRACE_SECONDS;
+// 2026-09-13 architecture correction: this function used to be
+// isVoiceClientReachable, gating <Dial><Client> on
+// households.voice_client_registered_at being no older than the Access
+// Token's ~1-hour TTL plus a 15-minute grace window. That conflated two
+// genuinely independent lifetimes — confirmed directly against Twilio's
+// own current Voice Mobile SDK documentation: the Access Token used to
+// establish a registration is short-lived (~1 hour), but the underlying
+// push-registration binding it creates has a TTL of roughly ONE YEAR of
+// idle time, entirely independent of the token that created it. Treating
+// a multi-hour-old (or multi-day-old) timestamp as "unreachable" was
+// therefore architecturally wrong, not just a too-strict number — a real
+// household that registered hours ago is, per Twilio's own model, still
+// almost certainly reachable, and was being incorrectly refused a
+// genuine, potentially-successful <Dial><Client> attempt.
+//
+// voice_client_registered_at is therefore historical evidence that this
+// household's identity has successfully completed at least one
+// registration — not a live heartbeat with a short expiry. The only
+// genuinely different case is no registration at all: a household that
+// has never once completed voice.register() has no identity for Twilio
+// to dial, full stop, regardless of how long ago "never" was. Anything
+// else — ten minutes old, two hours old, several days old — is treated
+// identically: attempt the real <Dial><Client> and let Twilio's own
+// DialCallStatus (the existing /call-delivery-failed handling, which
+// already alerts and fails gracefully on a genuine no-answer/failed
+// outcome) be the authoritative signal if the client turns out to
+// actually be unreachable — never a pre-emptive guess based on a
+// timestamp. Pure and directly unit-testable, same as before.
+function hasVoiceClientRegistrationHistory(registeredAt) {
+  return Boolean(registeredAt);
 }
 
 // Pure decision, directly unit-testable without Twilio/Express — the
@@ -86,7 +88,11 @@ function isVoiceClientReachable(registeredAt, now) {
 //
 // voiceClientReachable is passed in (not computed here) so this stays
 // free of any Date/now ambiguity — the caller computes it via
-// isVoiceClientReachable, this function only branches on the boolean.
+// hasVoiceClientRegistrationHistory, this function only branches on the
+// boolean. The parameter name is unchanged even after the 2026-09-13
+// reachability-model fix: decideCallDeliveryPlan's own contract (true ->
+// dial, false -> self-protecting-unreachable) hasn't changed, only how
+// the caller computes the boolean has.
 function decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable = false } = {}) {
   if (!household) {
     // Matches the real /voice call sites, where household can genuinely
@@ -117,8 +123,14 @@ function decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachabl
 //     reached Home Call Guard. Proves only the inbound leg.
 //
 //   deliveryReady — a capability/readiness fact, never proof anything was
-//     ever actually delivered: whether isVoiceClientReachable says the
-//     Voice SDK client is *currently* reachable.
+//     ever actually delivered: whether hasVoiceClientRegistrationHistory
+//     says this household's Voice SDK client has ever successfully
+//     registered. Updated 2026-09-13: this used to also require that
+//     registration be recent (within the Access Token's ~1-hour TTL),
+//     which was an architecture error (see hasVoiceClientRegistrationHistory's
+//     own comment) — Twilio's real push-registration binding lasts
+//     roughly a year, so a registration from hours or days ago is not a
+//     meaningful regression signal on its own.
 //
 //   endToEndDeliveryVerified — delivery_verified_at (036): real Twilio
 //     evidence (DialCallStatus === "completed") that an approved call
@@ -127,13 +139,18 @@ function decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachabl
 //     and forwarding alone is not proof.
 //
 // fullyProtected (the actual "You're protected" gate) requires both
-// endToEndDeliveryVerified AND that the client is *currently* still
-// reachable — a mobile delivery capability can regress after one real
-// success (app uninstalled, token expired), so proof of a past delivery
-// alone is not enough to keep claiming protection indefinitely.
+// endToEndDeliveryVerified AND deliveryReady — unchanged formula. Note
+// deliveryReady can now only be false when this household has *never*
+// registered a Voice SDK client at all; it will no longer flip false
+// purely because of elapsed time since a genuine past registration. A
+// real regression (app uninstalled, genuinely dead binding) is instead
+// expected to surface through delivery_verified_at/the existing
+// /call-delivery-failed alerting the next time a call is actually
+// attempted — reconciling exactly how "reconnect_needed" should behave
+// on Home/Account is a separate follow-up, not addressed by this fix.
 function computeProtectionStatus(household, now) {
   const forwardingVerified = !!(household && household.activation_verified_at);
-  const deliveryReady = isVoiceClientReachable(household && household.voice_client_registered_at, now);
+  const deliveryReady = hasVoiceClientRegistrationHistory(household && household.voice_client_registered_at);
   const endToEndDeliveryVerified = !!(household && household.delivery_verified_at);
   const fullyProtected = endToEndDeliveryVerified && deliveryReady;
 
@@ -143,7 +160,6 @@ function computeProtectionStatus(household, now) {
 module.exports = {
   resolveForwardingDestination,
   decideCallDeliveryPlan,
-  isVoiceClientReachable,
+  hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
-  REACHABILITY_GRACE_SECONDS,
 };

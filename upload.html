@@ -510,6 +510,335 @@
     line-height: 1.5;
   }
 
+  /* --- Guided signup redesign (2026-09-16) — the unsubscribed-state
+     carrier check / consent / Subscribe flow. Everything below is new
+     visual design only; every id these rules target already existed
+     and was driving the exact same JS logic before this pass, just with
+     no dedicated styling (bare browser-default <select>/checkbox/radio
+     controls), which is what made the whole section feel cramped and
+     the consent checkbox easy to miss. */
+
+  .signup-flow {
+    max-width: 480px;
+    margin: 32px auto 0;
+    text-align: left;
+  }
+
+  .signup-divider {
+    height: 1px;
+    background: #1e293b;
+    margin: 32px 0;
+  }
+
+  .signup-question {
+    margin-bottom: 28px;
+  }
+
+  .signup-question-title,
+  .signup-label {
+    display: block;
+    font-size: 19px;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin: 0 0 14px;
+  }
+
+  /* Mobile/Landline and Pay Monthly/PAYG — large tiles built from real,
+     fully semantic radio inputs (never a styled <div> pretending to be
+     one): the input itself stays in the accessibility tree and keeps
+     native keyboard/Tab/arrow-key behaviour, Space/Enter to activate,
+     and screen-reader "radio button, selected/not selected" semantics.
+     Only its own default visual rendering is hidden (opacity, not
+     display:none/visibility:hidden, which would also remove it from
+     the tab order in some browsers) — the adjacent label is what's
+     actually shown, restyled via the :checked sibling selector below. */
+  .tile-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .tile {
+    position: relative;
+    flex: 1 1 180px;
+  }
+
+  .tile input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .tile-face {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 16px 20px;
+    border: 2px solid #334155;
+    border-radius: 14px;
+    background: #0b1220;
+    color: #e2e8f0;
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.3;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+
+  .tile input:checked + .tile-face {
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.14);
+    color: #4ade80;
+  }
+
+  .tile input:focus-visible + .tile-face {
+    outline: 3px solid #22c55e;
+    outline-offset: 2px;
+  }
+
+  .tile input:hover + .tile-face {
+    border-color: #64748b;
+  }
+
+  /* Large, full-width native <select> — deliberately still a real
+     <select> (not a custom JS dropdown widget): every browser's own
+     accessibility, keyboard, and mobile-native picker behaviour comes
+     for free, which matters more for this product's older/non-technical
+     customer base than a fully custom look. */
+  .big-select {
+    display: block;
+    width: 100%;
+    min-height: 64px;
+    padding: 16px 44px 16px 18px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #e2e8f0;
+    background: #0b1220 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%2394a3b8' d='M3.5 5.5l4.5 4.5 4.5-4.5' stroke='%2394a3b8' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 16px center;
+    background-size: 16px;
+    border: 2px solid #334155;
+    border-radius: 14px;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+  }
+
+  .big-select:focus-visible {
+    outline: 3px solid #22c55e;
+    outline-offset: 2px;
+    border-color: #22c55e;
+  }
+
+  /* Compatibility messages — plain, non-technical, never styled to look
+     like an active/available path forward. Amber (the palette's
+     existing warning colour, e.g. .status-card[data-protection-
+     state="failed"]) rather than introducing a new red the rest of the
+     site doesn't use. */
+  .compat-message {
+    background: #1e293b;
+    border: 2px solid #f59e0b;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 24px;
+  }
+
+  .compat-message p {
+    margin: 0 0 8px;
+    font-size: 16px;
+    line-height: 1.5;
+    color: #fde68a;
+  }
+
+  .compat-message p:last-child {
+    margin-bottom: 0;
+  }
+
+  .compat-message a {
+    color: #fde68a;
+    font-weight: 700;
+  }
+
+  /* Consent — its own clearly bordered, accent-coloured card so it can
+     never be mistaken for ordinary body copy. */
+  .consent-card {
+    background: #0b1220;
+    border: 2px solid #22c55e;
+    border-radius: 16px;
+    padding: 24px;
+    margin: 8px 0 24px;
+  }
+
+  .consent-card .legal-links {
+    margin: 0 0 18px;
+    font-size: 15px;
+  }
+
+  .consent-card .legal-links a {
+    color: #4ade80;
+    font-weight: 600;
+  }
+
+  .consent-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    cursor: pointer;
+  }
+
+  .consent-row + .consent-row {
+    margin-top: 20px;
+  }
+
+  /* accent-color is the modern, one-line way to recolour a native
+     checkbox/radio without rebuilding it from scratch — every major
+     evergreen browser (Chrome/Edge/Firefox, Safari 15.4+) supports it,
+     and the control stays 100% native (real focus ring, real
+     accessibility semantics) underneath. */
+  .consent-row input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    accent-color: #22c55e;
+    cursor: pointer;
+  }
+
+  .consent-row-text {
+    font-size: 17px;
+    line-height: 1.45;
+    color: #e2e8f0;
+  }
+
+  .consent-price-note {
+    font-size: 14px;
+    color: #94a3b8;
+    line-height: 1.5;
+    margin: 0 0 20px;
+  }
+
+  .signup-primary-button {
+    /* No `display` override — this class is applied directly to
+       elements toggled via the native `hidden` attribute
+       (#checkCarrierButton), and an author `display` declaration
+       overrides the browser's own `[hidden] { display: none }` UA
+       rule, silently breaking the show/hide toggle regardless of what
+       `.hidden` is set to in JS (see this file's existing
+       .protected-number comment for the same gotcha, hit once before).
+       width: 100% alone is enough for a full-width button at the
+       default inline-block <button> display. */
+    width: 100%;
+    min-height: 64px;
+    padding: 18px 20px;
+    font-size: 19px;
+    font-weight: 700;
+    color: #04140a;
+    background: #22c55e;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .signup-primary-button:hover {
+    background: #16a34a;
+  }
+
+  .signup-primary-button:focus-visible {
+    outline: 3px solid #4ade80;
+    outline-offset: 2px;
+  }
+
+  .signup-primary-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* "Choose a different network or plan" (2026-09-16) — replaces
+     Continue entirely while a not-currently-supported result is showing,
+     so nothing green/primary-looking is ever on screen at the same time
+     as "this doesn't work." Same large tap target as the primary
+     button, deliberately NOT green — a clearly secondary, non-payment
+     action. */
+  .signup-choose-different-button {
+    /* No `display` override here either — see .signup-primary-button's
+       own comment; this element is also toggled via the native
+       `hidden` attribute. */
+    width: 100%;
+    min-height: 64px;
+    padding: 18px 20px;
+    font-size: 18px;
+    margin-top: 0;
+  }
+
+  .signup-choose-different-button:focus-visible {
+    outline: 3px solid #22c55e;
+    outline-offset: 2px;
+  }
+
+  /* "Previously used Home Call Guard?" — deliberately small and quiet,
+     underneath the main signup hierarchy, not competing with it. The
+     full warning/instructions this used to show unconditionally are
+     unchanged in substance, just revealed on demand now. */
+  .previously-used-link {
+    display: block;
+    text-align: center;
+    margin-top: 28px;
+    font-size: 14px;
+    color: #64748b;
+  }
+
+  .previously-used-link button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #94a3b8;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .previously-used-panel {
+    max-width: 480px;
+    margin: 16px auto 0;
+    padding: 18px 20px;
+    background: #0b1220;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    text-align: left;
+  }
+
+  @media (max-width: 480px) {
+    .signup-question-title,
+    .signup-label {
+      font-size: 17px;
+    }
+
+    .tile-face {
+      font-size: 16px;
+      min-height: 56px;
+      padding: 14px 16px;
+    }
+
+    .big-select,
+    .signup-primary-button {
+      min-height: 56px;
+      font-size: 17px;
+    }
+
+    .consent-card {
+      padding: 18px;
+    }
+
+    .consent-row-text {
+      font-size: 16px;
+    }
+  }
+
   .checkout-banner {
     background: #14532d;
     border: 1px solid #22c55e;
@@ -1067,13 +1396,145 @@
     </svg>
     <div class="status-title" id="statusTitle">Checking protection status…</div>
     <p class="status-sub" id="statusSub">We're loading your live protection status.</p>
-    <p class="price-note" id="priceNote" hidden>£4.99 per month. Cancel anytime.</p>
 
     <div class="spinner" id="confirmingSpinner" hidden aria-hidden="true"></div>
 
-    <form class="subscribe-button" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
-      <button type="submit">
-        Start protection
+    <!-- Carrier compatibility must be confirmed before payment — mirrors
+         mobile/app/(setup)/device-picker.tsx exactly: ask device type,
+         then (mobile only) network, then (only if the backend says it
+         affects eligibility) tariff. No carrier classification logic
+         lives here — every verdict comes from POST/GET
+         /billing/carrier-compatibility, which calls the same
+         services/providerPolicy.js the mobile app uses. Shown instead of
+         subscribeForm while state === "unsubscribed"; subscribeForm only
+         appears once a compatible carrier (or landline) is confirmed.
+
+         2026-09-16 visual redesign: every element below already existed
+         and drove the exact same JS/backend logic before this pass —
+         see git history for the pre-redesign markup. This is a styling
+         + hierarchy rebuild only, except carrierTariffSelect changing
+         from a <select> to a radio-tile pair (same two values,
+         pay_monthly/payg, read the same way by JS) to match the
+         requested "large side-by-side buttons" design. -->
+    <div id="carrierCheckSection" class="signup-flow" hidden>
+      <div class="signup-divider" aria-hidden="true"></div>
+
+      <div class="signup-question">
+        <span class="signup-question-title" id="deviceTypeQuestionLabel">What are we protecting?</span>
+        <div id="carrierDeviceRow" class="tile-row" role="radiogroup" aria-labelledby="deviceTypeQuestionLabel">
+          <label class="tile">
+            <input type="radio" name="carrierDeviceType" id="carrierDeviceMobile" value="mobile" checked>
+            <span class="tile-face">Mobile phone</span>
+          </label>
+          <label class="tile">
+            <input type="radio" name="carrierDeviceType" id="carrierDeviceLandline" value="landline">
+            <span class="tile-face">Landline</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="carrierNetworkRow" class="signup-question">
+        <label class="signup-label" for="carrierNetworkSelect">Which mobile network do you use?</label>
+        <select id="carrierNetworkSelect" class="big-select">
+          <option value="">Choose one…</option>
+          <option value="ee">EE</option>
+          <option value="o2">O2</option>
+          <option value="vodafone">Vodafone</option>
+          <option value="three">Three</option>
+          <option value="giffgaff">giffgaff</option>
+          <option value="tesco">Tesco Mobile</option>
+          <option value="sky">Sky Mobile</option>
+          <option value="id_mobile">iD Mobile</option>
+          <option value="smarty">SMARTY</option>
+          <option value="voxi">VOXI</option>
+          <option value="lebara">Lebara</option>
+          <option value="lyca">Lyca Mobile</option>
+          <option value="talkmobile">Talkmobile</option>
+          <option value="asda">ASDA Mobile</option>
+          <option value="1pmobile">1pMobile</option>
+          <option value="other">Other / Not sure</option>
+        </select>
+      </div>
+
+      <div id="carrierTariffRow" class="signup-question" hidden>
+        <span class="signup-question-title" id="tariffQuestionLabel">What type of plan do you have?</span>
+        <div class="tile-row" role="radiogroup" aria-labelledby="tariffQuestionLabel">
+          <label class="tile">
+            <input type="radio" name="carrierTariffType" id="carrierTariffPayMonthly" value="pay_monthly">
+            <span class="tile-face">Pay monthly</span>
+          </label>
+          <label class="tile">
+            <input type="radio" name="carrierTariffType" id="carrierTariffPayg" value="payg">
+            <span class="tile-face">Pay as you go</span>
+          </label>
+        </div>
+      </div>
+
+      <p id="carrierCheckError" class="error-banner" role="alert" hidden></p>
+
+      <!-- Three explicit, distinct customer states (2026-09-16) — never
+           collapsed into one generic "blocked" message. SUPPORTED
+           proceeds silently (no message needed, straight to Terms/
+           payment). NOT_CURRENTLY_SUPPORTED is a confirmed fact —
+           plain, simple, non-technical wording (composed client-side
+           from the selected network/plan name, never the backend's own
+           technical `reason` string), no false hope, no help-route
+           confusion, and an explicit prompt to pick a different
+           network/plan above. NEEDS_CONFIRMATION is a genuine unknown
+           — must never say "not supported," must always offer a real
+           way to reach a person. Which one renders is decided entirely
+           by the backend's customerState field; nothing here hardcodes
+           a per-carrier verdict — see evaluateCarrierCompatibility(). -->
+      <div id="carrierNotSupportedMessage" class="compat-message" role="alert" hidden>
+        <p id="carrierNotSupportedText"></p>
+        <p id="carrierNotSupportedSubtext"></p>
+      </div>
+      <div id="carrierNeedsConfirmationMessage" class="compat-message" role="alert" hidden>
+        <p>We're still confirming Home Call Guard works with your network. We don't want to take your payment until we're sure it will work for you.</p>
+        <p>Please <a href="mailto:support@homecallguard.co.uk">contact our support team</a> and we'll help confirm this for you.</p>
+      </div>
+
+      <!-- 2026-09-16 follow-up: while a not-currently-supported result is
+           showing, Continue is hidden entirely — leaving it visible
+           implied the customer could proceed with the very selection
+           just declared unsupported. "Choose a different network or
+           plan" replaces it, and only re-reveals Continue (see
+           handleChooseDifferentNetwork) once the customer has actually
+           acted on it — it never itself submits a new check. -->
+      <button type="button" class="signup-primary-button" id="checkCarrierButton">Continue</button>
+      <button type="button" class="secondary-action-button signup-choose-different-button" id="carrierChooseDifferentButton" hidden>Choose a different network or plan</button>
+    </div>
+
+    <!-- Terms/consent — separate from the cooling-off checkbox, per the
+         approved mobile design (mobile/app/(setup)/subscribe.tsx). Shown
+         once carrier compatibility is confirmed (or immediately for
+         landline). Recorded via POST /billing/terms-acceptance
+         immediately before the real Stripe redirect, never earlier.
+         Wording is unchanged from before this redesign — only the
+         visual card/spacing/checkbox size around it changed. -->
+    <div id="termsConsentSection" class="signup-flow" hidden>
+      <div class="signup-divider" aria-hidden="true"></div>
+
+      <div class="consent-card">
+        <p class="consent-price-note" id="priceNote">£4.99/month, including VAT. This is a recurring monthly subscription
+          that renews automatically every month until you cancel — cancel anytime.</p>
+
+        <p class="legal-links">
+          <a href="/terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
+          ·
+          <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
+        </p>
+
+        <label class="consent-row"><input type="checkbox" id="agreeTermsCheckbox"><span class="consent-row-text">I agree to the Terms &amp; Conditions and acknowledge the Privacy Policy.</span></label>
+        <label class="consent-row"><input type="checkbox" id="startImmediatelyCheckbox"><span class="consent-row-text">I'd like my protection to start right away. I understand I still have 30 days to change my mind either way.</span></label>
+
+        <p id="termsConsentError" class="error-banner" role="alert" hidden></p>
+      </div>
+    </div>
+
+    <form class="subscribe-button signup-flow" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
+      <button type="submit" class="signup-primary-button">
+        Subscribe &amp; pay £4.99/month now
       </button>
     </form>
 
@@ -1087,6 +1548,33 @@
 
     <div id="delayedActions" hidden>
       <button type="button" class="secondary-action-button" id="checkStatusButton">Check status again</button>
+    </div>
+
+    <!-- 2026-09-16 cancellation-safety fix, restyled 2026-09-16: shown
+         whenever state is "unsubscribed" — which covers both a brand-new
+         customer AND a customer whose protection has just lapsed.
+         GET /dashboard-data is requireEntitlement-gated, so once lapsed
+         the frontend has no way to tell these two apart — showing this
+         to a new customer too is a harmless extra link; hiding it from
+         a lapsed customer would leave them with forwarding still
+         silently pointed at a now-inactive number. Never shows an
+         invented code — see renderDeactivationResult. Deliberately
+         moved out of the main signup hierarchy and shrunk to a quiet
+         link — the underlying warning/functionality is unchanged, only
+         hidden-by-default behind "Turn off call forwarding" now instead
+         of always-visible. -->
+    <div id="unsubscribedDeactivationHelp" hidden>
+      <p class="previously-used-link">
+        Previously used Home Call Guard?
+        <button type="button" id="unsubscribedShowDeactivationButton">Turn off call forwarding</button>
+      </p>
+      <div id="unsubscribedDeactivationExplainer" class="previously-used-panel" hidden>
+        <p class="field-hint">
+          Cancelling your subscription does not automatically turn off call forwarding on your phone —
+          you need to turn it off yourself, or calls may not reach you.
+        </p>
+        <div id="unsubscribedDeactivationWidget"></div>
+      </div>
     </div>
   </section>
 
@@ -1139,13 +1627,24 @@
 
         <div id="callForwardingSetupForm">
           <p class="field-hint">Tell us what you're forwarding calls from to get your activation code.</p>
-          <label for="deviceTypeSelect">What are you forwarding calls from?</label>
-          <select id="deviceTypeSelect">
-            <option value="">Choose one…</option>
-            <option value="iphone">iPhone</option>
-            <option value="android">Android phone</option>
-            <option value="landline">Home landline</option>
-          </select>
+
+          <!-- Hidden when we already know the answer from the Mobile/
+               Landline choice made before payment (2026-09-16) — see
+               applyRememberedDeviceToManualForm. Falls back to asking
+               fresh, exactly as before, whenever that isn't available. -->
+          <div id="deviceTypeQuestionRow">
+            <label for="deviceTypeSelect">What are you forwarding calls from?</label>
+            <select id="deviceTypeSelect">
+              <option value="">Choose one…</option>
+              <option value="iphone">iPhone</option>
+              <option value="android">Android phone</option>
+              <option value="landline">Home landline</option>
+            </select>
+          </div>
+          <p class="field-hint" id="deviceTypeRememberedRow" hidden>
+            <span id="deviceTypeRememberedText"></span>
+            <button type="button" class="secondary-action-button" id="deviceTypeChangeButton">Change</button>
+          </p>
 
           <div id="landlineProviderRow" hidden>
             <label for="landlineProviderSelect">Who's your landline provider?</label>
@@ -1296,6 +1795,16 @@
       </form>
       <p class="account-support-note">This takes you to Stripe, our secure payment provider, where you can update your card details or cancel your subscription.</p>
       <p class="account-support-note" id="membershipNotManageableNote" hidden>To make changes to your membership, contact us at <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a>.</p>
+
+      <!-- Only shown once membership.status === "cancelled" (see
+           renderMembership) — the moment cancellation is confirmed is
+           exactly when the customer needs this, before protection has
+           even ended yet. -->
+      <div id="membershipDeactivationHelp" hidden>
+        <p class="field-hint"><strong>Turn off call forwarding</strong></p>
+        <button type="button" class="secondary-action-button" id="membershipShowDeactivationButton">Show me how to turn off call forwarding</button>
+        <div id="membershipDeactivationWidget" hidden></div>
+      </div>
     </section>
 
     <section class="card">
@@ -1686,13 +2195,26 @@
   let forceManualActivation = false;
 
   function renderActivateStep() {
-    const detected = detectMobileDeviceType(navigator.userAgent);
+    // 2026-09-16: a customer who told us pre-payment they were protecting
+    // a LANDLINE must never be shown the one-tap mobile-dialer flow just
+    // because the browser completing setup happens to be running on an
+    // iPhone/Android — that would set up forwarding on the wrong phone
+    // entirely (the one browsing, not the landline being protected). The
+    // remembered pre-payment answer always overrides user-agent
+    // detection for this specific case; user-agent detection is only
+    // trusted when we don't already know better.
+    const rememberedCategory = getRememberedDeviceCategory();
+    const detected = rememberedCategory === "landline" ? null : detectMobileDeviceType(navigator.userAgent);
     const showMobileFlow = !!detected && !forceManualActivation;
 
     const mobileFlow = document.getElementById("activateMobileFlow");
     const manualForm = document.getElementById("callForwardingSetupForm");
     if (mobileFlow) mobileFlow.hidden = !showMobileFlow;
     if (manualForm) manualForm.hidden = showMobileFlow;
+
+    if (!showMobileFlow) {
+      applyRememberedDeviceToManualForm(rememberedCategory);
+    }
 
     if (showMobileFlow) {
       detectedMobileDeviceType = detected;
@@ -1833,13 +2355,25 @@
       if (dateLabelEl) dateLabelEl.textContent = "Protected until";
       if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.accessUntil);
       if (statusMessageEl) {
-        statusMessageEl.textContent = "Cancelling your membership stops future payments. Your protection remains active until the end of your paid period.";
+        // 2026-09-16 cancellation-safety fix: the previous wording only
+        // described the billing/payment consequence of cancelling —
+        // never that call forwarding on the customer's own phone is a
+        // separate thing HCG cannot turn off remotely, and stays on
+        // until the customer removes it themselves.
+        statusMessageEl.textContent =
+          "Cancelling your membership stops future payments. Your protection remains active until the end of your paid period. " +
+          "Important: cancelling does NOT automatically turn off call forwarding on your phone — once your protection ends, " +
+          "you'll need to turn it off yourself, or calls may not reach you. See \"Turn off call forwarding\" below.";
         statusMessageEl.hidden = false;
       }
+      const cancelledHelpEl = document.getElementById("membershipDeactivationHelp");
+      if (cancelledHelpEl) cancelledHelpEl.hidden = false;
     } else {
       if (dateLabelEl) dateLabelEl.textContent = "Next payment";
       if (dateValueEl) dateValueEl.textContent = formatMembershipDate(membership.nextBillingDate);
       if (statusMessageEl) statusMessageEl.hidden = true;
+      const cancelledHelpEl = document.getElementById("membershipDeactivationHelp");
+      if (cancelledHelpEl) cancelledHelpEl.hidden = true;
     }
 
     if (manageButtonEl) {
@@ -1857,8 +2391,62 @@
   // activation against a genuine routed call rather than trusting a
   // self-report (see /activation-verify and services/activationVerification.js).
   const deviceTypeSelectEl = document.getElementById("deviceTypeSelect");
+  const deviceTypeQuestionRowEl = document.getElementById("deviceTypeQuestionRow");
+  const deviceTypeRememberedRowEl = document.getElementById("deviceTypeRememberedRow");
+  const deviceTypeRememberedTextEl = document.getElementById("deviceTypeRememberedText");
+  const deviceTypeChangeButtonEl = document.getElementById("deviceTypeChangeButton");
   const landlineProviderRowEl = document.getElementById("landlineProviderRow");
   const landlineProviderSelectEl = document.getElementById("landlineProviderSelect");
+
+  // Applies the pre-payment Mobile/Landline answer to this second,
+  // finer-grained question (2026-09-16) — never re-asks "mobile or
+  // landline" when we already know, while still asking iPhone vs Android
+  // where that's genuinely new information (only landline was answered
+  // pre-payment, never iPhone/Android specifically). A remembered
+  // 'landline' answer skips straight to the landline-provider question;
+  // a remembered 'mobile' answer removes "Home landline" from the
+  // dropdown (already ruled out) but still asks iPhone vs Android;
+  // unknown/absent (different browser/session, or this page reached
+  // directly) falls back to asking fresh, exactly as before this change.
+  function applyRememberedDeviceToManualForm(rememberedCategory) {
+    if (!deviceTypeSelectEl) return;
+
+    if (rememberedCategory === "landline") {
+      deviceTypeSelectEl.value = "landline";
+      if (landlineProviderRowEl) landlineProviderRowEl.hidden = false;
+      if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = true;
+      if (deviceTypeRememberedTextEl) deviceTypeRememberedTextEl.textContent = "Forwarding calls from: Home landline";
+      if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = false;
+      return;
+    }
+
+    if (rememberedCategory === "mobile") {
+      const landlineOption = deviceTypeSelectEl.querySelector('option[value="landline"]');
+      if (landlineOption) landlineOption.hidden = true;
+      // Still asking iPhone vs Android — genuinely new information, not
+      // a repeat of the pre-payment Mobile/Landline question — so the
+      // full question row stays visible here, just without the
+      // already-ruled-out landline option cluttering it.
+      if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
+      if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
+      return;
+    }
+
+    // No remembered answer — unchanged, original three-way question.
+    if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
+    if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
+  }
+
+  if (deviceTypeChangeButtonEl) {
+    deviceTypeChangeButtonEl.addEventListener("click", function () {
+      const landlineOption = deviceTypeSelectEl && deviceTypeSelectEl.querySelector('option[value="landline"]');
+      if (landlineOption) landlineOption.hidden = false;
+      if (deviceTypeSelectEl) deviceTypeSelectEl.value = "";
+      if (landlineProviderRowEl) landlineProviderRowEl.hidden = true;
+      if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
+      if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
+    });
+  }
   const getForwardingCodeButtonEl = document.getElementById("getForwardingCodeButton");
   const callForwardingErrorEl = document.getElementById("callForwardingError");
   const callForwardingInstructionsEl = document.getElementById("callForwardingInstructions");
@@ -2230,8 +2818,22 @@
   // Safari does not enable it for real customers, so on every other
   // browser this option simply never appears, rather than showing
   // something broken or unavailable.
+  // TEST-EXTRACT-START: shouldShowPhoneContactPicker
+  // Pure decision, extracted so a regression test can assert it directly
+  // rather than only by inspecting page markup. Feature-detected per
+  // MDN's own recommended check ("contacts" in navigator) — matches
+  // Chrome's own developer docs for the Contact Picker API. iOS Safari
+  // does not implement this API at all (confirmed against MDN/caniuse,
+  // not assumed), so hasContactsApi is false there and this must return
+  // false — never true "just in case," since a true here directly
+  // controls whether a real customer is shown a control that would
+  // silently fail if tapped.
+  function shouldShowPhoneContactPicker(hasContactsApi) {
+    return !!hasContactsApi;
+  }
+  // TEST-EXTRACT-END: shouldShowPhoneContactPicker
   const pickPhoneContactsOptionEl = document.getElementById("pickPhoneContactsOption");
-  if (pickPhoneContactsOptionEl && "contacts" in navigator) {
+  if (pickPhoneContactsOptionEl && shouldShowPhoneContactPicker("contacts" in navigator)) {
     pickPhoneContactsOptionEl.hidden = false;
   }
 
@@ -2433,11 +3035,12 @@
     const sub = document.getElementById("statusSub");
     const subscribeForm = document.getElementById("subscribeForm");
     const protectedContent = document.getElementById("protectedContent");
-    const priceNote = document.getElementById("priceNote");
     const stripeReassurance = document.getElementById("stripeReassurance");
     const confirmingSpinner = document.getElementById("confirmingSpinner");
     const successActions = document.getElementById("successActions");
     const delayedActions = document.getElementById("delayedActions");
+    const carrierCheckSection = document.getElementById("carrierCheckSection");
+    const termsConsentSection = document.getElementById("termsConsentSection");
 
     if (!card || !title || !sub) {
       return;
@@ -2449,8 +3052,8 @@
       title.textContent = "You're protected";
       sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
     } else if (state === "unsubscribed") {
-      title.textContent = "You don't currently have an active membership.";
-      sub.textContent = "Protect your home phone from scam callers today.";
+      title.textContent = "Protect your home phone from scam callers";
+      sub.textContent = "Join Home Call Guard today for £4.99/month (including VAT). Cancel anytime.";
     } else if (state === "confirming") {
       title.textContent = "Payment received. Activating your protection…";
       sub.textContent = "This usually takes a few seconds. Please don't close this page.";
@@ -2468,14 +3071,30 @@
       sub.textContent = "We're loading your live protection status.";
     }
 
-    if (subscribeForm) {
-      subscribeForm.hidden = state !== "unsubscribed";
+    // Carrier compatibility must be confirmed (and Terms accepted) before
+    // the payment button ever appears — mirrors the mobile app's
+    // device-picker.tsx-before-subscribe.tsx ordering. setStatus itself
+    // never reveals subscribeForm/termsConsentSection directly; only
+    // handleCarrierCheckSuccess() below does, once the carrier check has
+    // actually passed. Outside "unsubscribed" they're always force-hidden
+    // here, same safety property as before (never shown to an already-
+    // subscribed or mid-flow customer). carrierCheckSection itself is
+    // re-derived from whether termsConsentSection is already visible —
+    // not a separate flag — so a dashboard re-poll while still
+    // "unsubscribed" doesn't re-show the carrier form on top of an
+    // already-completed one.
+    if (subscribeForm && state !== "unsubscribed") {
+      subscribeForm.hidden = true;
     }
-    if (priceNote) {
-      priceNote.hidden = state !== "unsubscribed";
+    if (termsConsentSection && state !== "unsubscribed") {
+      termsConsentSection.hidden = true;
     }
-    if (stripeReassurance) {
-      stripeReassurance.hidden = state !== "unsubscribed";
+    if (carrierCheckSection) {
+      const alreadyPassed = !!(termsConsentSection && !termsConsentSection.hidden);
+      carrierCheckSection.hidden = state !== "unsubscribed" || alreadyPassed;
+    }
+    if (stripeReassurance && state !== "unsubscribed") {
+      stripeReassurance.hidden = true;
     }
     if (confirmingSpinner) {
       confirmingSpinner.hidden = state !== "confirming";
@@ -2488,6 +3107,10 @@
     }
     if (protectedContent) {
       protectedContent.hidden = state !== "protected";
+    }
+    const unsubscribedDeactivationHelp = document.getElementById("unsubscribedDeactivationHelp");
+    if (unsubscribedDeactivationHelp) {
+      unsubscribedDeactivationHelp.hidden = state !== "unsubscribed";
     }
   }
   // TEST-EXTRACT-END: setStatus
@@ -2530,10 +3153,536 @@
   }
   // TEST-EXTRACT-END: handleSubscribeFormSubmit
 
+  // --- Remembered device/network selection (2026-09-16) ---
+  //
+  // Removes the duplicate "what are you forwarding calls from" question:
+  // before this, the pre-payment carrier check (Mobile/Landline) and the
+  // post-payment "Turn on protection" step (iPhone/Android/landline) were
+  // two completely disconnected UI elements, so a landline customer was
+  // asked to confirm "landline" twice, and renderActivateStep()'s
+  // user-agent auto-detect could show the one-tap mobile dialer flow to
+  // a customer who had already told us they were protecting a landline.
+  //
+  // Deliberately client-side only (localStorage), not a new database
+  // column — matches this codebase's existing, deliberate decision not
+  // to persist device type server-side (see migration 035's own scope
+  // note: "a separate households.device_type column... was designed
+  // alongside this one, then deferred before release"), and mirrors how
+  // the mobile app already solves this exact problem (device-picker.tsx
+  // passes deviceType via navigation params + AsyncStorage-backed
+  // saveActivationDevice, never a server round trip). A cleared/private
+  // browser, or finishing setup on a different device, simply falls back
+  // to today's existing full-question behaviour — never a regression,
+  // only a convenience when it's available.
+  const DEVICE_CATEGORY_STORAGE_KEY = "hcg_device_category";
+  const MOBILE_NETWORK_STORAGE_KEY = "hcg_mobile_network";
+
+  function rememberDeviceCategory(category) {
+    try {
+      localStorage.setItem(DEVICE_CATEGORY_STORAGE_KEY, category);
+    } catch (err) {
+      // Private browsing / storage disabled — fine, this is a pure
+      // convenience, never required for the flow to work.
+    }
+  }
+
+  function rememberMobileNetwork(provider) {
+    try {
+      localStorage.setItem(MOBILE_NETWORK_STORAGE_KEY, provider);
+    } catch (err) {
+      // Same as above — safe to ignore.
+    }
+  }
+
+  function getRememberedDeviceCategory() {
+    try {
+      const value = localStorage.getItem(DEVICE_CATEGORY_STORAGE_KEY);
+      return value === "mobile" || value === "landline" ? value : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function getRememberedMobileNetwork() {
+    try {
+      return localStorage.getItem(MOBILE_NETWORK_STORAGE_KEY) || null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // --- Turn off call forwarding (2026-09-16, cancellation-safety fix) ---
+  //
+  // Shared by two locations: the Membership card (once cancelled) and
+  // the lapsed/unsubscribed status card. Deliberately calls
+  // GET /deactivation-instructions (requireAuth only, no entitlement
+  // required — see server.js's own comment on that route) rather than
+  // the existing /activation-instructions, which is requireEntitlement-
+  // gated and would 402 a customer who has already lapsed, at exactly
+  // the moment they need this most.
+  //
+  // Never shows an invented code: if the backend returns cancelCode:
+  // null (an unconfirmed network), this renders the honest "check your
+  // phone's native settings, or contact support" note instead — the
+  // exact same wording the backend itself provides, never a fallback
+  // guess written here. Landline never reaches the mobile network
+  // question at all — a completely separate branch, matching
+  // services/activationInstructions.js's own separation.
+  const MOBILE_NETWORK_OPTIONS = [
+    ["ee", "EE"], ["o2", "O2"], ["vodafone", "Vodafone"], ["three", "Three"],
+    ["giffgaff", "giffgaff"], ["tesco", "Tesco Mobile"], ["sky", "Sky Mobile"],
+    ["id_mobile", "iD Mobile"], ["smarty", "SMARTY"], ["voxi", "VOXI"],
+    ["lebara", "Lebara"], ["lyca", "Lyca Mobile"], ["talkmobile", "Talkmobile"],
+    ["asda", "ASDA Mobile"], ["1pmobile", "1pMobile"], ["other", "Other / Not sure"],
+  ];
+  const LANDLINE_PROVIDER_OPTIONS = [
+    ["bt", "BT"], ["sky", "Sky"], ["virgin", "Virgin Media"],
+    ["talktalk", "TalkTalk"], ["plusnet", "Plusnet"], ["other", "Other"],
+  ];
+
+  function buildSelect(options, placeholder) {
+    const select = document.createElement("select");
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = placeholder;
+    select.appendChild(blank);
+    options.forEach(function (pair) {
+      const opt = document.createElement("option");
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      select.appendChild(opt);
+    });
+    return select;
+  }
+
+  async function fetchDeactivationInstructions(deviceType, provider, carrier) {
+    const params = new URLSearchParams({ deviceType: deviceType });
+    if (deviceType === "landline") params.set("provider", provider);
+    if (deviceType !== "landline" && carrier) params.set("carrier", carrier);
+    const res = await fetch("/deactivation-instructions?" + params.toString());
+    if (!res.ok) throw new Error("request failed");
+    return res.json();
+  }
+
+  function renderDeactivationResult(container, instructions) {
+    container.innerHTML = "";
+
+    if (instructions.requiresPreliminaryCall && instructions.preliminaryCallNote) {
+      const note = document.createElement("p");
+      note.className = "field-hint";
+      note.textContent = instructions.preliminaryCallNote;
+      container.appendChild(note);
+    }
+
+    if (instructions.cancelCode) {
+      const codeLine = document.createElement("p");
+      codeLine.textContent = "On the phone, dial:";
+      container.appendChild(codeLine);
+      const code = document.createElement("p");
+      code.className = "forwarding-code";
+      code.textContent = instructions.cancelCode;
+      container.appendChild(code);
+      if (instructions.cancelCodeConfidence === "medium") {
+        const caveat = document.createElement("p");
+        caveat.className = "field-hint";
+        caveat.textContent = "This should work, but if it doesn't, check your phone's native call forwarding settings or contact support.";
+        container.appendChild(caveat);
+      }
+    } else if (instructions.cancelCodeMethod === "native_settings") {
+      const note = document.createElement("p");
+      note.className = "field-hint";
+      note.textContent = "Use your phone's own call forwarding settings (in the Phone app, or under Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network.";
+      container.appendChild(note);
+    } else {
+      // Honest fallback — never a guessed code (2026-09-16 core fix for
+      // the previously-shipped universal, confirmed-wrong #21#).
+      const note = document.createElement("p");
+      note.className = "field-hint";
+      note.textContent = "We don't have a confirmed removal code for your network yet. Check your phone's native call forwarding settings, or contact us at support@homecallguard.co.uk and we'll help.";
+      container.appendChild(note);
+    }
+  }
+
+  function initDeactivationWidget(widgetEl) {
+    widgetEl.innerHTML = "";
+
+    const deviceLabel = document.createElement("label");
+    deviceLabel.textContent = "What are you forwarding calls from?";
+    widgetEl.appendChild(deviceLabel);
+    const deviceSelect = buildSelect(
+      [["iphone", "iPhone"], ["android", "Android phone"], ["landline", "Home landline"]],
+      "Choose one…"
+    );
+    widgetEl.appendChild(deviceSelect);
+
+    const networkRow = document.createElement("div");
+    const networkLabel = document.createElement("label");
+    networkLabel.textContent = "Which mobile network do you use?";
+    const networkSelect = buildSelect(MOBILE_NETWORK_OPTIONS, "Choose one…");
+    networkRow.appendChild(networkLabel);
+    networkRow.appendChild(networkSelect);
+    networkRow.hidden = true;
+    widgetEl.appendChild(networkRow);
+
+    const landlineRow = document.createElement("div");
+    const landlineLabel = document.createElement("label");
+    landlineLabel.textContent = "Who's your landline provider?";
+    const landlineSelect = buildSelect(LANDLINE_PROVIDER_OPTIONS, "Choose one…");
+    landlineRow.appendChild(landlineLabel);
+    landlineRow.appendChild(landlineSelect);
+    landlineRow.hidden = true;
+    widgetEl.appendChild(landlineRow);
+
+    const errorEl = document.createElement("p");
+    errorEl.className = "error-banner";
+    errorEl.hidden = true;
+    widgetEl.appendChild(errorEl);
+
+    const goButton = document.createElement("button");
+    goButton.type = "button";
+    goButton.textContent = "Show my removal instructions";
+    widgetEl.appendChild(goButton);
+
+    const resultEl = document.createElement("div");
+    widgetEl.appendChild(resultEl);
+
+    deviceSelect.addEventListener("change", function () {
+      networkRow.hidden = deviceSelect.value !== "iphone" && deviceSelect.value !== "android";
+      landlineRow.hidden = deviceSelect.value !== "landline";
+    });
+
+    // Pre-fill from the same remembered pre-payment answer used to
+    // de-duplicate the setup-time question, where available — a
+    // convenience only, never required (falls back to asking fresh).
+    const remembered = getRememberedDeviceCategory();
+    if (remembered === "mobile") {
+      const rememberedNetwork = getRememberedMobileNetwork();
+      if (rememberedNetwork) networkSelect.value = rememberedNetwork;
+    }
+
+    goButton.addEventListener("click", async function () {
+      errorEl.hidden = true;
+      resultEl.innerHTML = "";
+
+      const deviceType = deviceSelect.value;
+      if (!deviceType) {
+        errorEl.textContent = "Please choose what you're forwarding calls from.";
+        errorEl.hidden = false;
+        return;
+      }
+      if (deviceType === "landline" && !landlineSelect.value) {
+        errorEl.textContent = "Please choose your landline provider.";
+        errorEl.hidden = false;
+        return;
+      }
+
+      goButton.disabled = true;
+      try {
+        const instructions = await fetchDeactivationInstructions(
+          deviceType,
+          deviceType === "landline" ? landlineSelect.value : undefined,
+          deviceType !== "landline" ? networkSelect.value : undefined
+        );
+        renderDeactivationResult(resultEl, instructions);
+      } catch (err) {
+        errorEl.textContent = "We couldn't load your removal instructions just now. Please try again, or contact support@homecallguard.co.uk.";
+        errorEl.hidden = false;
+      } finally {
+        goButton.disabled = false;
+      }
+    });
+  }
+
+  // panelId is the element toggled hidden/visible (the whole explainer,
+  // for the redesigned quiet "Previously used Home Call Guard?" link);
+  // widgetId (defaults to panelId) is the specific element the actual
+  // device/network picker gets lazily built into on first expand — kept
+  // separate so the redesigned unsubscribed version can show its warning
+  // paragraph immediately alongside the widget, both inside one panel,
+  // while the unchanged Membership-card version (no separate explainer
+  // wrapper) keeps working exactly as before.
+  function wireDeactivationHelpButton(buttonId, panelId, widgetId) {
+    const button = document.getElementById(buttonId);
+    const panel = document.getElementById(panelId);
+    const widget = document.getElementById(widgetId || panelId);
+    if (!button || !panel || !widget) return;
+    button.addEventListener("click", function () {
+      const showing = !panel.hidden;
+      if (showing) {
+        panel.hidden = true;
+        return;
+      }
+      if (!widget.dataset.initialised) {
+        initDeactivationWidget(widget);
+        widget.dataset.initialised = "true";
+      }
+      panel.hidden = false;
+    });
+  }
+
+  wireDeactivationHelpButton("unsubscribedShowDeactivationButton", "unsubscribedDeactivationExplainer", "unsubscribedDeactivationWidget");
+  wireDeactivationHelpButton("membershipShowDeactivationButton", "membershipDeactivationWidget");
+
+  // --- Carrier compatibility check (before payment) ---
+  //
+  // Mirrors mobile/app/(setup)/device-picker.tsx exactly: device type
+  // (mobile/landline) -> (mobile only) network -> (only if the backend
+  // says it affects eligibility) tariff. No carrier classification logic
+  // lives in this file — every verdict comes from
+  // POST /billing/carrier-compatibility (services/providerPolicy.js).
+  // Landline retains its own existing journey (deviceTypeSelect further
+  // down this page, used for the activation code after payment) and
+  // never goes through this network/tariff check at all.
+  const carrierCheckSectionEl = document.getElementById("carrierCheckSection");
+  const carrierDeviceMobileEl = document.getElementById("carrierDeviceMobile");
+  const carrierNetworkRowEl = document.getElementById("carrierNetworkRow");
+  const carrierNetworkSelectEl = document.getElementById("carrierNetworkSelect");
+  const carrierTariffRowEl = document.getElementById("carrierTariffRow");
+  const carrierCheckErrorEl = document.getElementById("carrierCheckError");
+  const carrierNotSupportedMessageEl = document.getElementById("carrierNotSupportedMessage");
+  const carrierNotSupportedTextEl = document.getElementById("carrierNotSupportedText");
+  const carrierNotSupportedSubtextEl = document.getElementById("carrierNotSupportedSubtext");
+  const carrierNeedsConfirmationMessageEl = document.getElementById("carrierNeedsConfirmationMessage");
+  const checkCarrierButtonEl = document.getElementById("checkCarrierButton");
+  const carrierChooseDifferentButtonEl = document.getElementById("carrierChooseDifferentButton");
+  const termsConsentSectionEl = document.getElementById("termsConsentSection");
+  const agreeTermsCheckboxEl = document.getElementById("agreeTermsCheckbox");
+  const startImmediatelyCheckboxEl = document.getElementById("startImmediatelyCheckbox");
+  const termsConsentErrorEl = document.getElementById("termsConsentError");
   const subscribeFormEl = document.getElementById("subscribeForm");
+  const stripeReassuranceEl = document.getElementById("stripeReassurance");
+
+  // 2026-09-16 redesign: the tariff question is now a radio-tile pair
+  // (large "Pay monthly"/"Pay as you go" buttons), not a <select> — same
+  // two values (pay_monthly/payg), sent to the backend exactly as
+  // before. Reads whichever radio is currently checked, or undefined if
+  // neither is (matches the old select's empty "Choose one…" state).
+  function getSelectedTariffType() {
+    const checked = document.querySelector('input[name="carrierTariffType"]:checked');
+    return checked ? checked.value : undefined;
+  }
+
+  function labelForNetwork(providerKey) {
+    const match = MOBILE_NETWORK_OPTIONS.find(pair => pair[0] === providerKey);
+    return match ? match[1] : "your network";
+  }
+
+  const TARIFF_LABELS = { pay_monthly: "Pay Monthly", payg: "Pay As You Go" };
+
+  document.querySelectorAll('input[name="carrierDeviceType"]').forEach(function (radio) {
+    radio.addEventListener("change", function () {
+      const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
+      if (carrierNetworkRowEl) carrierNetworkRowEl.hidden = !isMobile;
+      if (carrierTariffRowEl) carrierTariffRowEl.hidden = true;
+    });
+  });
+
+  // Reveals payment (termsConsentSection + subscribeForm) once carrier
+  // compatibility is confirmed. Landline is unaffected by
+  // providerPolicy.js entirely and proceeds straight through.
+  function handleCarrierCheckSuccess() {
+    if (carrierCheckSectionEl) carrierCheckSectionEl.hidden = true;
+    if (termsConsentSectionEl) termsConsentSectionEl.hidden = false;
+    if (subscribeFormEl) subscribeFormEl.hidden = false;
+    if (stripeReassuranceEl) stripeReassuranceEl.hidden = false;
+  }
+
+  async function evaluateCarrierCompatibility() {
+    if (carrierCheckErrorEl) carrierCheckErrorEl.hidden = true;
+    if (carrierNotSupportedMessageEl) carrierNotSupportedMessageEl.hidden = true;
+    if (carrierNeedsConfirmationMessageEl) carrierNeedsConfirmationMessageEl.hidden = true;
+    if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = false;
+    if (carrierChooseDifferentButtonEl) carrierChooseDifferentButtonEl.hidden = true;
+
+    const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
+    rememberDeviceCategory(isMobile ? "mobile" : "landline");
+    if (!isMobile) {
+      handleCarrierCheckSuccess();
+      return;
+    }
+
+    const provider = carrierNetworkSelectEl ? carrierNetworkSelectEl.value : "";
+    if (!provider) {
+      if (carrierCheckErrorEl) {
+        carrierCheckErrorEl.textContent = "Please choose your mobile network.";
+        carrierCheckErrorEl.hidden = false;
+      }
+      return;
+    }
+
+    const tariffType = carrierTariffRowEl && !carrierTariffRowEl.hidden
+      ? getSelectedTariffType()
+      : undefined;
+
+    try {
+      const response = await fetch("/billing/carrier-compatibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: provider, tariffType: tariffType }),
+      });
+      const result = await response.json();
+
+      if (result.reason === "tariff_type_required") {
+        if (carrierTariffRowEl) carrierTariffRowEl.hidden = false;
+        return;
+      }
+
+      if (result.canProceedToPayment) {
+        rememberMobileNetwork(provider);
+        handleCarrierCheckSuccess();
+        return;
+      }
+
+      // Three distinct customer states, never collapsed into one generic
+      // "blocked" message (2026-09-16) — see carrierNotSupportedMessage/
+      // carrierNeedsConfirmationMessage's own markup comment. The backend
+      // (services/providerPolicy.js's customerState) is the only source
+      // of WHETHER this is supported; nothing here decides that. What
+      // changed in the redesign is only the WORDING for the "not
+      // currently supported" case — simple, non-technical, composed
+      // from the network/plan name already known client-side, rather
+      // than the backend's own technical `reason` string (e.g. Tesco's
+      // "No network-level call forwarding (official Tesco Mobile
+      // support account...)"), which is still logged/available for
+      // support purposes but no longer shown to the customer directly.
+      if (result.customerState === "needs_confirmation") {
+        if (carrierNeedsConfirmationMessageEl) carrierNeedsConfirmationMessageEl.hidden = false;
+      } else {
+        // 2026-09-16 follow-up: Continue is hidden entirely here, not
+        // just left showing next to the message — an active-looking
+        // Continue button beside "this doesn't work" implied the
+        // customer could proceed with the very selection just declared
+        // unsupported. "Choose a different network or plan" (below)
+        // takes its place until the customer actually changes something.
+        const networkLabel = labelForNetwork(provider);
+        const isTariffCombo = !!(tariffType && TARIFF_LABELS[tariffType]);
+        const subject = isTariffCombo ? `${networkLabel} ${TARIFF_LABELS[tariffType]}` : networkLabel;
+        if (carrierNotSupportedTextEl) {
+          carrierNotSupportedTextEl.textContent = `Unfortunately, ${subject} is not currently compatible with Home Call Guard.`;
+        }
+        if (carrierNotSupportedSubtextEl) {
+          // Matches the network specifically (Tesco Mobile: "another
+          // supported mobile network") vs a plan-specific combination
+          // (Vodafone PAYG: "another supported mobile network or
+          // plan") — the exact two required wordings, chosen by
+          // whether a tariff was actually part of what was rejected.
+          carrierNotSupportedSubtextEl.textContent = isTariffCombo
+            ? "You can use Home Call Guard with another supported mobile network or plan."
+            : "You can use Home Call Guard with another supported mobile network.";
+        }
+        if (carrierNotSupportedMessageEl) carrierNotSupportedMessageEl.hidden = false;
+        if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = true;
+        if (carrierChooseDifferentButtonEl) carrierChooseDifferentButtonEl.hidden = false;
+      }
+    } catch (err) {
+      if (carrierCheckErrorEl) {
+        carrierCheckErrorEl.textContent = "We couldn't check your network. Please check your connection and try again.";
+        carrierCheckErrorEl.hidden = false;
+      }
+    }
+  }
+
+  if (checkCarrierButtonEl) {
+    checkCarrierButtonEl.addEventListener("click", evaluateCarrierCompatibility);
+  }
+
+  // "Choose a different network or plan" (2026-09-16) — returns focus to
+  // the network/tariff controls so the customer can pick something else.
+  // Deliberately does NOT clear carrierNetworkSelectEl's or the tariff
+  // radios' current value — the customer can still see what they had
+  // selected and just change it, rather than being made to start the
+  // question over from "Choose one…". Only the message and the button
+  // pair are reset; Continue reappears so the next real attempt is
+  // available once they've changed something.
+  if (carrierChooseDifferentButtonEl) {
+    carrierChooseDifferentButtonEl.addEventListener("click", function () {
+      if (carrierNotSupportedMessageEl) carrierNotSupportedMessageEl.hidden = true;
+      if (carrierChooseDifferentButtonEl) carrierChooseDifferentButtonEl.hidden = true;
+      if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = false;
+
+      const focusTarget = (carrierTariffRowEl && !carrierTariffRowEl.hidden)
+        ? document.getElementById("carrierTariffPayMonthly")
+        : carrierNetworkSelectEl;
+      if (focusTarget) {
+        focusTarget.focus();
+        if (typeof focusTarget.scrollIntoView === "function") {
+          focusTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    });
+  }
+
+  // Only ever used on the rare defense-in-depth-blocked/network-error
+  // path above (handleSubscribeFormSubmit itself is never un-done on the
+  // normal path — a real navigation to Stripe follows immediately, so
+  // there's nothing to reset).
+  function resetSubscribeButton() {
+    const btn = subscribeFormEl && subscribeFormEl.querySelector("button[type=submit]");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Subscribe & pay £4.99/month now";
+    }
+  }
+
   if (subscribeFormEl) {
-    subscribeFormEl.addEventListener("submit", function () {
+    subscribeFormEl.addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      if (termsConsentErrorEl) termsConsentErrorEl.hidden = true;
+
+      if (!agreeTermsCheckboxEl || !agreeTermsCheckboxEl.checked) {
+        if (termsConsentErrorEl) {
+          termsConsentErrorEl.textContent = "Please agree to the Terms & Conditions and Privacy Policy before continuing.";
+          termsConsentErrorEl.hidden = false;
+        }
+        return;
+      }
+      if (!startImmediatelyCheckboxEl || !startImmediatelyCheckboxEl.checked) {
+        if (termsConsentErrorEl) {
+          termsConsentErrorEl.textContent = "Please confirm you'd like your protection to start right away before continuing.";
+          termsConsentErrorEl.hidden = false;
+        }
+        return;
+      }
+
       handleSubscribeFormSubmit(subscribeFormEl);
+
+      // Defense-in-depth re-check immediately before the real Stripe
+      // redirect (same reasoning as the mobile app's own re-check in
+      // subscribe.tsx) + record Terms acceptance, then let the real
+      // navigation to /billing/create-checkout-session proceed. Both are
+      // fire-and-forget from the browser's perspective in the sense that
+      // create-checkout-session performs its own authoritative carrier
+      // check server-side regardless — this just avoids sending an
+      // already-known-ineligible household through a Stripe round trip
+      // only to bounce back.
+      fetch("/billing/carrier-compatibility")
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.canProceedToPayment) {
+            resetSubscribeButton();
+            if (termsConsentErrorEl) {
+              termsConsentErrorEl.textContent =
+                result.reason || "Your network isn't supported yet. Please go back and check your network.";
+              termsConsentErrorEl.hidden = false;
+            }
+            return;
+          }
+          fetch("/billing/terms-acceptance", { method: "POST" }).catch(function () {}).finally(function () {
+            subscribeFormEl.submit();
+          });
+        })
+        .catch(function () {
+          // Couldn't re-verify — fail closed rather than silently
+          // skipping the check; create-checkout-session still enforces
+          // this server-side either way, but don't pretend this
+          // succeeded.
+          resetSubscribeButton();
+          if (termsConsentErrorEl) {
+            termsConsentErrorEl.textContent = "We couldn't confirm your network. Please check your connection and try again.";
+            termsConsentErrorEl.hidden = false;
+          }
+        });
     });
   }
 
@@ -2558,6 +3707,13 @@
     } else if (kind === "already_active") {
       el.textContent = "You're already subscribed — no need to check out again.";
       el.classList.remove("checkout-banner-error");
+      el.hidden = false;
+    } else if (kind === "carrier_incompatible") {
+      // Belt-and-braces only — normally caught by the carrier check
+      // before the button is ever shown; this covers the rare case of
+      // reaching create-checkout-session directly (e.g. a stale tab).
+      el.textContent = "We can't take payment yet — your network hasn't been confirmed as compatible. Please check your network again below.";
+      el.classList.add("checkout-banner-error");
       el.hidden = false;
     } else if (kind === "membership_error") {
       el.textContent = "We couldn't open your membership settings just now. Please try again.";

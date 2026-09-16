@@ -25,7 +25,11 @@ const {
   markActivationVerified,
   getHouseholdByAuthUserId,
   markVoiceClientRegistered,
+  setHouseholdCarrierCompatibility,
+  recordTermsAcceptance,
 } = require("../database/households");
+const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
+const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus } = require("../services/callRouting");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
@@ -47,6 +51,7 @@ const {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
   buildActivationInstructions,
+  buildDeactivationInstructions,
 } = require("../services/activationInstructions");
 const { setHouseholdPhoneNumber } = require("../services/householdPhoneNumber");
 const { buildVoiceAccessToken } = require("../services/voiceAccessToken");
@@ -112,6 +117,97 @@ router.use((req, res, next) => {
   next();
 });
 
+// POST /api/v1/onboarding/carrier-compatibility { provider, tariffType }
+//
+// P0 Batch 1 continuation (2026-09-11): the missing "before payment" half
+// of services/providerPolicy.js's gate — evaluateProviderCompatibility
+// existed already, fully tested, but had zero callers anywhere in the
+// app (see the carrier-compatibility audit). Deliberately requireAuthApi
+// only, NOT requireEntitlement — an unsubscribed household must be able
+// to reach this before ever seeing a Subscribe button, same exception-list
+// reasoning as /api/v1/billing/create-checkout-session just below.
+//
+// Persists only the raw provider/tariff selection (never a derived
+// verdict — see database/households.js's setHouseholdCarrierCompatibility
+// and migration 038's own header) and returns the live evaluation, so the
+// app can show "works with your provider" / "isn't compatible yet"
+// immediately — before checkout is ever attempted, not just at the point
+// checkout would otherwise fail.
+router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (req, res) => {
+  const { provider, tariffType } = req.body || {};
+
+  if (typeof provider !== "string" || !provider.trim()) {
+    return res.status(400).json({ error: "invalid_input", message: "provider is required" });
+  }
+
+  const normalisedTariffType = typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
+
+  try {
+    await setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType);
+
+    const evaluation = evaluateHouseholdCheckoutEligibility({
+      carrier_provider_key: provider,
+      carrier_tariff_type: normalisedTariffType,
+    });
+
+    res.json({
+      status: evaluation.status,
+      customerState: evaluation.customerState,
+      canProceedToPayment: evaluation.canProceedToPayment,
+      reason: evaluation.reason,
+    });
+  } catch (err) {
+    console.error("SET CARRIER COMPATIBILITY ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// GET /api/v1/onboarding/carrier-compatibility
+//
+// Read-only re-evaluation of whatever carrier/tariff is already stored
+// for this household (no body, nothing written) — the defense-in-depth
+// check subscribe.tsx runs immediately before EITHER purchase path
+// (Stripe or iOS RevenueCat/StoreKit). Android/web already has a real
+// server-side block at the point of payment (create-checkout-session's
+// own eligibility check below); iOS has no equivalent, since Apple's
+// StoreKit purchase can't be intercepted server-side beforehand — this
+// route exists so the client can apply the same gate to both platforms
+// at the actual moment of purchase, not just rely on screen order being
+// impossible to bypass (which real app-navigation edge cases — killed-
+// and-resumed mid-flow, back/forward — don't reliably guarantee).
+router.get("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (req, res) => {
+  const evaluation = evaluateHouseholdCheckoutEligibility(req.household);
+  res.json({
+    status: evaluation.status,
+    customerState: evaluation.customerState,
+    canProceedToPayment: evaluation.canProceedToPayment,
+    reason: evaluation.reason,
+  });
+});
+
+// POST /api/v1/onboarding/terms-acceptance
+//
+// Durable evidence that the customer actively agreed to the Terms &
+// Conditions / acknowledged the Privacy Policy before payment — see
+// migration 039's header for why this is a separate append-only table
+// rather than a households column. requireAuthApi only, same reasoning
+// as the carrier-compatibility route above: must be reachable before
+// the household is entitled.
+router.post("/api/v1/onboarding/terms-acceptance", requireAuthApi, async (req, res) => {
+  try {
+    const acceptedAt = await recordTermsAcceptance(
+      req.household.id,
+      TERMS_VERSION,
+      PRIVACY_VERSION,
+      "subscription_terms"
+    );
+    res.json({ acceptedAt, termsVersion: TERMS_VERSION, privacyVersion: PRIVACY_VERSION });
+  } catch (err) {
+    console.error("RECORD TERMS ACCEPTANCE ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 // POST /api/v1/billing/create-checkout-session
 //
 // Mobile equivalent of routes/billing.js's /billing/create-checkout-session
@@ -134,6 +230,26 @@ router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (re
   if (!process.env.STRIPE_PRICE_ID) {
     console.error("MOBILE CHECKOUT SESSION ERROR: STRIPE_PRICE_ID not configured");
     return res.status(500).json({ error: "not_configured" });
+  }
+
+  // P0 Batch 1 continuation (2026-09-11): carrier compatibility must be
+  // established before payment wherever reasonably possible — see
+  // services/providerPolicy.js's evaluateHouseholdCheckoutEligibility.
+  // A household that hasn't captured a carrier yet (carrier_provider_key
+  // null) is evaluated identically to an unrecognised provider —
+  // 'unverified', blocked — never silently treated as compatible by
+  // default. This is the actual enforcement point for Android/web; the
+  // onboarding route above only ever gives an early, non-authoritative
+  // preview of this same evaluation. (iOS purchases don't reach this
+  // route at all — see mobile/app/(setup)/subscribe.tsx's own
+  // pre-purchase eligibility check for how iOS is gated instead.)
+  const eligibility = evaluateHouseholdCheckoutEligibility(req.household);
+  if (!eligibility.canProceedToPayment) {
+    return res.status(403).json({
+      error: "carrier_incompatible",
+      status: eligibility.status,
+      reason: eligibility.reason,
+    });
   }
 
   try {
@@ -510,7 +626,7 @@ router.delete("/api/v1/me/account", requireAuthApi, async (req, res) => {
 // preliminary 150 call — live in exactly one place, never duplicated in
 // client code).
 router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement, async (req, res) => {
-  const { deviceType, provider, protectedNumber } = req.query;
+  const { deviceType, provider, protectedNumber, carrier } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -559,11 +675,15 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
       twilioNumber: req.household.twilio_number,
       deviceType,
       provider,
+      carrier: typeof carrier === "string" ? carrier : undefined,
     });
 
     res.json({
       code: instructions.code,
       cancelCode: instructions.cancelCode,
+      cancelCodeMethod: instructions.cancelCodeMethod,
+      cancelCodeConfidence: instructions.cancelCodeConfidence,
+      cancelCodeNote: instructions.cancelCodeNote,
       requiresPreliminaryCall: instructions.requiresPreliminaryCall,
       preliminaryCallNumber: instructions.preliminaryCallNumber,
       preliminaryCallNote: instructions.preliminaryCallNote,
@@ -571,6 +691,54 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
     });
   } catch (err) {
     console.error("MOBILE ACTIVATION INSTRUCTIONS ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// GET /api/v1/deactivation/instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other&carrier=<mobile network key>
+//
+// 2026-09-16 — mobile counterpart of the web /deactivation-instructions
+// route: cancellation-safety fix, see that route's own header for the
+// full reasoning. Deliberately requireAuthApi ONLY, no requireEntitlement
+// — a customer who has already cancelled (or is mid-cancellation) must
+// still be able to see how to remove forwarding from their own phone.
+// Never touches the Twilio number; never provisions or activates
+// anything.
+router.get("/api/v1/deactivation/instructions", requireAuthApi, async (req, res) => {
+  const { deviceType, provider, carrier } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  try {
+    const instructions = buildDeactivationInstructions({
+      deviceType,
+      provider,
+      carrier: typeof carrier === "string" ? carrier : undefined,
+    });
+
+    res.json({
+      cancelCode: instructions.cancelCode,
+      cancelCodeMethod: instructions.cancelCodeMethod,
+      cancelCodeConfidence: instructions.cancelCodeConfidence,
+      cancelCodeNote: instructions.cancelCodeNote,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+    });
+  } catch (err) {
+    console.error("MOBILE DEACTIVATION INSTRUCTIONS ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });

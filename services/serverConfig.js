@@ -27,6 +27,13 @@ const REQUIRED_IN_PRODUCTION = [
   "STRIPE_SECRET_KEY",
   "STRIPE_PRICE_ID",
   "STRIPE_WEBHOOK_SECRET",
+  // Added 2026-09-10: without this, /voice's Twilio signature check
+  // (services/twilioWebhookAuth.js) can never validate anything — the
+  // exact same silent-failure shape this file's own comment already
+  // describes for STRIPE_WEBHOOK_SECRET, just for the webhook that makes
+  // activation_verified_at auto-stamping trustworthy rather than
+  // spoofable by anyone who can reach /voice.
+  "TWILIO_AUTH_TOKEN",
 ];
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);

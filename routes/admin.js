@@ -20,6 +20,7 @@ const { ensureTwilioNumberProvisioned, updateTwilioNumberForEntitlementChange } 
 const { grantComplimentaryEntitlement, revokeComplimentaryEntitlement } = require("../database/billing");
 const { recordAdminAction, getRecentAdminActions } = require("../services/adminActionLog");
 const { createInvite, listInvites, revokeInvite, ALLOWED_DURATIONS_DAYS } = require("../services/complimentaryInvites");
+const { findUnconfirmedQuarantineForHousehold, confirmTwilioNumberDeactivation } = require("../database/twilioQuarantine");
 
 const router = express.Router();
 
@@ -306,6 +307,68 @@ router.post("/admin/api/complimentary-invites/:id/revoke", requireAuth, requireA
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error("ADMIN REVOKE COMPLIMENTARY INVITE ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// P0 Batch 1 continuation (2026-09-11): the missing other half of the
+// quarantine system. database/twilioQuarantine.js's
+// confirmTwilioNumberDeactivation existed already but had "no automatic
+// caller exists anywhere" (its own comment) — meaning no Twilio number
+// could ever leave quarantine, by anyone, through any UI, until this.
+//
+// Read-only lookup first, so the admin UI can show a household's
+// quarantine status (and enable/disable the confirm button) before ever
+// calling the confirm action below. { quarantine: null } — not a 404 —
+// when nothing is quarantined, since that's the normal state for most
+// households, not an error.
+router.get("/admin/api/households/:id/quarantine", requireAuth, requireAdmin, async (req, res) => {
+  const quarantine = await findUnconfirmedQuarantineForHousehold(req.params.id);
+  res.json({ quarantine });
+});
+
+// Deliberately the ONLY caller of confirmTwilioNumberDeactivation added
+// in this batch — still human-invoked, still requires an admin to have
+// actually verified with the customer that carrier-level forwarding is
+// off. `method` is required (not optional, unlike
+// confirmTwilioNumberDeactivation's own signature) specifically so an
+// admin cannot confirm without recording HOW it was verified — a bare
+// "confirmed" checkbox is exactly the kind of unverifiable self-report
+// this whole system exists to avoid trusting.
+//
+// Does not itself release anything: releaseQuarantinedTwilioNumber
+// (services/twilioProvisioning.js) remains the only function that ever
+// calls Twilio's real .remove() API, completely unchanged by this route
+// — it only picks up rows this action confirms on its own next
+// scheduled run (services/twilioNumberReleaseRunner.js).
+router.post("/admin/api/households/:id/confirm-deactivation", requireAuth, requireAdmin, express.json(), async (req, res) => {
+  const { method } = req.body || {};
+
+  if (typeof method !== "string" || !method.trim()) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: "method is required — record how deactivation was verified with the customer",
+    });
+  }
+
+  const quarantine = await findUnconfirmedQuarantineForHousehold(req.params.id);
+  if (!quarantine) {
+    return res.status(404).json({ error: "no_quarantine_found" });
+  }
+
+  try {
+    const confirmed = await confirmTwilioNumberDeactivation(quarantine.id, method);
+
+    recordAdminAction({
+      type: "confirm_twilio_deactivation",
+      householdId: req.params.id,
+      email: null,
+      result: { quarantineId: quarantine.id, method },
+    });
+
+    res.json({ ok: true, quarantine: confirmed });
+  } catch (err) {
+    console.error("ADMIN CONFIRM DEACTIVATION ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });

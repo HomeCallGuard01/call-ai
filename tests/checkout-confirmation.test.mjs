@@ -16,7 +16,12 @@
 //     document. This is what actually proves the core safety property —
 //     that the subscribe button is never shown outside the "unsubscribed"
 //     state, covering "duplicate-click/revisit" and "already-active
-//     subscriber" behaviour at the state-machine level.
+//     subscriber" behaviour at the state-machine level. Extended
+//     2026-09-13 (web carrier-compatibility gate): the subscribe button
+//     also can't be shown WITHIN "unsubscribed" until carrier
+//     compatibility is confirmed — setStatus shows carrierCheckSection
+//     instead, mirroring the mobile app's device-picker.tsx-before-
+//     subscribe.tsx ordering.
 //
 // Run with: node tests/checkout-confirmation.test.mjs
 
@@ -105,6 +110,8 @@ if (!statusSource) {
     setStatus(state);
     return {
       subscribeForm: !fakeDocument.elements.subscribeForm.hidden,
+      carrierCheckSection: !fakeDocument.elements.carrierCheckSection.hidden,
+      termsConsentSection: !fakeDocument.elements.termsConsentSection.hidden,
       confirmingSpinner: !fakeDocument.elements.confirmingSpinner.hidden,
       successActions: !fakeDocument.elements.successActions.hidden,
       delayedActions: !fakeDocument.elements.delayedActions.hidden,
@@ -112,8 +119,22 @@ if (!statusSource) {
     };
   }
 
+  // 2026-09-13 (web carrier-compatibility gate): the payment button is no
+  // longer shown directly by setStatus for "unsubscribed" — carrier
+  // compatibility (and Terms acceptance) must be confirmed first, exactly
+  // mirroring the mobile app's device-picker.tsx-before-subscribe.tsx
+  // ordering. setStatus's job for "unsubscribed" is now to show
+  // carrierCheckSection; only handleCarrierCheckSuccess() (evaluated
+  // separately, real-browser-only) ever reveals subscribeForm.
   const unsubscribed = elementsVisibility('unsubscribed');
-  check(unsubscribed.subscribeForm === true, 'unsubscribed: the payment button IS shown (the only state it should ever appear in)');
+  check(
+    unsubscribed.subscribeForm === false,
+    'unsubscribed: the payment button is NOT shown until carrier compatibility is confirmed — no bypass of the carrier gate'
+  );
+  check(
+    unsubscribed.carrierCheckSection === true,
+    'unsubscribed: the carrier-compatibility check IS shown — this is what replaces the payment button as the first thing an unsubscribed customer sees'
+  );
 
   for (const state of ['confirming', 'success', 'activation_delayed', 'protected', 'loading', 'unknown']) {
     const visibility = elementsVisibility(state);
@@ -121,7 +142,28 @@ if (!statusSource) {
       visibility.subscribeForm === false,
       `${state}: the payment button is NOT shown — a customer in this state can never be sent through checkout again`
     );
+    check(
+      visibility.carrierCheckSection === false,
+      `${state}: the carrier-compatibility check is NOT shown outside "unsubscribed" either`
+    );
   }
+
+  // If the customer already completed the carrier check earlier in this
+  // same "unsubscribed" session (termsConsentSection already visible —
+  // the only signal setStatus has, since it's a pure function of DOM
+  // state, not a separate flag), a later re-poll must not re-show
+  // carrierCheckSection on top of the now-visible payment step.
+  fakeDocument.elements.termsConsentSection.hidden = false;
+  fakeDocument.elements.subscribeForm.hidden = false;
+  setStatus('unsubscribed');
+  check(
+    fakeDocument.elements.carrierCheckSection.hidden === true,
+    'unsubscribed, carrier check already passed this session: a dashboard re-poll does not re-show carrierCheckSection on top of the already-revealed payment step'
+  );
+  check(
+    fakeDocument.elements.termsConsentSection.hidden === false && fakeDocument.elements.subscribeForm.hidden === false,
+    'unsubscribed, carrier check already passed this session: the already-revealed termsConsentSection/subscribeForm stay visible — setStatus never re-hides them within the same state'
+  );
 
   const confirming = elementsVisibility('confirming');
   check(confirming.confirmingSpinner === true, 'confirming: the spinner/progress indicator is shown');

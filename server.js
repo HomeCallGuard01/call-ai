@@ -27,22 +27,25 @@ const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const {
   resolveForwardingDestination,
   decideCallDeliveryPlan,
-  isVoiceClientReachable,
+  hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
 } = require("./services/callRouting");
 const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { sendCriticalAlert } = require("./services/alerting");
 const { checkSupabaseHealth } = require("./services/healthCheck");
-const { releaseExpiredTwilioNumber } = require("./services/twilioProvisioning");
-const { runExpiredTwilioNumberRelease } = require("./services/twilioNumberReleaseRunner");
+const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
+const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
+const { findConfirmedUnreleasedQuarantine } = require("./database/twilioQuarantine");
+const { buildWebhookUrl, isGenuineTwilioRequest } = require("./services/twilioWebhookAuth");
 const { wouldCreateForwardingLoop } = require("./services/phone");
 const {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
   buildActivationInstructions,
+  buildDeactivationInstructions,
 } = require("./services/activationInstructions");
-const { isCallWithinVerificationWindow } = require("./services/activationVerification");
+const { isCallWithinVerificationWindow, stampActivationVerifiedOnRealCall } = require("./services/activationVerification");
 const {
   countUnknownCallsToday,
   countRecentCallsFromSameCaller,
@@ -247,9 +250,15 @@ function normaliseNumber(number) {
 // currently has any landline-specific branch.
 function dialHouseholdOrFailClosed(twiml, household) {
   const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
-  const voiceClientReachable = isVoiceClientReachable(
-    household && household.voice_client_registered_at,
-    new Date()
+  // 2026-09-13: renamed from isVoiceClientReachable — no longer a
+  // time-windowed check. See services/callRouting.js's
+  // hasVoiceClientRegistrationHistory for the full architecture
+  // correction (Twilio's push-registration binding lasts ~1 year,
+  // independent of the ~1-hour Access Token used to establish it; a
+  // household that registered hours or days ago must still be dialled
+  // normally, not pre-emptively refused).
+  const voiceClientReachable = hasVoiceClientRegistrationHistory(
+    household && household.voice_client_registered_at
   );
   const plan = decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable });
 
@@ -554,6 +563,17 @@ function toClientCall(call) {
     status: call.status,
     result: call.result,
     time: call.created_at,
+    // 2026-09-13: exposes the same fact database/calls.js's
+    // recordMonitoringOutcome already persists (terminated_by_system) —
+    // a call that connected as "SAFE" can still be terminated later by
+    // live monitoring once real risk is detected mid-call, and `result`
+    // is deliberately never retroactively rewritten (see
+    // recordMonitoringOutcome's own comment). Until now no client ever
+    // saw this second fact at all, so a genuinely-terminated call looked
+    // identical to an ordinary all-clear one. Purely additive — every
+    // existing field/semantic above is unchanged, and this is a plain
+    // boolean derived from the same row, never new detection logic.
+    terminatedBySystem: Boolean(call.terminated_by_system),
   };
 }
 
@@ -566,6 +586,47 @@ app.post("/voice", async (req, res) => {
 
   if (!household) {
     console.error("CALL ROUTING ERROR: no household matches dialled number", req.body.To);
+  }
+
+  // P0 Batch 1, component C: automatic activation_verified_at stamp —
+  // corrected 2026-09-10 to close a real contradiction a review caught:
+  // this was originally justified as safe because the request is
+  // "Twilio-authenticated," while /voice itself (like every other Twilio
+  // webhook in this codebase — /process, /call-status,
+  // /call-delivery-failed) had NO signature validation at all. Rather
+  // than gate the whole /voice response behind signature validation
+  // (real risk: a URL-construction bug here could reject genuine Twilio
+  // traffic and break call delivery entirely — far worse than the
+  // problem being fixed), only the auto-stamp itself is gated. Call
+  // handling below is completely unaffected by this check either way —
+  // an unsigned/invalid request still gets dialled exactly as before;
+  // it just never counts as activation evidence. See
+  // services/twilioWebhookAuth.js for why the URL is built from APP_URL
+  // rather than req.protocol/req.hostname (unreliable behind Railway's
+  // proxy — no `trust proxy` is configured anywhere in this codebase).
+  //
+  // Never awaited/never blocks the TwiML response either way. See
+  // services/activationVerification.js's own comment for why this can
+  // never be triggered by client activity alone (only ever called from
+  // here, and now only when the signature genuinely validates).
+  if (household) {
+    const genuineTwilioRequest = isGenuineTwilioRequest({
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      signature: req.get("X-Twilio-Signature"),
+      url: buildWebhookUrl(APP_URL, req.originalUrl),
+      params: req.body,
+    });
+
+    if (genuineTwilioRequest) {
+      stampActivationVerifiedOnRealCall(household, { markActivationVerified }).catch(err =>
+        console.error("ACTIVATION VERIFIED AUTO-STAMP ERROR:", household.id, err.message)
+      );
+    } else {
+      console.error(
+        "ACTIVATION VERIFIED AUTO-STAMP SKIPPED: Twilio signature did not validate (or TWILIO_AUTH_TOKEN is not configured)",
+        household.id
+      );
+    }
   }
 
   const contacts = household ? await getContacts(household.id) : [];
@@ -1067,7 +1128,7 @@ app.post("/household/phone-number", requireAuth, requireEntitlement, express.jso
 // includes the bare number itself, only the fully-formed, ready-to-dial
 // code. /dashboard-data is completely unchanged by this addition.
 app.get("/activation-instructions", requireAuth, requireEntitlement, async (req, res) => {
-  const { deviceType, provider, protectedNumber } = req.query;
+  const { deviceType, provider, protectedNumber, carrier } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -1112,11 +1173,15 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, async (req,
       twilioNumber: req.household.twilio_number,
       deviceType,
       provider,
+      carrier: typeof carrier === "string" ? carrier : undefined,
     });
 
     res.json({
       code: instructions.code,
       cancelCode: instructions.cancelCode,
+      cancelCodeMethod: instructions.cancelCodeMethod,
+      cancelCodeConfidence: instructions.cancelCodeConfidence,
+      cancelCodeNote: instructions.cancelCodeNote,
       requiresPreliminaryCall: instructions.requiresPreliminaryCall,
       preliminaryCallNumber: instructions.preliminaryCallNumber,
       preliminaryCallNote: instructions.preliminaryCallNote,
@@ -1124,6 +1189,60 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, async (req,
     });
   } catch (err) {
     console.error("WEB ACTIVATION INSTRUCTIONS ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// GET /deactivation-instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other&carrier=<mobile network key>
+//
+// 2026-09-16 — the cancellation-safety fix: cancelling a subscription
+// does NOT itself turn off call forwarding on the customer's own phone,
+// and the customer needs to be told how to remove it themselves. The
+// existing /activation-instructions route can't be reused for this —
+// it's requireEntitlement-gated, so a customer who has already cancelled
+// (or is in the middle of cancelling) would be locked out of it at
+// exactly the moment they need removal instructions most. Deliberately
+// requireAuth ONLY: this route never touches the Twilio number (it calls
+// buildDeactivationInstructions directly, not buildActivationInstructions
+// — see services/activationInstructions.js's own header on why
+// deactivation guidance never needed the Twilio number in the first
+// place) and never provisions/activates anything, so there is nothing
+// here that requires an active entitlement to see safely.
+app.get("/deactivation-instructions", requireAuth, async (req, res) => {
+  const { deviceType, provider, carrier } = req.query;
+
+  if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `deviceType must be one of: ${[...DEVICE_TYPES].join(", ")}`,
+    });
+  }
+
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
+
+  try {
+    const instructions = buildDeactivationInstructions({
+      deviceType,
+      provider,
+      carrier: typeof carrier === "string" ? carrier : undefined,
+    });
+
+    res.json({
+      cancelCode: instructions.cancelCode,
+      cancelCodeMethod: instructions.cancelCodeMethod,
+      cancelCodeConfidence: instructions.cancelCodeConfidence,
+      cancelCodeNote: instructions.cancelCodeNote,
+      requiresPreliminaryCall: instructions.requiresPreliminaryCall,
+      preliminaryCallNumber: instructions.preliminaryCallNumber,
+      preliminaryCallNote: instructions.preliminaryCallNote,
+    });
+  } catch (err) {
+    console.error("WEB DEACTIVATION INSTRUCTIONS ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });
@@ -1938,12 +2057,14 @@ async function runTwilioNumberReleaseCheck() {
   try {
     const result = await runExpiredTwilioNumberRelease({ supabaseAdmin, releaseExpiredTwilioNumber });
     if (result.found > 0) {
-      console.log(`TWILIO RELEASE SCHEDULER: found ${result.found}, released ${result.released}, skipped ${result.skipped}`);
+      console.log(
+        `TWILIO RELEASE SCHEDULER: found ${result.found}, released ${result.released}, quarantined ${result.quarantined}, skipped ${result.skipped}`
+      );
     }
     if (result.errors.length > 0) {
       sendCriticalAlert(
         "twilio_number_release_failed",
-        `${result.errors.length} household(s) failed Twilio number release`,
+        `${result.errors.length} household(s) failed Twilio number release/quarantine`,
         { errors: result.errors }
       ).catch(() => {});
     }
@@ -1953,9 +2074,42 @@ async function runTwilioNumberReleaseCheck() {
   }
 }
 
+// Stage 2 of the quarantine lifecycle (migration 037, P0 Batch 1
+// component D) — releases only quarantine rows a human has explicitly
+// confirmed deactivation for. Until something actually calls
+// confirmTwilioNumberDeactivation (no automatic caller exists in this
+// batch — see database/twilioQuarantine.js), this finds zero candidates
+// every run. That is the correct, intended behaviour for this
+// foundation, not a bug — see migration 037's own header.
+async function runQuarantinedNumberReleaseCheck() {
+  if (!supabaseAdmin) return;
+
+  try {
+    const result = await runConfirmedQuarantineRelease({
+      findConfirmed: findConfirmedUnreleasedQuarantine,
+      releaseQuarantinedTwilioNumber,
+    });
+    if (result.found > 0) {
+      console.log(`TWILIO QUARANTINE RELEASE SCHEDULER: found ${result.found}, released ${result.released}, skipped ${result.skipped}`);
+    }
+    if (result.errors.length > 0) {
+      sendCriticalAlert(
+        "twilio_quarantine_release_failed",
+        `${result.errors.length} confirmed quarantine record(s) failed Twilio release`,
+        { errors: result.errors }
+      ).catch(() => {});
+    }
+  } catch (err) {
+    console.error("TWILIO QUARANTINE RELEASE SCHEDULER FAILED:", err.message);
+    sendCriticalAlert("twilio_quarantine_release_scheduler_failed", `Twilio quarantine release check failed: ${err.message}`, {}).catch(() => {});
+  }
+}
+
 setTimeout(() => {
   runTwilioNumberReleaseCheck();
+  runQuarantinedNumberReleaseCheck();
   setInterval(runTwilioNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
+  setInterval(runQuarantinedNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
 }, TWILIO_RELEASE_FIRST_RUN_DELAY_MS);
 
 // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint

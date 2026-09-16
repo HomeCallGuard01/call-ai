@@ -182,6 +182,15 @@ function toClientCall(call) {
     status: call.status,
     result: call.result,
     time: call.created_at,
+    // 2026-09-13: mirrors server.js's own toClientCall fix (cherry-picked
+    // from fix/activity-status-terminated-by-system) — this is the mobile
+    // API's copy of the same function (routes/mobileApi.js's GET
+    // /api/v1/me/dashboard reads recentCalls via this one, not server.js's),
+    // and without it the mobile Activity/Home screens have no way to tell
+    // a genuinely system-terminated call apart from an ordinary all-clear
+    // one, exactly the gap the web-side fix closed. Purely additive, same
+    // reasoning as that fix's own comment.
+    terminatedBySystem: Boolean(call.terminated_by_system),
   };
 }
 

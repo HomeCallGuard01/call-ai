@@ -16,6 +16,9 @@ const {
   handleProcessedWebhookEvent,
 } = require("../services/twilioProvisioning");
 const { recordAcquisitionEvent } = require("../services/acquisitionAnalytics");
+const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
+const { setHouseholdCarrierCompatibility, recordTermsAcceptance } = require("../database/households");
+const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 
 const router = express.Router();
 
@@ -173,6 +176,82 @@ async function resolveStripeCustomerId(household, authUserId) {
   }
 }
 
+// POST /billing/carrier-compatibility { provider, tariffType }
+//
+// Web equivalent of routes/mobileApi.js's POST /api/v1/onboarding/
+// carrier-compatibility — same reasoning, same underlying functions
+// (setHouseholdCarrierCompatibility, evaluateHouseholdCheckoutEligibility),
+// cookie-session-authenticated (requireAuth) instead of bearer-token
+// (requireAuthApi) since that's how every other web route on this
+// router already authenticates. Deliberately does NOT duplicate any
+// carrier classification logic in frontend JavaScript — upload.html
+// only ever renders a static list of carrier names and sends the
+// customer's raw selection here; every verdict is computed exactly once,
+// server-side, by the same services/providerPolicy.js the mobile app
+// uses.
+router.post("/billing/carrier-compatibility", requireAuth, express.json(), async (req, res) => {
+  const { provider, tariffType } = req.body || {};
+
+  if (typeof provider !== "string" || !provider.trim()) {
+    return res.status(400).json({ error: "invalid_input", message: "provider is required" });
+  }
+
+  const normalisedTariffType = typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
+
+  try {
+    await setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType);
+
+    const evaluation = evaluateHouseholdCheckoutEligibility({
+      carrier_provider_key: provider,
+      carrier_tariff_type: normalisedTariffType,
+    });
+
+    res.json({
+      status: evaluation.status,
+      customerState: evaluation.customerState,
+      canProceedToPayment: evaluation.canProceedToPayment,
+      reason: evaluation.reason,
+    });
+  } catch (err) {
+    console.error("SET CARRIER COMPATIBILITY ERROR (web):", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// GET /billing/carrier-compatibility — read-only re-evaluation of
+// whatever is already stored, no body. Web equivalent of
+// routes/mobileApi.js's own GET route — used as a defense-in-depth
+// re-check immediately before the real Stripe redirect, the same
+// reasoning as that route's own comment.
+router.get("/billing/carrier-compatibility", requireAuth, async (req, res) => {
+  const evaluation = evaluateHouseholdCheckoutEligibility(req.household);
+  res.json({
+    status: evaluation.status,
+    customerState: evaluation.customerState,
+    canProceedToPayment: evaluation.canProceedToPayment,
+    reason: evaluation.reason,
+  });
+});
+
+// POST /billing/terms-acceptance — web equivalent of routes/mobileApi.js's
+// own POST /api/v1/onboarding/terms-acceptance. Same reasoning: durable,
+// append-only evidence (migration 039), server-derived version strings
+// only, no client input beyond auth.
+router.post("/billing/terms-acceptance", requireAuth, async (req, res) => {
+  try {
+    const acceptedAt = await recordTermsAcceptance(
+      req.household.id,
+      TERMS_VERSION,
+      PRIVACY_VERSION,
+      "subscription_terms"
+    );
+    res.json({ acceptedAt, termsVersion: TERMS_VERSION, privacyVersion: PRIVACY_VERSION });
+  } catch (err) {
+    console.error("RECORD TERMS ACCEPTANCE ERROR (web):", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 // SUBSCRIBE (exception-list route: requires auth, deliberately NOT
 // requireEntitlement — an unsubscribed household must be able to reach
 // this to ever become subscribed).
@@ -190,6 +269,16 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
   if (!process.env.STRIPE_PRICE_ID) {
     console.error("CHECKOUT SESSION ERROR: STRIPE_PRICE_ID not configured");
     return res.redirect("/dashboard?checkout=error");
+  }
+
+  // P0 Batch 1 continuation (2026-09-11): same gate as the mobile
+  // equivalent below (routes/mobileApi.js's /api/v1/billing/create-checkout-session)
+  // — see services/providerPolicy.js's evaluateHouseholdCheckoutEligibility.
+  // A household with no carrier captured yet is blocked, not assumed
+  // compatible.
+  const eligibility = evaluateHouseholdCheckoutEligibility(req.household);
+  if (!eligibility.canProceedToPayment) {
+    return res.redirect("/dashboard?checkout=carrier_incompatible");
   }
 
   try {

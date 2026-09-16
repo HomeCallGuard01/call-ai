@@ -297,6 +297,30 @@ async function markHouseholdDeliveryVerified(householdId) {
   return data;
 }
 
+// Persists a household's mobile-carrier selection captured during
+// onboarding, via set_household_carrier_compatibility (migration 038).
+// Deliberately stores only the raw provider/tariff selection, never a
+// derived compatibility verdict — see that migration's own header and
+// services/providerPolicy.js's evaluateHouseholdCheckoutEligibility,
+// which is the only place a verdict is ever computed, evaluated fresh
+// every time it's needed rather than trusted from a stored value.
+async function setHouseholdCarrierCompatibility(householdId, providerKey, tariffType) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("set_household_carrier_compatibility", {
+    p_household_id: householdId,
+    p_provider_key: providerKey,
+    p_tariff_type: tariffType || null,
+  });
+
+  if (error) {
+    console.error("SET HOUSEHOLD CARRIER COMPATIBILITY ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
 async function setUserRole(authUserId, role = "household") {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
@@ -327,6 +351,28 @@ async function getUserRole(authUserId) {
   return data ? data.role : "household";
 }
 
+// Durable evidence write — see migration 039's header (renumbered from
+// 029 during the canonical-release-base reconciliation, 2026-09-13 — see
+// that migration's own header for why). Never overwrites a prior
+// acceptance; every call inserts a new row.
+async function recordTermsAcceptance(householdId, termsVersion, privacyVersion, acceptanceType) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const { data, error } = await supabaseAdmin.rpc("record_terms_acceptance", {
+    p_household_id: householdId,
+    p_terms_version: termsVersion,
+    p_privacy_version: privacyVersion,
+    p_acceptance_type: acceptanceType || "subscription_terms",
+  });
+
+  if (error) {
+    console.error("RECORD TERMS ACCEPTANCE ERROR:", error);
+    throw error;
+  }
+
+  return data;
+}
+
 module.exports = {
   getHouseholdByAuthUserId,
   getHouseholdByTwilioNumber,
@@ -340,6 +386,9 @@ module.exports = {
   cancelTwilioNumberPendingRelease,
   releaseHouseholdTwilioNumber,
   releaseHouseholdTwilioNumberImmediately,
+  setHouseholdCarrierCompatibility,
   setUserRole,
   getUserRole,
+  setHouseholdCarrierCompatibility,
+  recordTermsAcceptance,
 };
