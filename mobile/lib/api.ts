@@ -192,7 +192,25 @@ export async function checkCarrierCompatibility(
 ): Promise<CarrierCompatibilityResponse> {
   const response = await authorizedFetch(
     "/api/v1/onboarding/carrier-compatibility",
-    { method: "POST", body: JSON.stringify({ provider, tariffType }) },
+    { method: "POST", body: JSON.stringify({ deviceType: "mobile", provider, tariffType }) },
+    accessToken
+  );
+  return parseJsonOrThrow<CarrierCompatibilityResponse>(response);
+}
+
+// 2026-09-16 — the landline counterpart of checkCarrierCompatibility
+// above: persists households.device_type = "landline" server-side
+// (migration 040), which is what makes the mobile carrier gate not
+// apply to this household at checkout — closes the launch-blocking
+// defect where a landline customer was permanently blocked at checkout
+// because carrier_provider_key being null was indistinguishable from
+// "mobile household that hasn't picked a network yet". Never sends a
+// provider/tariff — the backend clears any stale carrier data
+// atomically in the same write regardless.
+export async function setHouseholdLandline(accessToken?: string): Promise<CarrierCompatibilityResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/onboarding/carrier-compatibility",
+    { method: "POST", body: JSON.stringify({ deviceType: "landline" }) },
     accessToken
   );
   return parseJsonOrThrow<CarrierCompatibilityResponse>(response);

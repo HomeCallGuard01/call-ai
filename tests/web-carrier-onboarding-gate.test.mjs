@@ -48,8 +48,16 @@ check(
   'the web capture route requires auth but not entitlement — an unsubscribed household must be able to reach it before ever seeing the payment button'
 );
 check(
-  postCarrier.block.includes('setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType)'),
-  'the web route persists the raw provider/tariff selection via the same setHouseholdCarrierCompatibility the mobile route uses'
+  postCarrier.block.includes('setHouseholdCarrierCompatibility(req.household.id, deviceType, normalisedProvider, normalisedTariffType)'),
+  'the web route persists the device type + provider/tariff selection via the same setHouseholdCarrierCompatibility (migration 040) the mobile route uses'
+);
+check(
+  postCarrier.block.includes('deviceType !== "mobile" && deviceType !== "landline"'),
+  'the web route rejects a missing/invalid deviceType before any write is attempted'
+);
+check(
+  postCarrier.block.includes('deviceType === "mobile" ? provider : null'),
+  'a landline household never has a mobile provider persisted by the web route either, regardless of what the client sent'
 );
 check(
   postCarrier.block.includes('evaluateHouseholdCheckoutEligibility({'),

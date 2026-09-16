@@ -212,7 +212,12 @@ export type TariffType = "pay_monthly" | "payg";
 // is the one sentinel the client acts on directly — the backend, not a
 // client-side copy of providerPolicy.js, decides when tariff matters.
 export interface CarrierCompatibilityResponse {
-  status: "compatible" | "provider_specific" | "incompatible" | "unverified";
+  status: "compatible" | "provider_specific" | "incompatible" | "unverified" | "not_applicable";
+  // 2026-09-16: the three customer-facing states — use this to decide
+  // wording, never `reason` directly (that's the backend's own internal
+  // policy string, e.g. "Provider not in HomeCallGuard's confirmed
+  // compatibility list" — never meant for a customer to read verbatim).
+  customerState: "supported" | "not_currently_supported" | "needs_confirmation";
   canProceedToPayment: boolean;
   reason: string | null;
 }

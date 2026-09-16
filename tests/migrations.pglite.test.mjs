@@ -1057,8 +1057,8 @@ async function main() {
   );
 
   const { rows: [firstCapture] } = await db.query(
-    `select public.set_household_carrier_compatibility($1, $2, $3) as result`,
-    [householdId, 'vodafone', 'pay_monthly']
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4) as result`,
+    [householdId, 'mobile', 'vodafone', 'pay_monthly']
   );
   assert(!!firstCapture.result, 'set_household_carrier_compatibility returns the new captured-at timestamp');
 
@@ -1079,8 +1079,8 @@ async function main() {
   // mark_household_activation_verified's "first time only" one.
   await new Promise((resolve) => setTimeout(resolve, 10));
   const { rows: [secondCapture] } = await db.query(
-    `select public.set_household_carrier_compatibility($1, $2, $3) as result`,
-    [householdId, 'tesco', null]
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4) as result`,
+    [householdId, 'mobile', 'tesco', null]
   );
   assert(
     new Date(secondCapture.result).getTime() > new Date(firstCapture.result).getTime(),
@@ -1105,8 +1105,8 @@ async function main() {
   let junkValueRejected = false;
   try {
     await db.query(
-      `select public.set_household_carrier_compatibility($1, $2, $3)`,
-      [householdId, 'some-completely-made-up-provider-xyz', 'not-a-real-tariff-either']
+      `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+      [householdId, 'mobile', 'some-completely-made-up-provider-xyz', 'not-a-real-tariff-either']
     );
   } catch {
     junkValueRejected = true;
@@ -1127,8 +1127,8 @@ async function main() {
   let carrierCompatNonexistentThrew = false;
   try {
     await db.query(
-      `select public.set_household_carrier_compatibility($1, $2, $3)`,
-      ['00000000-0000-0000-0000-000000000000', 'o2', null]
+      `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+      ['00000000-0000-0000-0000-000000000000', 'mobile', 'o2', null]
     );
   } catch {
     carrierCompatNonexistentThrew = true;
@@ -1138,11 +1138,102 @@ async function main() {
   await asAuthUser(db, userId2, 'c-carrier-compat-test@example.com');
   let carrierCompatDeniedToAuthenticated = false;
   try {
-    await db.query(`select public.set_household_carrier_compatibility($1, $2, $3)`, [householdId, 'o2', null]);
+    await db.query(`select public.set_household_carrier_compatibility($1, $2, $3, $4)`, [householdId, 'mobile', 'o2', null]);
   } catch {
     carrierCompatDeniedToAuthenticated = true;
   }
   assert(carrierCompatDeniedToAuthenticated, 'authenticated role cannot execute set_household_carrier_compatibility directly — grants/security match every other households-lifecycle RPC in this codebase');
+
+  // --- 040: households.device_type — Mobile/Landline persisted onboarding
+  // configuration (landline checkout-eligibility fix, 2026-09-16) ---
+  await asServiceRole(db);
+
+  let oldThreeArgSignatureGone = false;
+  try {
+    await db.query(`select public.set_household_carrier_compatibility($1, $2, $3)`, [householdId, 'o2', null]);
+  } catch {
+    oldThreeArgSignatureGone = true;
+  }
+  assert(oldThreeArgSignatureGone, 'migration 040 dropped the old 3-arg set_household_carrier_compatibility — only the 4-arg (device_type-aware) version exists now');
+
+  let invalidDeviceTypeRaised = false;
+  try {
+    await db.query(
+      `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+      [householdId, 'tablet', 'o2', null]
+    );
+  } catch {
+    invalidDeviceTypeRaised = true;
+  }
+  assert(invalidDeviceTypeRaised, 'an invalid device_type (neither mobile nor landline) is rejected by the RPC itself, not just application-layer validation');
+
+  let nullDeviceTypeRaised = false;
+  try {
+    await db.query(
+      `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+      [householdId, null, 'o2', null]
+    );
+  } catch {
+    nullDeviceTypeRaised = true;
+  }
+  assert(nullDeviceTypeRaised, 'a null device_type is rejected by the RPC — never silently treated as one device type or the other');
+
+  let deviceTypeCheckConstraintRejected = false;
+  try {
+    await db.query(`update public.households set device_type = 'tablet' where id = $1`, [householdId]);
+  } catch {
+    deviceTypeCheckConstraintRejected = true;
+  }
+  assert(deviceTypeCheckConstraintRejected, 'households.device_type has a real CHECK constraint — an invalid value is rejected even by a direct write, not only through the RPC');
+
+  // Mobile -> Landline: carrier_provider_key/carrier_tariff_type must be
+  // cleared atomically the same instant device_type flips to landline —
+  // this is the actual security-refinement fix, proven directly against
+  // the database rather than only against the JS layer that calls it.
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'mobile', 'vodafone', 'pay_monthly']
+  );
+  const { rows: [beforeLandlineSwitch] } = await db.query(
+    `select device_type, carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    beforeLandlineSwitch.device_type === 'mobile' &&
+      beforeLandlineSwitch.carrier_provider_key === 'vodafone' &&
+      beforeLandlineSwitch.carrier_tariff_type === 'pay_monthly',
+    'household is a real mobile household with carrier/tariff captured, immediately before switching to landline'
+  );
+
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'landline', 'this-should-be-ignored', 'this-too']
+  );
+  const { rows: [afterLandlineSwitch] } = await db.query(
+    `select device_type, carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(afterLandlineSwitch.device_type === 'landline', 'device_type is persisted as landline');
+  assert(
+    afterLandlineSwitch.carrier_provider_key === null && afterLandlineSwitch.carrier_tariff_type === null,
+    'switching to landline atomically clears carrier_provider_key and carrier_tariff_type to null, even though the caller passed non-null values for both — landline mobile-carrier fields are never left stale'
+  );
+
+  // Landline -> Mobile: switching back requires a fresh, real carrier
+  // capture — nothing about the previous landline state can make a new
+  // mobile selection succeed without going through this same call again.
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'mobile', 'giffgaff', null]
+  );
+  const { rows: [afterSwitchBackToMobile] } = await db.query(
+    `select device_type, carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterSwitchBackToMobile.device_type === 'mobile' && afterSwitchBackToMobile.carrier_provider_key === 'giffgaff',
+    'switching back to mobile persists the newly-supplied provider — the household is never left in a state where an old landline flag and a new carrier disagree'
+  );
 
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //

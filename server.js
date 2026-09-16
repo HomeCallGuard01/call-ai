@@ -1028,6 +1028,15 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // query is needed for the household's own provisioning state.
     // twilioNumber deliberately not included — never sent to the browser.
     twilioProvisioningStatus: req.household.twilio_provisioning_status || "pending",
+    // 2026-09-16 — the same authoritative device_type persisted by
+    // POST /billing/carrier-compatibility (migration 040), surfaced so
+    // the post-payment "Turn on protection" step can treat Mobile/
+    // Landline as real, persisted onboarding configuration rather than
+    // trusting only a client-side (localStorage) memory of it — a
+    // household correctly classified as landline stays landline even in
+    // a different browser/session. null for a legacy/unclassified
+    // household; the UI falls back to its existing behaviour in that case.
+    deviceType: req.household.device_type || null,
     phoneNumberAdded: !!req.household.phone_number,
     // The household's own destination number, for the UI to show a
     // persistent "safe calls ring X" confirmation instead of a
