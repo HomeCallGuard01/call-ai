@@ -396,5 +396,87 @@ function check(condition, message) {
   check(getCustomerFacingState('anything-else') === 'needs_confirmation', 'an unrecognised internal status defaults to needs_confirmation, never supported');
 }
 
+// ============================================================
+// households.device_type (migration 040, 2026-09-16) — the landline
+// checkout-eligibility fix. evaluateProviderCompatibility itself is
+// completely untouched by this; evaluateHouseholdCheckoutEligibility
+// only gains a device_type branch checked BEFORE it ever reaches the
+// mobile carrier decision.
+// ============================================================
+
+{
+  // The exact bug this migration fixes: a genuine landline household
+  // with no carrier ever captured (because none applies) must be treated
+  // as "provider compatibility not applicable", never as an unclassified
+  // mobile household stuck with carrier_provider_key === null.
+  const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: null, carrier_tariff_type: null });
+  check(result.status === 'not_applicable', 'landline + null carrier: status is not_applicable, not unverified/blocked');
+  check(result.canProceedToPayment === true, 'landline + null carrier: checkout is allowed');
+  check(result.customerState === 'supported', 'landline + null carrier: customer-facing state is supported');
+}
+
+{
+  const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline' });
+  check(result.canProceedToPayment === true, 'a valid landline household: checkout is allowed');
+  check(result.reason === null, 'a valid landline household: no internal reason string is fabricated — there is nothing to explain');
+  check(result.policy === null, 'a valid landline household: no mobile provider policy object is attached');
+}
+
+{
+  // The mobile carrier gate must remain byte-for-byte unaffected: a
+  // stale carrier_provider_key sitting on a household that is (or later
+  // becomes) landline is irrelevant, because the landline branch returns
+  // before evaluateProviderCompatibility is ever called.
+  const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: 'tesco', carrier_tariff_type: 'payg' });
+  check(result.canProceedToPayment === true, 'landline: checkout is allowed even if a stale/leftover carrier_provider_key is still present on the row — the landline branch never consults it');
+}
+
+{
+  // device_type === "mobile" must fall through completely unchanged to
+  // the existing, already-tested carrier gate.
+  const supported = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'giffgaff' });
+  check(supported.canProceedToPayment === true, 'mobile + supported carrier (giffgaff): checkout is allowed');
+
+  const unsupportedTesco = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'tesco' });
+  check(unsupportedTesco.canProceedToPayment === false, 'mobile + Tesco: checkout is blocked');
+
+  const paygVodafone = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'vodafone', carrier_tariff_type: 'payg' });
+  check(paygVodafone.canProceedToPayment === false, 'mobile + Vodafone PAYG: checkout is blocked');
+
+  const payMonthlyVodafone = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'vodafone', carrier_tariff_type: 'pay_monthly' });
+  check(payMonthlyVodafone.canProceedToPayment === true, 'mobile + Vodafone Pay Monthly: checkout is allowed');
+
+  const lebara = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'lebara' });
+  check(lebara.canProceedToPayment === true, 'mobile + Lebara: checkout is allowed');
+
+  const nullCarrier = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: null });
+  check(nullCarrier.canProceedToPayment === false, 'mobile + null carrier: checkout is blocked — a mobile household must still complete carrier selection');
+}
+
+{
+  // device_type === null/undefined (legacy/unclassified, or a genuinely
+  // mobile household mid-onboarding that hasn't reached carrier
+  // selection yet) must NEVER be silently treated as landline. This is
+  // the core regression case the whole fix exists to close correctly —
+  // the fix must not simply flip the bug from "landline blocked" to
+  // "unclassified mobile waved through as landline".
+  const nullDeviceType = evaluateHouseholdCheckoutEligibility({ device_type: null, carrier_provider_key: null });
+  check(nullDeviceType.status !== 'not_applicable', 'device_type null: never implicitly treated as landline (not_applicable)');
+  check(nullDeviceType.canProceedToPayment === false, 'device_type null + no carrier: checkout remains blocked until device type is explicitly established');
+
+  const undefinedDeviceType = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: null });
+  check(undefinedDeviceType.status !== 'not_applicable', 'device_type entirely absent from the household object: never implicitly treated as landline');
+  check(undefinedDeviceType.canProceedToPayment === false, 'device_type entirely absent: checkout remains blocked');
+}
+
+{
+  // Only the literal string 'landline' takes the landline branch — a
+  // near-miss value must fall through to the ordinary (blocking) mobile
+  // gate rather than being treated as landline by accident.
+  const nearMiss = evaluateHouseholdCheckoutEligibility({ device_type: 'Landline', carrier_provider_key: null });
+  check(nearMiss.status !== 'not_applicable', 'device_type "Landline" (wrong case): not treated as landline — exact match only');
+  check(nearMiss.canProceedToPayment === false, 'device_type "Landline" (wrong case): checkout remains blocked, same as any other unclassified household');
+}
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;

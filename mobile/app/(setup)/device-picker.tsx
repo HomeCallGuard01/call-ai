@@ -33,7 +33,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
 import { Banner } from "../../components/Banner";
 import { PrimaryButton } from "../../components/PrimaryButton";
-import { checkCarrierCompatibility, ApiError } from "../../lib/api";
+import { checkCarrierCompatibility, setHouseholdLandline, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { saveActivationDevice } from "../../lib/activationDeviceStorage";
 import { MOBILE_CARRIERS } from "../../lib/carriers";
@@ -66,7 +66,7 @@ type Step =
   | { name: "carrier" }
   | { name: "tariff"; provider: MobileCarrierKey }
   | { name: "checking" }
-  | { name: "blocked"; reason: string | null };
+  | { name: "blocked"; customerState: "not_currently_supported" | "needs_confirmation" };
 
 export default function DevicePicker() {
   const { session } = useAuth();
@@ -83,9 +83,27 @@ export default function DevicePicker() {
     setStep({ name: "carrier" });
   }
 
-  function selectLandlineProvider(provider: LandlineProvider) {
-    saveActivationDevice({ deviceType: "landline", provider });
-    router.push("/(setup)/subscribe");
+  // 2026-09-16 fix (the landline checkout-eligibility defect found
+  // during PR #39 staging acceptance testing): this used to only save
+  // deviceType locally (saveActivationDevice, AsyncStorage) and navigate
+  // straight on — the backend never learned this household is landline
+  // at all, so households.device_type stayed null forever, which the
+  // checkout gate correctly treats as "unclassified mobile" and blocks.
+  // Landline now persists device_type="landline" server-side first
+  // (setHouseholdLandline — migration 040), the same authoritative
+  // signal evaluateHouseholdCheckoutEligibility reads at the real
+  // /api/v1/billing/create-checkout-session gate.
+  async function selectLandlineProvider(provider: LandlineProvider) {
+    setStep({ name: "checking" });
+    setError(null);
+    try {
+      await setHouseholdLandline(session?.access_token);
+      saveActivationDevice({ deviceType: "landline", provider });
+      router.push("/(setup)/subscribe");
+    } catch (err) {
+      setError("We couldn't save your selection just now. Please try again.");
+      setStep({ name: "landline-provider" });
+    }
   }
 
   async function evaluate(provider: MobileCarrierKey, tariffType?: TariffType) {
@@ -107,7 +125,11 @@ export default function DevicePicker() {
         router.push("/(setup)/subscribe");
         return;
       }
-      setStep({ name: "blocked", reason: result.reason });
+      // 2026-09-16 fix: never carries result.reason (the backend's own
+      // internal policy string) through to the rendered "blocked" step
+      // any more — only the customerState category, which decides fixed,
+      // non-technical copy (see the "blocked" render branch below).
+      setStep({ name: "blocked", customerState: result.customerState === "needs_confirmation" ? "needs_confirmation" : "not_currently_supported" });
     } catch (err) {
       setError(err instanceof ApiError ? "We couldn't check your network. Please try again." : "Something went wrong.");
       setStep({ name: "carrier" });
@@ -211,16 +233,15 @@ export default function DevicePicker() {
   }
 
   if (step.name === "blocked") {
+    // Fixed, non-technical copy chosen only by customerState — never
+    // the backend's own internal policy reason string (2026-09-16 fix).
+    const message = step.customerState === "needs_confirmation"
+      ? "We're still confirming Home Call Guard works with your network. We don't want to take your payment until we're sure it will work for you."
+      : "Unfortunately, this isn't currently compatible with Home Call Guard. You can use Home Call Guard with another supported mobile network or plan.";
     return (
       <Screen>
         <Text style={styles.title} accessibilityRole="header">We can't protect this network yet</Text>
-        <Banner
-          variant="notice"
-          message={
-            step.reason ||
-            "We're still confirming support for your network. We don't want to take payment until we're sure Home Call Guard will work for you."
-          }
-        />
+        <Banner variant="notice" message={message} />
         <PrimaryButton label="Try a different network" onPress={() => setStep({ name: "carrier" })} />
         <PrimaryButton
           label="Contact support"

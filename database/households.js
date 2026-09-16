@@ -297,19 +297,34 @@ async function markHouseholdDeliveryVerified(householdId) {
   return data;
 }
 
-// Persists a household's mobile-carrier selection captured during
-// onboarding, via set_household_carrier_compatibility (migration 038).
-// Deliberately stores only the raw provider/tariff selection, never a
-// derived compatibility verdict — see that migration's own header and
-// services/providerPolicy.js's evaluateHouseholdCheckoutEligibility,
-// which is the only place a verdict is ever computed, evaluated fresh
-// every time it's needed rather than trusted from a stored value.
-async function setHouseholdCarrierCompatibility(householdId, providerKey, tariffType) {
+// Persists a household's device type (mobile/landline) and, for mobile,
+// its carrier selection, via set_household_carrier_compatibility
+// (migration 040 — 4-argument signature, superseding migration 038's
+// 3-argument one). Deliberately stores only the raw device_type/
+// provider/tariff selection, never a derived compatibility verdict —
+// see that migration's own header and services/providerPolicy.js's
+// evaluateHouseholdCheckoutEligibility, which is the only place a
+// verdict is ever computed, evaluated fresh every time it's needed
+// rather than trusted from a stored value.
+//
+// deviceType is now required (2026-09-16 fix for the landline
+// checkout-eligibility defect) — every caller must say explicitly
+// whether this household is mobile or landline; there is no default.
+// For deviceType === "landline", providerKey/tariffType are ignored by
+// the RPC itself (cleared atomically, regardless of what's passed here)
+// — see migration 040's own comment on why that clearing happens in the
+// database, not just trusted from callers remembering to omit them.
+async function setHouseholdCarrierCompatibility(householdId, deviceType, providerKey, tariffType) {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  if (deviceType !== "mobile" && deviceType !== "landline") {
+    throw new Error(`setHouseholdCarrierCompatibility: deviceType must be "mobile" or "landline", got "${deviceType}"`);
+  }
 
   const { data, error } = await supabaseAdmin.rpc("set_household_carrier_compatibility", {
     p_household_id: householdId,
-    p_provider_key: providerKey,
+    p_device_type: deviceType,
+    p_provider_key: providerKey || null,
     p_tariff_type: tariffType || null,
   });
 

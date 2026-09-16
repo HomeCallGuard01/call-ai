@@ -196,9 +196,14 @@ export default function Subscribe() {
       const eligibility = await fetchCarrierCompatibility(session?.access_token);
       if (!eligibility.canProceedToPayment) {
         if (isMounted.current) {
+          // 2026-09-16 fix: never shows eligibility.reason (the
+          // backend's own internal policy string) directly — fixed,
+          // non-technical copy only, matching device-picker.tsx's own
+          // "blocked" step wording.
           setError(
-            eligibility.reason ||
-              "We can't take payment yet — your network hasn't been confirmed as compatible. Please go back and check your network."
+            eligibility.customerState === "needs_confirmation"
+              ? "We're still confirming Home Call Guard works with your network. Please contact support for help."
+              : "We can't take payment yet — your network hasn't been confirmed as compatible. Please go back and check your network."
           );
         }
         return;

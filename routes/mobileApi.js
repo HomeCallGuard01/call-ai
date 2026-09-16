@@ -134,22 +134,34 @@ router.use((req, res, next) => {
 // immediately — before checkout is ever attempted, not just at the point
 // checkout would otherwise fail.
 router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (req, res) => {
-  const { provider, tariffType } = req.body || {};
+  const { deviceType, provider, tariffType } = req.body || {};
 
-  if (typeof provider !== "string" || !provider.trim()) {
-    return res.status(400).json({ error: "invalid_input", message: "provider is required" });
+  if (deviceType !== "mobile" && deviceType !== "landline") {
+    return res.status(400).json({ error: "invalid_input", message: "deviceType must be \"mobile\" or \"landline\"." });
   }
 
-  const normalisedTariffType = typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
+  // provider is only required for mobile — see services/providerPolicy.js's
+  // device_type branch: a landline household has no mobile carrier at
+  // all, and the mobile provider policy simply does not apply to it.
+  if (deviceType === "mobile" && (typeof provider !== "string" || !provider.trim())) {
+    return res.status(400).json({ error: "invalid_input", message: "provider is required for a mobile household" });
+  }
+
+  const normalisedProvider = deviceType === "mobile" ? provider : null;
+  const normalisedTariffType = deviceType === "mobile" && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
 
   try {
-    await setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType);
+    await setHouseholdCarrierCompatibility(req.household.id, deviceType, normalisedProvider, normalisedTariffType);
 
     const evaluation = evaluateHouseholdCheckoutEligibility({
-      carrier_provider_key: provider,
+      device_type: deviceType,
+      carrier_provider_key: normalisedProvider,
       carrier_tariff_type: normalisedTariffType,
     });
 
+    // reason is kept for the "tariff_type_required" control-flow
+    // sentinel the app checks for — never rendered as raw text to the
+    // customer (see mobile/app/(setup)/device-picker.tsx).
     res.json({
       status: evaluation.status,
       customerState: evaluation.customerState,
@@ -536,6 +548,13 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         deliveryReady: protectionStatus.deliveryReady,
         endToEndDeliveryVerified: protectionStatus.endToEndDeliveryVerified,
         fullyProtected: protectionStatus.fullyProtected,
+        // Server-authoritative Mobile/Landline (households.device_type,
+        // migration 040) — parity with web's /dashboard-data. Lets the
+        // app prefer this over any client-remembered device category for
+        // the same "downstream consistency" reason: once a household is
+        // persisted as landline, every later screen must treat it as
+        // landline, not just the checkout step that captured it.
+        deviceType: req.household.device_type || null,
       },
       membership: {
         planName: "Home Call Guard Standard",

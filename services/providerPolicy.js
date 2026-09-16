@@ -337,7 +337,7 @@ function getMobileDeactivationInstructions(providerKey) {
 //
 // Takes a household-shaped object rather than a bare provider string, so
 // callers never have to know which two household columns this depends on
-// (supabase/migrations/038_household_carrier_compatibility.sql). A
+// (supabase/migrations/038/040_household_carrier_compatibility.sql). A
 // household with no carrier captured yet — every household that existed
 // before this migration, or one that hasn't reached the onboarding
 // carrier step yet — has carrier_provider_key === null/undefined, which
@@ -346,7 +346,37 @@ function getMobileDeactivationInstructions(providerKey) {
 // it is already handled correctly by the exact same fallback an
 // unrecognised provider string gets. Never throws — a null/undefined
 // household argument resolves the same way.
+//
+// device_type branch (2026-09-16, migration 040) — closes the
+// launch-blocking defect found during PR #39 staging acceptance
+// testing: a landline household legitimately has no mobile carrier at
+// all, and the mobile PROVIDER_POLICY simply does not apply to it. This
+// is the ONLY branch that may skip evaluateProviderCompatibility
+// entirely, and it requires household.device_type to be the
+// AUTHORITATIVE, server-persisted value written by
+// set_household_carrier_compatibility (migration 040) — never inferred
+// from carrier_provider_key being null, and never read from anything
+// client-supplied on the checkout request itself (see routes/billing.js
+// and routes/mobileApi.js — the checkout routes only ever read
+// req.household, resolved server-side from the authenticated session,
+// same trust boundary as every other field on that record).
+//
+// device_type === 'mobile' or null/legacy/unclassified both fall
+// through unchanged to evaluateProviderCompatibility below — that
+// function's own code and behaviour are completely untouched by this
+// change, so the existing mobile gate (including "null carrier_provider_
+// key stays blocked") is preserved exactly as before, by construction.
 function evaluateHouseholdCheckoutEligibility(household) {
+  if (household && household.device_type === "landline") {
+    return {
+      status: "not_applicable",
+      customerState: "supported",
+      canProceedToPayment: true,
+      reason: null,
+      policy: null,
+    };
+  }
+
   return evaluateProviderCompatibility(
     household && household.carrier_provider_key,
     household && household.carrier_tariff_type

@@ -54,8 +54,17 @@ check(
   'the capture route requires auth but NOT entitlement — an unsubscribed household must be able to reach it before ever seeing Subscribe'
 );
 check(
-  postCarrier.block.includes('setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType)'),
-  'the route persists the raw provider/tariff selection via setHouseholdCarrierCompatibility, keyed to the caller\'s own resolved household'
+  postCarrier.block.includes('setHouseholdCarrierCompatibility(req.household.id, deviceType, normalisedProvider, normalisedTariffType)'),
+  'the route persists the device type + raw provider/tariff selection via setHouseholdCarrierCompatibility (migration 040), keyed to the caller\'s own resolved household'
+);
+check(
+  postCarrier.block.includes('deviceType !== "mobile" && deviceType !== "landline"'),
+  'deviceType must be explicitly "mobile" or "landline" — a missing/invalid value is rejected with 400 before any write is attempted'
+);
+check(
+  postCarrier.block.includes('deviceType === "mobile"') &&
+    postCarrier.block.indexOf('typeof provider !== "string" || !provider.trim()') > postCarrier.block.indexOf('deviceType === "mobile"'),
+  'provider is only required when deviceType is "mobile" — a landline household is never forced to supply a mobile carrier'
 );
 check(
   postCarrier.block.includes('evaluateHouseholdCheckoutEligibility({'),
@@ -138,9 +147,13 @@ check(
 // ============================================================
 
 check(
-  householdsSource.includes('async function setHouseholdCarrierCompatibility(householdId, providerKey, tariffType)') &&
+  householdsSource.includes('async function setHouseholdCarrierCompatibility(householdId, deviceType, providerKey, tariffType)') &&
     householdsSource.includes('supabaseAdmin.rpc("set_household_carrier_compatibility"'),
-  'setHouseholdCarrierCompatibility calls the real SECURITY DEFINER RPC (migration 038, ported from p0-batch1-carrier-policy-quarantine), not a direct table write'
+  'setHouseholdCarrierCompatibility calls the real SECURITY DEFINER RPC (migration 040\'s 4-arg replacement of migration 038\'s function), not a direct table write'
+);
+check(
+  householdsSource.includes('deviceType !== "mobile" && deviceType !== "landline"'),
+  'setHouseholdCarrierCompatibility itself rejects an invalid/missing deviceType before ever calling the RPC — not just the route callers'
 );
 
 check(

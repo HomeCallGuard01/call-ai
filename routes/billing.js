@@ -190,22 +190,44 @@ async function resolveStripeCustomerId(household, authUserId) {
 // server-side, by the same services/providerPolicy.js the mobile app
 // uses.
 router.post("/billing/carrier-compatibility", requireAuth, express.json(), async (req, res) => {
-  const { provider, tariffType } = req.body || {};
+  const { deviceType, provider, tariffType } = req.body || {};
 
-  if (typeof provider !== "string" || !provider.trim()) {
-    return res.status(400).json({ error: "invalid_input", message: "provider is required" });
+  if (deviceType !== "mobile" && deviceType !== "landline") {
+    return res.status(400).json({ error: "invalid_input", message: "deviceType must be \"mobile\" or \"landline\"." });
   }
 
-  const normalisedTariffType = typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
+  // provider is only required for mobile — a landline household has no
+  // mobile carrier at all, and the mobile provider policy does not
+  // apply to it (see services/providerPolicy.js's device_type branch).
+  if (deviceType === "mobile" && (typeof provider !== "string" || !provider.trim())) {
+    return res.status(400).json({ error: "invalid_input", message: "provider is required for a mobile household" });
+  }
+
+  const normalisedProvider = deviceType === "mobile" ? provider : null;
+  const normalisedTariffType = deviceType === "mobile" && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
 
   try {
-    await setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType);
+    await setHouseholdCarrierCompatibility(req.household.id, deviceType, normalisedProvider, normalisedTariffType);
 
     const evaluation = evaluateHouseholdCheckoutEligibility({
-      carrier_provider_key: provider,
+      device_type: deviceType,
+      carrier_provider_key: normalisedProvider,
       carrier_tariff_type: normalisedTariffType,
     });
 
+    // `reason` is still returned — the frontend needs the
+    // "tariff_type_required" value as a control-flow sentinel (never
+    // rendered as visible text). What's fixed (2026-09-16) is that
+    // upload.html no longer ever displays this field directly to the
+    // customer for the not-currently-supported case; it composes its
+    // own simple, non-technical message client-side from customerState
+    // + the already-known selection instead (see upload.html's
+    // evaluateCarrierCompatibility). The backend's own internal reason
+    // text (e.g. "Provider not in HomeCallGuard's confirmed
+    // compatibility list") remains available here for that sentinel
+    // check and for logs/debugging, it just must never be rendered
+    // verbatim in the UI — see the defense-in-depth submit-handler fix
+    // below for the one place that previously did.
     res.json({
       status: evaluation.status,
       customerState: evaluation.customerState,

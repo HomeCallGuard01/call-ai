@@ -2203,7 +2203,16 @@
     // remembered pre-payment answer always overrides user-agent
     // detection for this specific case; user-agent detection is only
     // trusted when we don't already know better.
-    const rememberedCategory = getRememberedDeviceCategory();
+    // 2026-09-16: prefer the server-persisted, authoritative
+    // households.device_type (migration 040) over the client-side
+    // localStorage memory — this treats Mobile/Landline as real,
+    // persisted onboarding configuration, not merely a checkout-time
+    // flag: a household correctly classified as landline stays landline
+    // even in a different browser/session where localStorage never had
+    // a chance to be set. Falls back to the local memory (then to
+    // asking fresh) only for a legacy/unclassified household.
+    const serverDeviceCategory = lastDashboardData && lastDashboardData.deviceType;
+    const rememberedCategory = serverDeviceCategory || getRememberedDeviceCategory();
     const detected = rememberedCategory === "landline" ? null : detectMobileDeviceType(navigator.userAgent);
     const showMobileFlow = !!detected && !forceManualActivation;
 
@@ -3496,8 +3505,34 @@
 
     const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
     rememberDeviceCategory(isMobile ? "mobile" : "landline");
+
+    // 2026-09-16 fix (the landline checkout-eligibility defect found
+    // during PR #39 staging acceptance testing): landline used to call
+    // handleCarrierCheckSuccess() directly with zero server round trip,
+    // so the backend never learned this household is landline at all —
+    // its device_type stayed null forever, which the checkout gate
+    // (correctly, for a genuinely unclassified household) treats as
+    // "unverified mobile", blocking every landline customer. Landline
+    // now persists device_type="landline" through the SAME endpoint the
+    // mobile branch uses (server-authoritative — see services/
+    // providerPolicy.js's device_type branch — never inferred from
+    // carrier_provider_key being null, and never trusted from anything
+    // else the client sends at checkout time itself).
     if (!isMobile) {
-      handleCarrierCheckSuccess();
+      try {
+        const response = await fetch("/billing/carrier-compatibility", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceType: "landline" }),
+        });
+        if (!response.ok) throw new Error("request failed");
+        handleCarrierCheckSuccess();
+      } catch (err) {
+        if (carrierCheckErrorEl) {
+          carrierCheckErrorEl.textContent = "We couldn't save your selection just now. Please check your connection and try again.";
+          carrierCheckErrorEl.hidden = false;
+        }
+      }
       return;
     }
 
@@ -3518,7 +3553,7 @@
       const response = await fetch("/billing/carrier-compatibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: provider, tariffType: tariffType }),
+        body: JSON.stringify({ deviceType: "mobile", provider: provider, tariffType: tariffType }),
       });
       const result = await response.json();
 
@@ -3662,8 +3697,19 @@
           if (!result.canProceedToPayment) {
             resetSubscribeButton();
             if (termsConsentErrorEl) {
-              termsConsentErrorEl.textContent =
-                result.reason || "Your network isn't supported yet. Please go back and check your network.";
+              // 2026-09-16 fix: this used to show result.reason directly
+              // — the backend's own internal policy string (e.g.
+              // "Provider not in HomeCallGuard's confirmed compatibility
+              // list"), never meant for a customer to read. This is a
+              // rare defense-in-depth path (the pre-payment check
+              // already normally catches this before the customer ever
+              // reaches consent), so a plain, honest message is used
+              // rather than re-deriving the exact "Unfortunately, X..."
+              // wording a second time — either way, no raw internal
+              // string is ever shown.
+              termsConsentErrorEl.textContent = result.customerState === "needs_confirmation"
+                ? "We're still confirming Home Call Guard works with your network. Please contact support@homecallguard.co.uk for help."
+                : "Your network isn't currently supported. Please go back and check your network or plan.";
               termsConsentErrorEl.hidden = false;
             }
             return;

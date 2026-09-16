@@ -134,14 +134,22 @@ check(
 // behaviour is proven directly against a real database in
 // tests/migrations.pglite.test.mjs's migration 038 section) ---
 check(
-  captureBlock.includes('setHouseholdCarrierCompatibility(req.household.id, provider, normalisedTariffType)'),
-  'the route persists the provider/tariff via setHouseholdCarrierCompatibility, using the real household id (req.household.id) and the exact validated inputs'
+  captureBlock.includes('setHouseholdCarrierCompatibility(req.household.id, deviceType, normalisedProvider, normalisedTariffType)'),
+  'the route persists the device type + provider/tariff via setHouseholdCarrierCompatibility (migration 040), using the real household id (req.household.id) and the exact validated inputs'
 );
 
 // --- malformed/invalid payloads fail safely ---
 check(
+  captureBlock.includes('deviceType !== "mobile" && deviceType !== "landline"'),
+  'a missing/invalid deviceType is rejected before any write is attempted'
+);
+check(
   captureBlock.includes('typeof provider !== "string" || !provider.trim()'),
-  'a missing/non-string/empty provider is rejected'
+  'a missing/non-string/empty provider is rejected when deviceType is mobile'
+);
+check(
+  captureBlock.includes('deviceType === "mobile" ? provider : null'),
+  'a landline household never has a mobile provider persisted, regardless of what the client sent'
 );
 const validationIdx = captureBlock.indexOf('typeof provider !== "string"');
 const persistIdx = captureBlock.indexOf('setHouseholdCarrierCompatibility(');
