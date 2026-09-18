@@ -5,7 +5,7 @@
 // decision — no backend call needed, the choice only determines which
 // copy B4 shows.
 import { useState } from "react";
-import { Text, View, Pressable, StyleSheet } from "react-native";
+import { Text, View, Pressable, StyleSheet, Platform } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
@@ -16,9 +16,23 @@ import { looksLikePhoneNumber } from "../../lib/contactSelection";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 import type { DeviceType, LandlineProvider } from "../../lib/types";
 
+// iOS build must never offer, render, or mention an Android option —
+// Apple Guideline 2.3.10 (Build 11 review, 2026-09-18): "Revise the
+// app's binary to remove Android references." The Android build is
+// completely unaffected: this option, and every downstream screen that
+// already branches on deviceType === "android" (the phone-number
+// confirmation copy just below, activate.tsx's dialer handling, etc.),
+// stays fully intact and reachable there — only the iOS build excludes
+// the option from this list, which is the single place a customer could
+// ever select it. Runtime Platform.OS check, not a platform-suffixed
+// file, matching this codebase's own existing convention for the same
+// kind of split (see account/support.tsx's FAQ copy) — deviceType can
+// never become "android" on iOS once this option isn't offered, so
+// every "android" branch further down this file and in activate.tsx is
+// naturally unreachable there without needing its own separate guard.
 const DEVICE_OPTIONS: { type: DeviceType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { type: "iphone", label: "iPhone", icon: "logo-apple" },
-  { type: "android", label: "Android phone", icon: "logo-android" },
+  ...(Platform.OS === "ios" ? [] : [{ type: "android" as const, label: "Android phone", icon: "logo-android" as const }]),
   { type: "landline", label: "Landline", icon: "call" },
 ];
 
