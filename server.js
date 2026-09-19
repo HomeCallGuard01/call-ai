@@ -2031,6 +2031,17 @@ app.get("/support", (req, res) => {
   res.sendFile(__dirname + "/public/support.html");
 });
 
+// /go — simple, mobile-first link-in-bio landing page for social-media
+// profiles (TikTok/Instagram/Facebook). Three routes into the existing
+// flows only: Google Play, the real /dashboard onboarding entry point
+// (same as any other landline/Android customer), and an inline
+// iPhone waiting-list form using the same public /api/v1/waiting-list
+// endpoint the homepage banner already uses. No new signup/payment
+// path is introduced here.
+app.get("/go", (req, res) => {
+  res.sendFile(__dirname + "/public/go.html");
+});
+
 // Auth only, deliberately not requireEntitlement — an unsubscribed
 // household must still be able to reach the dashboard shell to see the
 // "Get Protected Today" prompt and start Checkout from it. The page's own

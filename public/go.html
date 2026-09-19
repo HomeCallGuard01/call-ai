@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+
+<meta name="description" content="Home Call Guard — scam-call protection for your phone. Get started on Android, landline or join the iPhone waiting list.">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Home Call Guard">
+<meta property="og:title" content="Home Call Guard">
+<meta property="og:description" content="Scam-call protection for your phone.">
+<meta property="og:image" content="https://homecallguard.co.uk/logo.png">
+
+<title>Home Call Guard</title>
+
+<style>
+  :root {
+    --background: #07111f;
+    --card: #101e31;
+    --card-light: #15263c;
+    --green: #22e59a;
+    --white: #ffffff;
+    --text: #d8e2ee;
+    --muted: #9babc0;
+    --border: rgba(255, 255, 255, 0.1);
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--white);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.5;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 20px 40px;
+  }
+
+  main {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .logo {
+    width: 84px;
+    height: 84px;
+    object-fit: contain;
+    border-radius: 20px;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-align: center;
+  }
+
+  h1 span {
+    color: var(--green);
+  }
+
+  .tagline {
+    color: var(--muted);
+    font-size: 0.95rem;
+    text-align: center;
+    margin-top: 6px;
+    margin-bottom: 28px;
+  }
+
+  .options {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .option {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 18px;
+    text-align: left;
+    text-decoration: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .option:active {
+    transform: scale(0.98);
+  }
+
+  .option:hover,
+  .option:focus-visible {
+    background: var(--card-light);
+    border-color: rgba(255, 255, 255, 0.22);
+    outline: none;
+  }
+
+  .option-icon {
+    flex-shrink: 0;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: rgba(34, 229, 154, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+  }
+
+  .option-title {
+    font-weight: 800;
+    font-size: 1.02rem;
+  }
+
+  .option-subtitle {
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin-top: 2px;
+  }
+
+  .option.primary {
+    background: var(--green);
+    border-color: transparent;
+  }
+
+  .option.primary .option-icon {
+    background: rgba(4, 19, 13, 0.15);
+  }
+
+  .option.primary .option-title {
+    color: #04130d;
+  }
+
+  .option.primary .option-subtitle {
+    color: rgba(4, 19, 13, 0.75);
+  }
+
+  /* iPhone waiting-list inline panel */
+  #iosWaitPanel {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-top: -2px;
+  }
+
+  #iosWaitPanel p {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+  }
+
+  .wait-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  #iosWaitEmail {
+    flex: 1;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    color: var(--white);
+    font-size: 0.95rem;
+  }
+
+  #iosWaitEmail::placeholder {
+    color: var(--muted);
+  }
+
+  #iosWaitSubmit {
+    flex-shrink: 0;
+    background: var(--green);
+    border: 0;
+    border-radius: 10px;
+    padding: 0 16px;
+    font-weight: 800;
+    color: #04130d;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+
+  #iosWaitSubmit:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  #iosWaitMessage {
+    font-size: 0.85rem;
+    margin-top: 10px;
+  }
+
+  #iosWaitMessage.success { color: var(--green); }
+  #iosWaitMessage.error { color: #ff8f8f; }
+
+  .signin {
+    margin-top: 28px;
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+
+  .signin a {
+    color: var(--green);
+    font-weight: 700;
+  }
+
+  footer {
+    margin-top: 36px;
+    display: flex;
+    gap: 14px;
+    font-size: 0.78rem;
+  }
+
+  footer a {
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<main>
+  <img src="/logo.png" alt="Home Call Guard" class="logo">
+  <h1>Home Call <span>Guard</span></h1>
+  <p class="tagline">Scam-call protection for your phone.</p>
+
+  <div class="options">
+    <a class="option primary" id="androidOption" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" data-analytics-event="bio_android">
+      <span class="option-icon" aria-hidden="true">📱</span>
+      <span>
+        <span class="option-title">Android</span>
+        <span class="option-subtitle">Download on Google Play</span>
+      </span>
+    </a>
+
+    <a class="option" id="landlineOption" href="/dashboard" data-analytics-event="bio_landline">
+      <span class="option-icon" aria-hidden="true">☎️</span>
+      <span>
+        <span class="option-title">Landline</span>
+        <span class="option-subtitle">Set up Home Call Guard</span>
+      </span>
+    </a>
+
+    <button type="button" class="option" id="iphoneOption" data-analytics-event="bio_ios" aria-expanded="false" aria-controls="iosWaitPanel">
+      <span class="option-icon" aria-hidden="true">🍎</span>
+      <span>
+        <span class="option-title">iPhone — Coming soon</span>
+        <span class="option-subtitle">Join the waiting list</span>
+      </span>
+    </button>
+
+    <div id="iosWaitPanel" hidden>
+      <p>We're waiting for final App Store approval. Join the waiting list and we'll let you know as soon as it's available.</p>
+      <div class="wait-row">
+        <input type="email" id="iosWaitEmail" placeholder="you@example.com" autocomplete="email">
+        <button type="button" id="iosWaitSubmit">Join</button>
+      </div>
+      <p id="iosWaitMessage" role="status"></p>
+    </div>
+  </div>
+
+  <p class="signin">Already a customer? <a href="/login.html" id="signinLink" data-analytics-event="bio_signin">Sign in</a></p>
+
+  <footer>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms.html">Terms</a>
+  </footer>
+</main>
+
+<script>
+(function () {
+  // Analytics hooks — dispatched as DOM CustomEvents so any analytics
+  // snippet added later (GA4, etc.) can listen for
+  // 'hcg:bio' without this page needing to know about it. No network
+  // call is made here; this never blocks or delays the real navigation.
+  document.querySelectorAll('[data-analytics-event]').forEach(function (el) {
+    el.addEventListener('click', function () {
+      try {
+        window.dispatchEvent(new CustomEvent('hcg:bio', { detail: { event: el.getAttribute('data-analytics-event') } }));
+      } catch (e) {}
+    });
+  });
+
+  // Preserve UTM parameters into onboarding where practical: forward
+  // this page's own query string onto the Landline/Sign-in links,
+  // which both lead into the real onboarding/auth flow.
+  var search = window.location.search;
+  if (search) {
+    ['landlineOption', 'signinLink'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.href = el.getAttribute('href') + search;
+    });
+  }
+
+  // iPhone — reveal the inline waiting-list panel rather than
+  // navigating anywhere. No path from here ever reaches payment,
+  // subscription or Twilio provisioning.
+  var iphoneOption = document.getElementById('iphoneOption');
+  var panel = document.getElementById('iosWaitPanel');
+  iphoneOption.addEventListener('click', function () {
+    var expanded = iphoneOption.getAttribute('aria-expanded') === 'true';
+    iphoneOption.setAttribute('aria-expanded', String(!expanded));
+    panel.hidden = expanded;
+    if (!expanded) document.getElementById('iosWaitEmail').focus();
+  });
+
+  var emailEl = document.getElementById('iosWaitEmail');
+  var submitBtn = document.getElementById('iosWaitSubmit');
+  var messageEl = document.getElementById('iosWaitMessage');
+
+  submitBtn.addEventListener('click', function () {
+    var email = emailEl.value.trim();
+    if (!email || email.indexOf('@') === -1) {
+      messageEl.textContent = 'Please enter a valid email address.';
+      messageEl.className = 'error';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    messageEl.textContent = '';
+    messageEl.className = '';
+
+    fetch('/api/v1/waiting-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, reason: 'ios_coming_soon' }),
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('failed');
+        messageEl.textContent = "Thanks — we'll email you as soon as Home Call Guard for iPhone is available.";
+        messageEl.className = 'success';
+        emailEl.value = '';
+        emailEl.disabled = true;
+        submitBtn.hidden = true;
+      })
+      .catch(function () {
+        messageEl.textContent = "We couldn't save that just now — please try again.";
+        messageEl.className = 'error';
+        submitBtn.disabled = false;
+      });
+  });
+})();
+</script>
+</body>
+</html>
