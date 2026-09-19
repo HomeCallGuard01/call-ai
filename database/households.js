@@ -309,16 +309,17 @@ async function markHouseholdDeliveryVerified(householdId) {
 //
 // deviceType is now required (2026-09-16 fix for the landline
 // checkout-eligibility defect) — every caller must say explicitly
-// whether this household is mobile or landline; there is no default.
-// For deviceType === "landline", providerKey/tariffType are ignored by
-// the RPC itself (cleared atomically, regardless of what's passed here)
-// — see migration 040's own comment on why that clearing happens in the
-// database, not just trusted from callers remembering to omit them.
+// whether this household is mobile, landline, or (2026-09-19, migration
+// 041) iphone; there is no default. For deviceType === "landline" or
+// "iphone", providerKey/tariffType are ignored by the RPC itself
+// (cleared atomically, regardless of what's passed here) — see migration
+// 040/041's own comments on why that clearing happens in the database,
+// not just trusted from callers remembering to omit them.
 async function setHouseholdCarrierCompatibility(householdId, deviceType, providerKey, tariffType) {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
-  if (deviceType !== "mobile" && deviceType !== "landline") {
-    throw new Error(`setHouseholdCarrierCompatibility: deviceType must be "mobile" or "landline", got "${deviceType}"`);
+  if (deviceType !== "mobile" && deviceType !== "landline" && deviceType !== "iphone") {
+    throw new Error(`setHouseholdCarrierCompatibility: deviceType must be "mobile", "landline", or "iphone", got "${deviceType}"`);
   }
 
   const { data, error } = await supabaseAdmin.rpc("set_household_carrier_compatibility", {

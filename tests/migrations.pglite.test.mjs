@@ -1205,9 +1205,15 @@ async function main() {
     'household is a real mobile household with carrier/tariff captured, immediately before switching to landline'
   );
 
+  // 2026-09-19 launch-safety correction (migration 043): landline now
+  // PERSISTS the provider key (the landline provider itself, e.g. 'bt')
+  // rather than clearing it — this is the actual mechanism the checkout
+  // gate now reads to decide whether an unsupported/unaudited landline
+  // provider may proceed. Only carrier_tariff_type (a mobile-only
+  // concept) still clears atomically.
   await db.query(
     `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
-    [householdId, 'landline', 'this-should-be-ignored', 'this-too']
+    [householdId, 'landline', 'bt', 'this-tariff-should-still-be-cleared']
   );
   const { rows: [afterLandlineSwitch] } = await db.query(
     `select device_type, carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
@@ -1215,8 +1221,12 @@ async function main() {
   );
   assert(afterLandlineSwitch.device_type === 'landline', 'device_type is persisted as landline');
   assert(
-    afterLandlineSwitch.carrier_provider_key === null && afterLandlineSwitch.carrier_tariff_type === null,
-    'switching to landline atomically clears carrier_provider_key and carrier_tariff_type to null, even though the caller passed non-null values for both — landline mobile-carrier fields are never left stale'
+    afterLandlineSwitch.carrier_provider_key === 'bt',
+    'switching to landline now PERSISTS the landline provider as carrier_provider_key (migration 043) — this is what the checkout gate reads to enforce LANDLINE_SUPPORTED_PROVIDERS, not a mobile-carrier leftover being tolerated'
+  );
+  assert(
+    afterLandlineSwitch.carrier_tariff_type === null,
+    'carrier_tariff_type still clears atomically on a landline switch, even though a non-null value was passed — tariff is a mobile-only concept and never applies to landline'
   );
 
   // Landline -> Mobile: switching back requires a fresh, real carrier
@@ -1234,6 +1244,110 @@ async function main() {
     afterSwitchBackToMobile.device_type === 'mobile' && afterSwitchBackToMobile.carrier_provider_key === 'giffgaff',
     'switching back to mobile persists the newly-supplied provider — the household is never left in a state where an old landline flag and a new carrier disagree'
   );
+
+  // --- 041: households.device_type widened to include 'iphone'
+  // (IOS_COMING_SOON, 2026-09-19) — already applied by the bulk
+  // migration loop at the top of this file (every migration in
+  // supabase/migrations/ is applied in order before any test body runs,
+  // same as 040's own section above never re-runs 040 either); this
+  // section tests its effects directly. ---
+  await asServiceRole(db);
+
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'mobile', 'giffgaff', null]
+  );
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'iphone', 'this-should-be-cleared', 'this-too']
+  );
+  const { rows: [afterIphoneSwitch] } = await db.query(
+    `select device_type, carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(afterIphoneSwitch.device_type === 'iphone', 'after migration 041, device_type can be set to iphone via the RPC');
+  assert(
+    afterIphoneSwitch.carrier_provider_key === null && afterIphoneSwitch.carrier_tariff_type === null,
+    'switching to iphone atomically clears carrier_provider_key/carrier_tariff_type, same as landline — no stale mobile-carrier data survives the switch'
+  );
+
+  // reset role (the full bootstrap superuser, same technique the
+  // SECURITY DEFINER grant-check section below already relies on) —
+  // service_role itself has no direct UPDATE grant on households at all
+  // (every real mutation goes through a SECURITY DEFINER RPC instead),
+  // so proving the CHECK constraint's own shape needs a role that can
+  // attempt a raw write in the first place.
+  await db.exec('reset role;');
+
+  let iphoneCheckConstraintAcceptedAfterMigration041 = true;
+  try {
+    await db.query(`update public.households set device_type = 'iphone' where id = $1`, [householdId]);
+  } catch {
+    iphoneCheckConstraintAcceptedAfterMigration041 = false;
+  }
+  assert(iphoneCheckConstraintAcceptedAfterMigration041, 'after migration 041, the CHECK constraint itself permits device_type = iphone via a direct write too, not just through the RPC');
+
+  let invalidDeviceTypeStillRejectedAfterMigration041 = false;
+  try {
+    await db.query(`update public.households set device_type = 'tablet' where id = $1`, [householdId]);
+  } catch {
+    invalidDeviceTypeStillRejectedAfterMigration041 = true;
+  }
+  assert(invalidDeviceTypeStillRejectedAfterMigration041, 'the CHECK constraint still rejects a genuinely invalid value after migration 041 — widening to iphone did not accidentally open the constraint up entirely');
+
+  await asServiceRole(db);
+
+  // Switching iphone -> mobile requires a fresh, real carrier selection,
+  // same as landline -> mobile already does.
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'mobile', 'o2', null]
+  );
+  const { rows: [afterSwitchBackFromIphone] } = await db.query(
+    `select device_type, carrier_provider_key from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    afterSwitchBackFromIphone.device_type === 'mobile' && afterSwitchBackFromIphone.carrier_provider_key === 'o2',
+    'switching from iphone back to mobile persists the newly-supplied provider correctly'
+  );
+
+  // --- 042: waiting_list_signups (IOS_COMING_SOON / unsupported-carrier
+  // waiting list, 2026-09-19) — already applied by the bulk migration
+  // loop at the top of this file; this section tests it directly. ---
+  const { rows: [insertedSignup] } = await db.query(
+    `insert into public.waiting_list_signups (email, reason, provider_key, device_type) values ($1, $2, $3, $4) returning id, email, reason, provider_key, device_type`,
+    ['waitlist-test@example.com', 'ios_coming_soon', null, 'iphone']
+  );
+  assert(
+    insertedSignup.email === 'waitlist-test@example.com' && insertedSignup.reason === 'ios_coming_soon' && insertedSignup.device_type === 'iphone',
+    'service_role can insert a waiting-list signup with the exact fields supplied'
+  );
+
+  const { rows: [carrierSignup] } = await db.query(
+    `insert into public.waiting_list_signups (email, reason, provider_key) values ($1, $2, $3) returning provider_key`,
+    ['carrier-waitlist-test@example.com', 'unsupported_carrier', 'tesco']
+  );
+  assert(carrierSignup.provider_key === 'tesco', 'a waiting-list signup can independently record an unsupported-carrier reason with its provider key');
+
+  await asAuthUser(db, userId2, 'waitlist-rls-test@example.com');
+  let authenticatedWaitingListInsertDenied = false;
+  try {
+    await db.query(`insert into public.waiting_list_signups (email, reason) values ($1, $2)`, ['should-fail@example.com', 'ios_coming_soon']);
+  } catch {
+    authenticatedWaitingListInsertDenied = true;
+  }
+  assert(authenticatedWaitingListInsertDenied, 'authenticated role cannot insert into waiting_list_signups directly — every real signup goes through the service-role-mediated backend route, matching every other unauthenticated-capture table in this project');
+
+  let authenticatedWaitingListSelectDenied = false;
+  try {
+    await db.query(`select * from public.waiting_list_signups limit 1`);
+  } catch {
+    authenticatedWaitingListSelectDenied = true;
+  }
+  assert(authenticatedWaitingListSelectDenied, 'authenticated role cannot read waiting_list_signups directly either — no customer or dashboard code path can enumerate other people\'s waiting-list signups');
+
+  await asServiceRole(db);
 
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //

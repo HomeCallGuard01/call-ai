@@ -21,7 +21,9 @@
 // paying for a network that then cannot forward calls has already been
 // observed for real (Tesco Mobile). See evaluateProviderCompatibility.
 
-const PROVIDER_POLICY_VERSION = "2026-09-16-v2";
+const { isIosComingSoon } = require("./featureFlags");
+
+const PROVIDER_POLICY_VERSION = "2026-09-19-v4";
 
 // status:
 //   'compatible'        — forwarding confirmed to work, no known caveats
@@ -213,6 +215,19 @@ const PROVIDER_POLICY = {
 
 const TARIFF_TYPES = new Set(["pay_monthly", "payg"]);
 
+// Explicitly-verified/configured UK landline providers only (2026-09-19
+// launch-safety correction) — deliberately NARROWER than
+// services/activationInstructions.js's own LANDLINE_PROVIDERS, which
+// also includes "other" as a *selectable* value there (a customer still
+// needs to pick something to reach activation-code copy, post-payment,
+// for an existing customer). "other" is never a member of this set on
+// purpose: this set decides who may PAY, not who may be shown a
+// dial code. A customer without a confirmed, named provider must never
+// be handed BT's default codes on the unproven assumption they'll work
+// and be let through to Stripe on that basis — see
+// evaluateHouseholdCheckoutEligibility's landline branch below.
+const LANDLINE_SUPPORTED_PROVIDERS = new Set(["bt", "sky", "virgin", "talktalk", "plusnet"]);
+
 function getProviderPolicy(providerKey) {
   const key = typeof providerKey === "string" ? providerKey.toLowerCase() : "";
   return PROVIDER_POLICY[key] || PROVIDER_POLICY.other;
@@ -366,13 +381,59 @@ function getMobileDeactivationInstructions(providerKey) {
 // function's own code and behaviour are completely untouched by this
 // change, so the existing mobile gate (including "null carrier_provider_
 // key stays blocked") is preserved exactly as before, by construction.
+// device_type === 'iphone' branch (2026-09-19, migration 041,
+// IOS_COMING_SOON — see services/featureFlags.js and
+// docs/launch/IOS_COMING_SOON_LAUNCH_FLAG.md) — while Apple App Store
+// approval is pending, a household that self-declared it's protecting an
+// iPhone must be blocked before payment, regardless of what UK mobile
+// carrier it's actually on: the point isn't carrier compatibility (an
+// iPhone customer might genuinely be on a fully-supported network), it's
+// that there is no way to complete onboarding/activation for an iPhone
+// yet. Checked BEFORE evaluateProviderCompatibility for the same reason
+// the landline branch is: this is a different question entirely, not a
+// carrier-policy outcome, and must never be answered by falling through
+// to "no carrier captured yet" -> unverified -> blocked-for-the-wrong-
+// reason. Once IOS_COMING_SOON is set to "false" (Apple approved, a
+// build exists), this branch stops firing and an iphone household falls
+// through unchanged to whatever the real iOS purchase gate requires at
+// that point — nothing else about this function needs to change.
 function evaluateHouseholdCheckoutEligibility(household) {
   if (household && household.device_type === "landline") {
+    // 2026-09-19 launch-safety correction: landline no longer proceeds
+    // to payment unconditionally. carrier_provider_key now carries the
+    // landline provider itself (migration 043 — persisted server-side by
+    // the same RPC that already handles device_type). Only the five
+    // explicitly-verified/configured providers in
+    // LANDLINE_SUPPORTED_PROVIDERS may proceed; "other", a missing
+    // value, or anything a manipulated request might supply that isn't
+    // one of those five exact keys fails closed — the same two-way,
+    // never-a-warning discipline this file's header already establishes
+    // for mobile carriers, applied here for the first time.
+    const provider = household.carrier_provider_key;
+    if (provider && LANDLINE_SUPPORTED_PROVIDERS.has(provider)) {
+      return {
+        status: "not_applicable",
+        customerState: "supported",
+        canProceedToPayment: true,
+        reason: null,
+        policy: null,
+      };
+    }
     return {
-      status: "not_applicable",
-      customerState: "supported",
-      canProceedToPayment: true,
-      reason: null,
+      status: "landline_provider_unsupported",
+      customerState: "landline_provider_unsupported",
+      canProceedToPayment: false,
+      reason: "landline_provider_unsupported",
+      policy: null,
+    };
+  }
+
+  if (household && household.device_type === "iphone" && isIosComingSoon()) {
+    return {
+      status: "ios_coming_soon",
+      customerState: "ios_coming_soon",
+      canProceedToPayment: false,
+      reason: "ios_coming_soon",
       policy: null,
     };
   }
@@ -387,6 +448,7 @@ module.exports = {
   PROVIDER_POLICY_VERSION,
   PROVIDER_POLICY,
   TARIFF_TYPES,
+  LANDLINE_SUPPORTED_PROVIDERS,
   getProviderPolicy,
   getCustomerFacingState,
   evaluateProviderCompatibility,

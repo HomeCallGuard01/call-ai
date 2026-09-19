@@ -204,16 +204,66 @@ export async function checkCarrierCompatibility(
 // apply to this household at checkout — closes the launch-blocking
 // defect where a landline customer was permanently blocked at checkout
 // because carrier_provider_key being null was indistinguishable from
-// "mobile household that hasn't picked a network yet". Never sends a
-// provider/tariff — the backend clears any stale carrier data
-// atomically in the same write regardless.
-export async function setHouseholdLandline(accessToken?: string): Promise<CarrierCompatibilityResponse> {
+// "mobile household that hasn't picked a network yet".
+//
+// provider is now required (2026-09-19 launch-safety correction,
+// migration 043) — it used to be omitted entirely, and the backend
+// cleared carrier_provider_key to null regardless, meaning no landline
+// provider was ever actually recorded server-side before payment. Now
+// persisted the same way a mobile carrier is, and gated the same way:
+// services/providerPolicy.js's LANDLINE_SUPPORTED_PROVIDERS decides
+// whether this specific provider may proceed — "other" or an unaudited
+// provider comes back with canProceedToPayment: false and customerState
+// "landline_provider_unsupported", same two-way discipline as an
+// unsupported mobile carrier.
+export async function setHouseholdLandline(provider: LandlineProvider, accessToken?: string): Promise<CarrierCompatibilityResponse> {
   const response = await authorizedFetch(
     "/api/v1/onboarding/carrier-compatibility",
-    { method: "POST", body: JSON.stringify({ deviceType: "landline" }) },
+    { method: "POST", body: JSON.stringify({ deviceType: "landline", provider }) },
     accessToken
   );
   return parseJsonOrThrow<CarrierCompatibilityResponse>(response);
+}
+
+// 2026-09-19 (IOS_COMING_SOON, migration 041) — the iPhone counterpart of
+// setHouseholdLandline above: persists households.device_type = "iphone"
+// server-side, which evaluateHouseholdCheckoutEligibility blocks on
+// while services/featureFlags.js's IOS_COMING_SOON is true. Never sends
+// a provider/tariff, same reasoning as landline. Not wired into any
+// built binary yet — prepared source only, for the next mobile build
+// once one is made (see docs/launch/IOS_COMING_SOON_LAUNCH_FLAG.md).
+export async function setHouseholdIphone(accessToken?: string): Promise<CarrierCompatibilityResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/onboarding/carrier-compatibility",
+    { method: "POST", body: JSON.stringify({ deviceType: "iphone" }) },
+    accessToken
+  );
+  return parseJsonOrThrow<CarrierCompatibilityResponse>(response);
+}
+
+// GET /api/v1/launch-flags — public, unauthenticated. See
+// services/featureFlags.js on the backend for the single source of
+// truth this reads.
+export async function fetchLaunchFlags(): Promise<{ iosComingSoon: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/launch-flags`);
+  return parseJsonOrThrow<{ iosComingSoon: boolean }>(response);
+}
+
+// POST /api/v1/waiting-list — public, unauthenticated (see migration
+// 042's own header). Reused for both the iPhone coming-soon reason and
+// an unsupported-carrier reason from device-picker.tsx.
+export async function joinWaitingList(params: {
+  email: string;
+  reason: "ios_coming_soon" | "unsupported_carrier";
+  providerKey?: string;
+  deviceType?: string;
+}): Promise<{ ok: true }> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/waiting-list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  return parseJsonOrThrow<{ ok: true }>(response);
 }
 
 // GET /api/v1/onboarding/carrier-compatibility — read-only re-evaluation

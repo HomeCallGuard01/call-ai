@@ -136,18 +136,28 @@ router.use((req, res, next) => {
 router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (req, res) => {
   const { deviceType, provider, tariffType } = req.body || {};
 
-  if (deviceType !== "mobile" && deviceType !== "landline") {
-    return res.status(400).json({ error: "invalid_input", message: "deviceType must be \"mobile\" or \"landline\"." });
+  if (deviceType !== "mobile" && deviceType !== "landline" && deviceType !== "iphone") {
+    return res.status(400).json({ error: "invalid_input", message: "deviceType must be \"mobile\", \"landline\", or \"iphone\"." });
   }
 
-  // provider is only required for mobile — see services/providerPolicy.js's
-  // device_type branch: a landline household has no mobile carrier at
-  // all, and the mobile provider policy simply does not apply to it.
+  // provider is required for mobile (a real UK carrier key) and, since
+  // 2026-09-19, for landline too — see services/providerPolicy.js's
+  // LANDLINE_SUPPORTED_PROVIDERS: this validation only checks the
+  // provider is one of the six selectable landline keys ("other"
+  // included, a legitimate answer), it does not decide eligibility —
+  // that happens below, in evaluateHouseholdCheckoutEligibility. Never
+  // required for iphone.
   if (deviceType === "mobile" && (typeof provider !== "string" || !provider.trim())) {
     return res.status(400).json({ error: "invalid_input", message: "provider is required for a mobile household" });
   }
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
 
-  const normalisedProvider = deviceType === "mobile" ? provider : null;
+  const normalisedProvider = deviceType === "iphone" ? null : provider;
   const normalisedTariffType = deviceType === "mobile" && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
 
   try {

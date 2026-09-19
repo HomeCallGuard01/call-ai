@@ -56,8 +56,12 @@ check(
   'the web route rejects a missing/invalid deviceType before any write is attempted'
 );
 check(
-  postCarrier.block.includes('deviceType === "mobile" ? provider : null'),
-  'a landline household never has a mobile provider persisted by the web route either, regardless of what the client sent'
+  postCarrier.block.includes('deviceType === "iphone" ? null : provider'),
+  'the web route only ever nulls provider for iphone — landline now persists the provider it captures too (2026-09-19, migration 043), which the checkout gate reads to enforce LANDLINE_SUPPORTED_PROVIDERS'
+);
+check(
+  postCarrier.block.includes('deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))'),
+  'the web route requires a landline household to supply one of the six selectable landline provider keys'
 );
 check(
   postCarrier.block.includes('evaluateHouseholdCheckoutEligibility({'),

@@ -148,8 +148,12 @@ check(
   'a missing/non-string/empty provider is rejected when deviceType is mobile'
 );
 check(
-  captureBlock.includes('deviceType === "mobile" ? provider : null'),
-  'a landline household never has a mobile provider persisted, regardless of what the client sent'
+  captureBlock.includes('deviceType === "iphone" ? null : provider'),
+  'provider is only ever nulled for iphone — mobile persists its carrier as before, and (2026-09-19, migration 043) landline now persists the provider it captures too, which is what the checkout gate reads to enforce LANDLINE_SUPPORTED_PROVIDERS'
+);
+check(
+  captureBlock.includes('deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))'),
+  'a landline household must supply one of the six selectable landline provider keys — validated the same way "provider is required for a mobile household" already was'
 );
 const validationIdx = captureBlock.indexOf('typeof provider !== "string"');
 const persistIdx = captureBlock.indexOf('setHouseholdCarrierCompatibility(');

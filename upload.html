@@ -1082,8 +1082,39 @@
     <div id="carrierCheckSection" hidden>
       <h3 class="field-hint-heading">What are we protecting?</h3>
       <div id="carrierDeviceRow" role="radiogroup" aria-label="Device type">
-        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceMobile" value="mobile" checked> Mobile phone</label>
+        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceMobile" value="mobile" checked> Android phone</label>
         <label><input type="radio" name="carrierDeviceType" id="carrierDeviceLandline" value="landline"> Landline</label>
+        <!-- IOS_COMING_SOON (2026-09-19, services/featureFlags.js): the
+             iPhone option is always shown — removing it entirely would
+             leave an iPhone customer with no idea HCG exists for them at
+             all — but selecting it never reaches carrier/network
+             questions, consent, or Stripe; see handleCarrierDeviceChange
+             and the #iosComingSoonMessage panel below. Once
+             IOS_COMING_SOON is set to "false", this option's downstream
+             behaviour changes automatically (the backend evaluation it
+             triggers stops returning customerState "ios_coming_soon")
+             with no markup change required. -->
+        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceIphone" value="iphone"> iPhone — Coming soon</label>
+      </div>
+
+      <!-- Shown only when customerState === "ios_coming_soon" (the real,
+           server-evaluated verdict for deviceType "iphone" — never
+           inferred client-side, same discipline as every other carrier
+           verdict on this page). Never reaches Stripe: checkCarrierButton
+           stays hidden for this state, same mechanism as the existing
+           not-currently-supported/needs-confirmation messages. -->
+      <div id="iosComingSoonMessage" hidden>
+        <h3 class="field-hint-heading">Home Call Guard for iPhone is coming soon</h3>
+        <p>We're waiting for final approval of our iPhone app. Home Call Guard isn't currently available for new iPhone customers.</p>
+        <p>Join the waiting list and we'll let you know as soon as it's available.</p>
+        <div id="iosWaitingListForm">
+          <label for="iosWaitingListEmail">Email address</label>
+          <input type="email" id="iosWaitingListEmail" autocomplete="email" placeholder="you@example.com">
+          <button type="button" id="iosWaitingListSubmit">Join the waiting list</button>
+          <p id="iosWaitingListError" class="error-banner" role="alert" hidden></p>
+          <p id="iosWaitingListSuccess" hidden>Thanks — we'll email you as soon as Home Call Guard for iPhone is available.</p>
+        </div>
+        <p class="field-hint">Protecting an Android phone or a landline instead? <button type="button" class="link-button" id="iosComingSoonChooseAnother">Choose a different option</button></p>
       </div>
 
       <div id="carrierNetworkRow">
@@ -1118,6 +1149,27 @@
         </select>
       </div>
 
+      <!-- 2026-09-19 launch-safety correction: the landline provider is
+           now asked and sent server-side BEFORE payment — it never was
+           before (setHouseholdLandline took no provider at all), which
+           meant "Other/not sure" (or any unaudited provider) could reach
+           Stripe on the unproven assumption BT's default codes would
+           work. Only the five explicitly-verified providers may proceed
+           — see services/providerPolicy.js's LANDLINE_SUPPORTED_PROVIDERS
+           and the #landlineProviderUnsupportedMessage panel below. -->
+      <div id="carrierLandlineProviderRow" hidden>
+        <label for="carrierLandlineProviderSelect">Which landline provider do you have?</label>
+        <select id="carrierLandlineProviderSelect">
+          <option value="">Choose one…</option>
+          <option value="bt">BT</option>
+          <option value="sky">Sky</option>
+          <option value="virgin">Virgin Media</option>
+          <option value="talktalk">TalkTalk</option>
+          <option value="plusnet">Plusnet</option>
+          <option value="other">Not sure / another provider</option>
+        </select>
+      </div>
+
       <p id="carrierCheckError" class="error-banner" role="alert" hidden></p>
 
       <!-- Three explicit, distinct customer states (2026-09-16) — never
@@ -1136,6 +1188,22 @@
       <div id="carrierNeedsConfirmationMessage" class="error-banner" role="alert" hidden>
         <p>We're still confirming Home Call Guard works with your network. We don't want to take your payment until we're sure it will work for you.</p>
         <p>Please <a href="mailto:support@homecallguard.co.uk">contact our support team</a> and we'll help confirm this for you.</p>
+      </div>
+
+      <!-- Shown only when customerState === "landline_provider_unsupported"
+           (real, server-evaluated — "Other/not sure" or any provider not
+           in LANDLINE_SUPPORTED_PROVIDERS). Never reaches Stripe:
+           checkCarrierButton stays hidden, same mechanism as every other
+           blocked state on this page. -->
+      <div id="landlineProviderUnsupportedMessage" hidden>
+        <p>We don't currently have confirmed setup instructions for your landline provider. Join our waiting list and we'll let you know when your provider is supported.</p>
+        <div id="landlineWaitingListForm">
+          <label for="landlineWaitingListEmail">Email address</label>
+          <input type="email" id="landlineWaitingListEmail" autocomplete="email" placeholder="you@example.com">
+          <button type="button" id="landlineWaitingListSubmit">Join the waiting list</button>
+          <p id="landlineWaitingListError" class="error-banner" role="alert" hidden></p>
+          <p id="landlineWaitingListSuccess" hidden>Thanks — we'll email you as soon as your landline provider is supported.</p>
+        </div>
       </div>
 
       <button type="button" id="checkCarrierButton">Continue</button>
@@ -3057,14 +3125,29 @@
   // never goes through this network/tariff check at all.
   const carrierCheckSectionEl = document.getElementById("carrierCheckSection");
   const carrierDeviceMobileEl = document.getElementById("carrierDeviceMobile");
+  const carrierDeviceLandlineEl = document.getElementById("carrierDeviceLandline");
+  const carrierDeviceIphoneEl = document.getElementById("carrierDeviceIphone");
   const carrierNetworkRowEl = document.getElementById("carrierNetworkRow");
   const carrierNetworkSelectEl = document.getElementById("carrierNetworkSelect");
   const carrierTariffRowEl = document.getElementById("carrierTariffRow");
   const carrierTariffSelectEl = document.getElementById("carrierTariffSelect");
+  const carrierLandlineProviderRowEl = document.getElementById("carrierLandlineProviderRow");
+  const carrierLandlineProviderSelectEl = document.getElementById("carrierLandlineProviderSelect");
   const carrierCheckErrorEl = document.getElementById("carrierCheckError");
   const carrierNotSupportedMessageEl = document.getElementById("carrierNotSupportedMessage");
   const carrierNotSupportedTextEl = document.getElementById("carrierNotSupportedText");
   const carrierNeedsConfirmationMessageEl = document.getElementById("carrierNeedsConfirmationMessage");
+  const iosComingSoonMessageEl = document.getElementById("iosComingSoonMessage");
+  const iosWaitingListEmailEl = document.getElementById("iosWaitingListEmail");
+  const iosWaitingListSubmitEl = document.getElementById("iosWaitingListSubmit");
+  const iosWaitingListErrorEl = document.getElementById("iosWaitingListError");
+  const iosWaitingListSuccessEl = document.getElementById("iosWaitingListSuccess");
+  const iosComingSoonChooseAnotherEl = document.getElementById("iosComingSoonChooseAnother");
+  const landlineProviderUnsupportedMessageEl = document.getElementById("landlineProviderUnsupportedMessage");
+  const landlineWaitingListEmailEl = document.getElementById("landlineWaitingListEmail");
+  const landlineWaitingListSubmitEl = document.getElementById("landlineWaitingListSubmit");
+  const landlineWaitingListErrorEl = document.getElementById("landlineWaitingListError");
+  const landlineWaitingListSuccessEl = document.getElementById("landlineWaitingListSuccess");
   const checkCarrierButtonEl = document.getElementById("checkCarrierButton");
   const termsConsentSectionEl = document.getElementById("termsConsentSection");
   const agreeTermsCheckboxEl = document.getElementById("agreeTermsCheckbox");
@@ -3076,10 +3159,89 @@
   document.querySelectorAll('input[name="carrierDeviceType"]').forEach(function (radio) {
     radio.addEventListener("change", function () {
       const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
+      const isLandline = carrierDeviceLandlineEl && carrierDeviceLandlineEl.checked;
       if (carrierNetworkRowEl) carrierNetworkRowEl.hidden = !isMobile;
       if (carrierTariffRowEl) carrierTariffRowEl.hidden = true;
+      if (carrierLandlineProviderRowEl) carrierLandlineProviderRowEl.hidden = !isLandline;
+      // Every device-type change starts from a clean slate — a customer
+      // who saw the iPhone panel, then switched to Android/Landline,
+      // must not still see it (or its now-stale success/error state)
+      // sitting underneath the newly-relevant controls. Same for the
+      // landline-provider-unsupported panel when switching away from it.
+      if (iosComingSoonMessageEl) iosComingSoonMessageEl.hidden = true;
+      if (iosWaitingListErrorEl) iosWaitingListErrorEl.hidden = true;
+      if (iosWaitingListSuccessEl) iosWaitingListSuccessEl.hidden = true;
+      if (landlineProviderUnsupportedMessageEl) landlineProviderUnsupportedMessageEl.hidden = true;
+      if (landlineWaitingListErrorEl) landlineWaitingListErrorEl.hidden = true;
+      if (landlineWaitingListSuccessEl) landlineWaitingListSuccessEl.hidden = true;
+      if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = false;
     });
   });
+
+  function submitWaitingList(emailEl, errorEl, successEl, submitBtnEl, payload) {
+    if (errorEl) errorEl.hidden = true;
+    if (successEl) successEl.hidden = true;
+    const email = emailEl ? emailEl.value.trim() : "";
+    if (!email || email.indexOf("@") === -1) {
+      if (errorEl) {
+        errorEl.textContent = "Please enter a valid email address.";
+        errorEl.hidden = false;
+      }
+      return;
+    }
+    fetch("/api/v1/waiting-list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ email: email }, payload)),
+    })
+      .then(function (r) { if (!r.ok) throw new Error("failed"); })
+      .then(function () {
+        if (successEl) successEl.hidden = false;
+        if (submitBtnEl) submitBtnEl.disabled = true;
+      })
+      .catch(function () {
+        if (errorEl) {
+          errorEl.textContent = "We couldn't save that just now. Please check your connection and try again.";
+          errorEl.hidden = false;
+        }
+      });
+  }
+
+  if (landlineWaitingListSubmitEl) {
+    landlineWaitingListSubmitEl.addEventListener("click", function () {
+      const provider = carrierLandlineProviderSelectEl ? carrierLandlineProviderSelectEl.value : "";
+      submitWaitingList(
+        landlineWaitingListEmailEl,
+        landlineWaitingListErrorEl,
+        landlineWaitingListSuccessEl,
+        landlineWaitingListSubmitEl,
+        { reason: "unsupported_carrier", providerKey: provider || undefined, deviceType: "landline" }
+      );
+    });
+  }
+
+  if (iosComingSoonChooseAnotherEl) {
+    iosComingSoonChooseAnotherEl.addEventListener("click", function () {
+      if (iosComingSoonMessageEl) iosComingSoonMessageEl.hidden = true;
+      if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = false;
+      if (carrierDeviceMobileEl) {
+        carrierDeviceMobileEl.checked = true;
+        carrierDeviceMobileEl.dispatchEvent(new Event("change"));
+      }
+    });
+  }
+
+  if (iosWaitingListSubmitEl) {
+    iosWaitingListSubmitEl.addEventListener("click", function () {
+      submitWaitingList(
+        iosWaitingListEmailEl,
+        iosWaitingListErrorEl,
+        iosWaitingListSuccessEl,
+        iosWaitingListSubmitEl,
+        { reason: "ios_coming_soon", deviceType: "iphone" }
+      );
+    });
+  }
 
   // Reveals payment (termsConsentSection + subscribeForm) once carrier
   // compatibility is confirmed. Landline is unaffected by
@@ -3095,6 +3257,48 @@
     if (carrierCheckErrorEl) carrierCheckErrorEl.hidden = true;
     if (carrierNotSupportedMessageEl) carrierNotSupportedMessageEl.hidden = true;
     if (carrierNeedsConfirmationMessageEl) carrierNeedsConfirmationMessageEl.hidden = true;
+    if (iosComingSoonMessageEl) iosComingSoonMessageEl.hidden = true;
+    if (landlineProviderUnsupportedMessageEl) landlineProviderUnsupportedMessageEl.hidden = true;
+
+    const isIphone = carrierDeviceIphoneEl && carrierDeviceIphoneEl.checked;
+
+    // IOS_COMING_SOON (2026-09-19): routed through the exact same
+    // POST /billing/carrier-compatibility every other device type uses —
+    // one codepath, real server evaluation, never a client-only
+    // shortcut. Persists device_type="iphone" (migration 041) so this is
+    // recorded the same way mobile/landline are, and so a manipulated
+    // direct POST/checkout attempt is blocked by the same server-side
+    // evaluateHouseholdCheckoutEligibility check, not just by this UI
+    // never showing Continue/Stripe for this state.
+    if (isIphone) {
+      try {
+        const response = await fetch("/billing/carrier-compatibility", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceType: "iphone" }),
+        });
+        const result = await response.json();
+        if (result.customerState === "ios_coming_soon") {
+          if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = true;
+          if (iosComingSoonMessageEl) iosComingSoonMessageEl.hidden = false;
+          return;
+        }
+        // Should be unreachable while IOS_COMING_SOON is true — but if
+        // the flag has been turned off server-side, don't strand the
+        // customer on a page that can no longer explain what happened;
+        // treat it the same as any other now-eligible result.
+        if (result.canProceedToPayment) {
+          handleCarrierCheckSuccess();
+          return;
+        }
+      } catch (err) {
+        if (carrierCheckErrorEl) {
+          carrierCheckErrorEl.textContent = "We couldn't save your selection just now. Please check your connection and try again.";
+          carrierCheckErrorEl.hidden = false;
+        }
+      }
+      return;
+    }
 
     const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
     rememberDeviceCategory(isMobile ? "mobile" : "landline");
@@ -3111,14 +3315,34 @@
     // providerPolicy.js's device_type branch — never inferred from
     // carrier_provider_key being null, and never trusted from anything
     // else the client sends at checkout time itself).
+    //
+    // 2026-09-19 launch-safety correction: the provider itself is now
+    // required and sent (migration 043) — "Other/not sure" or any
+    // unaudited provider no longer reaches Stripe on the unproven
+    // assumption a default dial code will work. See
+    // services/providerPolicy.js's LANDLINE_SUPPORTED_PROVIDERS.
     if (!isMobile) {
+      const landlineProvider = carrierLandlineProviderSelectEl ? carrierLandlineProviderSelectEl.value : "";
+      if (!landlineProvider) {
+        if (carrierCheckErrorEl) {
+          carrierCheckErrorEl.textContent = "Please choose your landline provider.";
+          carrierCheckErrorEl.hidden = false;
+        }
+        return;
+      }
       try {
         const response = await fetch("/billing/carrier-compatibility", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceType: "landline" }),
+          body: JSON.stringify({ deviceType: "landline", provider: landlineProvider }),
         });
-        if (!response.ok) throw new Error("request failed");
+        const result = await response.json();
+        if (result.customerState === "landline_provider_unsupported") {
+          if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = true;
+          if (landlineProviderUnsupportedMessageEl) landlineProviderUnsupportedMessageEl.hidden = false;
+          return;
+        }
+        if (!response.ok || !result.canProceedToPayment) throw new Error("request failed");
         handleCarrierCheckSuccess();
       } catch (err) {
         if (carrierCheckErrorEl) {
@@ -3169,9 +3393,16 @@
       if (result.customerState === "needs_confirmation") {
         if (carrierNeedsConfirmationMessageEl) carrierNeedsConfirmationMessageEl.hidden = false;
       } else {
+        // 2026-09-19 fix (found via live walkthrough, not previously
+        // caught by structural tests): this used to show result.reason
+        // directly — PROVIDER_POLICY's own internal audit-citation text
+        // (e.g. "No network-level call forwarding (official Tesco Mobile
+        // support account, direct statement)"), never meant for a
+        // customer to read verbatim. Same fixed, honest, non-technical
+        // wording already used by this page's own defense-in-depth
+        // re-check for the identical case, for consistency.
         if (carrierNotSupportedTextEl) {
-          carrierNotSupportedTextEl.textContent =
-            result.reason || "Home Call Guard isn't currently supported on your network.";
+          carrierNotSupportedTextEl.textContent = "Your network isn't currently supported. Please check another network or plan.";
         }
         if (carrierNotSupportedMessageEl) carrierNotSupportedMessageEl.hidden = false;
       }
@@ -3247,7 +3478,11 @@
               // rather than re-deriving the exact "Unfortunately, X..."
               // wording a second time — either way, no raw internal
               // string is ever shown.
-              termsConsentErrorEl.textContent = result.customerState === "needs_confirmation"
+              termsConsentErrorEl.textContent = result.customerState === "ios_coming_soon"
+                ? "Home Call Guard for iPhone is coming soon and isn't available to new customers yet."
+                : result.customerState === "landline_provider_unsupported"
+                ? "We don't currently have confirmed setup instructions for your landline provider. Please go back and join the waiting list."
+                : result.customerState === "needs_confirmation"
                 ? "We're still confirming Home Call Guard works with your network. Please contact support@homecallguard.co.uk for help."
                 : "Your network isn't currently supported. Please go back and check your network or plan.";
               termsConsentErrorEl.hidden = false;

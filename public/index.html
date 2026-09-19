@@ -1561,6 +1561,25 @@
         transition-duration: 0.01ms !important;
       }
     }
+
+    .ios-coming-soon-banner {
+      background: #eef2ff;
+      border-bottom: 1px solid #c7d2fe;
+      padding: 10px 0;
+      font-size: 14px;
+      text-align: center;
+    }
+    .ios-coming-soon-banner .container {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .ios-coming-soon-banner a {
+      font-weight: 600;
+      white-space: nowrap;
+    }
   </style>
 </head>
 
@@ -1598,6 +1617,39 @@
     </div>
   </header>
 
+  <!-- IOS_COMING_SOON (2026-09-19, services/featureFlags.js): hidden by
+       default so a viewer whose browser blocks/delays JS never sees a
+       stale claim either way; shown only once GET /api/v1/launch-flags
+       confirms the flag is on. Removing this banner entirely once Apple
+       approves the app is exactly "set IOS_COMING_SOON to false" — no
+       markup change needed, since it simply stops being shown. Never
+       says HCG itself is unavailable — only the iPhone app. -->
+  <div id="iosComingSoonBanner" class="ios-coming-soon-banner" hidden>
+    <div class="container">
+      <span>
+        <strong>iPhone app coming soon</strong> — Home Call Guard is currently available for supported Android phones and landlines.
+        Our iPhone app is awaiting final App Store approval.
+      </span>
+      <a href="#ios-waiting-list">Join the iPhone waiting list →</a>
+    </div>
+  </div>
+  <script>
+    (function () {
+      fetch("/api/v1/launch-flags")
+        .then(function (r) { return r.json(); })
+        .then(function (flags) {
+          if (!flags || !flags.iosComingSoon) return;
+          var banner = document.getElementById("iosComingSoonBanner");
+          if (banner) banner.hidden = false;
+        })
+        .catch(function () {
+          // Fails closed toward NOT showing the banner on a network
+          // error, rather than guessing — the homepage must never claim
+          // something about availability it can't actually confirm.
+        });
+    })();
+  </script>
+
   <main id="top">
 
     <section class="hero">
@@ -1623,7 +1675,7 @@
 
           <p class="compat-line">
             <strong>Protect your landline or mobile.</strong>
-            Works with landlines, Android and iPhone.
+            Works with landlines and Android now — iPhone coming soon.
             <strong>£4.99 per month.</strong>
           </p>
 
@@ -1809,8 +1861,8 @@
 
           <article class="compat-card">
             <div class="compat-icon" aria-hidden="true">🍎</div>
-            <h3>iPhone</h3>
-            <p>Home Call Guard supports protection for iPhone/mobile users.</p>
+            <h3>iPhone — Coming soon</h3>
+            <p>Our iPhone app is awaiting final App Store approval. <a href="#ios-waiting-list">Join the waiting list →</a></p>
           </article>
 
         </div>
@@ -2267,6 +2319,66 @@
       </div>
     </section>
 
+    <!-- IOS_COMING_SOON: hidden by default, shown only when the banner
+         above confirms the flag is on (same fetch, same element toggled
+         together — see the script below). -->
+    <section class="section section-light" id="ios-waiting-list" hidden>
+      <div class="container">
+        <div class="home-phone-card">
+          <h3>Home Call Guard for iPhone is coming soon</h3>
+          <p>We're waiting for final approval of our iPhone app. Home Call Guard isn't currently available for new iPhone customers.</p>
+          <p>Join the waiting list and we'll let you know as soon as it's available.</p>
+          <div id="homepageWaitingListForm">
+            <label for="homepageWaitingListEmail">Email address</label>
+            <input type="email" id="homepageWaitingListEmail" autocomplete="email" placeholder="you@example.com">
+            <button type="button" id="homepageWaitingListSubmit">Join the waiting list</button>
+            <p id="homepageWaitingListError" hidden></p>
+            <p id="homepageWaitingListSuccess" hidden>Thanks — we'll email you as soon as Home Call Guard for iPhone is available.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+    <script>
+      (function () {
+        fetch("/api/v1/launch-flags")
+          .then(function (r) { return r.json(); })
+          .then(function (flags) {
+            if (!flags || !flags.iosComingSoon) return;
+            var section = document.getElementById("ios-waiting-list");
+            if (section) section.hidden = false;
+          })
+          .catch(function () {});
+
+        var submitBtn = document.getElementById("homepageWaitingListSubmit");
+        if (!submitBtn) return;
+        submitBtn.addEventListener("click", function () {
+          var errorEl = document.getElementById("homepageWaitingListError");
+          var successEl = document.getElementById("homepageWaitingListSuccess");
+          var emailEl = document.getElementById("homepageWaitingListEmail");
+          if (errorEl) errorEl.hidden = true;
+          if (successEl) successEl.hidden = true;
+          var email = emailEl ? emailEl.value.trim() : "";
+          if (!email || email.indexOf("@") === -1) {
+            if (errorEl) { errorEl.textContent = "Please enter a valid email address."; errorEl.hidden = false; }
+            return;
+          }
+          fetch("/api/v1/waiting-list", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email, reason: "ios_coming_soon", deviceType: "iphone" }),
+          })
+            .then(function (r) { if (!r.ok) throw new Error("failed"); })
+            .then(function () {
+              if (successEl) successEl.hidden = false;
+              submitBtn.disabled = true;
+            })
+            .catch(function () {
+              if (errorEl) { errorEl.textContent = "We couldn't save that just now. Please check your connection and try again."; errorEl.hidden = false; }
+            });
+        });
+      })();
+    </script>
+
     <section class="section" id="faq">
       <div class="container">
 
@@ -2366,9 +2478,8 @@
                 Your account and trusted contacts are always managed through
                 a simple online dashboard. If you're protecting a landline,
                 no app is needed at all. For mobile protection, Home Call
-                Guard uses a companion app — available for Android now, and
-                Home Call Guard supports protection for iPhone/mobile users
-                too.
+                Guard uses a companion app — available for Android now. Our
+                iPhone app is coming soon, awaiting final App Store approval.
               </p>
             </div>
 

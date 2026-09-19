@@ -17,6 +17,7 @@ const {
 } = require("../services/twilioProvisioning");
 const { recordAcquisitionEvent } = require("../services/acquisitionAnalytics");
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
+const { LANDLINE_PROVIDERS } = require("../services/activationInstructions");
 const { setHouseholdCarrierCompatibility, recordTermsAcceptance } = require("../database/households");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 
@@ -192,18 +193,28 @@ async function resolveStripeCustomerId(household, authUserId) {
 router.post("/billing/carrier-compatibility", requireAuth, express.json(), async (req, res) => {
   const { deviceType, provider, tariffType } = req.body || {};
 
-  if (deviceType !== "mobile" && deviceType !== "landline") {
-    return res.status(400).json({ error: "invalid_input", message: "deviceType must be \"mobile\" or \"landline\"." });
+  if (deviceType !== "mobile" && deviceType !== "landline" && deviceType !== "iphone") {
+    return res.status(400).json({ error: "invalid_input", message: "deviceType must be \"mobile\", \"landline\", or \"iphone\"." });
   }
 
-  // provider is only required for mobile — a landline household has no
-  // mobile carrier at all, and the mobile provider policy does not
-  // apply to it (see services/providerPolicy.js's device_type branch).
+  // provider is required for mobile (a real UK carrier key) and, since
+  // 2026-09-19, for landline too (one of the six selectable landline
+  // provider keys, "other" included — that's a legitimate customer
+  // answer even though it doesn't grant checkout; see
+  // services/providerPolicy.js's LANDLINE_SUPPORTED_PROVIDERS, which is
+  // deliberately narrower and decides eligibility, not input validity).
+  // Never required for iphone — there is no provider concept there.
   if (deviceType === "mobile" && (typeof provider !== "string" || !provider.trim())) {
     return res.status(400).json({ error: "invalid_input", message: "provider is required for a mobile household" });
   }
+  if (deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `provider is required for landline and must be one of: ${[...LANDLINE_PROVIDERS].join(", ")}`,
+    });
+  }
 
-  const normalisedProvider = deviceType === "mobile" ? provider : null;
+  const normalisedProvider = deviceType === "iphone" ? null : provider;
   const normalisedTariffType = deviceType === "mobile" && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
 
   try {

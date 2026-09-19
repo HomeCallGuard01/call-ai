@@ -78,8 +78,9 @@ check(
 // ============================================================
 
 check(
-  devicePickerSource.includes('import { checkCarrierCompatibility, setHouseholdLandline, ApiError }'),
-  'device-picker.tsx imports the new setHouseholdLandline alongside the existing mobile-carrier check'
+  devicePickerSource.includes('checkCarrierCompatibility, setHouseholdLandline, setHouseholdIphone, joinWaitingList, ApiError') &&
+    devicePickerSource.includes('from "../../lib/api"'),
+  'device-picker.tsx imports setHouseholdLandline alongside the existing mobile-carrier check, plus (2026-09-19) setHouseholdIphone/joinWaitingList for the IOS_COMING_SOON flow'
 );
 
 const selectLandlineFnStart = devicePickerSource.indexOf('async function selectLandlineProvider(');
@@ -88,8 +89,13 @@ const selectLandlineFnBody = devicePickerSource.slice(selectLandlineFnStart, sel
 
 check(selectLandlineFnStart !== -1, 'selectLandlineProvider is declared');
 check(
-  selectLandlineFnBody.includes('await setHouseholdLandline(session?.access_token)'),
-  'selecting a landline provider persists device_type="landline" server-side (setHouseholdLandline) — this is the actual fix: previously nothing told the backend this household is landline at all'
+  selectLandlineFnBody.includes('const result = await setHouseholdLandline(provider, session?.access_token)'),
+  'selecting a landline provider persists device_type="landline" AND the provider itself server-side (setHouseholdLandline, 2026-09-19 migration 043) — the actual fix: previously nothing told the backend this household is landline, or which provider, at all'
+);
+check(
+  selectLandlineFnBody.includes('result.customerState === "landline_provider_unsupported"') &&
+    selectLandlineFnBody.includes('setStep({ name: "landline-provider-unsupported", provider });'),
+  'an unsupported landline provider (2026-09-19) routes to its own dead-end step instead of ever reaching Subscribe — the real, server-evaluated verdict, not a client-side guess'
 );
 
 const persistIdx = selectLandlineFnBody.indexOf('await setHouseholdLandline(');

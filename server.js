@@ -34,6 +34,8 @@ const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { sendCriticalAlert } = require("./services/alerting");
 const { checkSupabaseHealth } = require("./services/healthCheck");
+const { isIosComingSoon } = require("./services/featureFlags");
+const { insertWaitingListSignup } = require("./database/waitingList");
 const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
 const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
 const { findConfirmedUnreleasedQuarantine } = require("./database/twilioQuarantine");
@@ -1945,6 +1947,51 @@ app.get("/", (req, res) => {
 // body (checks.supabase), just doesn't change the HTTP status — that
 // distinction (dependency degraded vs. this service is down) is exactly
 // what keeps this from becoming a second, noisier uptime signal.
+// GET /api/v1/launch-flags — public, unauthenticated, read-only. The
+// single source both the website and (once a future mobile build exists)
+// the app read to know whether iPhone purchasing is currently open —
+// see services/featureFlags.js. Deliberately just this one boolean, not
+// a general config/feature-flag dump, to keep the removal step exactly
+// "flip IOS_COMING_SOON, no code change" rather than growing into
+// something that needs its own migration path later.
+app.get("/api/v1/launch-flags", (req, res) => {
+  res.json({ iosComingSoon: isIosComingSoon() });
+});
+
+// POST /api/v1/waiting-list — public, unauthenticated (see migration
+// 042's own header: a waiting-list signup is, by definition, someone
+// who isn't a customer yet and may have no session at all). One
+// reusable capture point for every "not available to you yet" reason —
+// today: 'ios_coming_soon' (the homepage banner and the iPhone
+// device-picker option both link here) and 'unsupported_carrier' (a
+// blocked mobile network, optionally naming which one).
+const WAITING_LIST_REASONS = new Set(["ios_coming_soon", "unsupported_carrier"]);
+
+app.post("/api/v1/waiting-list", express.json(), async (req, res) => {
+  const { email, reason, providerKey, deviceType } = req.body || {};
+
+  if (typeof email !== "string" || !email.trim() || email.indexOf("@") === -1) {
+    return res.status(400).json({ error: "invalid_input", message: "A valid email address is required." });
+  }
+
+  if (!WAITING_LIST_REASONS.has(reason)) {
+    return res.status(400).json({ error: "invalid_input", message: `reason must be one of: ${[...WAITING_LIST_REASONS].join(", ")}` });
+  }
+
+  try {
+    await insertWaitingListSignup({
+      email: email.trim(),
+      reason,
+      providerKey: reason === "unsupported_carrier" && typeof providerKey === "string" && providerKey.trim() ? providerKey.trim() : null,
+      deviceType: typeof deviceType === "string" && deviceType.trim() ? deviceType.trim() : null,
+    });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("WAITING LIST SIGNUP ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 const SUPABASE_HEALTH_CHECK_TIMEOUT_MS = 2000;
 
 app.get("/health", async (req, res) => {

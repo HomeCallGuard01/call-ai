@@ -404,31 +404,65 @@ function check(condition, message) {
 // mobile carrier decision.
 // ============================================================
 
+// 2026-09-19 launch-safety correction: landline no longer proceeds to
+// payment unconditionally. carrier_provider_key now carries the
+// landline provider itself (migration 043); only the five explicitly-
+// verified providers in LANDLINE_SUPPORTED_PROVIDERS may proceed.
+
 {
-  // The exact bug this migration fixes: a genuine landline household
-  // with no carrier ever captured (because none applies) must be treated
-  // as "provider compatibility not applicable", never as an unclassified
-  // mobile household stuck with carrier_provider_key === null.
+  // A landline household with no provider captured at all must fail
+  // closed, exactly like an unclassified mobile household does — not be
+  // waved through on the (now-corrected) old assumption that landline
+  // has no provider-specific question at all.
   const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: null, carrier_tariff_type: null });
-  check(result.status === 'not_applicable', 'landline + null carrier: status is not_applicable, not unverified/blocked');
-  check(result.canProceedToPayment === true, 'landline + null carrier: checkout is allowed');
-  check(result.customerState === 'supported', 'landline + null carrier: customer-facing state is supported');
+  check(result.status === 'landline_provider_unsupported', 'landline + null provider: status is landline_provider_unsupported, never silently allowed');
+  check(result.canProceedToPayment === false, 'landline + null provider: checkout is blocked');
+  check(result.customerState === 'landline_provider_unsupported', 'landline + null provider: customer-facing state is the distinct landline_provider_unsupported value');
 }
 
 {
   const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline' });
-  check(result.canProceedToPayment === true, 'a valid landline household: checkout is allowed');
-  check(result.reason === null, 'a valid landline household: no internal reason string is fabricated — there is nothing to explain');
-  check(result.policy === null, 'a valid landline household: no mobile provider policy object is attached');
+  check(result.canProceedToPayment === false, 'a landline household with no carrier_provider_key field at all: checkout is blocked');
 }
 
 {
-  // The mobile carrier gate must remain byte-for-byte unaffected: a
-  // stale carrier_provider_key sitting on a household that is (or later
-  // becomes) landline is irrelevant, because the landline branch returns
-  // before evaluateProviderCompatibility is ever called.
+  // "Other/not sure" is a legitimate, selectable landline answer — but
+  // it must never grant checkout, since there are no confirmed setup
+  // instructions for it.
+  const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: 'other' });
+  check(result.canProceedToPayment === false, 'landline "other": checkout is blocked');
+  check(result.customerState === 'landline_provider_unsupported', 'landline "other": customer-facing state is landline_provider_unsupported');
+}
+
+{
+  // A mobile carrier key leaking into a landline household's provider
+  // field (a genuine data-shape mistake, or a manipulated request) must
+  // never be misinterpreted as a valid landline provider — the two
+  // namespaces overlap in spelling ("sky" is both) but are never
+  // cross-trusted; only literal membership in LANDLINE_SUPPORTED_PROVIDERS
+  // grants landline checkout.
   const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: 'tesco', carrier_tariff_type: 'payg' });
-  check(result.canProceedToPayment === true, 'landline: checkout is allowed even if a stale/leftover carrier_provider_key is still present on the row — the landline branch never consults it');
+  check(result.canProceedToPayment === false, 'landline with a mobile-only carrier key ("tesco", never a valid landline provider) in carrier_provider_key: blocked, not silently trusted');
+}
+
+{
+  const supportedProviders = ['bt', 'sky', 'virgin', 'talktalk', 'plusnet'];
+  for (const provider of supportedProviders) {
+    const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: provider });
+    check(result.canProceedToPayment === true, `landline provider "${provider}": checkout is allowed`);
+    check(result.status === 'not_applicable', `landline provider "${provider}": status is not_applicable — the mobile carrier gate genuinely does not run`);
+    check(result.customerState === 'supported', `landline provider "${provider}": customer-facing state is supported`);
+    check(result.reason === null, `landline provider "${provider}": no internal reason string is fabricated — there is nothing to explain`);
+    check(result.policy === null, `landline provider "${provider}": no mobile provider policy object is attached`);
+  }
+}
+
+{
+  // A manipulated request attaching a genuinely unrecognised string
+  // (neither a real landline provider nor a real mobile carrier) must
+  // fail closed the same way.
+  const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: 'some-made-up-provider-xyz' });
+  check(result.canProceedToPayment === false, 'landline with a completely unrecognised provider string: blocked');
 }
 
 {
