@@ -50,6 +50,7 @@ const {
 const {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
+  toActivationDeviceType,
   buildActivationInstructions,
   buildDeactivationInstructions,
 } = require("../services/activationInstructions");
@@ -636,6 +637,38 @@ router.delete("/api/v1/me/account", requireAuthApi, async (req, res) => {
     // client input — so it's safe to echo back verbatim.
     res.status(500).json({ error: err.code || "failed" });
   }
+});
+
+// GET /api/v1/me/activation-device
+//
+// Server-authoritative fallback for "which device/provider did this
+// household activate with." The app normally remembers this locally
+// (mobile/lib/activationDeviceStorage.ts, expo-secure-store) purely so
+// "Turn Off Protection" (Account tab) can show the real cancel code
+// without a round trip — but SecureStore is wiped by an app uninstall/
+// reinstall or a device change, at which point that screen previously
+// had no way to recover it at all, even though the same information is
+// durable server-side (households.device_type, migration 040/041;
+// households.carrier_provider_key, migration 043). That screen falls
+// back to this route when its local record is empty, then re-caches the
+// result locally so this only round-trips once per reinstall.
+//
+// Same requireAuthApi + requireEntitlement gate as
+// /api/v1/activation/instructions immediately below, since this exists
+// purely to supply that same call's deviceType/provider arguments —
+// never a looser or tighter gate than the endpoint it feeds.
+//
+// provider is only ever the real value for a landline household — a
+// mobile network key belongs to a different vocabulary
+// (services/providerPolicy.js's carrier keys) than LandlineProvider, and
+// no current caller needs it, so it's deliberately omitted here rather
+// than returned under a misleading field.
+router.get("/api/v1/me/activation-device", requireAuthApi, requireEntitlement, async (req, res) => {
+  const deviceType = toActivationDeviceType(req.household.device_type);
+  res.json({
+    deviceType,
+    provider: deviceType === "landline" ? req.household.carrier_provider_key || null : null,
+  });
 });
 
 // GET /api/v1/activation/instructions?deviceType=iphone|android|landline&provider=bt|sky|virgin|talktalk|plusnet|other

@@ -23,6 +23,26 @@ const { getMobileDeactivationInstructions } = require("./providerPolicy");
 const DEVICE_TYPES = new Set(["iphone", "android", "landline"]);
 const LANDLINE_PROVIDERS = new Set(["bt", "sky", "virgin", "talktalk", "plusnet", "other"]);
 
+// households.device_type (migration 040/041) uses "mobile"/"landline"/
+// "iphone"; DEVICE_TYPES above uses "android" instead of "mobile" for the
+// same physical category — an existing, unrelated naming split between
+// the household record and the activation/deactivation-instructions
+// vocabulary (mobile/lib/api.ts's checkCarrierCompatibility already
+// sends "mobile" to the household record while the mobile app's own
+// local DeviceType type uses "android"). Centralised here, in one place,
+// rather than duplicated wherever a caller needs to bridge the two —
+// used by GET /api/v1/me/activation-device (routes/mobileApi.js) to
+// translate the household's persisted device type into the vocabulary
+// buildActivationInstructions/buildDeactivationInstructions actually
+// expect. Returns null for a household that has never captured a
+// device type at all.
+function toActivationDeviceType(householdDeviceType) {
+  if (householdDeviceType === "mobile") return "android";
+  if (householdDeviceType === "landline") return "landline";
+  if (householdDeviceType === "iphone") return "iphone";
+  return null;
+}
+
 // Twilio numbers this project assigns are always UK E.164 (+44...) — see
 // services/twilioProvisioning.js's own number-search scoping. UK dialling
 // convention for supplementary-service codes uses the national format
@@ -167,6 +187,7 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider, carri
 module.exports = {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
+  toActivationDeviceType,
   toNationalDialingFormat,
   buildDeactivationInstructions,
   buildActivationInstructions,

@@ -10,7 +10,7 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { toNationalDialingFormat, buildActivationInstructions } = require('../services/activationInstructions.js');
+const { toNationalDialingFormat, toActivationDeviceType, buildActivationInstructions } = require('../services/activationInstructions.js');
 
 let failures = 0;
 
@@ -28,6 +28,38 @@ function check(condition, message) {
 check(
   toNationalDialingFormat('+441234567890') === '01234567890',
   'converts a UK E.164 number to national dialling format (leading 0)'
+);
+
+// --- toActivationDeviceType ---
+//
+// households.device_type (migration 040/041) uses "mobile"/"landline"/
+// "iphone"; this file's own DEVICE_TYPES uses "android" instead of
+// "mobile" for the same category — used by GET
+// /api/v1/me/activation-device (2026-09-19 fix) to bridge the two.
+
+check(
+  toActivationDeviceType('mobile') === 'android',
+  'toActivationDeviceType: household "mobile" maps to activation-instructions "android"'
+);
+check(
+  toActivationDeviceType('landline') === 'landline',
+  'toActivationDeviceType: household "landline" maps to activation-instructions "landline" unchanged'
+);
+check(
+  toActivationDeviceType('iphone') === 'iphone',
+  'toActivationDeviceType: household "iphone" maps to activation-instructions "iphone" unchanged'
+);
+check(
+  toActivationDeviceType(null) === null,
+  'toActivationDeviceType: a household that has never captured a device type (null) maps to null, never a guessed category'
+);
+check(
+  toActivationDeviceType(undefined) === null,
+  'toActivationDeviceType: undefined is treated the same as null'
+);
+check(
+  toActivationDeviceType('not-a-real-device-type') === null,
+  'toActivationDeviceType: an unrecognised value maps to null rather than passing through unvalidated'
 );
 
 // --- buildActivationInstructions: mobile (iPhone/Android) ---

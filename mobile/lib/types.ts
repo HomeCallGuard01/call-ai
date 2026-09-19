@@ -150,6 +150,17 @@ export interface ActivationInstructionsResponse {
   explanation: string;
 }
 
+// GET /api/v1/me/activation-device — server-authoritative fallback for
+// which device/provider this household activated with, used by "Turn
+// Off Protection" when its local record (lib/activationDeviceStorage.ts)
+// is empty (e.g. after an app uninstall/reinstall). deviceType is null
+// for a household that has never captured one at all; provider is only
+// ever non-null alongside deviceType "landline".
+export interface ActivationDeviceResponse {
+  deviceType: DeviceType | null;
+  provider: LandlineProvider | null;
+}
+
 // GET /api/v1/voice/token — a short-lived Twilio Access Token (VoiceGrant)
 // the app uses to register the Voice SDK client and receive an approved
 // call directly on this handset, bypassing PSTN entirely (see

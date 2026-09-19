@@ -13,6 +13,7 @@ import type {
   NotEntitledResponse,
   ActivationVerifyResponse,
   ActivationInstructionsResponse,
+  ActivationDeviceResponse,
   ContactResponse,
   CheckoutSessionResponse,
   PortalSessionResponse,
@@ -385,6 +386,19 @@ export async function verifyActivation(accessToken?: string): Promise<Activation
 // app no longer needs to ask about at all). The backend route already
 // treats this parameter as fully optional — omitting it is safe and
 // already-supported, not a new server-side change.
+// GET /api/v1/me/activation-device — server-authoritative fallback for
+// which device/provider this household activated with. Used by "Turn
+// Off Protection" (app/(tabs)/account/turn-off-protection.tsx) only when
+// lib/activationDeviceStorage.ts's local record is empty (e.g. after an
+// app uninstall/reinstall wipes SecureStore) — never called when the
+// local record already exists. Same requireEntitlement gate as
+// fetchActivationInstructions below, since it exists purely to supply
+// that call's arguments.
+export async function fetchActivationDevice(accessToken?: string): Promise<ActivationDeviceResponse> {
+  const response = await authorizedFetch("/api/v1/me/activation-device", {}, accessToken);
+  return parseJsonOrThrow<ActivationDeviceResponse>(response, true);
+}
+
 export async function fetchActivationInstructions(
   deviceType: DeviceType,
   provider?: LandlineProvider,
