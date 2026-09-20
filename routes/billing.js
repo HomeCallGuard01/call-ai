@@ -114,6 +114,13 @@ function buildCheckoutSessionParams({ customer, priceId, householdId, appUrl }) 
     // above already supplies what Stripe needs (the customer's country)
     // to compute UK-destination VAT correctly.
     automatic_tax: { enabled: true },
+    // Required alongside automatic_tax whenever an existing Customer is
+    // passed (see `customer` above) — confirmed live, 2026-09-20:
+    // deploying automatic_tax without this broke checkout outright
+    // (Stripe rejected every session), since Stripe won't read/update an
+    // existing customer's address for tax calculation without this
+    // explicit opt-in.
+    customer_update: { address: "auto" },
     // consent_collection: { terms_of_service: "required" } is NOT enabled
     // yet — Stripe rejects it outright ("You cannot collect consent to
     // your terms of service unless a URL is set in the Stripe Dashboard"),

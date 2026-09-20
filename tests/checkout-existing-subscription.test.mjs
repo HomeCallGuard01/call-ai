@@ -180,6 +180,17 @@ check(
   'the web checkout session requests automatic tax calculation, so the VAT-inclusive Price actually gets its VAT itemised and recorded, not just charged as a flat amount'
 );
 
+// Live production finding, same day: deploying automatic_tax alone broke
+// checkout outright — Stripe rejects a session that combines an existing
+// `customer` with automatic_tax unless customer_update explicitly opts
+// in to letting Stripe read/update that customer's address. Reproduced
+// live (every real checkout attempt got a caught error, redirected to
+// ?checkout=error) before this was added.
+check(
+  sessionParams.customer_update?.address === 'auto',
+  'the web checkout session sets customer_update: { address: "auto" } — required whenever an existing customer is combined with automatic_tax, or Stripe rejects the session entirely'
+);
+
 // The mobile/Android checkout builder (services/checkoutSession.js) —
 // same fix, separate implementation, must not silently drift from the
 // web one.
@@ -194,6 +205,10 @@ const mobileSessionParams = buildMobileCheckoutSessionParams({
 check(
   mobileSessionParams.automatic_tax?.enabled === true,
   'the mobile/Android checkout session also requests automatic tax calculation — both platforms share one STRIPE_PRICE_ID, so both must apply VAT the same way'
+);
+check(
+  mobileSessionParams.customer_update?.address === 'auto',
+  'the mobile/Android checkout session also sets customer_update: { address: "auto" } — the same live-production checkout breakage applied to this builder too, since it takes the identical existing-customer + automatic_tax combination'
 );
 check(
   mobileSessionParams.billing_address_collection === 'required',

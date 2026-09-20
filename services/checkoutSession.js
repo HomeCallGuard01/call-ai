@@ -115,6 +115,11 @@ function buildCheckoutSessionParams({ customer, priceId, householdId, successUrl
     // Android/mobile checkout — both platforms share one STRIPE_PRICE_ID
     // (see routes/mobileApi.js), so both need this.
     automatic_tax: { enabled: true },
+    // Required alongside automatic_tax whenever an existing Customer is
+    // passed — see routes/billing.js's identical comment. Confirmed live,
+    // 2026-09-20: deploying automatic_tax without this broke checkout
+    // outright on both platforms (Stripe rejected every session).
+    customer_update: { address: "auto" },
     // consent_collection: { terms_of_service: "required" } is NOT enabled
     // yet — Stripe rejects it outright ("You cannot collect consent to
     // your terms of service unless a URL is set in the Stripe Dashboard"),
