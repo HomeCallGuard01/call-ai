@@ -298,8 +298,8 @@ check(
 const uploadHtmlSource = readFileSync(path.join(__dirname, '..', 'upload.html'), 'utf8');
 
 check(
-  uploadHtmlSource.includes('<label><input type="radio" name="carrierDeviceType" id="carrierDeviceIphone" value="iphone"> iPhone — Coming soon</label>'),
-  'upload.html\'s device-type picker retains an iPhone option, clearly marked "Coming soon"'
+  /<input type="radio" name="carrierDeviceType" id="carrierDeviceIphone" value="iphone">[\s\S]{0,200}?iPhone — Coming soon/.test(uploadHtmlSource),
+  'upload.html\'s device-type picker retains an iPhone option (radio input unchanged: name/id/value), clearly marked "Coming soon" (2026-09-20: markup restyled into a tappable card — see .option-card CSS — but the underlying radio input and its label text are unchanged)'
 );
 check(
   uploadHtmlSource.includes('id="iosComingSoonMessage"') &&

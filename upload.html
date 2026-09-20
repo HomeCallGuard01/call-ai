@@ -140,6 +140,132 @@
     margin-bottom: 20px;
   }
 
+  /* Touch-friendly device/provider picker cards (2026-09-20) — replaces
+     small <select>/<option> controls to match the mobile app's
+     device-picker usability. Presentation only: for the radio-backed
+     device-type group the real <input type="radio"> stays inside each
+     card and drives selection via :has(), so every existing JS listener
+     keyed to carrierDeviceType/.checked is untouched. For the groups
+     backed by a <select> (network/tariff/landline provider), the native
+     <select> stays in the DOM as the single source of truth for .value
+     reads at submit time — only visually hidden — and each card is a
+     button that sets its value and toggles .selected; see wireCardGroup. */
+  .option-cards-label {
+    display: block;
+    text-align: left;
+    font-size: 15px;
+    color: #e2e8f0;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+
+  .option-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 440px;
+    margin: 0 auto 20px;
+  }
+
+  .option-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-height: 60px;
+    background: #0f172a;
+    border: 2px solid #1e293b;
+    border-radius: 14px;
+    padding: 14px 18px;
+    text-align: left;
+    cursor: pointer;
+    color: white;
+    font: inherit;
+    transition: border-color 0.12s ease, background 0.12s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button.option-card {
+    font-weight: normal;
+  }
+
+  .option-card:hover {
+    border-color: #334155;
+  }
+
+  .option-card input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+  }
+
+  .option-card-icon {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(34, 197, 94, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .option-card-icon img {
+    width: 26px;
+    height: 26px;
+  }
+
+  .option-card-label {
+    font-weight: 700;
+    font-size: 17px;
+    flex: 1;
+  }
+
+  .option-card-check {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid #334155;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: transparent;
+    background: transparent;
+    font-size: 15px;
+    font-weight: 900;
+    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  }
+
+  .option-card.selected,
+  .option-card:has(input:checked) {
+    border-color: #22c55e;
+    background: #0d1f13;
+  }
+
+  .option-card.selected .option-card-check,
+  .option-card:has(input:checked) .option-card-check {
+    border-color: #22c55e;
+    background: #22c55e;
+    color: #052e16;
+  }
+
+  @media (max-width: 480px) {
+    .option-cards {
+      max-width: 100%;
+    }
+
+    .option-card {
+      padding: 16px;
+    }
+
+    .option-card-label {
+      font-size: 16px;
+    }
+  }
+
   .status-card {
     text-align: center;
     padding: 40px 24px;
@@ -1081,9 +1207,19 @@
          appears once a compatible carrier (or landline) is confirmed. -->
     <div id="carrierCheckSection" hidden>
       <h3 class="field-hint-heading">What are we protecting?</h3>
-      <div id="carrierDeviceRow" role="radiogroup" aria-label="Device type">
-        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceMobile" value="mobile" checked> Android phone</label>
-        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceLandline" value="landline"> Landline</label>
+      <div id="carrierDeviceRow" class="option-cards" role="radiogroup" aria-label="Device type">
+        <label class="option-card">
+          <input type="radio" name="carrierDeviceType" id="carrierDeviceMobile" value="mobile" checked>
+          <span class="option-card-icon"><img src="/android-device-mark.png" alt="" width="26" height="26"></span>
+          <span class="option-card-label">Android phone</span>
+          <span class="option-card-check" aria-hidden="true">&#10003;</span>
+        </label>
+        <label class="option-card">
+          <input type="radio" name="carrierDeviceType" id="carrierDeviceLandline" value="landline">
+          <span class="option-card-icon"><img src="/landline-device-mark.png" alt="" width="26" height="26"></span>
+          <span class="option-card-label">Landline</span>
+          <span class="option-card-check" aria-hidden="true">&#10003;</span>
+        </label>
         <!-- IOS_COMING_SOON (2026-09-19, services/featureFlags.js): the
              iPhone option is always shown — removing it entirely would
              leave an iPhone customer with no idea HCG exists for them at
@@ -1094,7 +1230,12 @@
              behaviour changes automatically (the backend evaluation it
              triggers stops returning customerState "ios_coming_soon")
              with no markup change required. -->
-        <label><input type="radio" name="carrierDeviceType" id="carrierDeviceIphone" value="iphone"> iPhone — Coming soon</label>
+        <label class="option-card">
+          <input type="radio" name="carrierDeviceType" id="carrierDeviceIphone" value="iphone">
+          <span class="option-card-icon"><img src="/iphone-device-mark.png" alt="" width="26" height="26"></span>
+          <span class="option-card-label">iPhone — Coming soon</span>
+          <span class="option-card-check" aria-hidden="true">&#10003;</span>
+        </label>
       </div>
 
       <!-- Shown only when customerState === "ios_coming_soon" (the real,
@@ -1118,8 +1259,8 @@
       </div>
 
       <div id="carrierNetworkRow">
-        <label for="carrierNetworkSelect">Which mobile network do you use?</label>
-        <select id="carrierNetworkSelect">
+        <label for="carrierNetworkSelect" class="option-cards-label">Which mobile network do you use?</label>
+        <select id="carrierNetworkSelect" class="visually-hidden" tabindex="-1" aria-hidden="true">
           <option value="">Choose one…</option>
           <option value="ee">EE</option>
           <option value="o2">O2</option>
@@ -1138,15 +1279,17 @@
           <option value="1pmobile">1pMobile</option>
           <option value="other">Other / Not sure</option>
         </select>
+        <div class="option-cards" id="carrierNetworkCards" role="radiogroup" aria-label="Mobile network"></div>
       </div>
 
       <div id="carrierTariffRow" hidden>
-        <label for="carrierTariffSelect">Pay monthly or pay as you go?</label>
-        <select id="carrierTariffSelect">
+        <label for="carrierTariffSelect" class="option-cards-label">Pay monthly or pay as you go?</label>
+        <select id="carrierTariffSelect" class="visually-hidden" tabindex="-1" aria-hidden="true">
           <option value="">Choose one…</option>
           <option value="pay_monthly">Pay monthly (contract)</option>
           <option value="payg">Pay as you go</option>
         </select>
+        <div class="option-cards" id="carrierTariffCards" role="radiogroup" aria-label="Pay monthly or pay as you go"></div>
       </div>
 
       <!-- 2026-09-19 launch-safety correction: the landline provider is
@@ -1158,8 +1301,8 @@
            — see services/providerPolicy.js's LANDLINE_SUPPORTED_PROVIDERS
            and the #landlineProviderUnsupportedMessage panel below. -->
       <div id="carrierLandlineProviderRow" hidden>
-        <label for="carrierLandlineProviderSelect">Which landline provider do you have?</label>
-        <select id="carrierLandlineProviderSelect">
+        <label for="carrierLandlineProviderSelect" class="option-cards-label">Which landline provider do you have?</label>
+        <select id="carrierLandlineProviderSelect" class="visually-hidden" tabindex="-1" aria-hidden="true">
           <option value="">Choose one…</option>
           <option value="bt">BT</option>
           <option value="sky">Sky</option>
@@ -1168,6 +1311,7 @@
           <option value="plusnet">Plusnet</option>
           <option value="other">Not sure / another provider</option>
         </select>
+        <div class="option-cards" id="carrierLandlineProviderCards" role="radiogroup" aria-label="Landline provider"></div>
       </div>
 
       <p id="carrierCheckError" class="error-banner" role="alert" hidden></p>
@@ -1323,13 +1467,14 @@
                applyRememberedDeviceToManualForm. Falls back to asking
                fresh, exactly as before, whenever that isn't available. -->
           <div id="deviceTypeQuestionRow">
-            <label for="deviceTypeSelect">What are you forwarding calls from?</label>
-            <select id="deviceTypeSelect">
+            <label for="deviceTypeSelect" class="option-cards-label">What are you forwarding calls from?</label>
+            <select id="deviceTypeSelect" class="visually-hidden" tabindex="-1" aria-hidden="true">
               <option value="">Choose one…</option>
               <option value="iphone">iPhone</option>
               <option value="android">Android phone</option>
               <option value="landline">Home landline</option>
             </select>
+            <div class="option-cards" id="deviceTypeCards" role="radiogroup" aria-label="What are you forwarding calls from"></div>
           </div>
           <p class="field-hint" id="deviceTypeRememberedRow" hidden>
             <span id="deviceTypeRememberedText"></span>
@@ -1337,8 +1482,8 @@
           </p>
 
           <div id="landlineProviderRow" hidden>
-            <label for="landlineProviderSelect">Who's your landline provider?</label>
-            <select id="landlineProviderSelect">
+            <label for="landlineProviderSelect" class="option-cards-label">Who's your landline provider?</label>
+            <select id="landlineProviderSelect" class="visually-hidden" tabindex="-1" aria-hidden="true">
               <option value="">Choose one…</option>
               <option value="bt">BT</option>
               <option value="sky">Sky</option>
@@ -1347,6 +1492,7 @@
               <option value="plusnet">Plusnet</option>
               <option value="other">Other</option>
             </select>
+            <div class="option-cards" id="landlineProviderCards" role="radiogroup" aria-label="Landline provider"></div>
           </div>
 
           <p id="callForwardingError" class="error-banner" role="alert" hidden></p>
@@ -2097,6 +2243,14 @@
   const landlineProviderRowEl = document.getElementById("landlineProviderRow");
   const landlineProviderSelectEl = document.getElementById("landlineProviderSelect");
 
+  const DEVICE_TYPE_ICON_MAP = {
+    iphone: "/iphone-device-mark.png",
+    android: "/android-device-mark.png",
+    landline: "/landline-device-mark.png",
+  };
+  buildOptionCards(deviceTypeSelectEl, document.getElementById("deviceTypeCards"), DEVICE_TYPE_ICON_MAP);
+  buildOptionCards(landlineProviderSelectEl, document.getElementById("landlineProviderCards"));
+
   // Applies the pre-payment Mobile/Landline answer to this second,
   // finer-grained question (2026-09-16) — never re-asks "mobile or
   // landline" when we already know, while still asking iPhone vs Android
@@ -2122,6 +2276,7 @@
     if (rememberedCategory === "mobile") {
       const landlineOption = deviceTypeSelectEl.querySelector('option[value="landline"]');
       if (landlineOption) landlineOption.hidden = true;
+      buildOptionCards(deviceTypeSelectEl, document.getElementById("deviceTypeCards"), DEVICE_TYPE_ICON_MAP);
       // Still asking iPhone vs Android — genuinely new information, not
       // a repeat of the pre-payment Mobile/Landline question — so the
       // full question row stays visible here, just without the
@@ -2141,6 +2296,7 @@
       const landlineOption = deviceTypeSelectEl && deviceTypeSelectEl.querySelector('option[value="landline"]');
       if (landlineOption) landlineOption.hidden = false;
       if (deviceTypeSelectEl) deviceTypeSelectEl.value = "";
+      buildOptionCards(deviceTypeSelectEl, document.getElementById("deviceTypeCards"), DEVICE_TYPE_ICON_MAP);
       if (landlineProviderRowEl) landlineProviderRowEl.hidden = true;
       if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
       if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
@@ -3155,6 +3311,68 @@
   const termsConsentErrorEl = document.getElementById("termsConsentError");
   const subscribeFormEl = document.getElementById("subscribeForm");
   const stripeReassuranceEl = document.getElementById("stripeReassurance");
+
+  // Renders one tappable card per real, currently-visible <option> of a
+  // <select> (the blank placeholder option, and any option a caller has
+  // set .hidden on — e.g. applyRememberedDeviceToManualForm's ruled-out
+  // "landline" option — are both skipped), and keeps the select's own
+  // .value in sync with whichever card is tapped. The select itself
+  // stays the single source of truth read everywhere else in this file
+  // (evaluateCarrierCompatibility, getForwardingCodeButton, waiting-list
+  // submissions, etc.) — this is presentation-only, so no downstream
+  // eligibility/read logic changes. Safe to re-run whenever the select's
+  // own option list/hidden state/value changes elsewhere (it does, for
+  // deviceTypeSelect) since it just rebuilds the container's children
+  // from the select's current state. optIconMap (value -> image src) is
+  // optional, used only where a device-mark image already exists.
+  function buildOptionCards(select, container, optIconMap) {
+    if (!select || !container) return;
+    container.innerHTML = "";
+    Array.prototype.forEach.call(select.querySelectorAll("option"), function (option) {
+      if (!option.value || option.hidden) return;
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "option-card";
+      card.setAttribute("role", "radio");
+      card.setAttribute("aria-checked", option.selected ? "true" : "false");
+      card.dataset.value = option.value;
+      if (optIconMap && optIconMap[option.value]) {
+        const icon = document.createElement("span");
+        icon.className = "option-card-icon";
+        const img = document.createElement("img");
+        img.src = optIconMap[option.value];
+        img.alt = "";
+        img.width = 26;
+        img.height = 26;
+        icon.appendChild(img);
+        card.appendChild(icon);
+      }
+      const label = document.createElement("span");
+      label.className = "option-card-label";
+      label.textContent = option.textContent;
+      const check = document.createElement("span");
+      check.className = "option-card-check";
+      check.setAttribute("aria-hidden", "true");
+      check.innerHTML = "&#10003;";
+      card.appendChild(label);
+      card.appendChild(check);
+      if (option.selected) card.classList.add("selected");
+      card.addEventListener("click", function () {
+        select.value = option.value;
+        Array.prototype.forEach.call(container.children, function (sibling) {
+          const isSelected = sibling === card;
+          sibling.classList.toggle("selected", isSelected);
+          sibling.setAttribute("aria-checked", isSelected ? "true" : "false");
+        });
+        select.dispatchEvent(new Event("change"));
+      });
+      container.appendChild(card);
+    });
+  }
+
+  buildOptionCards(carrierNetworkSelectEl, document.getElementById("carrierNetworkCards"));
+  buildOptionCards(carrierTariffSelectEl, document.getElementById("carrierTariffCards"));
+  buildOptionCards(carrierLandlineProviderSelectEl, document.getElementById("carrierLandlineProviderCards"));
 
   document.querySelectorAll('input[name="carrierDeviceType"]').forEach(function (radio) {
     radio.addEventListener("change", function () {
