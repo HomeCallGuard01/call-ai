@@ -102,6 +102,18 @@ function buildCheckoutSessionParams({ customer, priceId, householdId, appUrl }) 
       metadata: buildStripeMetadata(householdId),
     },
     billing_address_collection: "required",
+    // 2026-09-20 — the Price this session uses (STRIPE_PRICE_ID) is now
+    // VAT-inclusive (AFMD Ltd is UK VAT-registered, GB379120684 — see
+    // terms.html §3). Stripe Tax is enabled account-wide with that
+    // registration on file, but automatic tax calculation only actually
+    // runs on a session/subscription that explicitly requests it —
+    // account-level enablement alone does nothing here. Without this,
+    // Stripe charged the Price's raw amount with zero VAT calculated or
+    // recorded, despite the registration existing (confirmed via a real
+    // production investigation, 2026-09-20). billing_address_collection
+    // above already supplies what Stripe needs (the customer's country)
+    // to compute UK-destination VAT correctly.
+    automatic_tax: { enabled: true },
     // consent_collection: { terms_of_service: "required" } is NOT enabled
     // yet — Stripe rejects it outright ("You cannot collect consent to
     // your terms of service unless a URL is set in the Stripe Dashboard"),

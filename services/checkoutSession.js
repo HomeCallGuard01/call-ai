@@ -106,6 +106,15 @@ function buildCheckoutSessionParams({ customer, priceId, householdId, successUrl
       metadata: buildStripeMetadata(householdId),
     },
     billing_address_collection: "required",
+    // 2026-09-20 — see routes/billing.js's identical comment on its own
+    // buildCheckoutSessionParams (the web equivalent of this function):
+    // the Price this session uses is now VAT-inclusive, Stripe Tax is
+    // enabled account-wide with AFMD Ltd's UK registration on file, but
+    // that alone does nothing until a session/subscription explicitly
+    // requests automatic tax calculation. Applies identically to
+    // Android/mobile checkout — both platforms share one STRIPE_PRICE_ID
+    // (see routes/mobileApi.js), so both need this.
+    automatic_tax: { enabled: true },
     // consent_collection: { terms_of_service: "required" } is NOT enabled
     // yet — Stripe rejects it outright ("You cannot collect consent to
     // your terms of service unless a URL is set in the Stripe Dashboard"),

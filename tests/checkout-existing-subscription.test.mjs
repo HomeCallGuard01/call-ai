@@ -22,6 +22,12 @@ const {
   buildCheckoutSessionParams,
 } = require('../routes/billing.js');
 
+// The mobile/Android checkout route (routes/mobileApi.js) shares this
+// separate, genuinely different implementation — see services/
+// checkoutSession.js's own header for why two exist. Both need the
+// same automatic_tax fix (2026-09-20), so both are checked here.
+const { buildCheckoutSessionParams: buildMobileCheckoutSessionParams } = require('../services/checkoutSession.js');
+
 let failures = 0;
 
 function check(condition, message) {
@@ -161,6 +167,41 @@ check(
 check(
   sessionParams.line_items[0].price === 'price_test456' && sessionParams.line_items[0].quantity === 1,
   'the session is created against the exact price ID passed in, not a hardcoded one'
+);
+
+// 2026-09-20 VAT fix — the live Stripe Price is now VAT-inclusive and
+// Stripe Tax is enabled account-wide with AFMD Ltd's UK registration on
+// file, but neither takes effect on a specific session without this.
+// Real production investigation confirmed £4.99 was being charged with
+// zero VAT calculated/recorded despite the registration existing, purely
+// because this was missing.
+check(
+  sessionParams.automatic_tax?.enabled === true,
+  'the web checkout session requests automatic tax calculation, so the VAT-inclusive Price actually gets its VAT itemised and recorded, not just charged as a flat amount'
+);
+
+// The mobile/Android checkout builder (services/checkoutSession.js) —
+// same fix, separate implementation, must not silently drift from the
+// web one.
+const mobileSessionParams = buildMobileCheckoutSessionParams({
+  customer: 'cus_test123',
+  priceId: 'price_test456',
+  householdId: 'household-789',
+  successUrl: 'homecallguard://checkout-success',
+  cancelUrl: 'homecallguard://checkout-cancel',
+});
+
+check(
+  mobileSessionParams.automatic_tax?.enabled === true,
+  'the mobile/Android checkout session also requests automatic tax calculation — both platforms share one STRIPE_PRICE_ID, so both must apply VAT the same way'
+);
+check(
+  mobileSessionParams.billing_address_collection === 'required',
+  'the mobile checkout session still collects a full billing address too — needed for automatic tax to determine the customer is UK'
+);
+check(
+  mobileSessionParams.line_items[0].price === 'price_test456',
+  'the mobile checkout session is still created against the exact price ID passed in, unaffected by the automatic_tax addition'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

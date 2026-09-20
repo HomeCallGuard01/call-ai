@@ -23,8 +23,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
+import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { deriveLoadOutcome, isSettingUp as computeIsSettingUp, computeHomeProtectionState, hasProvenActivation } from "../../lib/homeStatus";
+import { classifyLoadFailure, type LoadFailureReason } from "../../lib/loadFailure";
+import { resetVoiceRegistrationState } from "../../lib/voiceClient";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import type { DashboardActivityItem, DashboardResponse } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
@@ -90,6 +93,10 @@ export default function Home() {
   const { session } = useAuth();
   const [state, setState] = useState<ScreenState>("loading");
   const [data, setData] = useState<DashboardResponse | null>(null);
+  // Only meaningful while state === "unavailable" — see lib/loadFailure.ts.
+  // Defaults to "network_error" so an unset value never accidentally
+  // claims a session problem that wasn't actually classified.
+  const [unavailableReason, setUnavailableReason] = useState<LoadFailureReason>("network_error");
   // True when `data` is from a previous successful load and the most
   // recent refresh attempt failed — distinct from "unavailable" (no
   // confirmed data has ever existed for this session). Only this case
@@ -133,6 +140,7 @@ export default function Home() {
     if (isRefresh) setIsRefreshing(true);
     let succeeded = false;
     let isNotEntitledError = false;
+    let failureReason: LoadFailureReason = "network_error";
     let result: DashboardResponse | null = null;
 
     try {
@@ -140,6 +148,10 @@ export default function Home() {
       succeeded = true;
     } catch (err) {
       isNotEntitledError = err instanceof NotEntitledError;
+      // classifyLoadFailure never needs to run for a NotEntitledError —
+      // that's already its own distinct outcome below, unrelated to
+      // "can't check right now" wording.
+      if (!isNotEntitledError) failureReason = classifyLoadFailure(err);
     }
 
     // A newer load() call started (and possibly already resolved) while
@@ -154,7 +166,7 @@ export default function Home() {
     // for what the screen is allowed to claim next. hadPriorData reads
     // the current `data` closure value, which is exactly what "prior to
     // this attempt" means here.
-    const outcome = deriveLoadOutcome({ succeeded, isNotEntitledError, hadPriorData: !!data });
+    const outcome = deriveLoadOutcome({ succeeded, isNotEntitledError, hadPriorData: !!data, failureReason });
 
     if (outcome.kind === "has_data") {
       if (succeeded) setData(result);
@@ -165,9 +177,33 @@ export default function Home() {
       setState("not_entitled");
     } else {
       setIsStale(false);
+      setUnavailableReason(outcome.reason);
       setState("unavailable");
     }
   }, [data, session?.access_token]);
+
+  // Session-expiry recovery (2026-09-20): a real, expired/invalid session
+  // must send the customer to sign in again, not just retry the same
+  // failing request — see the "unavailable" render branch below. Clears
+  // the stale session explicitly rather than relying on any implicit
+  // auth-state-driven navigation elsewhere in the app, so this stays a
+  // single, explicit, user-initiated action (matching the existing "Try
+  // again" button's pattern) instead of an automatic sign-out that could
+  // fire unexpectedly on a merely-transient failure — classifyLoadFailure
+  // only ever returns "session_expired" for a genuine 401 from our own
+  // backend, never for a network error.
+  //
+  // resetVoiceRegistrationState() first, synchronously, matching the
+  // exact established sign-out pattern (account/index.tsx's own
+  // signOutAndResetVoiceRegistration) — a stale "already registered" flag
+  // must never survive into whatever session comes next after signing
+  // back in.
+  function handleSessionExpired() {
+    resetVoiceRegistrationState();
+    supabase.auth.signOut().finally(() => {
+      router.replace("/(auth)/login");
+    });
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -217,11 +253,32 @@ export default function Home() {
               <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
             </View>
           </View>
-          <Text style={styles.giantTitle} accessibilityRole="header">Can't check right now</Text>
-          <Text style={styles.statusBody}>
-            We couldn't confirm your protection status. Check your connection and try again.
-          </Text>
-          <PrimaryButton label="Try again" onPress={() => load()} />
+          {unavailableReason === "session_expired" ? (
+            <>
+              <Text style={styles.giantTitle} accessibilityRole="header">Please sign in again</Text>
+              <Text style={styles.statusBody}>
+                Your session has expired. Sign in again to see your protection status.
+              </Text>
+              <PrimaryButton label="Sign in" onPress={handleSessionExpired} />
+            </>
+          ) : unavailableReason === "server_error" ? (
+            <>
+              <Text style={styles.giantTitle} accessibilityRole="header">Temporary problem</Text>
+              <Text style={styles.statusBody}>
+                Home Call Guard is having a temporary problem on our end. Your protection isn't affected —
+                please try again in a moment.
+              </Text>
+              <PrimaryButton label="Try again" onPress={() => load()} />
+            </>
+          ) : (
+            <>
+              <Text style={styles.giantTitle} accessibilityRole="header">Can't check right now</Text>
+              <Text style={styles.statusBody}>
+                We couldn't confirm your protection status. Check your connection and try again.
+              </Text>
+              <PrimaryButton label="Try again" onPress={() => load()} />
+            </>
+          )}
         </ScrollView>
       </SafeAreaView>
     );

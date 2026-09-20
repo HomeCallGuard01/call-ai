@@ -24,6 +24,7 @@
 // Run with: node tests/mobile-app.test.mjs
 
 import { deriveLoadOutcome, isSettingUp, computeHomeProtectionState, hasProvenActivation } from '../mobile/lib/homeStatus.ts';
+import { classifyLoadFailure } from '../mobile/lib/loadFailure.ts';
 import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from '../mobile/lib/forwardingNumber.ts';
 import { computePageIndex, shouldResyncScrollPosition, scrollOffsetForPage } from '../mobile/lib/carousel.ts';
 import {
@@ -142,6 +143,71 @@ function check(condition, message) {
   check(
     firstLoadFailure.kind === 'unavailable',
     'a failed fetch with no prior data produces unavailable, never has_data — this is the exact bug: bootstrap/dashboard failing on first load must never fall through to "Protected"'
+  );
+  check(
+    firstLoadFailure.reason === 'network_error',
+    'an unclassified failure (no failureReason passed) defaults to network_error, preserving every existing call site\'s behaviour unchanged'
+  );
+
+  // --- 2026-09-20 fix: session-expiry/server-error/network-error must not
+  // collapse into one undifferentiated "unavailable" state. Real production
+  // finding: a genuinely expired/invalid mobile session showed the exact
+  // same "Can't check right now — check your connection" copy as an actual
+  // connectivity failure, with no way for the customer (or support) to
+  // tell them apart. See lib/loadFailure.ts's own header. ---
+
+  check(
+    classifyLoadFailure({ status: 401, code: 'unauthenticated' }) === 'session_expired',
+    'classifyLoadFailure: a 401 (expired/invalid session, whether from the server or the client\'s own "no active session" check) is classified as session_expired'
+  );
+  check(
+    classifyLoadFailure({ status: 500, code: 'failed' }) === 'server_error',
+    'classifyLoadFailure: a 500 from our own backend is classified as server_error, never as a connectivity problem'
+  );
+  check(
+    classifyLoadFailure({ status: 403, code: 'forbidden' }) === 'server_error',
+    'classifyLoadFailure: any other real HTTP status our backend returned (not 401) is treated as server_error, not network_error — the backend DID respond'
+  );
+  check(
+    classifyLoadFailure(new TypeError('Network request failed')) === 'network_error',
+    'classifyLoadFailure: a plain error with no HTTP status at all (fetch() itself failing — no response ever received) is the one genuine network_error case'
+  );
+  check(
+    classifyLoadFailure(undefined) === 'network_error',
+    'classifyLoadFailure: an undefined/missing error still fails safely to network_error rather than throwing'
+  );
+
+  const sessionExpiredOutcome = deriveLoadOutcome({
+    succeeded: false,
+    isNotEntitledError: false,
+    hadPriorData: false,
+    failureReason: 'session_expired',
+  });
+  check(
+    sessionExpiredOutcome.kind === 'unavailable' && sessionExpiredOutcome.reason === 'session_expired',
+    'a 401 on first load produces unavailable with reason session_expired — the Home screen must tell the customer to sign in again, not blame their connection'
+  );
+
+  const serverErrorOutcome = deriveLoadOutcome({
+    succeeded: false,
+    isNotEntitledError: false,
+    hadPriorData: false,
+    failureReason: 'server_error',
+  });
+  check(
+    serverErrorOutcome.kind === 'unavailable' && serverErrorOutcome.reason === 'server_error',
+    'a 5xx on first load produces unavailable with reason server_error — distinct wording from a genuine connectivity failure'
+  );
+
+  const staleWithSessionExpired = deriveLoadOutcome({
+    succeeded: false,
+    isNotEntitledError: false,
+    hadPriorData: true,
+    failureReason: 'session_expired',
+  });
+  check(
+    staleWithSessionExpired.kind === 'has_data' && staleWithSessionExpired.isStale === true,
+    'hadPriorData still wins over any failureReason on a refresh — a session hiccup on a background refresh keeps showing last-known-good data as stale, exactly like any other refresh failure (E3)'
   );
 
   const refreshFailureWithPriorData = deriveLoadOutcome({ succeeded: false, isNotEntitledError: false, hadPriorData: true });

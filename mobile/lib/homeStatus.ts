@@ -15,10 +15,12 @@
 // Protected" without a real, just-fetched (or previously-fetched-this-
 // session) DashboardResponse.
 
+import type { LoadFailureReason } from "./loadFailure";
+
 export type LoadOutcome =
   | { kind: "not_entitled" }
   | { kind: "has_data"; isStale: boolean }
-  | { kind: "unavailable" };
+  | { kind: "unavailable"; reason: LoadFailureReason };
 
 // Given what happened on a load/refresh attempt, decides the next screen
 // state. Fail-closed by construction: "has_data" is reachable only from
@@ -26,15 +28,24 @@ export type LoadOutcome =
 // existed from earlier *in this same session* (hadPriorData) — never
 // from a failure with no prior data, which always resolves to
 // "unavailable" rather than presenting a guess as fact.
+//
+// failureReason (2026-09-20) — see lib/loadFailure.ts's own header for
+// why this exists: "unavailable" used to be one undifferentiated state,
+// which meant an expired session and a real backend error both showed
+// the same "check your connection" copy as a genuine network failure.
+// Optional and defaults to "network_error" so any existing call site
+// that hasn't been updated to classify its error keeps working exactly
+// as before.
 export function deriveLoadOutcome(params: {
   succeeded: boolean;
   isNotEntitledError: boolean;
   hadPriorData: boolean;
+  failureReason?: LoadFailureReason;
 }): LoadOutcome {
   if (params.succeeded) return { kind: "has_data", isStale: false };
   if (params.isNotEntitledError) return { kind: "not_entitled" };
   if (params.hadPriorData) return { kind: "has_data", isStale: true };
-  return { kind: "unavailable" };
+  return { kind: "unavailable", reason: params.failureReason ?? "network_error" };
 }
 
 // 2026-09-12 correction (real physical-device test finding): a household
