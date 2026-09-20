@@ -113,7 +113,13 @@ check(withUtm.includes('href="/register.html?utm_source=tiktok&amp;utm_medium=bi
 const hostile = renderGoPage(goSource, { iosComingSoon: true, utm: { utmSource: '"><script>alert(1)</script>', utmMedium: 'a&b', utmCampaign: "x'y" } });
 const hostileTag = (hostile.match(/<a[^>]*id="landline"[^>]*>/) || [''])[0];
 check(!hostile.includes('<script') && hostileTag === '<a class="store alt" id="landline" href="/register.html?utm_source=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E&amp;utm_medium=a%26b&amp;utm_campaign=x\'y" rel="noopener">', 'hostile UTM values are percent-encoded: the landline tag is exactly one well-formed <a> and no markup can be injected');
-check(!withUtm.match(/href="\/\?/) && withUtm.includes('id="learnMore" href="/"'), 'UTMs are NOT forwarded to the homepage link (avoids double-counting one visitor as two landing visits)');
+check(withUtm.includes('id="learnMore" href="/?utm_source=tiktok&amp;utm_medium=bio&amp;utm_campaign=launch"'), 'UTMs are ALSO forwarded onto the "Learn more" homepage link, so a visitor who reads the homepage first and registers later is still attributed to the social source');
+const hostileLearn = (hostile.match(/<a[^>]*id="learnMore"[^>]*>/) || [''])[0];
+check(hostileLearn === '<a class="learn" id="learnMore" href="/?utm_source=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E&amp;utm_medium=a%26b&amp;utm_campaign=x\'y">' && (hostile.match(/<a\b/g) || []).length === 5, 'hostile UTM values are percent-encoded on the Learn more link too: still exactly one well-formed <a>, no injected markup');
+const noUtmLearn = renderGoPage(goSource, { iosComingSoon: true, utm: {} });
+check(noUtmLearn.includes('id="learnMore" href="/"') && noUtmLearn === goSource, 'no UTM parameters -> Learn more stays the plain "/" (page unchanged)');
+const withStray = renderGoPage(goSource, { iosComingSoon: true, utm: { utmSource: 'tiktok', ttclid: 'abc', fbclid: 'x', email: 'a@b.c' } });
+check(!/ttclid|fbclid|a@b\.c|email=/.test(withStray) && withStray.includes('id="learnMore" href="/?utm_source=tiktok"'), 'only utm_source/utm_medium/utm_campaign are ever forwarded — no other parameter reaches either link');
 check(renderGoPage(goSource, { iosComingSoon: false, appStoreUrl: REAL_LOOKING, utm: { utmSource: 'tiktok' } }).includes('utm_source=tiktok') , 'going live for Apple does not disturb the landline UTM forwarding');
 
 // ---- Learn more: a small secondary link to the main website ----

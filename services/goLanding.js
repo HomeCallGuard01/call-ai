@@ -43,7 +43,21 @@ function liveAppStoreButton(url) {
 // three UTM fields the analytics system already records are forwarded —
 // never any other query parameter — and each value is percent-encoded and
 // HTML-escaped, so a hostile query string cannot alter the link.
+//
+// The same UTMs are forwarded onto "Learn more" (the homepage, "/"): a
+// visitor who reads the homepage first and registers afterwards is still
+// attributed to the social source, because the homepage forwards its own
+// query string onto its "get protected" buttons and records its own
+// landing_visit with the UTMs. TRADE-OFF (explicitly approved by the owner,
+// 2026-09-20: retaining the original social acquisition source through to
+// registration is preferred over an exact raw landing-visit count): that
+// visitor counts as two landing_visit events (one for /go, one for /).
+// Landing counts are documented as raw page requests, not unique visitors,
+// whereas without forwarding the source of a later registration would be
+// lost. To revert, delete LEARN_MORE_LINK and its replace() below plus the
+// matching checks in tests/go-landing-page.test.mjs.
 const LANDLINE_LINK = 'id="landline" href="/register.html"';
+const LEARN_MORE_LINK = 'id="learnMore" href="/"';
 
 function utmQuery(utm) {
   if (!utm) return '';
@@ -58,6 +72,9 @@ function renderGoPage(template, { iosComingSoon, appStoreUrl, utm }) {
   const q = utmQuery(utm);
   if (q && html.includes(LANDLINE_LINK)) {
     html = html.replace(LANDLINE_LINK, 'id="landline" href="/register.html' + q + '"');
+  }
+  if (q && html.includes(LEARN_MORE_LINK)) {
+    html = html.replace(LEARN_MORE_LINK, 'id="learnMore" href="/' + q + '"');
   }
   if (iosComingSoon !== false || !isValidAppStoreUrl(appStoreUrl)) return html;
   const start = html.indexOf(START);
