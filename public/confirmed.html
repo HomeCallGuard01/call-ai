@@ -149,22 +149,13 @@
     window.location.replace(url);
   }
 
-  (function () {
-    var hash = window.location.hash ? window.location.hash.slice(1) : "";
-    var params = new URLSearchParams(hash);
-    var accessToken = params.get("access_token");
-    var refreshToken = params.get("refresh_token");
-    var expiresIn = params.get("expires_in");
-
-    if (!accessToken || !refreshToken) {
-      // No usable session tokens in this redirect at all — the most
-      // likely cause is the one-time verification token having already
-      // been consumed. Confirmation is still real; only the automatic
-      // handoff failed.
-      goToLoginFallback(readPendingEmail());
-      return;
-    }
-
+  // Hands a real access_token/refresh_token pair to the existing,
+  // unchanged /confirm-session endpoint — the exact same secure session-
+  // establishment mechanism both the TokenHash path (below) and the
+  // legacy hash-fragment path (further below) use. tokenForFallback is
+  // only ever used to pre-fill the login form's email if this last step
+  // fails after an otherwise-successful verification.
+  function establishSession(accessToken, refreshToken, expiresIn, tokenForFallback) {
     document.getElementById("message").textContent = "Taking you to your dashboard…";
     document.getElementById("loginLink").hidden = true;
 
@@ -179,8 +170,75 @@
         window.location.href = "/dashboard";
       })
       .catch(function () {
-        goToLoginFallback(decodeEmailFromToken(accessToken) || readPendingEmail());
+        goToLoginFallback(decodeEmailFromToken(tokenForFallback) || readPendingEmail());
       });
+  }
+
+  (function () {
+    // 2026-09-20 — TokenHash confirmation path (primary, once the
+    // Supabase "Confirm signup" email template is updated to link here
+    // with ?token_hash=...&type=signup instead of Supabase's own direct
+    // /auth/v1/verify link). Verification only happens from this actual
+    // page-JS fetch call, never from the plain GET that loads this
+    // page's HTML — so an automated email-security link scanner (which
+    // fetches/previews a URL but does not execute page JavaScript) can
+    // no longer prematurely consume the one-time token before the real
+    // customer taps the link. This is the actual root cause fix for the
+    // real-device failure the hash-fragment path's fallback was only
+    // ever able to paper over. See routes/mobileApi.js and this file's
+    // header comment for the fallback this preserves unchanged.
+    var queryParams = new URLSearchParams(window.location.search);
+    var tokenHash = queryParams.get("token_hash");
+    var tokenHashType = queryParams.get("type");
+
+    if (tokenHash && tokenHashType === "signup") {
+      document.getElementById("message").textContent = "Confirming your email…";
+      document.getElementById("loginLink").hidden = true;
+
+      fetch("/verify-confirmation-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token_hash: tokenHash, type: tokenHashType }),
+      })
+        .then(function (res) {
+          if (!res.ok) throw new Error("verify-confirmation-token failed");
+          return res.json();
+        })
+        .then(function (data) {
+          establishSession(data.access_token, data.refresh_token, data.expires_in, data.access_token);
+        })
+        .catch(function () {
+          // token_hash missing/invalid/expired/already used — no
+          // session was ever issued, so there is no token to decode an
+          // email from here; the same-browser sessionStorage value (if
+          // any) is the only recovery source.
+          goToLoginFallback(readPendingEmail());
+        });
+      return;
+    }
+
+    // Legacy path — Supabase's own confirmation redirect appends the
+    // real session as a URL fragment (#access_token=...&refresh_token=
+    // ...) directly, for any confirmation link sent before the email
+    // template change above (or if it's ever reverted). Never sent to
+    // the server, but readable here. Kept fully intact, unchanged
+    // behaviour, as the fallback for exactly that case.
+    var hash = window.location.hash ? window.location.hash.slice(1) : "";
+    var hashParams = new URLSearchParams(hash);
+    var accessToken = hashParams.get("access_token");
+    var refreshToken = hashParams.get("refresh_token");
+    var expiresIn = hashParams.get("expires_in");
+
+    if (!accessToken || !refreshToken) {
+      // No usable session tokens in this redirect at all — the most
+      // likely cause is the one-time verification token having already
+      // been consumed. Confirmation is still real; only the automatic
+      // handoff failed.
+      goToLoginFallback(readPendingEmail());
+      return;
+    }
+
+    establishSession(accessToken, refreshToken, expiresIn, accessToken);
   })();
 </script>
 

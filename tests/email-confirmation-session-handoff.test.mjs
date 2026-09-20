@@ -77,8 +77,15 @@ check(
   'no usable tokens at all in the confirmation redirect (link already consumed) falls back to the login screen, not a dead end'
 );
 check(
-  confirmedSource.includes('.catch(function () {\n        goToLoginFallback(decodeEmailFromToken(accessToken) || readPendingEmail());\n      });'),
-  'a failed /confirm-session POST also falls back to the login screen, preferring the email decoded from the real access_token JWT over the same-browser convenience value'
+  // 2026-09-20 — this fallback now lives inside the shared
+  // establishSession() helper (see tests/token-hash-confirmation.test.mjs),
+  // used by both the legacy hash-fragment path and the new TokenHash
+  // path, rather than being duplicated per-path. Behaviour is unchanged:
+  // still prefers the email decoded from the real token over the
+  // same-browser convenience value.
+  confirmedSource.includes('function establishSession(accessToken, refreshToken, expiresIn, tokenForFallback) {') &&
+    confirmedSource.includes('.catch(function () {\n        goToLoginFallback(decodeEmailFromToken(tokenForFallback) || readPendingEmail());\n      });'),
+  'a failed /confirm-session POST also falls back to the login screen, preferring the email decoded from the real access_token JWT over the same-browser convenience value (now shared by both confirmation paths via establishSession())'
 );
 
 check(

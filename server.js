@@ -1762,6 +1762,67 @@ app.post("/confirm-session", express.json(), async (req, res) => {
   return res.json({ ok: true });
 });
 
+// VERIFY CONFIRMATION TOKEN (TokenHash) — 2026-09-20 fix for a real
+// production failure: Supabase's default "Confirm signup" email links
+// directly to its own /auth/v1/verify endpoint, which consumes the
+// one-time token on ANY GET request — including an automated email-
+// security link scanner's own prefetch, well before the real customer
+// ever taps it. Reproduced live: confirmation succeeded (Supabase
+// audit log shows user_signedup) but the customer's own browser never
+// received a valid session, only the /confirm-session fallback above,
+// which meant re-entering their password.
+//
+// The fix: the "Confirm signup" email template (Supabase Dashboard,
+// changed separately, not by this code) now links to
+// /confirmed.html?token_hash={{ .TokenHash }}&type=signup instead —
+// public/confirmed.html's own script calls this route from actual
+// page JavaScript, not from the page's plain GET, so a scanner that
+// only fetches/previews the URL's HTML (and doesn't execute its
+// JavaScript, which is how these scanners work) can no longer consume
+// the token before the real customer's tap does.
+//
+// `type` is accepted from the request only to produce a clean 400 for
+// a malformed call — the actual verifyOtp() call below always passes
+// the literal "signup", never whatever the client sent, so this route
+// can never be repurposed to verify a password-recovery or magic-link
+// token (each of those has its own, separate flow).
+//
+// Never returns more than the bare access_token/refresh_token/
+// expires_in a confirmation flow needs — no user object, no other
+// claims. The caller (confirmed.html) hands these straight to the
+// existing, unmodified /confirm-session above, exactly like the
+// legacy hash-fragment path already does — this is not a new/weaker
+// session-establishment mechanism, just a new way of getting to it
+// that isn't foilable by a prefetch.
+app.post("/verify-confirmation-token", express.json(), async (req, res) => {
+  const { token_hash: tokenHash, type } = req.body || {};
+
+  if (!tokenHash || typeof tokenHash !== "string" || type !== "signup") {
+    return res.status(400).json({ error: "invalid_input" });
+  }
+
+  const { data, error } = await supabase.auth.verifyOtp({
+    token_hash: tokenHash,
+    type: "signup",
+  });
+
+  if (error || !data?.session) {
+    // Covers missing/invalid/expired/already-used token_hash alike —
+    // Supabase's own verifyOtp() enforces single-use and expiry;
+    // nothing here needs to re-check that itself. Deliberately no
+    // detail beyond this generic code: confirmed.html's fallback
+    // doesn't need one, and this must never help an attacker
+    // distinguish "expired" from "never existed" from "already used".
+    return res.status(401).json({ error: "invalid_token_hash" });
+  }
+
+  return res.json({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+    expires_in: data.session.expires_in,
+  });
+});
+
 // AUTH: RESEND CONFIRMATION
 
 app.post("/resend-confirmation", async (req, res) => {
