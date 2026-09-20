@@ -20,6 +20,7 @@ const {
 const { redeemInvite } = require("./services/complimentaryInvites");
 const { decidePostLoginRedirect, decideDashboardRouteRedirect } = require("./services/postLoginRouting");
 const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require("./services/acquisitionAnalytics");
+const { renderGoPage } = require("./services/goLanding");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
@@ -2099,8 +2100,34 @@ app.get("/support", (req, res) => {
 // iPhone waiting-list form using the same public /api/v1/waiting-list
 // endpoint the homepage banner already uses. No new signup/payment
 // path is introduced here.
+// 2026-09-20: /go is now the permanent download landing page — Google Play
+// plus an App Store button that stays a disabled "Coming soon" until BOTH
+// IOS_COMING_SOON=false and a valid APP_STORE_URL are set (see
+// services/goLanding.js). The template is read once at startup. No
+// JavaScript, no third-party requests, no pricing/login/email on the page.
+//
+// Visits are counted with the EXISTING first-party, cookie-free
+// "landing_visit" acquisition event (path "/go", plus UTM parameters and
+// the referrer's hostname only) — same mechanism, same fire-and-forget
+// safety as GET / above: recorded after the response is sent, never
+// awaited, so it can never slow or break the page.
+const GO_TEMPLATE = fs.readFileSync(__dirname + "/public/go.html", "utf8");
 app.get("/go", (req, res) => {
-  res.sendFile(__dirname + "/public/go.html");
+  const { utmSource, utmMedium, utmCampaign } = parseUtmParams(req.query);
+  res.type("html").send(
+    renderGoPage(GO_TEMPLATE, {
+      iosComingSoon: isIosComingSoon(),
+      appStoreUrl: process.env.APP_STORE_URL,
+      utm: { utmSource, utmMedium, utmCampaign },
+    })
+  );
+  recordAcquisitionEvent("landing_visit", {
+    path: "/go",
+    utmSource,
+    utmMedium,
+    utmCampaign,
+    referrerHost: parseReferrerHost(req.get("referer"), APP_URL_PARSED.hostname),
+  }).catch(() => {});
 });
 
 // Auth only, deliberately not requireEntitlement — an unsubscribed
