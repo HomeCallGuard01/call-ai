@@ -352,6 +352,21 @@
       return;
     }
 
+    // 2026-09-20 — email-confirmation session-handoff fallback: stashed
+    // here, synchronously, at the moment of submission (not read back
+    // from this input after the server's redirect, which may not
+    // preserve it) so public/confirmed.html can pre-fill the login
+    // form's email if the automatic post-confirmation sign-in fails.
+    // Same-browser only, never required — confirmed.html degrades to no
+    // pre-fill if it's unavailable. Key must match confirmed.html's
+    // PENDING_EMAIL_KEY. Holds only an email address, never a password.
+    try {
+      sessionStorage.setItem("hcg_pending_confirmation_email", document.getElementById("email").value);
+    } catch (err) {
+      // sessionStorage can throw in some contexts (private browsing,
+      // storage disabled) — this is only a same-browser convenience.
+    }
+
     var btn = document.getElementById("submitButton");
     btn.disabled = true;
     btn.textContent = "Creating account…";

@@ -27,7 +27,7 @@
 // alone would not survive the Subscribe → Confirmation → Contacts hops
 // in between.
 import { useState } from "react";
-import { Text, View, Pressable, StyleSheet, ActivityIndicator, TextInput } from "react-native";
+import { Text, View, Pressable, StyleSheet, ActivityIndicator, TextInput, Image } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
@@ -52,9 +52,30 @@ import type { DeviceType, LandlineProvider, MobileCarrierKey, TariffType } from 
 // reverting to the normal iPhone flow is the one piece of this file that
 // would need a source change (and a new build) — everything else here
 // is unaffected either way.
-const DEVICE_OPTIONS: { type: DeviceType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { type: "iphone", label: "iPhone — Coming soon", icon: "logo-apple" },
-  { type: "android", label: "Android phone", icon: "logo-android" },
+// 2026-09-20 — iPhone/Android used to render via Ionicons' generic
+// logo-apple/logo-android glyphs (a stock icon-font rendering, not real
+// platform iconography). Replaced with real image assets:
+//  - Android uses a proper silhouette of Google's own Android robot
+//    mark ("bugdroid"), which Google explicitly open-licenses (CC BY
+//    3.0) for exactly this kind of third-party use, including
+//    single-colour treatments like this one.
+//  - iPhone deliberately does NOT use Apple's bitten-apple logo — that
+//    mark is Apple's trademark, and third-party apps are not free to
+//    use it to represent "iPhone" without Apple's own approval. A
+//    generic smartphone-device silhouette (rounded frame, notch, home
+//    indicator) honestly represents the device category without that
+//    risk. Landline keeps its existing Ionicons "call" glyph — that's
+//    a generic pictogram, not another platform's brand mark, so there
+//    is no equivalent concern.
+// See mobile/assets/android-device-mark.png and iphone-device-mark.png.
+const DEVICE_OPTIONS: {
+  type: DeviceType;
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  iconSource?: number;
+}[] = [
+  { type: "iphone", label: "iPhone — Coming soon", iconSource: require("../../assets/iphone-device-mark.png") },
+  { type: "android", label: "Android phone", iconSource: require("../../assets/android-device-mark.png") },
   { type: "landline", label: "Landline", icon: "call" },
 ];
 
@@ -410,7 +431,7 @@ export default function DevicePicker() {
       <Text style={styles.title} accessibilityRole="header">What are we setting up protection on?</Text>
       <Text style={styles.subtitle}>Pick the phone whose calls you want screened.</Text>
       <View style={styles.cards}>
-        {DEVICE_OPTIONS.map(({ type, label, icon }) => (
+        {DEVICE_OPTIONS.map(({ type, label, icon, iconSource }) => (
           <Pressable
             key={type}
             onPress={() => selectDevice(type)}
@@ -418,7 +439,11 @@ export default function DevicePicker() {
             accessibilityRole="button"
             accessibilityLabel={label}
           >
-            <Ionicons name={icon} size={32} color={colors.accent} style={styles.cardIcon} accessibilityElementsHidden importantForAccessibility="no" />
+            {iconSource ? (
+              <Image source={iconSource} style={styles.cardIconImage} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no" />
+            ) : (
+              <Ionicons name={icon!} size={32} color={colors.accent} style={styles.cardIcon} accessibilityElementsHidden importantForAccessibility="no" />
+            )}
             <Text style={styles.cardText}>{label}</Text>
           </Pressable>
         ))}
@@ -480,6 +505,11 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   cardIcon: {
+    marginBottom: spacing.xs,
+  },
+  cardIconImage: {
+    width: 40,
+    height: 40,
     marginBottom: spacing.xs,
   },
   cardText: {

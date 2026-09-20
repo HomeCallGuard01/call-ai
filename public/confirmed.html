@@ -89,19 +89,81 @@
   // fragment (#access_token=...&refresh_token=...) — never sent to the
   // server, but readable here. If present and valid, this continues
   // straight into the dashboard instead of asking for the password
-  // again. Any failure (no fragment at all, expired/invalid tokens, a
-  // network error) falls back to the plain "Log In" link already in the
-  // page — never a dead end.
+  // again.
+  //
+  // 2026-09-20 — real production reproduction proved the automatic
+  // session handoff can fail even though confirmation itself genuinely
+  // succeeded (Supabase only ever redirects here after the email is
+  // verified) — most likely because the one-time verification
+  // token/link had already been consumed before this browser opened it.
+  // Rather than leave the customer on a dead-end page, every failure
+  // path below now sends them straight to /login.html with a clear
+  // "already confirmed" message and their email pre-filled wherever
+  // it's available, so they only ever have to type their password once
+  // more — never their email again, never a fresh confirmation. This
+  // never bypasses Supabase's own authentication: /login still requires
+  // the real password via supabase.auth.signInWithPassword, and nothing
+  // here stores or transmits a password.
+
+  // Same-browser convenience set by register.html right before it
+  // submits the signup form — read back here only as a fallback for
+  // pre-filling the login form's email field, never trusted for
+  // authentication. Key must match register.html's PENDING_EMAIL_KEY.
+  var PENDING_EMAIL_KEY = "hcg_pending_confirmation_email";
+
+  function readPendingEmail() {
+    try {
+      return sessionStorage.getItem(PENDING_EMAIL_KEY);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearPendingEmail() {
+    try {
+      sessionStorage.removeItem(PENDING_EMAIL_KEY);
+    } catch (e) {}
+  }
+
+  // Reads the `email` claim straight out of the confirmation link's own
+  // access_token JWT. Deliberately NOT verified client-side — there is
+  // no key to verify it with in a browser, and none is needed, because
+  // this value is only ever used to pre-fill a form field. The real
+  // authentication still happens on /login via Supabase's own
+  // signInWithPassword. Falls back to null on anything malformed.
+  function decodeEmailFromToken(token) {
+    try {
+      var payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      while (payload.length % 4) payload += "=";
+      var claims = JSON.parse(atob(payload));
+      return typeof claims.email === "string" ? claims.email : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function goToLoginFallback(prefillEmail) {
+    clearPendingEmail();
+    var url = "/login.html?state=confirmed";
+    if (prefillEmail) url += "&email=" + encodeURIComponent(prefillEmail);
+    window.location.replace(url);
+  }
+
   (function () {
     var hash = window.location.hash ? window.location.hash.slice(1) : "";
-    if (!hash) return;
-
     var params = new URLSearchParams(hash);
     var accessToken = params.get("access_token");
     var refreshToken = params.get("refresh_token");
     var expiresIn = params.get("expires_in");
 
-    if (!accessToken || !refreshToken) return;
+    if (!accessToken || !refreshToken) {
+      // No usable session tokens in this redirect at all — the most
+      // likely cause is the one-time verification token having already
+      // been consumed. Confirmation is still real; only the automatic
+      // handoff failed.
+      goToLoginFallback(readPendingEmail());
+      return;
+    }
 
     document.getElementById("message").textContent = "Taking you to your dashboard…";
     document.getElementById("loginLink").hidden = true;
@@ -113,11 +175,11 @@
     })
       .then(function (res) {
         if (!res.ok) throw new Error("confirm-session failed");
+        clearPendingEmail();
         window.location.href = "/dashboard";
       })
       .catch(function () {
-        document.getElementById("message").textContent = "Your email address has been confirmed and your account is now active.";
-        document.getElementById("loginLink").hidden = false;
+        goToLoginFallback(decodeEmailFromToken(accessToken) || readPendingEmail());
       });
   })();
 </script>

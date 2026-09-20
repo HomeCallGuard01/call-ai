@@ -338,8 +338,8 @@ check(
 const devicePickerSource = readFileSync(path.join(__dirname, '..', 'mobile', 'app', '(setup)', 'device-picker.tsx'), 'utf8');
 
 check(
-  devicePickerSource.includes('{ type: "iphone", label: "iPhone — Coming soon", icon: "logo-apple" }'),
-  'mobile device-picker.tsx retains the iPhone option, clearly marked "Coming soon"'
+  devicePickerSource.includes('{ type: "iphone", label: "iPhone — Coming soon", iconSource: require("../../assets/iphone-device-mark.png") }'),
+  'mobile device-picker.tsx retains the iPhone option, clearly marked "Coming soon" (2026-09-20: icon changed from the generic Ionicons Apple-logo glyph to a non-trademarked device silhouette — see tests/device-picker-platform-icons.test.mjs — but the option itself and its label are unchanged)'
 );
 check(
   devicePickerSource.includes('if (type === "iphone") {') &&

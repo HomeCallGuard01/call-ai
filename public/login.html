@@ -238,6 +238,28 @@
       document.getElementById("resend_email").value = loginEmail || "";
       document.getElementById("resendBox").hidden = false;
     }
+  } else if (state === "confirmed") {
+    // 2026-09-20 — the email-confirmation session-handoff fallback
+    // (public/confirmed.html): confirmation itself always succeeded to
+    // land here, only the automatic sign-in did not. The customer
+    // should only ever need to type their password again, never their
+    // email, so it's pre-filled whenever confirmed.html could resolve
+    // it and the password field is focused directly.
+    //
+    // Deliberately handled here, before the neutral existing-account
+    // branch further down — that branch's own hedged "may already be
+    // registered" wording must never sit next to language like
+    // "confirmed" that could let a login attempt on someone else's
+    // email infer their real account state (see
+    // tests/registration-flow.test.mjs's enumeration-safety check).
+    var confirmedNotice = document.getElementById("noticeBanner");
+    confirmedNotice.textContent = "Your email is confirmed. Enter your password to continue.";
+    confirmedNotice.hidden = false;
+
+    if (loginEmail) {
+      document.getElementById("email").value = loginEmail;
+      document.getElementById("password").focus();
+    }
   } else if (state === "resent") {
     var notice = document.getElementById("noticeBanner");
     notice.textContent = "If that email is registered and unconfirmed, a new confirmation email has been sent.";
