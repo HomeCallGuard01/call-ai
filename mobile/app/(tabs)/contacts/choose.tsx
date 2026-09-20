@@ -5,9 +5,10 @@
 // has authorised, in one request) or typing details in by hand.
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../../components/Screen";
 import { BackLink } from "../../../components/BackLink";
-import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
+import { colors, radius, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
 export default function ChooseContactMethod() {
   return (
@@ -19,11 +20,13 @@ export default function ChooseContactMethod() {
       </Text>
 
       <Option
+        icon="people"
         label="Sync contacts"
         description="Import everyone your phone allows Home Call Guard to see, saved as trusted contacts in one go. Safe to run again any time — nothing is ever duplicated."
         onPress={() => router.push("/(tabs)/contacts/from-phone")}
       />
       <Option
+        icon="create-outline"
         label="Enter manually"
         description="Type in a name and phone number yourself."
         onPress={() => router.push("/(tabs)/contacts/add")}
@@ -32,15 +35,20 @@ export default function ChooseContactMethod() {
   );
 }
 
-function Option({ label, description, onPress }: { label: string; description: string; onPress: () => void }) {
+function Option({ icon, label, description, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; description: string; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
       accessibilityRole="button"
     >
-      <Text style={styles.optionLabel}>{label}</Text>
-      <Text style={styles.optionDescription}>{description}</Text>
+      <View style={styles.optionBadge}>
+        <Ionicons name={icon} size={22} color={colors.accent} accessibilityElementsHidden importantForAccessibility="no" />
+      </View>
+      <View style={styles.optionText}>
+        <Text style={styles.optionLabel}>{label}</Text>
+        <Text style={styles.optionDescription}>{description}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -57,13 +65,27 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   option: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
     minHeight: MIN_TOUCH_TARGET,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     backgroundColor: colors.card,
     marginBottom: spacing.md,
+  },
+  optionBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  optionText: {
+    flex: 1,
   },
   optionPressed: {
     borderColor: colors.accent,

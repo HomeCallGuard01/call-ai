@@ -13,7 +13,7 @@ import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import { hasProvenActivation } from "../../lib/homeStatus";
-import { colors, spacing, typography } from "../../lib/theme";
+import { colors, radius, spacing, typography } from "../../lib/theme";
 
 const RESUME_ROUTE: Record<string, string> = {
   subscribe: "/(setup)/subscribe",
@@ -74,7 +74,7 @@ export default function SetupWelcome() {
   }
 
   return (
-    <Screen>
+    <Screen brand>
       <Text style={styles.title} accessibilityRole="header">Let's get you protected — in just a few clicks</Text>
       <Text style={styles.subtitle}>Three quick steps:</Text>
 
@@ -125,19 +125,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   steps: {
-    gap: spacing.lg,
+    gap: spacing.md,
     marginBottom: spacing.xl,
   },
   step: {
     flexDirection: "row",
     gap: spacing.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
   },
   stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.accentSoft,
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: colors.accentDeep,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -145,7 +151,7 @@ const styles = StyleSheet.create({
   stepNumberText: {
     color: colors.accent,
     fontWeight: "700",
-    fontSize: 13,
+    fontSize: 14,
   },
   stepText: {
     flex: 1,

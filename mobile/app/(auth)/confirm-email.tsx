@@ -174,7 +174,7 @@ export default function ConfirmEmail() {
     }
 
     return (
-      <Screen>
+      <Screen brand>
         <Text style={styles.title} accessibilityRole="header">Link invalid</Text>
         <Banner variant="error" message="This confirmation link is invalid or has expired. Please sign in, or request a new one below." />
         <PrimaryButton label="Sign in" onPress={() => router.replace("/(auth)/login")} />
@@ -205,7 +205,7 @@ export default function ConfirmEmail() {
   }
 
   return (
-    <Screen>
+    <Screen brand>
       <Text style={styles.title} accessibilityRole="header">{content.title}</Text>
       {content.paragraphs.map((paragraph, i) => (
         <Text key={i} style={styles.body}>{paragraph}</Text>

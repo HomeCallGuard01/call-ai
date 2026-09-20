@@ -120,7 +120,7 @@ export default function SetUpCallForwarding() {
     <Screen>
       <Text style={styles.title}>Set up call forwarding</Text>
       <Text style={styles.explanation}>
-        Call forwarding is what sends your calls to Home Call Guard to be checked, before they reach you.
+        Call forwarding sends your calls to Home Call Guard. Trusted contacts are put straight through, and calls from everyone else are monitored.
       </Text>
 
       {forwardingNumber && (
@@ -131,7 +131,7 @@ export default function SetUpCallForwarding() {
       )}
 
       <View style={styles.codeBox} accessibilityRole="text" accessibilityLabel={`Your call forwarding code is ${instructions?.code}`}>
-        <Text style={styles.code} selectable>{instructions?.code}</Text>
+        <Text style={styles.code} selectable adjustsFontSizeToFit numberOfLines={1}>{instructions?.code}</Text>
       </View>
 
       {canAutoDial ? (
@@ -199,18 +199,19 @@ const styles = StyleSheet.create({
   codeBox: {
     minHeight: MIN_TOUCH_TARGET * 1.5,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.accent,
-    backgroundColor: colors.card,
+    backgroundColor: colors.accentMuted,
+    paddingHorizontal: spacing.md,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: spacing.md,
   },
   code: {
-    fontSize: 32,
+    fontSize: 22,
     fontWeight: "700",
     color: colors.accent,
-    letterSpacing: 1,
+    letterSpacing: 0.3,
   },
   steps: {
     gap: spacing.sm,

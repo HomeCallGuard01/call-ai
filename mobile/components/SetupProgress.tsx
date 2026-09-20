@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
   },
   dotFilled: {
     borderColor: colors.accent,
-    backgroundColor: colors.accentMuted,
+    backgroundColor: colors.accentSoft,
   },
   dotCheck: {
     color: colors.accent,
@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   label: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.textMuted,
     marginTop: spacing.xs,
   },

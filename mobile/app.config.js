@@ -7,6 +7,14 @@ module.exports = {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
+    // Root/window background — what shows behind React while the JS bundle
+    // loads, i.e. the moment between the native splash hiding and the first
+    // painted frame. Without this, Android's AppTheme (DayNight, no
+    // windowBackground) falls back to the theme's default light background
+    // and flashes white right after the splash. Same value as
+    // lib/theme.ts's colors.background AND the splash backgroundColor below,
+    // so splash -> window -> first screen is one continuous colour.
+    backgroundColor: "#050a07",
     ios: {
       supportsTablet: false,
       bundleIdentifier: "co.uk.homecallguard.app",
@@ -30,7 +38,10 @@ module.exports = {
     android: {
       package: "co.uk.homecallguard.app",
       adaptiveIcon: {
-        backgroundColor: "#0b1220",
+        // Same near-black as the splash, the app's first screen and the
+        // launcher icon background image — the shield now sits on the app's
+        // own black/green palette instead of the old navy (#0b1220).
+        backgroundColor: "#050a07",
         foregroundImage: "./assets/android-icon-foreground.png",
         backgroundImage: "./assets/android-icon-background.png",
         monochromeImage: "./assets/android-icon-monochrome.png",
@@ -61,18 +72,28 @@ module.exports = {
       [
         "expo-splash-screen",
         {
-          // assets/splash-icon.png is a light-coloured mark on a fully
-          // transparent background (confirmed by sampling its pixels —
-          // center ~(221,221,225), corners (0,0,0,0) alpha) — designed for
-          // a dark backdrop, not the light backgroundColor used for the
-          // Android adaptive icon below. backgroundColor here is
-          // lib/theme.ts's own colors.background, the same dark background
-          // already used everywhere in the app's actual UI, so the splash
-          // screen matches the first real frame instead of flashing.
-          image: "./assets/splash-icon.png",
-          imageWidth: 200,
+          // assets/splash-shield.png: the genuine Home Call Guard green
+          // shield/telephone mark (cropped from shield-mark-padded-master.png,
+          // the same mark as the launcher icon, website and Play listing) on a
+          // fully transparent 1024x1024 canvas. This REPLACES the stock Expo
+          // template placeholder (assets/splash-icon.png — a grey grid with
+          // concentric circles) that every build up to and including Android
+          // build 6 shipped as its startup screen.
+          //
+          // Sizing: on Android 12+ the system draws this icon in a circle
+          // whose visible diameter is 2/3 of the icon canvas, so the mark must
+          // sit well inside that circle (the shield is ~50% of the canvas
+          // height, comfortably inside it) — which is also why the wordmark is
+          // NOT on the native splash: it would be clipped. The wordmark
+          // ("Home Call Guard") appears in-app immediately after, via BrandMark.
+          //
+          // backgroundColor is lib/theme.ts's colors.background (the app's
+          // actual first frame) and the top-level backgroundColor above, so
+          // there is no colour jump when the splash hands over.
+          image: "./assets/splash-shield.png",
+          imageWidth: 220,
           resizeMode: "contain",
-          backgroundColor: "#0b1220",
+          backgroundColor: "#050a07",
         },
       ],
       [

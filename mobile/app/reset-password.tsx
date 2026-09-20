@@ -73,7 +73,7 @@ export default function ResetPassword() {
 
   if (!hasValidLink) {
     return (
-      <Screen>
+      <Screen brand>
         <Text style={styles.title}>Link invalid</Text>
         <Banner variant="error" message="This reset link is missing or invalid. Please request a new one." />
         <PrimaryButton label="Back to login" onPress={() => router.replace("/(auth)/login")} />
@@ -83,7 +83,7 @@ export default function ResetPassword() {
 
   if (isDone) {
     return (
-      <Screen>
+      <Screen brand>
         <Text style={styles.title}>Password updated successfully</Text>
         <Text style={styles.body}>Your password has been changed and you're now signed in.</Text>
         <PrimaryButton label="Continue to Dashboard" onPress={() => router.replace("/(tabs)")} />
@@ -92,7 +92,7 @@ export default function ResetPassword() {
   }
 
   return (
-    <Screen>
+    <Screen brand>
       <Text style={styles.title}>Set a new password</Text>
 
       {error && <Banner variant="error" message={error} />}

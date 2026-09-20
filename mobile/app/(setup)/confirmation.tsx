@@ -19,7 +19,7 @@ import { colors, spacing, typography } from "../../lib/theme";
 
 export default function Confirmation() {
   return (
-    <Screen scroll={false}>
+    <Screen scroll={false} brand>
       <View style={styles.container}>
         <View style={styles.badge} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           <Text style={styles.badgeIcon}>✓</Text>

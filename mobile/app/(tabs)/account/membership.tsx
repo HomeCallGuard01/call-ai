@@ -10,6 +10,7 @@ import * as WebBrowser from "expo-web-browser";
 import { Screen } from "../../../components/Screen";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Banner } from "../../../components/Banner";
+import { Card } from "../../../components/Card";
 import { fetchDashboard, createPortalSession, ApiError, NotEntitledError } from "../../../lib/api";
 import { restorePurchases as restoreApplePurchases, isEntitled } from "../../../lib/purchases";
 import { useAuth } from "../../../lib/AuthContext";
@@ -147,21 +148,23 @@ export default function Membership() {
 
   return (
     <Screen>
-      <Text style={styles.plan}>{membership.planName}</Text>
-      <Text style={styles.price}>{membership.priceLabel}</Text>
-      <Text style={styles.status}>{STATUS_LABELS[membership.status]}</Text>
+      <Card tone={membership.status === "active" ? "positive" : "default"} style={styles.planCard}>
+        <Text style={styles.plan}>{membership.planName}</Text>
+        <Text style={styles.price}>{membership.priceLabel}</Text>
+        <Text style={styles.status}>{STATUS_LABELS[membership.status]}</Text>
 
-      {membership.nextBillingDate && (
-        <Text style={styles.detail}>Next billing date: {new Date(membership.nextBillingDate).toLocaleDateString("en-GB")}</Text>
-      )}
-      {membership.status === "cancelled" && membership.accessUntil && (
-        <Text style={styles.detail}>
-          Protection continues until {new Date(membership.accessUntil).toLocaleDateString("en-GB")}
-        </Text>
-      )}
-      {membership.status === "trial" && membership.trialEndDate && (
-        <Text style={styles.detail}>Trial ends: {new Date(membership.trialEndDate).toLocaleDateString("en-GB")}</Text>
-      )}
+        {membership.nextBillingDate && (
+          <Text style={styles.detail}>Next billing date: {new Date(membership.nextBillingDate).toLocaleDateString("en-GB")}</Text>
+        )}
+        {membership.status === "cancelled" && membership.accessUntil && (
+          <Text style={styles.detail}>
+            Protection continues until {new Date(membership.accessUntil).toLocaleDateString("en-GB")}
+          </Text>
+        )}
+        {membership.status === "trial" && membership.trialEndDate && (
+          <Text style={styles.detail}>Trial ends: {new Date(membership.trialEndDate).toLocaleDateString("en-GB")}</Text>
+        )}
+      </Card>
 
       {error && <Banner variant="error" message={error} />}
       {restoreMessage && <Banner variant="notice" message={restoreMessage} />}
@@ -209,6 +212,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.sm,
   },
+  planCard: {
+    marginBottom: spacing.md,
+  },
   plan: {
     ...typography.hero,
     color: colors.text,
@@ -222,7 +228,7 @@ const styles = StyleSheet.create({
   status: {
     ...typography.title,
     color: colors.accent,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   detail: {
     ...typography.body,

@@ -20,11 +20,11 @@ const FAQ_ITEMS = [
   {
     question: "What happens when someone I don't know calls?",
     answer:
-      "We briefly ask them the reason for their call and check it before letting it through — this only takes a few seconds. If it looks like a scam, the call is stopped before it reaches you.",
+      "The call is put through to you, and Home Call Guard monitors it while you talk. If it detects clear signs of a scam, the call is ended automatically. You can see how each call was handled in Activity.",
   },
   {
     question: "Will calls from my family and friends be affected?",
-    answer: "No. Anyone in your trusted contacts is put straight through, every time, with no checks or delays.",
+    answer: "No. Anyone in your trusted contacts is put straight through, every time, and their calls are never monitored.",
   },
   {
     question: "How do I let Home Call Guard access my contacts?",
@@ -33,7 +33,7 @@ const FAQ_ITEMS = [
   },
   {
     question: "Is my phone number changing?",
-    answer: "No — you keep your existing number. We simply check your calls for you before they reach you.",
+    answer: "No — you keep your existing number. Call forwarding sends your calls to Home Call Guard, and approved calls are put through to you.",
   },
   {
     question: "What if I need help?",

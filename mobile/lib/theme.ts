@@ -1,19 +1,44 @@
-// Reuses the existing web app's established brand palette (public/*.html,
-// public/index.html's hero section) rather than inventing a new one —
-// keeps the app visually consistent with the website rather than reading
-// as a different product. Per the market-positioning refinement
-// (docs/mobile-app/APP_VISUAL_SPECIFICATION.md), this should read as
-// modern/premium/reassuring, not as a stripped-down "accessibility mode."
+// Home Call Guard's visual identity — the black/green look established by
+// the approved Google Play marketing artwork (2026-09-20). Values are
+// sampled from that artwork and the shield asset, not invented: the
+// artwork's background is a near-black with a faint green cast (#010705),
+// its accent green is ~#4bf977, and assets/shield-mark.png's own green is
+// ~#18dd56 — the previous mint (#00ff99) and navy (#0b1220) matched
+// neither the logo nor the marketing.
+//
+// Every screen and shared component reads from this one file (no colour
+// literals elsewhere), so the whole app re-skins from here. All export
+// names that existed before (colors.background/card/border/text/
+// textMuted/accent/accentMuted/danger/dangerBackground/white, spacing,
+// typography, MIN_TOUCH_TARGET) are kept, so nothing that already imports
+// them changes meaning — only their values, and the additions below.
+//
+// Semantic outcome colours mirror the app's real Activity states and
+// nothing more: neutral grey = a trusted contact rang straight through,
+// green = screened / no concerns, amber = high risk / call stopped or
+// ended. There is deliberately no red "risk rating" scale — the app has
+// no such thing.
 export const colors = {
-  background: "#0b1220",
-  card: "#111a2e",
-  border: "#233047",
-  text: "#e5eaf3",
-  textMuted: "#94a3b8",
-  accent: "#00ff99",
-  accentMuted: "#0f2a1a",
+  background: "#050a07",
+  card: "#0c130f",
+  cardElevated: "#111c16",
+  border: "#1d2b23",
+  borderStrong: "#2b4136",
+  text: "#f3f7f4",
+  textMuted: "#98a99f",
+  accent: "#3cf07a",
+  accentDeep: "#18dd56",
+  accentMuted: "#0a2014",
+  accentSoft: "rgba(60, 240, 122, 0.14)",
+  accentGlow: "rgba(60, 240, 122, 0.10)",
+  onAccent: "#04100a",
+  neutral: "#9aa8b6",
+  neutralSoft: "rgba(154, 168, 182, 0.14)",
   danger: "#f59e0b",
-  dangerBackground: "#2a1a0f",
+  dangerBackground: "#241708",
+  dangerSoft: "rgba(245, 158, 11, 0.14)",
+  dangerText: "#fde68a",
+  noticeText: "#bbf7d0",
   white: "#ffffff",
 };
 
@@ -26,16 +51,26 @@ export const spacing = {
   xxl: 48,
 };
 
+export const radius = {
+  sm: 10,
+  md: 14,
+  lg: 20,
+  pill: 999,
+};
+
 export const typography = {
   // Reserved for the single dominant "You're protected" headline (Home
   // screen redesign, 2026-08-23) — deliberately larger than `hero`, which
   // stays as-is for every other screen's title so this remains a
   // one-off, not a general size bump.
-  giant: { fontSize: 32, fontWeight: "800" as const },
-  hero: { fontSize: 28, fontWeight: "700" as const },
-  title: { fontSize: 22, fontWeight: "700" as const },
+  giant: { fontSize: 32, fontWeight: "800" as const, letterSpacing: -0.6 },
+  hero: { fontSize: 28, fontWeight: "700" as const, letterSpacing: -0.4 },
+  title: { fontSize: 22, fontWeight: "700" as const, letterSpacing: -0.2 },
   body: { fontSize: 16, fontWeight: "400" as const },
   caption: { fontSize: 13, fontWeight: "400" as const },
+  // Small all-caps section label ("RECENT ACTIVITY") — a hierarchy aid,
+  // never used for body text.
+  eyebrow: { fontSize: 12, fontWeight: "700" as const, letterSpacing: 1 },
 };
 
 // Minimum touch target per platform HIG/Material guidance — applied

@@ -65,7 +65,7 @@ export default function Register() {
   }
 
   return (
-    <Screen>
+    <Screen brand>
       <Text style={styles.title}>Create your account</Text>
 
       {error && <Banner variant="error" message={error} />}

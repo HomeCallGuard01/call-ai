@@ -366,7 +366,7 @@ export default function Activate() {
       </Text>
 
       <View style={styles.codeBox} accessibilityRole="text" accessibilityLabel={`Your activation code is ${instructions.code}`}>
-        <Text style={styles.code} selectable>{instructions.code}</Text>
+        <Text style={styles.code} selectable adjustsFontSizeToFit numberOfLines={1}>{instructions.code}</Text>
       </View>
       <Pressable onPress={handleCopy} accessibilityRole="button" style={styles.copyLink}>
         <Text style={styles.copyLinkText}>{copied ? "Copied!" : "Copy code"}</Text>
@@ -587,18 +587,19 @@ const styles = StyleSheet.create({
   codeBox: {
     minHeight: MIN_TOUCH_TARGET * 1.5,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.accent,
-    backgroundColor: colors.card,
+    backgroundColor: colors.accentMuted,
+    paddingHorizontal: spacing.md,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: spacing.sm,
   },
   code: {
-    fontSize: 32,
+    fontSize: 22,
     fontWeight: "700",
     color: colors.accent,
-    letterSpacing: 1,
+    letterSpacing: 0.3,
   },
   copyLink: {
     alignSelf: "center",

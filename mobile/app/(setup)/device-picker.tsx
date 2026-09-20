@@ -427,7 +427,7 @@ export default function DevicePicker() {
   }
 
   return (
-    <Screen>
+    <Screen brand>
       <Text style={styles.title} accessibilityRole="header">What are we setting up protection on?</Text>
       <Text style={styles.subtitle}>Pick the phone whose calls you want screened.</Text>
       <View style={styles.cards}>

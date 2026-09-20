@@ -48,7 +48,7 @@ export default function Login() {
   }
 
   return (
-    <Screen>
+    <Screen brand>
       <Text style={styles.title}>Log in</Text>
 
       {error && <Banner variant="error" message={error} />}

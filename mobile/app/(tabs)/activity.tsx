@@ -7,11 +7,15 @@
 import { useCallback, useState } from "react";
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { OutcomeRow } from "../../components/OutcomeRow";
+import { EmptyState } from "../../components/EmptyState";
+import { ScreenHeader } from "../../components/ScreenHeader";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import type { DashboardActivityItem } from "../../lib/types";
-import { colors, spacing, typography } from "../../lib/theme";
+import { colors, spacing } from "../../lib/theme";
 
 // terminatedBySystem is checked BEFORE result (2026-09-13 fix) — same
 // reasoning and precedence as lib/app/(tabs)/index.tsx's own
@@ -77,45 +81,49 @@ export default function Activity() {
   if (notEntitled) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.emptyText}>
-          Start your protection to see which calls have been screened.
-        </Text>
-        <View style={styles.notEntitledButton}>
-          <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
-        </View>
+        <EmptyState icon="shield-outline" message="Start your protection to see which calls have been screened.">
+          <View style={styles.notEntitledButton}>
+            <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
+          </View>
+        </EmptyState>
       </View>
     );
   }
 
   return (
-    <FlatList
-      style={styles.list}
-      data={items}
-      keyExtractor={(item, index) => `${item.time}-${index}`}
-      contentContainerStyle={styles.listContent}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
-      ListEmptyComponent={
-        <View style={styles.empty}>
-          <Text style={styles.emptyText}>No calls yet — we'll let you know as soon as we screen one.</Text>
-        </View>
-      }
-      renderItem={({ item }) => {
-        const outcome = describeOutcome(item);
-        return (
-          <View style={styles.row}>
-            <View style={[styles.dot, styles[`dot_${outcome.tone}`]]} />
-            <View style={styles.rowText}>
-              <Text style={styles.outcome}>{outcome.text}</Text>
-              <Text style={styles.time}>{new Date(item.time).toLocaleString("en-GB")}</Text>
-            </View>
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <FlatList
+        style={styles.list}
+        data={items}
+        keyExtractor={(item, index) => `${item.time}-${index}`}
+        contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
+        ListHeaderComponent={<ScreenHeader title="Activity" subtitle="How each call was handled" />}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <EmptyState icon="time-outline" message="No calls yet — we'll let you know as soon as we screen one." />
           </View>
-        );
-      }}
-    />
+        }
+        renderItem={({ item }) => {
+          const outcome = describeOutcome(item);
+          return (
+            <OutcomeRow
+              tone={outcome.tone}
+              title={outcome.text}
+              subtitle={new Date(item.time).toLocaleString("en-GB")}
+            />
+          );
+        }}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -136,44 +144,5 @@ const styles = StyleSheet.create({
   },
   empty: {
     paddingTop: spacing.xxl,
-    alignItems: "center",
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: spacing.md,
-  },
-  dot_neutral: {
-    backgroundColor: colors.textMuted,
-  },
-  dot_positive: {
-    backgroundColor: colors.accent,
-  },
-  dot_warning: {
-    backgroundColor: colors.danger,
-  },
-  rowText: {
-    flex: 1,
-  },
-  outcome: {
-    ...typography.body,
-    color: colors.text,
-  },
-  time: {
-    ...typography.caption,
-    color: colors.textMuted,
   },
 });

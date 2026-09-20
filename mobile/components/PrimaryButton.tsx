@@ -1,5 +1,5 @@
 import { Pressable, Text, StyleSheet, ActivityIndicator } from "react-native";
-import { colors, spacing, MIN_TOUCH_TARGET } from "../lib/theme";
+import { colors, radius, spacing, MIN_TOUCH_TARGET } from "../lib/theme";
 
 interface Props {
   label: string;
@@ -25,7 +25,7 @@ export function PrimaryButton({ label, onPress, disabled, loading, variant = "pr
       accessibilityState={{ disabled: disabled || loading }}
     >
       {loading ? (
-        <ActivityIndicator color={isSecondary ? colors.accent : colors.background} />
+        <ActivityIndicator color={isSecondary ? colors.accent : colors.onAccent} />
       ) : (
         <Text style={[styles.label, isSecondary && styles.secondaryLabel]}>{label}</Text>
       )}
@@ -35,8 +35,8 @@ export function PrimaryButton({ label, onPress, disabled, loading, variant = "pr
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: MIN_TOUCH_TARGET,
-    borderRadius: 12,
+    minHeight: MIN_TOUCH_TARGET + 4,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.lg,
@@ -46,20 +46,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   secondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
+    backgroundColor: colors.accentGlow,
+    borderWidth: 1.5,
     borderColor: colors.accent,
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   pressed: {
     opacity: 0.85,
   },
   label: {
-    color: colors.background,
+    color: colors.onAccent,
     fontSize: 16,
     fontWeight: "700",
+    letterSpacing: 0.2,
   },
   secondaryLabel: {
     color: colors.accent,

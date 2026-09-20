@@ -22,6 +22,10 @@ import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
+import { BrandMark } from "../../components/BrandMark";
+import { OutcomeRow, type OutcomeTone } from "../../components/OutcomeRow";
+import { EmptyState } from "../../components/EmptyState";
+import { Ionicons } from "@expo/vector-icons";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
@@ -79,14 +83,37 @@ function formatActivityTime(iso: string): string {
 }
 
 function BrandHeader() {
+  return <BrandMark size="md" />;
+}
+
+// The dominant hero: the real brand shield inside two soft rings. Green
+// rings = actively protected; grey = anything short of that (setting up,
+// confirming, reconnecting, not entitled, or a load problem) — so
+// "protected" is visually unmistakable and never implied by a state that
+// isn't. Presentation only: which one renders is decided by the same
+// state checks as before.
+function Hero({ muted = false }: { muted?: boolean }) {
   return (
-    <View style={styles.brandHeader}>
-      <Text style={styles.brandWordmark}>
-        <Text style={styles.brandWordmarkWhite}>Home Call </Text>
-        <Text style={styles.brandWordmarkGreen}>Guard</Text>
-      </Text>
+    <View style={styles.shieldWrap}>
+      <View style={[styles.ringOuter, muted && styles.ringOuterMuted]}>
+        <View style={[styles.ringInner, muted && styles.ringInnerMuted]}>
+          <Image
+            source={require("../../assets/shield-mark.png")}
+            style={muted ? styles.shieldImageMuted : styles.shieldImage}
+            resizeMode="contain"
+          />
+        </View>
+      </View>
     </View>
   );
+}
+
+// Trusted contact -> neutral, high risk -> amber, everything else screened
+// clear -> green: the app's three real outcomes, derived from the same
+// describeActivity result the row label already comes from.
+function toneFor(item: DashboardActivityItem, isWarning: boolean): OutcomeTone {
+  if (item.status === "Known") return "neutral";
+  return isWarning ? "warning" : "positive";
 }
 
 export default function Home() {
@@ -214,6 +241,7 @@ export default function Home() {
   if (state === "loading") {
     return (
       <SafeAreaView style={styles.centeredSafeArea}>
+        <BrandMark size="lg" />
         <ActivityIndicator color={colors.accent} size="large" />
       </SafeAreaView>
     );
@@ -224,12 +252,8 @@ export default function Home() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
           <BrandHeader />
-          <View style={styles.shieldWrap}>
-            <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
-              <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
-            </View>
-          </View>
-          <Text style={styles.giantTitle} accessibilityRole="header">Not protected yet</Text>
+          <Hero muted />
+          <Text style={styles.giantTitleMuted} accessibilityRole="header">Not protected yet</Text>
           <Text style={styles.statusBody}>
             You don't currently have an active membership. Protect your home phone from scam
             callers today.
@@ -248,14 +272,10 @@ export default function Home() {
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
         >
           <BrandHeader />
-          <View style={styles.shieldWrap}>
-            <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
-              <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
-            </View>
-          </View>
+          <Hero muted />
           {unavailableReason === "session_expired" ? (
             <>
-              <Text style={styles.giantTitle} accessibilityRole="header">Please sign in again</Text>
+              <Text style={styles.giantTitleMuted} accessibilityRole="header">Please sign in again</Text>
               <Text style={styles.statusBody}>
                 Your session has expired. Sign in again to see your protection status.
               </Text>
@@ -263,7 +283,7 @@ export default function Home() {
             </>
           ) : unavailableReason === "server_error" ? (
             <>
-              <Text style={styles.giantTitle} accessibilityRole="header">Temporary problem</Text>
+              <Text style={styles.giantTitleMuted} accessibilityRole="header">Temporary problem</Text>
               <Text style={styles.statusBody}>
                 Home Call Guard is having a temporary problem on our end. Your protection isn't affected —
                 please try again in a moment.
@@ -272,7 +292,7 @@ export default function Home() {
             </>
           ) : (
             <>
-              <Text style={styles.giantTitle} accessibilityRole="header">Can't check right now</Text>
+              <Text style={styles.giantTitleMuted} accessibilityRole="header">Can't check right now</Text>
               <Text style={styles.statusBody}>
                 We couldn't confirm your protection status. Check your connection and try again.
               </Text>
@@ -335,12 +355,8 @@ export default function Home() {
 
         {homeProtectionState === "setting_up" ? (
           <>
-            <View style={styles.shieldWrap}>
-              <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
-                <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
-              </View>
-            </View>
-            <Text style={styles.giantTitle} accessibilityRole="header">Setting up</Text>
+            <Hero muted />
+            <Text style={styles.giantTitleMuted} accessibilityRole="header">Setting up</Text>
             <Text style={styles.statusBody}>{finishSetupBody}</Text>
             <PrimaryButton
               label={finishSetupLabel}
@@ -357,12 +373,8 @@ export default function Home() {
                 resolves automatically the next time a real call
                 connects, same as the "setting up" -> "protected"
                 transition already does. */}
-            <View style={styles.shieldWrap}>
-              <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
-                <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
-              </View>
-            </View>
-            <Text style={styles.giantTitle} accessibilityRole="header">Almost there</Text>
+            <Hero muted />
+            <Text style={styles.giantTitleMuted} accessibilityRole="header">Almost there</Text>
             <Text style={styles.statusBody}>
               Your call forwarding is set up correctly. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.
             </Text>
@@ -380,12 +392,8 @@ export default function Home() {
                 recovers automatically. Also never claims "You're
                 protected" — the existing fail-safe (fullyProtected
                 requires current reachability) still applies. */}
-            <View style={styles.shieldWrap}>
-              <View style={[styles.shieldGlow, styles.shieldGlowMuted]}>
-                <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImageMuted} resizeMode="contain" />
-              </View>
-            </View>
-            <Text style={styles.giantTitle} accessibilityRole="header">Reconnecting</Text>
+            <Hero muted />
+            <Text style={styles.giantTitleMuted} accessibilityRole="header">Reconnecting</Text>
             <Text style={styles.statusBody}>
               Home Call Guard has protected you before — we just can't currently reach this app. Keep it open for a moment to reconnect. You don't need to redo call forwarding.
             </Text>
@@ -398,11 +406,7 @@ export default function Home() {
                 per the design objective ("shield/protection visual as
                 the dominant element rather than a generic text
                 dashboard"). */}
-            <View style={styles.shieldWrap}>
-              <View style={styles.shieldGlow}>
-                <Image source={require("../../assets/shield-mark.png")} style={styles.shieldImage} resizeMode="contain" />
-              </View>
-            </View>
+            <Hero />
 
             <Text style={styles.giantTitle} accessibilityRole="header">You're protected</Text>
             <Text style={styles.reassurance}>
@@ -447,6 +451,7 @@ export default function Home() {
             {/* Trusted contacts status — simple summary + link, never the
                 full editable list (that's the Contacts tab's job). */}
             <View style={styles.summaryRow}>
+              <Ionicons name="people" size={20} color={colors.accent} style={styles.summaryIcon} accessibilityElementsHidden importantForAccessibility="no" />
               <Text style={styles.summaryRowLabel}>Trusted contacts</Text>
               <Text style={styles.summaryRowValue}>
                 {data!.contacts.length === 0
@@ -461,19 +466,21 @@ export default function Home() {
                 full list rather than duplicating it here. */}
             <Text style={styles.sectionTitle}>Recent activity</Text>
             {recentActivity.length === 0 ? (
-              <Text style={styles.emptyStateText}>No calls yet — this is where you'll see them.</Text>
+              <View style={styles.emptyWrap}>
+                <EmptyState icon="time-outline" message="No calls yet — this is where you'll see them." />
+              </View>
             ) : (
               <View style={styles.activityList}>
                 {recentActivity.map((item, index) => {
                   const { label, isWarning } = describeActivity(item);
                   return (
-                    <View key={`${item.time}-${index}`} style={styles.activityRow}>
-                      <View style={[styles.activityDot, isWarning && styles.activityDotWarning]} />
-                      <View style={styles.activityTextWrap}>
-                        <Text style={styles.activityLabel}>{label}</Text>
-                        <Text style={styles.activityTime}>{formatActivityTime(item.time)}</Text>
-                      </View>
-                    </View>
+                    <OutcomeRow
+                      key={`${item.time}-${index}`}
+                      tone={toneFor(item, isWarning)}
+                      title={label}
+                      subtitle={formatActivityTime(item.time)}
+                      compact
+                    />
                   );
                 })}
               </View>
@@ -495,7 +502,7 @@ export default function Home() {
   );
 }
 
-const SHIELD_SIZE = 132;
+const SHIELD_SIZE = 120;
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -507,40 +514,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     alignItems: "center",
     justifyContent: "center",
+    gap: spacing.lg,
   },
   content: {
     padding: spacing.lg,
     flexGrow: 1,
   },
-  brandHeader: {
-    alignItems: "center",
-    marginBottom: spacing.lg,
-  },
-  brandWordmark: {
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  brandWordmarkWhite: {
-    color: colors.text,
-  },
-  brandWordmarkGreen: {
-    color: colors.accent,
-  },
   shieldWrap: {
     alignItems: "center",
-    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
   },
-  shieldGlow: {
-    width: SHIELD_SIZE + 48,
-    height: SHIELD_SIZE + 48,
-    borderRadius: (SHIELD_SIZE + 48) / 2,
-    backgroundColor: colors.accentMuted,
+  ringOuter: {
+    width: SHIELD_SIZE + 84,
+    height: SHIELD_SIZE + 84,
+    borderRadius: (SHIELD_SIZE + 84) / 2,
+    backgroundColor: colors.accentGlow,
     alignItems: "center",
     justifyContent: "center",
   },
-  shieldGlowMuted: {
+  ringOuterMuted: {
+    backgroundColor: colors.neutralSoft,
+  },
+  ringInner: {
+    width: SHIELD_SIZE + 44,
+    height: SHIELD_SIZE + 44,
+    borderRadius: (SHIELD_SIZE + 44) / 2,
+    backgroundColor: colors.accentMuted,
+    borderWidth: 1,
+    borderColor: colors.accentDeep,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ringInnerMuted: {
     backgroundColor: colors.card,
+    borderColor: colors.border,
   },
   shieldImage: {
     width: SHIELD_SIZE,
@@ -549,7 +557,7 @@ const styles = StyleSheet.create({
   shieldImageMuted: {
     width: SHIELD_SIZE,
     height: SHIELD_SIZE,
-    opacity: 0.5,
+    opacity: 0.45,
   },
   giantTitle: {
     ...typography.giant,
@@ -557,30 +565,39 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: spacing.sm,
   },
-  reassurance: {
-    ...typography.body,
+  giantTitleMuted: {
+    ...typography.giant,
     color: colors.text,
     textAlign: "center",
+    marginBottom: spacing.sm,
+  },
+  reassurance: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: "center",
+    lineHeight: 23,
     marginBottom: spacing.lg,
   },
   statusBody: {
     ...typography.body,
-    color: colors.text,
+    color: colors.textMuted,
     textAlign: "center",
+    lineHeight: 23,
     marginBottom: spacing.lg,
   },
   statRow: {
     flexDirection: "row",
     gap: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   statCard: {
     flex: 1,
     backgroundColor: colors.card,
-    borderRadius: 14,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.sm,
     alignItems: "center",
   },
   statCardWarning: {
@@ -588,8 +605,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dangerBackground,
   },
   statNumber: {
-    fontSize: 30,
+    fontSize: 36,
     fontWeight: "800",
+    letterSpacing: -0.5,
     color: colors.accent,
   },
   statNumberWarning: {
@@ -603,19 +621,22 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: colors.card,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     marginBottom: spacing.lg,
   },
+  summaryIcon: {
+    marginRight: spacing.sm,
+  },
   summaryRowLabel: {
     ...typography.body,
     color: colors.text,
+    flex: 1,
   },
   summaryRowValue: {
     ...typography.body,
@@ -625,53 +646,21 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.title,
     color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  emptyStateText: {
-    ...typography.body,
-    color: colors.textMuted,
-    marginBottom: spacing.lg,
-  },
-  activityList: {
     marginBottom: spacing.md,
   },
-  activityRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  emptyWrap: {
+    paddingVertical: spacing.lg,
   },
-  activityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.accent,
-    marginTop: 6,
-    marginRight: spacing.sm,
-  },
-  activityDotWarning: {
-    backgroundColor: colors.danger,
-  },
-  activityTextWrap: {
-    flex: 1,
-  },
-  activityLabel: {
-    ...typography.body,
-    color: colors.text,
-  },
-  activityTime: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: 2,
+  activityList: {
+    marginBottom: spacing.sm,
   },
   nudge: {
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
+    borderColor: colors.borderStrong,
+    borderRadius: 16,
     backgroundColor: colors.card,
     padding: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   nudgeText: {
     ...typography.body,

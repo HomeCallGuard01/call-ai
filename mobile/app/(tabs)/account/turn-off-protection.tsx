@@ -149,18 +149,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   codeBox: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.accent,
     borderRadius: 14,
-    backgroundColor: colors.card,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.accentMuted,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: spacing.lg,
   },
   code: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "700",
     color: colors.accent,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
 });

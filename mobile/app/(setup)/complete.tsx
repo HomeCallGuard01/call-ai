@@ -47,7 +47,7 @@ export default function SetupComplete() {
         : `${contactCount} trusted contact${contactCount === 1 ? "" : "s"} added — they'll always ring straight through, never screened.`;
 
   return (
-    <Screen>
+    <Screen brand>
       {/* 2026-09-07 correction: this screen used to unconditionally claim
           "You're protected" the moment call forwarding was verified — the
           exact false-assurance gap this change series exists to close

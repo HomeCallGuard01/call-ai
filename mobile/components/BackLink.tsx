@@ -28,7 +28,7 @@ const styles = StyleSheet.create({
   },
   backLinkText: {
     color: colors.accent,
-    fontWeight: "600",
-    fontSize: 15,
+    fontWeight: "700",
+    fontSize: 16,
   },
 });

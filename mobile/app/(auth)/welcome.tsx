@@ -19,22 +19,29 @@ import { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, LayoutChangeEvent } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { PrimaryButton } from "../../components/PrimaryButton";
+import { BrandMark } from "../../components/BrandMark";
 import { computePageIndex, shouldResyncScrollPosition, scrollOffsetForPage } from "../../lib/carousel";
 import { colors, spacing, typography } from "../../lib/theme";
 
-const PANELS = [
+type PanelIcon = keyof typeof Ionicons.glyphMap;
+
+const PANELS: { icon: PanelIcon; headline: string; body: string }[] = [
   {
-    headline: "Stop scam callers before they reach you",
+    icon: "shield-checkmark",
+    headline: "Stop scam calls, not the people you trust",
     body: "Protect your phone from nuisance and scam callers in just a few clicks.",
   },
   {
+    icon: "people",
     headline: "Keep your number, keep your family's calls coming through exactly as normal",
     body: "Friends and family ring through immediately — nothing changes for them.",
   },
   {
+    icon: "time",
     headline: "You stay in control",
-    body: "See exactly what was screened and why, any time you want to check.",
+    body: "See how each call was handled.",
   },
 ];
 
@@ -66,6 +73,9 @@ export default function Welcome() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+      <View style={styles.brandRow}>
+        <BrandMark size="lg" />
+      </View>
       <View style={styles.carouselContainer} onLayout={handleLayout}>
         {carouselWidth > 0 && (
           <ScrollView
@@ -85,6 +95,11 @@ export default function Welcome() {
           >
             {PANELS.map((panel, index) => (
               <View key={index} style={[styles.panel, { width: carouselWidth }]}>
+                <View style={styles.heroOuter}>
+                  <View style={styles.heroInner}>
+                    <Ionicons name={panel.icon} size={44} color={colors.accent} accessibilityElementsHidden importantForAccessibility="no" />
+                  </View>
+                </View>
                 <Text style={styles.headline}>{panel.headline}</Text>
                 <Text style={styles.body}>{panel.body}</Text>
               </View>
@@ -136,16 +151,43 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     justifyContent: "center",
   },
+  brandRow: {
+    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+  },
+  heroOuter: {
+    width: 148,
+    height: 148,
+    borderRadius: 74,
+    backgroundColor: colors.accentGlow,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginBottom: spacing.xl,
+  },
+  heroInner: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: colors.accentMuted,
+    borderWidth: 1,
+    borderColor: colors.accentDeep,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headline: {
     ...typography.hero,
     color: colors.text,
     marginBottom: spacing.md,
     flexShrink: 1,
+    textAlign: "center",
   },
   body: {
     ...typography.body,
     color: colors.textMuted,
     flexShrink: 1,
+    textAlign: "center",
+    lineHeight: 23,
   },
   dots: {
     flexDirection: "row",
@@ -157,9 +199,10 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.border,
+    backgroundColor: colors.borderStrong,
   },
   dotActive: {
+    width: 22,
     backgroundColor: colors.accent,
   },
   footer: {

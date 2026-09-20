@@ -42,7 +42,7 @@ export default function ForgotPassword() {
   }
 
   return (
-    <Screen>
+    <Screen brand>
       <Text style={styles.title}>Reset your password</Text>
 
       {notice && <Banner variant="notice" message={notice} />}

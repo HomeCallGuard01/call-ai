@@ -10,10 +10,11 @@ import { View, Text, FlatList, Pressable, StyleSheet, Alert, ActivityIndicator }
 import { router, useFocusEffect } from "expo-router";
 import { PrimaryButton } from "../../../components/PrimaryButton";
 import { Screen } from "../../../components/Screen";
+import { EmptyState } from "../../../components/EmptyState";
 import { fetchDashboard, deleteContact as apiDeleteContact, NotEntitledError } from "../../../lib/api";
 import { useAuth } from "../../../lib/AuthContext";
 import type { DashboardContact } from "../../../lib/types";
-import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
+import { colors, radius, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
 export default function ContactsList() {
   const { session } = useAuth();
@@ -78,12 +79,11 @@ export default function ContactsList() {
     return (
       <Screen scroll={false}>
         <View style={styles.centered}>
-          <Text style={styles.emptyText}>
-            Start your protection to add and manage trusted contacts.
-          </Text>
-          <View style={styles.notEntitledButton}>
-            <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
-          </View>
+          <EmptyState icon="people-outline" message="Start your protection to add and manage trusted contacts.">
+            <View style={styles.notEntitledButton}>
+              <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
+            </View>
+          </EmptyState>
         </View>
       </Screen>
     );
@@ -97,9 +97,7 @@ export default function ContactsList() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>
-              No trusted contacts yet — add the people you don't want screened.
-            </Text>
+            <EmptyState icon="people-outline" message="No trusted contacts yet — add the people you don't want screened." />
           </View>
         }
         renderItem={({ item }) => (
@@ -109,8 +107,13 @@ export default function ContactsList() {
               onPress={() => router.push({ pathname: "/(tabs)/contacts/add", params: { id: item.id, name: item.name, number: item.number } })}
               accessibilityRole="button"
             >
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.number}>{item.number}</Text>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{item.name.trim().charAt(0).toUpperCase() || "?"}</Text>
+              </View>
+              <View style={styles.nameWrap}>
+                <Text style={styles.name}>{item.name}</Text>
+                <Text style={styles.number}>{item.number}</Text>
+              </View>
             </Pressable>
             <Pressable
               style={styles.deleteButton}
@@ -153,26 +156,39 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
     alignItems: "center",
   },
-  emptyText: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
   row: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: radius.md,
     marginBottom: spacing.sm,
     backgroundColor: colors.card,
   },
   rowMain: {
     flex: 1,
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: MIN_TOUCH_TARGET + 12,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.md,
+  },
+  avatarText: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  nameWrap: {
+    flex: 1,
   },
   name: {
     ...typography.body,
@@ -193,6 +209,7 @@ const styles = StyleSheet.create({
   deleteText: {
     color: colors.danger,
     fontWeight: "600",
+    fontSize: 14,
   },
   footer: {
     padding: spacing.lg,
