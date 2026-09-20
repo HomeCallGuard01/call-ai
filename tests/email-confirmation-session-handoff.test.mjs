@@ -50,11 +50,17 @@ function check(condition, message) {
 // ============================================================
 
 check(
-  /\.then\(function \(res\) \{[\s\S]*?window\.location\.href = "\/dashboard";[\s\S]*?\}\)/.test(confirmedSource),
-  'a successful /confirm-session POST still navigates straight to /dashboard (the ideal path is unchanged)'
+  // 2026-09-20 — the unconditional `window.location.href = "/dashboard"`
+  // this used to check for now lives inside continueAfterSession() (see
+  // tests/mobile-confirmation-handoff.test.mjs, which proves as real
+  // running JS that a desktop/non-mobile visitor still lands on
+  // /dashboard with no detour) — this only needs to confirm the success
+  // path now calls that function instead of navigating directly.
+  /\.then\(function \(res\) \{[\s\S]*?continueAfterSession\(accessToken, refreshToken\);[\s\S]*?\}\)/.test(confirmedSource),
+  'a successful /confirm-session POST still continues on (via continueAfterSession, which lands on /dashboard for any non-mobile-OS visitor — the ideal path is unchanged in outcome)'
 );
 check(
-  confirmedSource.includes('clearPendingEmail();\n        window.location.href = "/dashboard";'),
+  confirmedSource.includes('clearPendingEmail();\n        continueAfterSession(accessToken, refreshToken);'),
   'the success path clears the pending-email convenience value (no longer needed once the real session is established)'
 );
 

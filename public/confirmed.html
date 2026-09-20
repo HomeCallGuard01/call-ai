@@ -149,6 +149,49 @@
     window.location.replace(url);
   }
 
+  // 2026-09-20 — mobile-app signups now land on this same page (see
+  // routes/mobileApi.js's MOBILE_CONFIRM_EMAIL_REDIRECT_URL) instead of
+  // a homecallguard://... link embedded directly in the email, because
+  // that custom scheme was being dropped/stripped by mail clients'
+  // HTML sanitisers, leaving mobile customers with a confirmation email
+  // and no visible link at all. A real HTTPS link here is always
+  // tappable regardless of scheme-stripping; once a session is
+  // established the SAME way as for a web signup, this hands off into
+  // the app via the exact homecallguard://confirm-email deep link
+  // mobile/app/(auth)/confirm-email.tsx already knows how to consume —
+  // fired from real page JavaScript, after the session already exists,
+  // never from the email/redirect chain itself, so this adds no new
+  // scanner-prefetch exposure. A desktop browser (or a phone without
+  // the app installed) simply never leaves this page; the customer
+  // continues on the website exactly as before.
+  function isLikelyMobileOS() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  function continueAfterSession(accessToken, refreshToken) {
+    if (!isLikelyMobileOS()) {
+      window.location.href = "/dashboard";
+      return;
+    }
+
+    var handedOff = false;
+    var fallbackTimer = setTimeout(function () {
+      if (!handedOff) window.location.href = "/dashboard";
+    }, 1500);
+
+    document.addEventListener("visibilitychange", function onVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        handedOff = true;
+        clearTimeout(fallbackTimer);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
+    });
+
+    window.location.href =
+      "homecallguard://confirm-email#access_token=" + encodeURIComponent(accessToken) +
+      "&refresh_token=" + encodeURIComponent(refreshToken);
+  }
+
   // Hands a real access_token/refresh_token pair to the existing,
   // unchanged /confirm-session endpoint — the exact same secure session-
   // establishment mechanism both the TokenHash path (below) and the
@@ -167,7 +210,7 @@
       .then(function (res) {
         if (!res.ok) throw new Error("confirm-session failed");
         clearPendingEmail();
-        window.location.href = "/dashboard";
+        continueAfterSession(accessToken, refreshToken);
       })
       .catch(function () {
         goToLoginFallback(decodeEmailFromToken(tokenForFallback) || readPendingEmail());

@@ -14,6 +14,18 @@ export interface ResendConfirmationResponse {
   status: "resent" | "already_registered" | "no_action";
 }
 
+// POST /verify-confirmation-token (server.js — shared with the web
+// confirmation flow, see public/confirmed.html) — 2026-09-20, the
+// TokenHash confirmation mechanism. Only present for defence-in-depth
+// if this screen is ever reached directly with a token_hash; the
+// primary mobile confirmation path still arrives via
+// access_token/refresh_token, handed off from public/confirmed.html.
+export interface VerifyConfirmationTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
 export type MembershipStatus = "active" | "trial" | "payment_issue" | "cancelled";
 
 export type TwilioProvisioningStatus = "pending" | "active" | "failed";

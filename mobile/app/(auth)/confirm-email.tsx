@@ -51,30 +51,53 @@ import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { supabase } from "../../lib/supabase";
-import { resendConfirmationEmail, bootstrapHousehold } from "../../lib/api";
+import { resendConfirmationEmail, bootstrapHousehold, verifyConfirmationToken } from "../../lib/api";
 import { outcomeContent, planResendEffect, type RegisterStatus } from "../../lib/registrationOutcome";
 import { colors, spacing, typography } from "../../lib/theme";
 
 export default function ConfirmEmail() {
-  const { email, status: initialStatus, access_token, refresh_token } = useLocalSearchParams<{
+  const { email, status: initialStatus, access_token, refresh_token, token_hash, type } = useLocalSearchParams<{
     email: string;
     status?: RegisterStatus;
     access_token?: string;
     refresh_token?: string;
+    // 2026-09-20 — defence-in-depth only. The primary mobile
+    // confirmation path no longer arrives here directly at all: the
+    // email link now points at public/confirmed.html (a real HTTPS
+    // URL, always tappable, and where the TokenHash verification
+    // actually happens — see that file), which hands off
+    // access_token/refresh_token into this exact screen afterwards,
+    // unchanged from before. token_hash is only handled here in case
+    // this screen is ever reached directly with one.
+    token_hash?: string;
+    type?: string;
   }>();
   const [status, setStatus] = useState<RegisterStatus>(initialStatus === "already_registered" ? "already_registered" : "pending_confirmation");
   const [notice, setNotice] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
 
-  const hasConfirmationLink = !!access_token && !!refresh_token;
+  const hasAccessToken = !!access_token && !!refresh_token;
+  const hasTokenHash = !!token_hash && type === "signup";
+  const hasConfirmationLink = hasAccessToken || hasTokenHash;
   const [linkState, setLinkState] = useState<"verifying" | "failed" | "idle">(hasConfirmationLink ? "verifying" : "idle");
 
   useEffect(() => {
     if (!hasConfirmationLink) return;
 
     let cancelled = false;
-    supabase.auth.setSession({ access_token: access_token!, refresh_token: refresh_token! }).then(async ({ error, data }) => {
+
+    // Shared by both entry mechanisms below — establishes the real
+    // session, awaits household bootstrap (see the long comment this
+    // replaced for exactly why that must be awaited here specifically),
+    // then continues into the app. Identical behaviour regardless of
+    // whether the tokens came directly from the deep link or via
+    // verifyConfirmationToken() first.
+    async function establishSessionAndContinue(sessionAccessToken: string, sessionRefreshToken: string) {
+      const { error, data } = await supabase.auth.setSession({
+        access_token: sessionAccessToken,
+        refresh_token: sessionRefreshToken,
+      });
       if (cancelled) return;
       if (error) {
         setLinkState("failed");
@@ -114,15 +137,28 @@ export default function ConfirmEmail() {
 
       if (cancelled) return;
       router.replace("/(tabs)");
-    });
+    }
+
+    if (hasAccessToken) {
+      establishSessionAndContinue(access_token!, refresh_token!);
+    } else if (hasTokenHash) {
+      verifyConfirmationToken(token_hash!)
+        .then((result) => {
+          if (cancelled) return;
+          return establishSessionAndContinue(result.access_token, result.refresh_token);
+        })
+        .catch(() => {
+          if (!cancelled) setLinkState("failed");
+        });
+    }
 
     return () => {
       cancelled = true;
     };
-    // access_token/refresh_token are only ever read once, on the initial
-    // mount this screen is reached via a deep link with — re-running this
-    // if they somehow changed identity is not a real scenario for a
-    // one-shot confirmation link.
+    // These params are only ever read once, on the initial mount this
+    // screen is reached via a deep link with — re-running this if they
+    // somehow changed identity is not a real scenario for a one-shot
+    // confirmation link.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasConfirmationLink]);
 

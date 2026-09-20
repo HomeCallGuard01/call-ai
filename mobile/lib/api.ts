@@ -28,6 +28,7 @@ import type {
   TariffType,
   CarrierCompatibilityResponse,
   TermsAcceptanceResponse,
+  VerifyConfirmationTokenResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -177,6 +178,24 @@ export async function resendConfirmationEmail(email: string): Promise<ResendConf
     body: JSON.stringify({ email }),
   });
   return parseJsonOrThrow<ResendConfirmationResponse>(response);
+}
+
+// POST /verify-confirmation-token (server.js, not under /api/v1 —
+// shared verbatim with the web confirmation flow, see
+// public/confirmed.html). No Authorization header — no session exists
+// yet. See (auth)/confirm-email.tsx: this is the defence-in-depth path
+// for a token_hash-bearing link reaching this screen directly; the
+// primary mobile confirmation path hands off already-verified
+// access_token/refresh_token from public/confirmed.html instead, which
+// is why this exists here rather than being called during registration
+// itself.
+export async function verifyConfirmationToken(tokenHash: string): Promise<VerifyConfirmationTokenResponse> {
+  const response = await fetch(`${API_BASE_URL}/verify-confirmation-token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token_hash: tokenHash, type: "signup" }),
+  });
+  return parseJsonOrThrow<VerifyConfirmationTokenResponse>(response);
 }
 
 // POST /api/v1/onboarding/carrier-compatibility — always 200 (see

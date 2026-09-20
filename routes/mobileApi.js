@@ -381,23 +381,33 @@ router.post("/api/v1/billing/manage-membership", requireAuthApi, async (req, res
 // project's default Site URL (the public marketing homepage) for the
 // mobile app's confirmation emails too — a customer tapping "Confirm
 // your email" landed in Safari on the homepage with no way back into
-// the app, and had to re-register from scratch. This is the same
-// homecallguard://... scheme already proven working for the password-
-// reset deep link (mobile/app/reset-password.tsx) — Supabase appends the
-// confirmation session as a URL fragment
-// (homecallguard://confirm-email#access_token=...&refresh_token=...),
-// which mobile/app/(auth)/confirm-email.tsx now detects and exchanges
-// for a real session via supabase.auth.setSession(), exactly mirroring
-// reset-password.tsx's existing pattern. Web's /register and
-// /resend-confirmation routes (server.js) are untouched — they keep
-// their own ${APP_URL}/confirmed.html redirect.
+// the app, and had to re-register from scratch. Originally fixed with a
+// homecallguard://confirm-email custom-scheme redirect.
 //
-// Requires this exact URL (or a homecallguard://* wildcard) to be
-// present in the Supabase project's Authentication → URL Configuration
-// → Redirect URLs allow-list, or Supabase silently falls back to the
-// default Site URL again — same allow-list the reset-password deep link
-// already relies on.
-const MOBILE_CONFIRM_EMAIL_REDIRECT_URL = "homecallguard://confirm-email";
+// 2026-09-20 CHANGED — that custom-scheme redirect caused a second, more
+// severe regression once the "Confirm signup" Supabase email template
+// was updated (see docs — TokenHash fix for the email-link-scanner
+// issue): a scheme other than http(s) in the confirmation link is
+// dropped/stripped by mail clients' HTML sanitisers, so mobile
+// customers received a confirmation email with no visible link/CTA at
+// all. Now points at the exact same public/confirmed.html URL the web
+// app already uses — a real, always-tappable HTTPS link, immune to
+// scheme-stripping — which reuses the existing /verify-confirmation-
+// token flow and then itself hands off into the app via the same
+// homecallguard://confirm-email deep link, from real page JavaScript
+// (see public/confirmed.html's attemptAppHandoff()), not from the
+// email/GoTrue redirect chain. mobile/app/(auth)/confirm-email.tsx
+// receives access_token/refresh_token exactly as before — nothing about
+// how it establishes a session changed, only how it's reached — so this
+// requires no new mobile build to take effect for already-installed
+// apps. It also independently supports a token_hash-bearing link now
+// (see that file), in case this screen is ever reached directly.
+//
+// Already allow-listed: this is the SAME URL (${APP_URL}/confirmed.html)
+// web signups have always used — no new entry needed in the Supabase
+// project's Authentication → URL Configuration → Redirect URLs list.
+const APP_URL = process.env.APP_URL || "http://localhost:3199";
+const MOBILE_CONFIRM_EMAIL_REDIRECT_URL = `${APP_URL}/confirmed.html`;
 
 // POST /api/v1/register — replaces the mobile client's old direct
 // supabase.auth.signUp() call. Deliberately unauthenticated (no session
