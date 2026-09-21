@@ -1,6 +1,6 @@
 # LANDLINE_COMING_SOON launch flag
 
-**Status: implemented locally, NOT deployed, NOT committed. No production, Stripe, Twilio, Supabase or Apple/iOS change is part of this.**
+**Status: integrated on `release/android-v10` (local only) — mobile app, backend gate, website and /go together. NOT pushed, NOT deployed. No production, Stripe, Twilio, Supabase or Apple/iOS change is part of this.**
 
 ## Why
 
@@ -21,6 +21,9 @@ This is the **single authoritative source**. Everything else reads it:
 | `POST /billing/create-checkout-session` (website) and `POST /api/v1/billing/create-checkout-session` (mobile) | Reject **before any Stripe call** and before the entitlement lookup: 403 `carrier_incompatible` (mobile) / redirect to `/dashboard?checkout=carrier_incompatible` (website). |
 | `GET /api/v1/launch-flags` (public, unauthenticated) | Publishes `landlineComingSoon` alongside `iosComingSoon`. |
 | Mobile app | Reads `landlineComingSoon` from `/api/v1/launch-flags` and **fails closed**: landline is treated as available only when that response explicitly says `landlineComingSoon === false`. A failed, timed-out, malformed or field-less response keeps landline Coming soon. |
+| Web onboarding (`upload.html`) | Same rule, in the page: landline opens only for a 2xx `launch-flags` object with `landlineComingSoon === false`. The Landline choice is recorded server-side with `provider: "other"` (so the capture-route contract is unchanged) and the response is **ignored** — a 400 or any other answer can never make landline available. The page keys on `reason: "landline_coming_soon"`, never on a state the server does not send. |
+| `/go` | `services/goLanding.js` renders the Landline card as a Coming-soon waiting-list card unless `landlineComingSoon` is the boolean `false`. Android links to Google Play; iPhone and Landline collect interest through `POST /api/v1/waiting-list` with reasons `ios_coming_soon` / `landline_coming_soon` (the `reason` column is open text — no migration). |
+| Public website | Homepage, support page and the 12 guides state that Android is available and iPhone/landline are coming soon; Landline is a non-clickable tile and no page links a landline sign-up route. These are static copy, not flag-driven. |
 
 ## What older clients see
 
@@ -48,7 +51,7 @@ Set `LANDLINE_COMING_SOON=false` on the backend and redeploy. Effects:
 
 - `evaluateHouseholdCheckoutEligibility` skips the Coming-soon branch; the original five-provider landline rules apply again (proven in `tests/landline-coming-soon-backend.test.mjs`, section 7).
 - `/api/v1/launch-flags` returns `landlineComingSoon: false`, and the mobile app (which follows this value) shows landline as available **without a new build**.
-- The website's onboarding page and homepage are a separate follow-up and must be updated deliberately.
+- The website's static copy (homepage tiles, FAQ, guides, support page) and the `/go` waiting-list copy still say Coming soon and must be updated deliberately at that time; `upload.html` and `/go` open landline on their own once the flag says so.
 
 Do **not** flip it until a loop-safe landline delivery path exists and has been physically proven.
 
@@ -56,4 +59,5 @@ Do **not** flip it until a loop-safe landline delivery path exists and has been 
 
 - `tests/landline-coming-soon-backend.test.mjs` — loads the real route modules and calls the real handlers with a Stripe stand-in that records any access.
 - `tests/mobile-landline-coming-soon.test.mjs` — the mobile app's fail-closed handling, executed against the real `landlineAvailability.ts`.
+- `tests/website-landline-coming-soon.test.mjs` — `upload.html` fail-closed behaviour, `/go` (executed) fail-closed matrix, the public-site claims scan, and the "one gate only / no superseded state / no migration" integration contract.
 - `tests/provider-policy.test.mjs`, `tests/ios-coming-soon-and-payment-safety.test.mjs` — the landline provider-rule assertions now run with the flag explicitly `"false"` (they prove the preserved rules).

@@ -107,9 +107,14 @@ check(
   submitFetchBlock.includes('result.customerState === "needs_confirmation"'),
   'the defense-in-depth re-check branches on customerState, not the raw backend reason string'
 );
+// 2026-09-21 (LANDLINE_COMING_SOON): the re-check may COMPARE `reason` to the one stable sentinel
+// "landline_coming_soon" (the authoritative server keeps customerState "landline_provider_unsupported" for
+// already-shipped clients, so `reason` is the only way to tell Coming soon apart) to pick a FIXED customer
+// message. What must still never happen is any other use of `reason` — in particular assigning the raw
+// backend string to an element's text.
 check(
-  !submitFetchBlock.replace(/\/\/.*$/gm, '').includes('result.reason'),
-  'the defense-in-depth re-check never assigns the raw backend `reason` string to any element\'s text in actual code (comments explaining the historical bug excluded)'
+  !submitFetchBlock.replace(/\/\/.*$/gm, '').replace(/result\.reason === "landline_coming_soon"/g, '').includes('result.reason'),
+  'the defense-in-depth re-check never assigns the raw backend `reason` string to any element\'s text in actual code (comments explaining the historical bug excluded); its only use of `reason` is an equality comparison with the stable sentinel "landline_coming_soon" that selects a fixed message'
 );
 
 // ============================================================

@@ -1262,8 +1262,10 @@
            when Landline is chosen. Landline is not being sold yet, so this
            never reaches provider questions, consent, or Stripe — Continue
            is hidden for this state, and the server independently refuses
-           checkout for a landline household (customerState
-           "landline_coming_soon"). The landline provider row and its
+           checkout for a landline household (customerState stays
+           "landline_provider_unsupported", the state every client already
+           understands; the real cause is reason "landline_coming_soon").
+           The landline provider row and its
            supported-provider gate below are deliberately kept for when the
            flag is turned off. -->
       <div id="landlineComingSoonMessage" hidden>
@@ -1350,6 +1352,8 @@
       </div>
 
       <!-- Shown only when customerState === "landline_provider_unsupported"
+           AND reason !== "landline_coming_soon" (that case is the Coming-soon
+           message above, never this one) —
            (real, server-evaluated — "Other/not sure" or any provider not
            in LANDLINE_SUPPORTED_PROVIDERS). Never reaches Stripe:
            checkCarrierButton stays hidden, same mechanism as every other
@@ -1701,7 +1705,7 @@
   // server-side (services/providerPolicy.js's checkout eligibility, enforced
   // by both create-checkout-session routes) — nothing on this page can grant
   // a landline household access to payment. See
-  // docs/launch/LANDLINE_COMING_SOON_FLAG.md.
+  // docs/launch/LANDLINE_COMING_SOON_LAUNCH_FLAG.md.
   let landlineComingSoon = true;
   const EMPTY_ACTIVITY_MESSAGE = "No calls checked yet";
   const EMPTY_ACTIVITY_HINT = "Your recent call activity will appear here once Home Call Guard begins checking calls.";
@@ -3625,7 +3629,10 @@
           body: JSON.stringify({ deviceType: "landline", provider: landlineProvider }),
         });
         const result = await response.json();
-        if (result.customerState === "landline_coming_soon") {
+        // The server's real cause is `reason` (customerState stays
+        // "landline_provider_unsupported" for every shipped client). Believe
+        // the server: this only ever moves the page TOWARD Coming soon.
+        if (result.reason === "landline_coming_soon") {
           landlineComingSoon = true;
           applyLandlineAvailabilityToUi();
           enterLandlineComingSoon();
@@ -3710,10 +3717,14 @@
 
   // --- LANDLINE_COMING_SOON (2026-09-21) ---
   // Shows the explanation, hides every control that could lead toward
-  // payment, and records the choice server-side (device_type "landline")
-  // so that ANY later checkout attempt for this household is refused by
-  // the server — not merely by this page never showing a button. The
-  // server, not this function, is what enforces the block.
+  // payment, and records the choice server-side (device_type "landline",
+  // provider "other" — a valid landline provider value, so the route
+  // contract is untouched) so that ANY later checkout attempt for this
+  // household is refused by the server — not merely by this page never
+  // showing a button. The server, not this function, is what enforces the
+  // block. The response is deliberately IGNORED: availability is NEVER
+  // inferred from a response, an error status or a failure — it comes only
+  // from an explicit landlineComingSoon === false in /api/v1/launch-flags.
   function enterLandlineComingSoon() {
     if (carrierLandlineProviderRowEl) carrierLandlineProviderRowEl.hidden = true;
     if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = true;
@@ -3722,17 +3733,8 @@
     fetch("/billing/carrier-compatibility", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deviceType: "landline" }),
+      body: JSON.stringify({ deviceType: "landline", provider: "other" }),
     })
-      .then(function (response) {
-        // A 400 here means the server no longer treats landline as coming
-        // soon (it now requires a provider): believe the server and let
-        // the customer continue the normal landline journey.
-        if (response.status === 400) {
-          landlineComingSoon = false;
-          applyLandlineAvailabilityToUi();
-        }
-      })
       .catch(function () { /* network failure: stay on the safe "coming soon" state */ });
   }
 
@@ -3765,14 +3767,23 @@
     });
   }
 
-  // Fails closed: any error keeps landlineComingSoon === true.
+  // FAILS CLOSED. Landline is treated as available ONLY when this response
+  // is a 2xx object containing landlineComingSoon === false (boolean false).
+  // A failed, timed-out, non-2xx, malformed or field-less response — or an
+  // older server that does not send the field — keeps it Coming soon.
   fetch("/api/v1/launch-flags")
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) throw new Error("launch-flags " + r.status);
+      return r.json();
+    })
     .then(function (flags) {
-      landlineComingSoon = !(flags && flags.landlineComingSoon === false);
+      landlineComingSoon = !(flags !== null && typeof flags === "object" && flags.landlineComingSoon === false);
       applyLandlineAvailabilityToUi();
     })
-    .catch(function () {});
+    .catch(function () {
+      landlineComingSoon = true;
+      applyLandlineAvailabilityToUi();
+    });
 
   if (checkCarrierButtonEl) {
     checkCarrierButtonEl.addEventListener("click", evaluateCarrierCompatibility);
@@ -3840,7 +3851,7 @@
               // string is ever shown.
               termsConsentErrorEl.textContent = result.customerState === "ios_coming_soon"
                 ? "Home Call Guard for iPhone is coming soon and isn't available to new customers yet."
-                : result.customerState === "landline_coming_soon"
+                : result.reason === "landline_coming_soon"
                 ? "Home Call Guard for landlines is coming soon and isn't available to new customers yet."
                 : result.customerState === "landline_provider_unsupported"
                 ? "We don't currently have confirmed setup instructions for your landline provider. Please go back and join the waiting list."
