@@ -275,7 +275,7 @@ export default function Subscribe() {
       <Text style={styles.title} accessibilityRole="header">Home Call Guard Standard</Text>
       <Text style={styles.price}>£4.99/month, including VAT</Text>
       <Text style={styles.body}>
-        AI-powered call protection and unlimited trusted contacts. This is a recurring monthly
+        Scam call protection and unlimited trusted contacts. This is a recurring monthly
         subscription that renews automatically every month until you cancel — cancel anytime.
       </Text>
 

@@ -10,10 +10,11 @@
 // Founding Member / 12-month price-lock framing removed 2026-08-29 (App
 // Store release, matches subscribe.tsx/confirmation.tsx) — same reason:
 // must not reintroduce a claim already removed earlier in the same flow.
-// The guarantee line is platform-aware because Apple, not Home Call
-// Guard, issues App Store refunds.
+// 2026-09-21 copy correction: the 30-day money-back guarantee line was
+// removed from this screen (and is deliberately NOT replaced by any other
+// guarantee); the price note now states that £4.99 includes VAT.
 import { useEffect, useRef, useState } from "react";
-import { Text, StyleSheet, Platform } from "react-native";
+import { Text, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -61,12 +62,7 @@ export default function SetupComplete() {
       <Text style={styles.title} accessibilityRole="header">Setup complete</Text>
       <Text style={styles.body}>Your call forwarding is active. Check the Home tab for your current protection status.</Text>
       <Text style={styles.body}>{contactsLine}</Text>
-      <Text style={styles.guaranteeNote}>
-        {Platform.OS === "ios"
-          ? "£4.99 per month, cancel anytime. Covered by our 30-day money-back guarantee — Apple handles " +
-            "App Store refund requests directly."
-          : "£4.99 per month, cancel anytime. Covered by our 30-day money-back guarantee."}
-      </Text>
+      <Text style={styles.priceNote}>£4.99 per month including VAT, cancel anytime.</Text>
       <PrimaryButton label="Go to my dashboard" onPress={() => router.replace("/(tabs)")} />
     </Screen>
   );
@@ -83,7 +79,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.md,
   },
-  guaranteeNote: {
+  priceNote: {
     ...typography.caption,
     color: colors.textMuted,
     marginBottom: spacing.lg,

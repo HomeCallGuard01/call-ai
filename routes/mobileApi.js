@@ -579,7 +579,7 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       },
       membership: {
         planName: "Home Call Guard Standard",
-        priceLabel: "£4.99 per month",
+        priceLabel: "£4.99 per month including VAT",
         status: membershipStatus,
         nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
         accessUntil: subscription ? subscription.current_period_end : null,

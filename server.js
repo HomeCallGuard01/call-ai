@@ -1087,7 +1087,7 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // webhook wrote; never invented client-side.
     membership: {
       planName: "Home Call Guard Standard",
-      priceLabel: "£4.99 per month",
+      priceLabel: "£4.99 per month including VAT",
       status: membershipStatus,
       nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
       accessUntil: subscription ? subscription.current_period_end : null,
