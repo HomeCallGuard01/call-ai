@@ -1,380 +1,250 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050a07">
 <meta name="robots" content="noindex">
 
-<meta name="description" content="Home Call Guard — scam-call protection for your phone. Get started on Android, landline or join the iPhone waiting list.">
+<title>Home Call Guard</title>
+<meta name="description" content="Another layer of protection for you and your family. Protect yourself and the people you care about from scam calls.">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Home Call Guard">
 <meta property="og:title" content="Home Call Guard">
-<meta property="og:description" content="Scam-call protection for your phone.">
+<meta property="og:description" content="Another layer of protection for you and your family.">
 <meta property="og:image" content="https://homecallguard.co.uk/logo.png">
 
-<title>Home Call Guard</title>
+<link rel="preload" as="image" href="/hcg-shield.png">
 
+<!-- /go is the permanent "link in bio" / QR / press landing page.
+     AVAILABILITY MUST STAY ACCURATE HERE: Android is the only product
+     available today. iPhone and Landline are "Coming soon" and route
+     ONLY to the waiting list (POST /api/v1/waiting-list) — never to
+     registration, login, the dashboard, checkout or payment. There is
+     deliberately no pricing, no login and no third-party request.
+     Served by server.js's GET /go via services/goLanding.js, which
+     decides whether the iPhone card becomes a live App Store link (see
+     the markers) and forwards utm_* onto the "Learn more" link. The only
+     script is the small waiting-list submit handler at the bottom. -->
 <style>
   :root {
-    --background: #07111f;
-    --card: #101e31;
-    --card-light: #15263c;
-    --green: #22e59a;
-    --green-dark: #04130d;
-    --white: #ffffff;
-    --text: #d8e2ee;
-    --muted: #9babc0;
-    --border: rgba(255, 255, 255, 0.1);
+    --bg: #050a07;
+    --card: #0c130f;
+    --border: #1d2b23;
+    --border-strong: #2b4136;
+    --text: #f3f7f4;
+    --muted: #98a99f;
+    --green: #3cf07a;
+    --green-deep: #18dd56;
+    --green-soft: rgba(60, 240, 122, 0.10);
+    --on-green: #04100a;
   }
-
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-
-  html {
-    scroll-behavior: smooth;
-  }
-
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); }
   body {
-    background: radial-gradient(circle at 50% -10%, #0d2033 0%, var(--background) 55%);
-    color: var(--white);
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    line-height: 1.5;
     min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 40px 20px 40px;
-  }
-
-  main {
-    width: 100%;
-    max-width: 420px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .logo {
-    width: 88px;
-    height: 88px;
-    object-fit: contain;
-    border-radius: 20px;
-    margin-bottom: 18px;
-    box-shadow: 0 8px 28px rgba(34, 229, 154, 0.18);
-  }
-
-  h1 {
-    font-size: 1.6rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    text-align: center;
-  }
-
-  h1 span {
-    color: var(--green);
-  }
-
-  .tagline {
-    color: var(--muted);
-    font-size: 0.98rem;
-    text-align: center;
-    margin-top: 8px;
-    margin-bottom: 28px;
-    max-width: 320px;
-  }
-
-  /* Primary CTA — the single, unmistakable action on this page */
-  .cta-primary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    background: var(--green);
-    color: var(--green-dark);
-    font-size: 1.15rem;
-    font-weight: 800;
-    text-align: center;
-    text-decoration: none;
-    border-radius: 16px;
-    padding: 18px 20px;
-    box-shadow: 0 12px 30px rgba(34, 229, 154, 0.28);
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .cta-primary:active {
-    transform: scale(0.98);
-    box-shadow: 0 6px 18px rgba(34, 229, 154, 0.24);
-  }
-
-  .cta-hint {
-    color: var(--muted);
-    font-size: 0.82rem;
-    text-align: center;
-    margin-top: 10px;
-  }
-
-  .options {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-top: 34px;
-    scroll-margin-top: 24px;
-  }
-
-  .options-label {
-    color: var(--muted);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 2px;
-  }
-
-  .option {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    width: 100%;
-    min-height: 48px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 14px 16px;
-    text-align: left;
-    text-decoration: none;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .option:active {
-    transform: scale(0.98);
-  }
-
-  .option:hover,
-  .option:focus-visible {
-    background: var(--card-light);
-    border-color: rgba(255, 255, 255, 0.22);
-    outline: none;
-  }
-
-  .option-icon {
-    flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    background: rgba(34, 229, 154, 0.12);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .option-icon img {
-    width: 24px;
-    height: 24px;
-  }
-
-  .option-title {
-    font-weight: 800;
-    font-size: 1.02rem;
-  }
-
-  .option-subtitle {
-    color: var(--muted);
-    font-size: 0.88rem;
-    margin-top: 2px;
-  }
-
-  .option.primary {
-    background: linear-gradient(135deg, var(--green), #17c583);
-    border-color: transparent;
-  }
-
-  .option.primary .option-icon {
-    background: rgba(4, 19, 13, 0.15);
-  }
-
-  /* The icon assets are solid HCG green — invisible against this card's
-     own green background. Darkened to match the title/subtitle text
-     already recoloured for contrast on this card (see below). */
-  .option.primary .option-icon img {
-    filter: brightness(0);
-  }
-
-  .option.primary .option-title {
-    color: var(--green-dark);
-  }
-
-  .option.primary .option-subtitle {
-    color: rgba(4, 19, 13, 0.75);
-  }
-
-  /* iPhone waiting-list inline panel */
-  #iosWaitPanel {
-    width: 100%;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 16px 18px;
-    margin-top: -2px;
-  }
-
-  #iosWaitPanel p {
-    color: var(--muted);
-    font-size: 0.85rem;
-    margin-bottom: 12px;
-  }
-
-  .wait-row {
-    display: flex;
-    gap: 8px;
-  }
-
-  #iosWaitEmail {
-    flex: 1;
-    min-width: 0;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px;
-    color: var(--white);
-    font-size: 0.95rem;
-  }
-
-  #iosWaitEmail::placeholder {
-    color: var(--muted);
-  }
-
-  #iosWaitSubmit {
-    flex-shrink: 0;
-    background: var(--green);
-    border: 0;
-    border-radius: 10px;
-    padding: 0 16px;
-    font-weight: 800;
-    color: var(--green-dark);
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-
-  #iosWaitSubmit:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  #iosWaitMessage {
-    font-size: 0.85rem;
-    margin-top: 10px;
-  }
-
-  #iosWaitMessage.success { color: var(--green); }
-  #iosWaitMessage.error { color: #ff8f8f; }
-
-  .secondary-links {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 28px;
-    text-align: center;
-  }
-
-  .secondary-links a {
+    min-height: 100dvh;
+    background:
+      radial-gradient(ellipse 80% 45% at 50% 0%, rgba(60, 240, 122, 0.13), transparent 70%),
+      var(--bg);
     color: var(--text);
-    font-size: 0.9rem;
-    font-weight: 600;
-    text-decoration: none;
-    padding: 4px 0;
-  }
-
-  .secondary-links a:hover,
-  .secondary-links a:focus-visible {
-    color: var(--green);
-  }
-
-  .signin {
-    margin-top: 26px;
-    font-size: 0.88rem;
-    color: var(--muted);
-  }
-
-  .signin a {
-    color: var(--green);
-    font-weight: 700;
-  }
-
-  footer {
-    margin-top: 36px;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
     display: flex;
-    gap: 14px;
-    font-size: 0.78rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: max(32px, env(safe-area-inset-top)) 24px max(28px, env(safe-area-inset-bottom));
+    text-align: center;
+  }
+  main { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; }
+
+  .shield-ring {
+    width: 128px; height: 128px; border-radius: 50%;
+    background: var(--green-soft);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  .shield-ring div {
+    width: 96px; height: 96px; border-radius: 50%;
+    background: #0a2014; border: 1px solid var(--green-deep);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .shield-ring img { width: 66px; height: 66px; display: block; }
+
+  h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+  h1 span { color: var(--green); }
+  .lead { font-size: 1.22rem; font-weight: 600; letter-spacing: -0.015em; line-height: 1.3; margin-top: 12px; max-width: 18em; }
+  .sub { color: var(--muted); font-size: 0.98rem; margin-top: 10px; max-width: 21em; }
+
+  .choose { margin-top: 24px; color: var(--muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+  .devices { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; text-align: left; }
+
+  /* One card style for all three devices. Android is a real link; iPhone
+     and Landline are <details> whose <summary> is the card. */
+  .device {
+    display: block; width: 100%;
+    border-radius: 16px; border: 1.5px solid var(--border-strong);
+    background: var(--card); color: var(--text); text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .device > summary, a.device {
+    display: flex; align-items: center; gap: 14px;
+    min-height: 64px; padding: 10px 14px;
+    color: inherit; text-decoration: none; cursor: pointer; list-style: none;
+  }
+  .device > summary::-webkit-details-marker { display: none; }
+  .device > summary::marker { content: ""; }
+  a.device:focus-visible, .device > summary:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; border-radius: 16px; }
+  .d-icon { flex-shrink: 0; width: 32px; height: 32px; display: block; }
+  .d-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .d-text strong { font-size: 1.12rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+  .d-text span { font-size: 0.84rem; color: var(--muted); line-height: 1.3; }
+  .badge {
+    flex-shrink: 0; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 5px 10px; border-radius: 999px; white-space: nowrap;
   }
 
-  footer a {
-    color: var(--muted);
+  /* Available now — the main, live product. */
+  .device.available { border-color: var(--green); box-shadow: 0 0 28px rgba(60, 240, 122, 0.16); }
+  a.device.available:active { transform: scale(0.99); }
+  .device.available .badge { background: var(--green); color: var(--on-green); }
+
+  /* Coming soon — visibly not live. */
+  .device.soon .badge { border: 1px solid var(--border-strong); color: var(--muted); }
+  .device.soon[open] { border-color: var(--green-deep); }
+
+  form.wait { padding: 2px 14px 14px; }
+  form.wait p { color: var(--muted); font-size: 0.85rem; margin-bottom: 10px; }
+  .wait-row { display: flex; gap: 8px; }
+  .wait-row input {
+    flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border-strong);
+    border-radius: 10px; padding: 12px; color: var(--text); font-size: 1rem; font-family: inherit;
+  }
+  .wait-row input::placeholder { color: var(--muted); }
+  .wait-row input:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+  .wait-row button {
+    flex-shrink: 0; min-height: 44px; background: var(--green); color: var(--on-green); border: 0; border-radius: 10px;
+    padding: 0 18px; font-weight: 800; font-size: 0.95rem; font-family: inherit; cursor: pointer;
+  }
+  .wait-row button:disabled { opacity: 0.6; cursor: default; }
+  form.wait .msg { font-size: 0.85rem; margin: 0; }
+  form.wait .msg:not(:empty) { margin-top: 10px; }
+  form.wait .msg.success { color: var(--green); }
+  form.wait .msg.error { color: #ff8f8f; }
+
+  .learn { margin-top: 20px; padding: 10px 6px; font-size: 0.9rem; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
+  .learn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  footer { margin-top: 10px; display: flex; gap: 18px; font-size: 0.8rem; }
+  footer a { color: var(--muted); text-decoration: none; padding: 11px 8px; }
+  footer a:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+  @media (min-width: 720px) { .lead { font-size: 1.4rem; } }
+  @media (max-width: 360px) {
+    body { padding-left: 16px; padding-right: 16px; }
+    .device > summary, a.device { gap: 10px; padding-left: 10px; padding-right: 10px; }
+    .badge { font-size: 0.64rem; padding: 4px 8px; letter-spacing: 0.02em; }
+    .d-text span { font-size: 0.8rem; }
+    form.wait { padding-left: 10px; padding-right: 10px; }
+  }
+
+  /* Short screens (phones, and in-app browsers like TikTok's that lose height
+     to their own toolbars): progressively tighter so the three device cards,
+     Learn more and Privacy/Terms stay on screen without scrolling. */
+  @media (max-height: 760px) {
+    body { padding-top: 16px; padding-bottom: 10px; }
+    .shield-ring { width: 96px; height: 96px; margin-bottom: 10px; }
+    .shield-ring div { width: 72px; height: 72px; }
+    .shield-ring img { width: 50px; height: 50px; }
+    h1 { font-size: 1.7rem; }
+    .lead { font-size: 1.08rem; margin-top: 6px; }
+    .sub { font-size: 0.9rem; margin-top: 4px; }
+    .choose { margin-top: 14px; }
+    .devices { gap: 8px; margin-top: 8px; }
+    .device > summary, a.device { min-height: 56px; padding: 8px 12px; }
+    .d-text strong { font-size: 1.05rem; }
+    .learn { margin-top: 8px; padding: 8px 6px; }
+    footer { margin-top: 0; }
+    footer a { padding: 9px 8px; }
+  }
+  @media (max-height: 640px) {
+    body { padding-top: 10px; padding-bottom: 6px; }
+    .shield-ring { width: 76px; height: 76px; margin-bottom: 8px; }
+    .shield-ring div { width: 58px; height: 58px; }
+    .shield-ring img { width: 40px; height: 40px; }
+    h1 { font-size: 1.5rem; }
+    .lead { font-size: 1rem; margin-top: 4px; }
+    .sub { display: none; }
+    .choose { margin-top: 10px; }
+    .devices { gap: 6px; margin-top: 6px; }
+    .device > summary, a.device { min-height: 50px; padding: 6px 12px; }
+    .d-icon { width: 28px; height: 28px; }
+    .d-text strong { font-size: 1rem; }
+    .d-text span { font-size: 0.78rem; }
+    .learn { margin-top: 4px; padding: 7px 6px; font-size: 0.85rem; }
+    footer a { padding: 8px 8px; }
   }
 </style>
+<noscript><style>form.wait .wait-row { display: none; }</style></noscript>
 </head>
 <body>
 <main>
-  <img src="/logo.png" alt="Home Call Guard" class="logo">
+  <div class="shield-ring"><div><img src="/hcg-shield.png" width="66" height="66" alt=""></div></div>
+
   <h1>Home Call <span>Guard</span></h1>
-  <p class="tagline">AI-powered call screening that stops scam and nuisance calls before they ever reach you.</p>
+  <p class="lead">Another layer of protection for you and your family.</p>
+  <p class="sub">Protect yourself and the people you care about from scam calls.</p>
 
-  <a class="cta-primary" href="#getProtected" id="getStartedCta" data-analytics-event="bio_cta_primary">Get Home Call Guard</a>
-  <p class="cta-hint">Free to set up — protection from £4.99/month</p>
-
-  <div class="options" id="getProtected">
-    <p class="options-label">Choose your phone</p>
-
-    <a class="option primary" id="androidOption" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" data-analytics-event="bio_android">
-      <span class="option-icon" aria-hidden="true"><img src="/android-device-mark.png" alt=""></span>
-      <span>
-        <span class="option-title">Android</span>
-        <span class="option-subtitle">Download on Google Play</span>
-      </span>
+  <p class="choose">Choose your device</p>
+  <div class="devices">
+    <a class="device available" id="android" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener">
+      <img class="d-icon" src="/go-icon-android.png" width="32" height="32" alt="">
+      <span class="d-text"><strong>Android</strong><span>Google Play</span></span>
+      <span class="badge">Available now</span>
     </a>
 
-    <a class="option" id="landlineOption" href="/dashboard" data-analytics-event="bio_landline">
-      <span class="option-icon" aria-hidden="true"><img src="/landline-device-mark.png" alt=""></span>
-      <span>
-        <span class="option-title">Landline</span>
-        <span class="option-subtitle">Set up Home Call Guard</span>
-      </span>
-    </a>
+    <!--APP_STORE_BUTTON_START-->
+    <details class="device soon" id="iphone">
+      <summary>
+        <img class="d-icon" src="/go-icon-iphone.png" width="32" height="32" alt="">
+        <span class="d-text"><strong>iPhone</strong><span>Join the waiting list</span></span>
+        <span class="badge">Coming soon</span>
+      </summary>
+      <form class="wait" data-reason="ios_coming_soon" data-device="iphone" data-success="Thanks — we'll email you as soon as Home Call Guard for iPhone is available." novalidate>
+        <p>We're waiting for final App Store approval. Join the waiting list and we'll let you know as soon as it's available.</p>
+        <div class="wait-row">
+          <input type="email" name="email" aria-label="Your email address" placeholder="you@example.com" autocomplete="email" required>
+          <button type="submit">Join</button>
+        </div>
+        <p class="msg" role="status"></p>
+        <noscript><p>Please turn on JavaScript to join the waiting list.</p></noscript>
+      </form>
+    </details>
+    <!--APP_STORE_BUTTON_END-->
 
-    <button type="button" class="option" id="iphoneOption" data-analytics-event="bio_ios" aria-expanded="false" aria-controls="iosWaitPanel">
-      <span class="option-icon" aria-hidden="true"><img src="/iphone-device-mark.png" alt=""></span>
-      <span>
-        <span class="option-title">iPhone — Coming soon</span>
-        <span class="option-subtitle">Join the waiting list</span>
-      </span>
-    </button>
-
-    <div id="iosWaitPanel" hidden>
-      <p>We're waiting for final App Store approval. Join the waiting list and we'll let you know as soon as it's available.</p>
-      <div class="wait-row">
-        <input type="email" id="iosWaitEmail" placeholder="you@example.com" autocomplete="email">
-        <button type="button" id="iosWaitSubmit">Join</button>
-      </div>
-      <p id="iosWaitMessage" role="status"></p>
-    </div>
+    <!--LANDLINE_BUTTON_START-->
+    <details class="device soon" id="landline">
+      <summary>
+        <img class="d-icon" src="/go-icon-landline.png" width="32" height="32" alt="">
+        <span class="d-text"><strong>Landline</strong><span>Join the waiting list</span></span>
+        <span class="badge">Coming soon</span>
+      </summary>
+      <form class="wait" data-reason="landline_coming_soon" data-device="landline" data-success="Thanks — we'll email you when Home Call Guard for landline is available." novalidate>
+        <p>Landline support is coming soon. Join the waiting list and we'll email you when it's available.</p>
+        <div class="wait-row">
+          <input type="email" name="email" aria-label="Your email address" placeholder="you@example.com" autocomplete="email" required>
+          <button type="submit">Join</button>
+        </div>
+        <p class="msg" role="status"></p>
+        <noscript><p>Please turn on JavaScript to join the waiting list.</p></noscript>
+      </form>
+    </details>
+    <!--LANDLINE_BUTTON_END-->
   </div>
 
-  <div class="secondary-links">
-    <a href="/#how-it-works" data-analytics-event="bio_how_it_works">How Home Call Guard Works</a>
-    <a href="/" data-analytics-event="bio_visit_site">Visit Home Call Guard</a>
-  </div>
-
-  <p class="signin">Already a customer? <a href="/login.html" id="signinLink" data-analytics-event="bio_signin">Sign in</a></p>
+  <a class="learn" id="learnMore" href="/">Learn more about Home Call Guard</a>
 
   <footer>
     <a href="/privacy">Privacy</a>
@@ -384,78 +254,64 @@
 
 <script>
 (function () {
-  // Analytics hooks — dispatched as DOM CustomEvents so any analytics
-  // snippet added later (GA4, etc.) can listen for
-  // 'hcg:bio' without this page needing to know about it. No network
-  // call is made here; this never blocks or delays the real navigation.
-  document.querySelectorAll('[data-analytics-event]').forEach(function (el) {
-    el.addEventListener('click', function () {
-      try {
-        window.dispatchEvent(new CustomEvent('hcg:bio', { detail: { event: el.getAttribute('data-analytics-event') } }));
-      } catch (e) {}
+  var each = function (list, fn) { Array.prototype.forEach.call(list, fn); };
+
+  // One card open at a time, so the page stays short in in-app browsers.
+  var cards = document.querySelectorAll('details.device');
+  each(cards, function (card) {
+    card.addEventListener('toggle', function () {
+      if (!card.open) return;
+      each(cards, function (other) { if (other !== card) other.open = false; });
+      var input = card.querySelector('input');
+      if (input) input.focus();
     });
   });
 
-  // Preserve UTM parameters into onboarding where practical: forward
-  // this page's own query string onto the Landline/Sign-in links,
-  // which both lead into the real onboarding/auth flow.
-  var search = window.location.search;
-  if (search) {
-    ['landlineOption', 'signinLink'].forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el) el.href = el.getAttribute('href') + search;
-    });
-  }
+  // Waiting list — the ONLY thing either "Coming soon" card can do: a POST
+  // to /api/v1/waiting-list (email + a reason code identifying which card).
+  // Nothing here navigates, and nothing here can reach registration,
+  // login, the dashboard, checkout or payment.
+  each(document.querySelectorAll('form.wait'), function (form) {
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var emailEl = form.querySelector('input');
+      var button = form.querySelector('button');
+      var msg = form.querySelector('.msg');
+      var email = emailEl.value.trim();
 
-  // iPhone — reveal the inline waiting-list panel rather than
-  // navigating anywhere. No path from here ever reaches payment,
-  // subscription or Twilio provisioning.
-  var iphoneOption = document.getElementById('iphoneOption');
-  var panel = document.getElementById('iosWaitPanel');
-  iphoneOption.addEventListener('click', function () {
-    var expanded = iphoneOption.getAttribute('aria-expanded') === 'true';
-    iphoneOption.setAttribute('aria-expanded', String(!expanded));
-    panel.hidden = expanded;
-    if (!expanded) {
-      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      document.getElementById('iosWaitEmail').focus();
-    }
-  });
+      if (!email || email.indexOf('@') === -1) {
+        msg.textContent = 'Please enter a valid email address.';
+        msg.className = 'msg error';
+        return;
+      }
 
-  var emailEl = document.getElementById('iosWaitEmail');
-  var submitBtn = document.getElementById('iosWaitSubmit');
-  var messageEl = document.getElementById('iosWaitMessage');
+      button.disabled = true;
+      msg.textContent = '';
+      msg.className = 'msg';
 
-  submitBtn.addEventListener('click', function () {
-    var email = emailEl.value.trim();
-    if (!email || email.indexOf('@') === -1) {
-      messageEl.textContent = 'Please enter a valid email address.';
-      messageEl.className = 'error';
-      return;
-    }
-
-    submitBtn.disabled = true;
-    messageEl.textContent = '';
-    messageEl.className = '';
-
-    fetch('/api/v1/waiting-list', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email, reason: 'ios_coming_soon' }),
-    })
-      .then(function (res) {
-        if (!res.ok) throw new Error('failed');
-        messageEl.textContent = "Thanks — we'll email you as soon as Home Call Guard for iPhone is available.";
-        messageEl.className = 'success';
-        emailEl.value = '';
-        emailEl.disabled = true;
-        submitBtn.hidden = true;
+      fetch('/api/v1/waiting-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          reason: form.getAttribute('data-reason'),
+          deviceType: form.getAttribute('data-device')
+        })
       })
-      .catch(function () {
-        messageEl.textContent = "We couldn't save that just now — please try again.";
-        messageEl.className = 'error';
-        submitBtn.disabled = false;
-      });
+        .then(function (res) {
+          if (!res.ok) throw new Error('failed');
+          msg.textContent = form.getAttribute('data-success');
+          msg.className = 'msg success';
+          emailEl.value = '';
+          emailEl.disabled = true;
+          button.hidden = true;
+        })
+        .catch(function () {
+          msg.textContent = "We couldn't save that just now — please try again.";
+          msg.className = 'msg error';
+          button.disabled = false;
+        });
+    });
   });
 })();
 </script>
