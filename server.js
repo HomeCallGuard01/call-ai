@@ -35,7 +35,7 @@ const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { sendCriticalAlert } = require("./services/alerting");
 const { checkSupabaseHealth } = require("./services/healthCheck");
-const { isIosComingSoon } = require("./services/featureFlags");
+const { isIosComingSoon, isLandlineComingSoon } = require("./services/featureFlags");
 const { insertWaitingListSignup } = require("./database/waitingList");
 const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
 const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
@@ -2121,6 +2121,7 @@ app.get("/go", (req, res) => {
   res.type("html").send(
     renderGoPage(GO_TEMPLATE, {
       iosComingSoon: isIosComingSoon(),
+      landlineComingSoon: isLandlineComingSoon(),
       appStoreUrl: process.env.APP_STORE_URL,
       utm: { utmSource, utmMedium, utmCampaign },
     })

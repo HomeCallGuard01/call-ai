@@ -21,4 +21,19 @@ function isIosComingSoon() {
   return process.env.IOS_COMING_SOON !== "false";
 }
 
-module.exports = { isIosComingSoon };
+// LANDLINE_COMING_SOON (2026-09-21): HCG landline protection is not yet
+// ready to sell, so landline is presented as "Coming soon" everywhere and
+// a household that says it is protecting a landline must not be able to
+// reach paid checkout (or, through it, number provisioning) — see
+// services/providerPolicy.js's evaluateHouseholdCheckoutEligibility,
+// docs/launch/LANDLINE_COMING_SOON_FLAG.md, and the iPhone flag above,
+// whose exact pattern this mirrors. The landline implementation itself
+// (provider policy, activation instructions, dashboard steps) is
+// deliberately left in place: this only disables customer availability.
+// Defaults to true (fails toward "not available") whenever the env var is
+// unset or anything other than the literal string "false".
+function isLandlineComingSoon() {
+  return process.env.LANDLINE_COMING_SOON !== "false";
+}
+
+module.exports = { isIosComingSoon, isLandlineComingSoon };

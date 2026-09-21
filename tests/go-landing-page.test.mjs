@@ -29,6 +29,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const { renderGoPage, isValidAppStoreUrl } = require('../services/goLanding');
 const { KNOWN_EVENT_TYPES } = require('../services/acquisitionAnalytics');
+const { isLandlineComingSoon } = require('../services/featureFlags');
 
 const goSource = readFileSync(path.join(__dirname, '..', 'public', 'go.html'), 'utf8');
 const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
@@ -60,7 +61,7 @@ const VISIBLE = withoutComments(goSource);   // rendered markup — developer co
 const SCRIPT = withoutComments((goSource.match(/<script>([\s\S]*?)<\/script>/) || [, ''])[1]);
 
 // ---- Server wiring ----
-const goRoute = serverSource.slice(serverSource.indexOf('app.get("/go"'), serverSource.indexOf('app.get("/go"') + 900);
+const goRoute = serverSource.slice(serverSource.indexOf('app.get("/go"'), serverSource.indexOf('app.get("/go"') + 1200);
 check(
   serverSource.includes('app.get("/go", (req, res) => {') && goRoute.includes('renderGoPage(GO_TEMPLATE'),
   'server.js still serves the /go URL (existing links keep working), rendered through services/goLanding.js'
@@ -128,6 +129,39 @@ check(!/<form[^>]*\baction=/i.test(goSource) && !/<form[^>]*\bmethod=/i.test(goS
 check(!/location|window\.open|history\.|\.href\s*=|navigate|assign\(|replace\(/.test(SCRIPT), 'the page script never navigates (no location/window.open/history/href assignment)');
 const urlLiterals = [...SCRIPT.matchAll(/['"](\/[^'"]*|https?:[^'"]*)['"]/g)].map((m) => m[1]);
 check(JSON.stringify([...new Set(urlLiterals)]) === JSON.stringify(['/api/v1/waiting-list']), `the script's only URL is the waiting-list endpoint (found: ${[...new Set(urlLiterals)].join(', ')})`);
+
+// ---- 3b. LANDLINE_COMING_SOON: a fail-closed switch so landline can be DELIBERATELY re-enabled later — never by accident ----
+const LL_START = '<!--LANDLINE_BUTTON_START-->';
+const LL_END = '<!--LANDLINE_BUTTON_END-->';
+check(goSource.includes(LL_START) && goSource.includes(LL_END) && goSource.indexOf(LL_START) < goSource.indexOf('id="landline"') && goSource.indexOf('id="landline"') < goSource.indexOf(LL_END), 'the Landline Coming soon card is wrapped in LANDLINE_BUTTON markers');
+check(goSource.slice(goSource.indexOf(LL_START) + LL_START.length, goSource.indexOf(LL_END)).trim() === cardBlock(goSource, 'landline'), 'the markers contain EXACTLY the existing Landline waiting-list card and nothing else — the shipped default is unchanged');
+check(process.env.LANDLINE_COMING_SOON !== undefined || isLandlineComingSoon() === true, 'the shared flag defaults to landline COMING SOON when LANDLINE_COMING_SOON is unset (fails closed)');
+const UTM_ALL = { utmSource: 'tiktok', utmMedium: 'bio', utmCampaign: 'launch' };
+for (const notEnabled of [undefined, null, true, 'false', 'true', 0, '', 'no', 'FALSE', 'False', {}, []]) {
+  check(renderGoPage(goSource, { iosComingSoon: true, landlineComingSoon: notEnabled }) === goSource, `landlineComingSoon=${JSON.stringify(notEnabled)} (not the boolean false) -> the page is returned byte-for-byte as the template: waiting-list card, no landline link, no /register.html`);
+  const withUtm = renderGoPage(goSource, { iosComingSoon: true, landlineComingSoon: notEnabled, utm: UTM_ALL });
+  check(!withUtm.includes('/register.html') && cardBlock(withUtm, 'landline') === cardBlock(goSource, 'landline'), `landlineComingSoon=${JSON.stringify(notEnabled)} + UTMs: UTMs alone can never make Landline a link`);
+}
+const liveLandline = renderGoPage(goSource, { iosComingSoon: true, landlineComingSoon: false, utm: {} });
+check(liveLandline.includes('<a class="device available" id="landline" href="/register.html" rel="noopener">') && liveLandline.includes('<strong>Landline</strong>') && liveLandline.includes('Set up Home Call Guard for your home phone') && /id="landline"[\s\S]*?<span class="badge">Available now<\/span>/.test(liveLandline), 'landlineComingSoon === false (boolean) -> the Landline waiting-list card is replaced by a live "Available now" link to the existing /register.html entry point');
+check(!liveLandline.includes('data-reason="landline_coming_soon"') && !liveLandline.includes('data-device="landline"') && cardBlock(liveLandline, 'landline') === '' && !/id="landline"[^>]*>[\s\S]*?<form/.test(liveLandline.slice(liveLandline.indexOf('id="landline"'), liveLandline.indexOf('</a>', liveLandline.indexOf('id="landline"')))), 'the live landline link carries NO waiting-list form and NO data-reason — a live card and the waiting-list card never appear together');
+check(!liveLandline.includes(LL_START) && !liveLandline.includes(LL_END), 'the swap consumes the markers (no stray markers in the served page)');
+check(liveLandline.includes(`href="${PLAY}"`) && cardBlock(liveLandline, 'iphone') === cardBlock(goSource, 'iphone') && liveLandline.includes('data-reason="ios_coming_soon"'), 'enabling Landline leaves Android and the iPhone waiting-list card completely untouched');
+const liveHrefs = [...withoutComments(liveLandline).matchAll(/<a\b[^>]*\bhref="([^"]*)"/g)].map((m) => m[1]);
+check(JSON.stringify(liveHrefs) === JSON.stringify([PLAY, '/register.html', '/', '/privacy', '/terms.html']), `when enabled, the only links are Google Play, /register.html, the homepage, Privacy and Terms (found: ${liveHrefs.join(', ')})`);
+const liveWithUtm = renderGoPage(goSource, { iosComingSoon: true, landlineComingSoon: false, utm: UTM_ALL });
+check(liveWithUtm.includes('id="landline" href="/register.html?utm_source=tiktok&amp;utm_medium=bio&amp;utm_campaign=launch"'), 'when enabled, utm_* are forwarded onto the landline sign-up link so registration keeps its social attribution');
+const hostileLive = renderGoPage(goSource, { iosComingSoon: true, landlineComingSoon: false, utm: { utmSource: '"><script>alert(1)</script>', utmMedium: 'a&b', utmCampaign: "x'y" } });
+check(!hostileLive.includes('<script>alert') && (hostileLive.match(/<a class="device available" id="landline"[^>]*>/) || [''])[0] === '<a class="device available" id="landline" href="/register.html?utm_source=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E&amp;utm_medium=a%26b&amp;utm_campaign=x\'y" rel="noopener">', 'hostile UTM values are percent-encoded: the live landline tag is exactly one well-formed <a> and no markup can be injected');
+const appleLiveOnly = renderGoPage(goSource, { iosComingSoon: false, appStoreUrl: REAL_LOOKING, landlineComingSoon: true, utm: UTM_ALL });
+check(appleLiveOnly.includes(`id="iphone" href="${REAL_LOOKING}"`) && !appleLiveOnly.includes('/register.html') && cardBlock(appleLiveOnly, 'landline') === cardBlock(goSource, 'landline'), 'Apple going live does NOT enable Landline — the two flags are independent');
+const landlineLiveOnly = renderGoPage(goSource, { iosComingSoon: true, landlineComingSoon: false, appStoreUrl: REAL_LOOKING, utm: UTM_ALL });
+check(landlineLiveOnly.includes('id="landline" href="/register.html?utm_source=tiktok') && !landlineLiveOnly.includes('apps.apple.com') && cardBlock(landlineLiveOnly, 'iphone') === cardBlock(goSource, 'iphone'), 'enabling Landline does NOT enable the App Store — the two flags are independent (even with a valid App Store URL present)');
+const bothLive = renderGoPage(goSource, { iosComingSoon: false, appStoreUrl: REAL_LOOKING, landlineComingSoon: false, utm: UTM_ALL });
+check(bothLive.includes(`id="iphone" href="${REAL_LOOKING}"`) && bothLive.includes('id="landline" href="/register.html?utm_source=tiktok') && !/<details\b/.test(withoutComments(bothLive).replace(/<script[\s\S]*?<\/script>/g, '')) && !/<form\b/.test(withoutComments(bothLive).replace(/<script[\s\S]*?<\/script>/g, '')), 'both live: two "Available now" links and no waiting-list forms left on the page');
+check(goRoute.includes('landlineComingSoon: isLandlineComingSoon()') && serverSource.includes('isLandlineComingSoon } = require("./services/featureFlags")'), 'server.js passes the REAL isLandlineComingSoon() into the /go render');
+check(!/landlineComingSoon:\s*(false|true)\b/.test(goRoute), 'the /go route never hardcodes the landline flag');
+check((serverSource.match(/isLandlineComingSoon\(\)/g) || []).length >= 1 && (serverSource.match(/isLandlineComingSoon\(\)/g) || []).length === (serverSource.match(/landlineComingSoon: isLandlineComingSoon\(\)/g) || []).length, 'every use of the landline flag in server.js is a read-only `landlineComingSoon: isLandlineComingSoon()` pass-through (never a control-flow gate) — it grants nothing');
 
 // ---- 4. No remaining claim that Landline is available / that both are supported ----
 check(!/landline/i.test(TEXT.replace(visibleText(landlineBlock), '')), 'the word "landline" appears ONLY inside the Landline Coming soon card — nowhere else on the page (title, description, lead, links)');
