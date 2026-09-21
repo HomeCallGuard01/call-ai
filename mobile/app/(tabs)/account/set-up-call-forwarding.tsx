@@ -18,15 +18,19 @@ import { PrimaryButton } from "../../../components/PrimaryButton";
 import { fetchActivationInstructions } from "../../../lib/api";
 import { useAuth } from "../../../lib/AuthContext";
 import { loadActivationDevice } from "../../../lib/activationDeviceStorage";
+import { isLandlineComingSoon, useLandlineComingSoon } from "../../../lib/landlineFlag";
+import { LandlineComingSoon } from "../../../components/LandlineComingSoon";
 import { canAutoOpenDialer, buildDialerUrl } from "../../../lib/dialerLink";
 import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../../lib/forwardingNumber";
 import type { ActivationInstructionsResponse } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
-type ScreenState = "loading" | "ready" | "no_device_on_record" | "unavailable";
+type ScreenState = "loading" | "ready" | "no_device_on_record" | "unavailable" | "landline_coming_soon";
 
 export default function SetUpCallForwarding() {
   const { session } = useAuth();
+  // True (Coming soon) until the server explicitly says landline is open.
+  const landlineComingSoon = useLandlineComingSoon();
   const [state, setState] = useState<ScreenState>("loading");
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [deviceType, setDeviceType] = useState<string | null>(null);
@@ -43,6 +47,11 @@ export default function SetUpCallForwarding() {
           if (cancelled) return;
           if (!device) {
             setState("no_device_on_record");
+            return;
+          }
+          // Landline is Coming soon: show that instead of landline dialling steps.
+          if (isLandlineComingSoon(device.deviceType)) {
+            setState("landline_coming_soon");
             return;
           }
           setDeviceType(device.deviceType);
@@ -63,7 +72,7 @@ export default function SetUpCallForwarding() {
       return () => {
         cancelled = true;
       };
-    }, [session?.access_token])
+    }, [session?.access_token, landlineComingSoon])
   );
 
   async function handleOpenPhone() {
@@ -88,6 +97,15 @@ export default function SetUpCallForwarding() {
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accent} size="large" accessibilityLabel="Loading your call forwarding code" />
         </View>
+      </Screen>
+    );
+  }
+
+  if (state === "landline_coming_soon") {
+    return (
+      <Screen>
+        <Text style={styles.title}>Set up call forwarding</Text>
+        <LandlineComingSoon />
       </Screen>
     );
   }

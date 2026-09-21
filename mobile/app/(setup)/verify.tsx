@@ -89,7 +89,7 @@ export default function Verify() {
       {hasCheckedOnce && (
         <Banner
           variant="notice"
-          message="Not working? The most common causes are: the code was mistyped, or — for Sky and Virgin Media — the Call Divert add-on hasn't been added to your account yet."
+          message="Not working? The most common cause is that the code was mistyped. Check it and try again."
         />
       )}
 

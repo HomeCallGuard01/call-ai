@@ -36,6 +36,10 @@ const FAQ_ITEMS = [
     answer: "No — you keep your existing number. Call forwarding sends your calls to Home Call Guard, and approved calls are put through to you.",
   },
   {
+    question: "Does Home Call Guard work on a landline?",
+    answer: "Not yet — landline support is coming soon. Home Call Guard is currently available for Android phones.",
+  },
+  {
     question: "What if I need help?",
     answer: `Contact us any time at ${SUPPORT_EMAIL} and we'll be glad to help. If you're calling on behalf of a family member, that's no problem — just let us know.`,
   },

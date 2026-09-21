@@ -408,6 +408,16 @@ function check(condition, message) {
 // payment unconditionally. carrier_provider_key now carries the
 // landline provider itself (migration 043); only the five explicitly-
 // verified providers in LANDLINE_SUPPORTED_PROVIDERS may proceed.
+//
+// 2026-09-21 (LANDLINE_COMING_SOON, services/featureFlags.js): while that
+// flag is on (its default) NO landline household can proceed at all — that
+// behaviour is proven in tests/landline-coming-soon-backend.test.mjs. Every
+// landline assertion in THIS section exists to prove the provider rules that
+// are deliberately preserved underneath the flag (so they can be restored),
+// so this section runs with the flag explicitly "false" and puts it back
+// immediately after the last landline block below.
+const previousLandlineComingSoon = process.env.LANDLINE_COMING_SOON;
+process.env.LANDLINE_COMING_SOON = 'false';
 
 {
   // A landline household with no provider captured at all must fail
@@ -464,6 +474,9 @@ function check(condition, message) {
   const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: 'some-made-up-provider-xyz' });
   check(result.canProceedToPayment === false, 'landline with a completely unrecognised provider string: blocked');
 }
+
+if (previousLandlineComingSoon === undefined) delete process.env.LANDLINE_COMING_SOON;
+else process.env.LANDLINE_COMING_SOON = previousLandlineComingSoon;
 
 {
   // device_type === "mobile" must fall through completely unchanged to

@@ -263,10 +263,12 @@ export async function setHouseholdIphone(accessToken?: string): Promise<CarrierC
 
 // GET /api/v1/launch-flags — public, unauthenticated. See
 // services/featureFlags.js on the backend for the single source of
-// truth this reads.
-export async function fetchLaunchFlags(): Promise<{ iosComingSoon: boolean }> {
+// truth this reads. landlineComingSoon (2026-09-21) is optional in the type on
+// purpose: an older backend that doesn't send it must read as "landline still
+// Coming soon" — see lib/landlineAvailability.ts's fail-closed rule.
+export async function fetchLaunchFlags(): Promise<{ iosComingSoon: boolean; landlineComingSoon?: boolean }> {
   const response = await fetch(`${API_BASE_URL}/api/v1/launch-flags`);
-  return parseJsonOrThrow<{ iosComingSoon: boolean }>(response);
+  return parseJsonOrThrow<{ iosComingSoon: boolean; landlineComingSoon?: boolean }>(response);
 }
 
 // POST /api/v1/waiting-list — public, unauthenticated (see migration

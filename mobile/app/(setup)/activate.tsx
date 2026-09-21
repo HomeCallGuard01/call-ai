@@ -39,10 +39,14 @@ import {
   provisioningExplanation,
 } from "../../lib/provisioningStages";
 import type { ActivationInstructionsResponse, DeviceType, LandlineProvider, TwilioProvisioningStatus } from "../../lib/types";
+import { isLandlineComingSoon, useLandlineComingSoon } from "../../lib/landlineFlag";
+import { LandlineComingSoon } from "../../components/LandlineComingSoon";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 export default function Activate() {
   const { session } = useAuth();
+  // True (Coming soon) until the server explicitly says landline is open.
+  const landlineComingSoon = useLandlineComingSoon();
   const params = useLocalSearchParams<{ deviceType?: DeviceType; provider?: LandlineProvider }>();
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +118,8 @@ export default function Activate() {
 
   function load() {
     if (!resolvedDevice) return;
+    // Landline is Coming soon: never fetch landline dialling instructions.
+    if (isLandlineComingSoon(resolvedDevice.deviceType)) return;
     const thisLoadId = ++loadId.current;
     setIsLoading(true);
     setError(null);
@@ -176,7 +182,7 @@ export default function Activate() {
       });
   }
 
-  useEffect(load, [resolvedDevice, session?.access_token]);
+  useEffect(load, [resolvedDevice, session?.access_token, landlineComingSoon]);
 
   // Real iPhone testing (2026-08-08) found the old "Still setting up your
   // line" / "Check again" state a dead end — the customer had to manually
@@ -258,6 +264,16 @@ export default function Activate() {
   // itself is unreachable without it. Route back rather than show a
   // permanent spinner (isLoading never gets set false by load() in this
   // case, since load() itself refuses to run without a resolved device).
+  // Landline is Coming soon (lib/landlineAvailability.ts): no dial-the-code
+  // instructions, no "Activate protection", no verification for a landline.
+  if (landlineComingSoon && resolvedDevice?.deviceType === "landline") {
+    return (
+      <Screen>
+        <LandlineComingSoon actionLabel="Choose a different option" onAction={() => router.replace("/(setup)/device-picker")} />
+      </Screen>
+    );
+  }
+
   if (resolvedDevice === null) {
     return (
       <Screen>

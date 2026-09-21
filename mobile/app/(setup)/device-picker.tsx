@@ -37,6 +37,9 @@ import { checkCarrierCompatibility, setHouseholdLandline, setHouseholdIphone, jo
 import { useAuth } from "../../lib/AuthContext";
 import { saveActivationDevice } from "../../lib/activationDeviceStorage";
 import { MOBILE_CARRIERS } from "../../lib/carriers";
+import { LANDLINE_CARD_LABEL_AVAILABLE, LANDLINE_CARD_LABEL_COMING_SOON } from "../../lib/landlineAvailability";
+import { isLandlineComingSoon, useLandlineComingSoon } from "../../lib/landlineFlag";
+import { LandlineComingSoon } from "../../components/LandlineComingSoon";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 import type { DeviceType, LandlineProvider, MobileCarrierKey, TariffType } from "../../lib/types";
 
@@ -76,7 +79,14 @@ const DEVICE_OPTIONS: {
 }[] = [
   { type: "iphone", label: "iPhone — Coming soon", iconSource: require("../../assets/iphone-device-mark.png") },
   { type: "android", label: "Android phone", iconSource: require("../../assets/android-device-mark.png") },
-  { type: "landline", label: "Landline", icon: "call" },
+  // Landline Coming soon (2026-09-21): the backend flag LANDLINE_COMING_SOON
+  // (published as landlineComingSoon by /api/v1/launch-flags) decides, and the
+  // app fails closed — see lib/landlineAvailability.ts / lib/landlineFlag.ts.
+  // While Coming soon the card stays, relabelled at render time below exactly
+  // like iPhone above; selectDevice routes it to its own dead-end step and it
+  // can never reach the provider list, Subscribe or payment. The provider list
+  // and setHouseholdLandline further down are deliberately kept, not deleted.
+  { type: "landline", label: LANDLINE_CARD_LABEL_AVAILABLE, icon: "call" },
 ];
 
 const LANDLINE_PROVIDERS: { provider: LandlineProvider; label: string }[] = [
@@ -101,10 +111,13 @@ type Step =
   | { name: "checking" }
   | { name: "blocked"; customerState: "not_currently_supported" | "needs_confirmation" }
   | { name: "ios-coming-soon" }
+  | { name: "landline-coming-soon" }
   | { name: "landline-provider-unsupported"; provider: LandlineProvider };
 
 export default function DevicePicker() {
   const { session } = useAuth();
+  // True (Coming soon) until the server explicitly says landline is open.
+  const landlineComingSoon = useLandlineComingSoon();
   const [deviceType, setDeviceType] = useState<DeviceType | null>(null);
   const [step, setStep] = useState<Step>({ name: "device" });
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +137,8 @@ export default function DevicePicker() {
   function selectDevice(type: DeviceType) {
     setDeviceType(type);
     if (type === "landline") {
-      setStep({ name: "landline-provider" });
+      // Coming soon: no provider list, no server write, no Subscribe.
+      setStep(isLandlineComingSoon("landline") ? { name: "landline-coming-soon" } : { name: "landline-provider" });
       return;
     }
     if (type === "iphone") {
@@ -177,6 +191,12 @@ export default function DevicePicker() {
   // unproven assumption a default dial code will work; it goes to its
   // own dead-end step instead, same shape as the iOS coming-soon one.
   async function selectLandlineProvider(provider: LandlineProvider) {
+    // Defence in depth: even if this step were somehow reached, Landline
+    // never progresses to setHouseholdLandline / Subscribe while Coming soon.
+    if (isLandlineComingSoon("landline")) {
+      setStep({ name: "landline-coming-soon" });
+      return;
+    }
     setStep({ name: "checking" });
     setError(null);
     resetWaitingListForm();
@@ -363,6 +383,17 @@ export default function DevicePicker() {
     );
   }
 
+  if (step.name === "landline-coming-soon") {
+    return (
+      <Screen>
+        <Pressable onPress={() => setStep({ name: "device" })} accessibilityRole="button" style={styles.backLink}>
+          <Text style={styles.backLinkText}>‹ Back</Text>
+        </Pressable>
+        <LandlineComingSoon actionLabel="Choose a different option" onAction={() => setStep({ name: "device" })} />
+      </Screen>
+    );
+  }
+
   if (step.name === "landline-provider-unsupported") {
     return (
       <Screen>
@@ -426,12 +457,18 @@ export default function DevicePicker() {
     );
   }
 
+  // Card list as shown: the Landline card carries "— Coming soon" while the
+  // server says so (and, failing closed, while the answer isn't known yet).
+  const deviceOptions = DEVICE_OPTIONS.map(option =>
+    option.type === "landline" && landlineComingSoon ? { ...option, label: LANDLINE_CARD_LABEL_COMING_SOON } : option
+  );
+
   return (
     <Screen brand>
       <Text style={styles.title} accessibilityRole="header">What are we setting up protection on?</Text>
       <Text style={styles.subtitle}>Pick the phone whose calls you want screened.</Text>
       <View style={styles.cards}>
-        {DEVICE_OPTIONS.map(({ type, label, icon, iconSource }) => (
+        {deviceOptions.map(({ type, label, icon, iconSource }) => (
           <Pressable
             key={type}
             onPress={() => selectDevice(type)}

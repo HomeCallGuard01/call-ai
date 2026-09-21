@@ -255,7 +255,7 @@ export default function Home() {
           <Hero muted />
           <Text style={styles.giantTitleMuted} accessibilityRole="header">Not protected yet</Text>
           <Text style={styles.statusBody}>
-            You don't currently have an active membership. Protect your home phone from scam
+            You don't currently have an active membership. Protect your phone from scam
             callers today.
           </Text>
           <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />

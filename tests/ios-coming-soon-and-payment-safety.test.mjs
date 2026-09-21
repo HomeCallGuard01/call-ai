@@ -33,6 +33,22 @@ function check(condition, message) {
 // env var between blocks is sufficient; no cache-busting needed. Stated
 // explicitly here because getting this wrong (reading it once at import)
 // would make the whole flag pointless.
+// 2026-09-21 (LANDLINE_COMING_SOON): the landline provider-rule assertions in
+// this file prove the rules PRESERVED underneath that flag, so they run with
+// it explicitly "false". Default-on behaviour (landline can never pay) is
+// proven in tests/landline-coming-soon-backend.test.mjs.
+function withLandlineComingSoon(value, fn) {
+  const previous = process.env.LANDLINE_COMING_SOON;
+  if (value === undefined) delete process.env.LANDLINE_COMING_SOON;
+  else process.env.LANDLINE_COMING_SOON = value;
+  try {
+    fn();
+  } finally {
+    if (previous === undefined) delete process.env.LANDLINE_COMING_SOON;
+    else process.env.LANDLINE_COMING_SOON = previous;
+  }
+}
+
 function withIosComingSoon(value, fn) {
   const previous = process.env.IOS_COMING_SOON;
   if (value === undefined) delete process.env.IOS_COMING_SOON;
@@ -141,7 +157,7 @@ withIosComingSoon('false', () => {
 // Eligible Android and landline customers can pay
 // ============================================================
 
-withIosComingSoon('true', () => {
+withIosComingSoon('true', () => withLandlineComingSoon('false', () => {
   const android = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'o2' });
   check(android.canProceedToPayment === true, 'eligible Android customer (device_type mobile, supported carrier): can pay');
 
@@ -151,13 +167,13 @@ withIosComingSoon('true', () => {
 
   const unsupportedLandline = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: 'other' });
   check(unsupportedLandline.canProceedToPayment === false, 'landline "Other/not sure": cannot pay (2026-09-19 launch-safety correction — was previously waved through unconditionally)');
-});
+}));
 
 // ============================================================
 // Landline provider matrix — the exact required proof
 // ============================================================
 
-withIosComingSoon('true', () => {
+withIosComingSoon('true', () => withLandlineComingSoon('false', () => {
   for (const provider of ['bt', 'sky', 'virgin', 'talktalk', 'plusnet']) {
     const result = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: provider });
     check(result.canProceedToPayment === true, `landline provider "${provider}": can proceed to payment`);
@@ -178,7 +194,7 @@ withIosComingSoon('true', () => {
 
   const mobileKeyLeaked = evaluateHouseholdCheckoutEligibility({ device_type: 'landline', carrier_provider_key: 'o2' });
   check(mobileKeyLeaked.canProceedToPayment === false, 'landline with a real mobile-carrier key ("o2", never a valid landline provider) attached: cannot reach Stripe — no cross-namespace trust between mobile and landline provider keys');
-});
+}));
 
 // An unsupported landline provider joining the waiting list must never
 // create a subscription, entitlement, or Twilio provisioning — proven
@@ -249,8 +265,8 @@ check(
   'GET /api/v1/launch-flags is declared'
 );
 check(
-  serverSource.includes('res.json({ iosComingSoon: isIosComingSoon() });'),
-  'GET /api/v1/launch-flags returns the real, live isIosComingSoon() value — never a hardcoded true/false'
+  serverSource.includes('res.json({ iosComingSoon: isIosComingSoon(), landlineComingSoon: isLandlineComingSoon() });'),
+  'GET /api/v1/launch-flags returns the real, live isIosComingSoon() value (2026-09-21: plus landlineComingSoon) — never a hardcoded true/false'
 );
 {
   const launchFlagsIdx = serverSource.indexOf('app.get("/api/v1/launch-flags"');

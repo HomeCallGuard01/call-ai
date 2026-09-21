@@ -21,7 +21,7 @@
 // paying for a network that then cannot forward calls has already been
 // observed for real (Tesco Mobile). See evaluateProviderCompatibility.
 
-const { isIosComingSoon } = require("./featureFlags");
+const { isIosComingSoon, isLandlineComingSoon } = require("./featureFlags");
 
 const PROVIDER_POLICY_VERSION = "2026-09-19-v4";
 
@@ -399,6 +399,32 @@ function getMobileDeactivationInstructions(providerKey) {
 // that point — nothing else about this function needs to change.
 function evaluateHouseholdCheckoutEligibility(household) {
   if (household && household.device_type === "landline") {
+    // LANDLINE_COMING_SOON (2026-09-21, services/featureFlags.js) — checked
+    // FIRST, before any provider is even considered, so no provider value
+    // (supported, "other", missing or manipulated) can reach payment while
+    // the flag is on. This is the authoritative server-side gate for every
+    // route below it (web + mobile pre-check and checkout), regardless of
+    // which client build or direct request got here.
+    //
+    // status / customerState deliberately stay "landline_provider_unsupported":
+    // that is the one landline-blocked state every already-shipped client
+    // (Android builds up to v9, the website's upload page) already understands
+    // and renders as a dead end BEFORE payment — a brand-new value would be
+    // an unknown state to them. Only `reason` carries the real cause
+    // ("landline_coming_soon"), which no client ever renders (it is only used
+    // for logs and the "tariff_type_required" control-flow sentinel).
+    //
+    // The provider rules below are NOT removed: with the flag explicitly
+    // "false" this branch is skipped and behaviour is exactly as before.
+    if (isLandlineComingSoon()) {
+      return {
+        status: "landline_provider_unsupported",
+        customerState: "landline_provider_unsupported",
+        canProceedToPayment: false,
+        reason: "landline_coming_soon",
+        policy: null,
+      };
+    }
     // 2026-09-19 launch-safety correction: landline no longer proceeds
     // to payment unconditionally. carrier_provider_key now carries the
     // landline provider itself (migration 043 — persisted server-side by

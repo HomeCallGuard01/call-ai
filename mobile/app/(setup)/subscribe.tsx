@@ -44,6 +44,9 @@ import { SetupProgress } from "../../components/SetupProgress";
 import { createCheckoutSession, fetchDashboard, fetchCarrierCompatibility, acceptTerms, ApiError } from "../../lib/api";
 import { fetchHcgPackage, purchaseHcgPackage, isEntitled, PurchasesNotConfiguredError } from "../../lib/purchases";
 import { useAuth } from "../../lib/AuthContext";
+import { loadActivationDevice } from "../../lib/activationDeviceStorage";
+import { isLandlineComingSoon, useLandlineComingSoon } from "../../lib/landlineFlag";
+import { LandlineComingSoon } from "../../components/LandlineComingSoon";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 const RETURN_URL = "homecallguard://setup/subscribe";
@@ -60,6 +63,22 @@ export default function Subscribe() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [startImmediately, setStartImmediately] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  // Landline is Coming soon (server flag, lib/landlineFlag.ts): a stale stored
+  // "landline" device (e.g. picked in an older app version) must never reach
+  // payment from here. Local storage only — no network call, nothing changes
+  // for Android/iPhone customers, who never have "landline" stored.
+  const landlineComingSoon = useLandlineComingSoon();
+  const [storedDeviceType, setStoredDeviceType] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadActivationDevice().then(device => {
+      if (!cancelled) setStoredDeviceType(device?.deviceType ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const landlineBlocked = landlineComingSoon && storedDeviceType === "landline";
 
   // openAuthSessionAsync can stay open for minutes (Stripe Checkout is a
   // real payment form, not a quick redirect) — long enough that the
@@ -183,6 +202,14 @@ export default function Subscribe() {
 
     setIsProcessing(true);
     try {
+      // Authoritative landline guard at the moment of purchase (the effect
+      // above may not have resolved yet if the customer taps very quickly).
+      const storedDevice = await loadActivationDevice();
+      if (isLandlineComingSoon(storedDevice?.deviceType)) {
+        if (isMounted.current) setStoredDeviceType(storedDevice?.deviceType ?? null);
+        return;
+      }
+
       // Defense-in-depth carrier-compatibility check, applied identically
       // to both purchase paths, right here at the actual moment of
       // purchase — not just relying on device-picker.tsx running earlier
@@ -231,6 +258,14 @@ export default function Subscribe() {
     } finally {
       if (isMounted.current) setIsProcessing(false);
     }
+  }
+
+  if (landlineBlocked) {
+    return (
+      <Screen>
+        <LandlineComingSoon actionLabel="Choose a different option" onAction={() => router.replace("/(setup)/device-picker")} />
+      </Screen>
+    );
   }
 
   return (

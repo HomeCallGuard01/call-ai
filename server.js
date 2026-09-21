@@ -34,7 +34,7 @@ const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
 const { sendCriticalAlert } = require("./services/alerting");
 const { checkSupabaseHealth } = require("./services/healthCheck");
-const { isIosComingSoon } = require("./services/featureFlags");
+const { isIosComingSoon, isLandlineComingSoon } = require("./services/featureFlags");
 const { insertWaitingListSignup } = require("./database/waitingList");
 const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
 const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
@@ -2010,13 +2010,16 @@ app.get("/", (req, res) => {
 // what keeps this from becoming a second, noisier uptime signal.
 // GET /api/v1/launch-flags — public, unauthenticated, read-only. The
 // single source both the website and (once a future mobile build exists)
-// the app read to know whether iPhone purchasing is currently open —
-// see services/featureFlags.js. Deliberately just this one boolean, not
-// a general config/feature-flag dump, to keep the removal step exactly
-// "flip IOS_COMING_SOON, no code change" rather than growing into
-// something that needs its own migration path later.
+// the app read to know whether iPhone (iosComingSoon) and landline
+// (landlineComingSoon, 2026-09-21) purchasing is currently open — see
+// services/featureFlags.js. Deliberately just these two booleans, not
+// a general config/feature-flag dump, to keep each removal step exactly
+// "flip the env var, no code change" rather than growing into
+// something that needs its own migration path later. The app fails
+// CLOSED for landline: it only treats landline as available when this
+// returns landlineComingSoon === false.
 app.get("/api/v1/launch-flags", (req, res) => {
-  res.json({ iosComingSoon: isIosComingSoon() });
+  res.json({ iosComingSoon: isIosComingSoon(), landlineComingSoon: isLandlineComingSoon() });
 });
 
 // POST /api/v1/waiting-list — public, unauthenticated (see migration
