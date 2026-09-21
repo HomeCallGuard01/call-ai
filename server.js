@@ -2025,9 +2025,14 @@ app.get("/api/v1/launch-flags", (req, res) => {
 // who isn't a customer yet and may have no session at all). One
 // reusable capture point for every "not available to you yet" reason —
 // today: 'ios_coming_soon' (the homepage banner and the iPhone
-// device-picker option both link here) and 'unsupported_carrier' (a
-// blocked mobile network, optionally naming which one).
-const WAITING_LIST_REASONS = new Set(["ios_coming_soon", "unsupported_carrier"]);
+// device-picker option both link here), 'unsupported_carrier' (a
+// blocked mobile network, optionally naming which one) and, since
+// 2026-09-21, 'landline_coming_soon' (the /go Landline card — landline is
+// not yet available, so /go collects interest instead of selling it).
+// Adding a reason needs no migration: waiting_list_signups.reason is an
+// open text column by design (migration 042), so iPhone rows are untouched
+// and Landline interest is separately identifiable by its own reason.
+const WAITING_LIST_REASONS = new Set(["ios_coming_soon", "unsupported_carrier", "landline_coming_soon"]);
 
 app.post("/api/v1/waiting-list", express.json(), async (req, res) => {
   const { email, reason, providerKey, deviceType } = req.body || {};
@@ -2094,17 +2099,16 @@ app.get("/support", (req, res) => {
 });
 
 // /go — simple, mobile-first link-in-bio landing page for social-media
-// profiles (TikTok/Instagram/Facebook). Three routes into the existing
-// flows only: Google Play, the real /dashboard onboarding entry point
-// (same as any other landline/Android customer), and an inline
-// iPhone waiting-list form using the same public /api/v1/waiting-list
-// endpoint the homepage banner already uses. No new signup/payment
-// path is introduced here.
-// 2026-09-20: /go is now the permanent download landing page — Google Play
-// plus an App Store button that stays a disabled "Coming soon" until BOTH
-// IOS_COMING_SOON=false and a valid APP_STORE_URL are set (see
-// services/goLanding.js). The template is read once at startup. No
-// JavaScript, no third-party requests, no pricing/login/email on the page.
+// profiles (TikTok/Instagram/Facebook).
+// 2026-09-21: availability is Android only. /go offers three device cards:
+// Android ("Available now" — the Google Play listing), iPhone ("Coming
+// soon" — waiting list, becoming a live App Store link only when BOTH
+// IOS_COMING_SOON=false and a valid APP_STORE_URL are set; see
+// services/goLanding.js) and Landline ("Coming soon" — waiting list with
+// reason 'landline_coming_soon'). The two Coming soon cards use the public
+// /api/v1/waiting-list endpoint below and can never reach registration,
+// login, the dashboard, checkout or payment. The template is read once at
+// startup. No third-party requests, no pricing, no login on the page.
 //
 // Visits are counted with the EXISTING first-party, cookie-free
 // "landing_visit" acquisition event (path "/go", plus UTM parameters and

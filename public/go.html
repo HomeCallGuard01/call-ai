@@ -17,12 +17,16 @@
 
 <link rel="preload" as="image" href="/hcg-shield.png">
 
-<!-- /go is the permanent "link in bio" / QR / press landing page: routes
-     into the product only. Deliberately no JavaScript, no third-party
-     requests, no pricing, no login and no email capture — one image,
-     inline CSS. Served by server.js's GET /go via services/goLanding.js,
-     which decides whether the App Store button is live (see the markers)
-     and forwards utm_* onto the landline sign-up link. -->
+<!-- /go is the permanent "link in bio" / QR / press landing page.
+     AVAILABILITY MUST STAY ACCURATE HERE: Android is the only product
+     available today. iPhone and Landline are "Coming soon" and route
+     ONLY to the waiting list (POST /api/v1/waiting-list) — never to
+     registration, login, the dashboard, checkout or payment. There is
+     deliberately no pricing, no login and no third-party request.
+     Served by server.js's GET /go via services/goLanding.js, which
+     decides whether the iPhone card becomes a live App Store link (see
+     the markers) and forwards utm_* onto the "Learn more" link. The only
+     script is the small waiting-list submit handler at the bottom. -->
 <style>
   :root {
     --bg: #050a07;
@@ -34,6 +38,7 @@
     --green: #3cf07a;
     --green-deep: #18dd56;
     --green-soft: rgba(60, 240, 122, 0.10);
+    --on-green: #04100a;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { background: var(--bg); }
@@ -57,122 +62,184 @@
   main { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; }
 
   .shield-ring {
-    width: 160px; height: 160px; border-radius: 50%;
+    width: 128px; height: 128px; border-radius: 50%;
     background: var(--green-soft);
     display: flex; align-items: center; justify-content: center;
-    margin-bottom: 22px;
+    margin-bottom: 18px;
   }
   .shield-ring div {
-    width: 120px; height: 120px; border-radius: 50%;
+    width: 96px; height: 96px; border-radius: 50%;
     background: #0a2014; border: 1px solid var(--green-deep);
     display: flex; align-items: center; justify-content: center;
   }
-  .shield-ring img { width: 84px; height: 84px; display: block; }
+  .shield-ring img { width: 66px; height: 66px; display: block; }
 
-  h1 { font-size: 2.05rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+  h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
   h1 span { color: var(--green); }
-  .lead { font-size: 1.28rem; font-weight: 600; letter-spacing: -0.015em; line-height: 1.3; margin-top: 14px; max-width: 18em; }
-  .sub { color: var(--muted); font-size: 1rem; margin-top: 12px; max-width: 21em; }
+  .lead { font-size: 1.22rem; font-weight: 600; letter-spacing: -0.015em; line-height: 1.3; margin-top: 12px; max-width: 18em; }
+  .sub { color: var(--muted); font-size: 0.98rem; margin-top: 10px; max-width: 21em; }
 
-  .stores { width: 100%; display: flex; flex-direction: column; gap: 12px; margin-top: 28px; }
-  .store {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    width: 100%; min-height: 68px; padding: 10px 18px;
-    border-radius: 16px; border: 1.5px solid var(--green);
+  .choose { margin-top: 24px; color: var(--muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+  .devices { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; text-align: left; }
+
+  /* One card style for all three devices. Android is a real link; iPhone
+     and Landline are <details> whose <summary> is the card. */
+  .device {
+    display: block; width: 100%;
+    border-radius: 16px; border: 1.5px solid var(--border-strong);
     background: var(--card); color: var(--text); text-decoration: none;
-    box-shadow: 0 0 28px rgba(60, 240, 122, 0.16);
     -webkit-tap-highlight-color: transparent;
-    transition: transform .12s ease, box-shadow .12s ease;
   }
-  .store:active { transform: scale(0.98); box-shadow: 0 0 16px rgba(60, 240, 122, 0.14); }
-  .store:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
-  .store small { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-  .store strong { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
-
-  /* Landline: a real, active route but visually a step below Google Play. */
-  .store.alt { min-height: 64px; box-shadow: none; border-color: var(--border-strong); }
-  .store.alt:active { transform: scale(0.98); }
-  .store.alt strong { font-size: 1.15rem; }
-  .store.alt span { font-size: 0.85rem; color: var(--muted); line-height: 1.3; }
-
-  /* Not-yet-available state: visibly disabled, not a link, not focusable. */
-  .store.disabled {
-    border-color: var(--border-strong); border-style: dashed; background: transparent;
-    box-shadow: none; cursor: default; pointer-events: none; color: #8a9b91;
+  .device > summary, a.device {
+    display: flex; align-items: center; gap: 14px;
+    min-height: 64px; padding: 10px 14px;
+    color: inherit; text-decoration: none; cursor: pointer; list-style: none;
   }
-  .store.disabled small { color: #6f8177; }
+  .device > summary::-webkit-details-marker { display: none; }
+  .device > summary::marker { content: ""; }
+  a.device:focus-visible, .device > summary:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; border-radius: 16px; }
+  .d-icon { flex-shrink: 0; width: 32px; height: 32px; display: block; }
+  .d-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .d-text strong { font-size: 1.12rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+  .d-text span { font-size: 0.84rem; color: var(--muted); line-height: 1.3; }
+  .badge {
+    flex-shrink: 0; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+  }
+
+  /* Available now — the main, live product. */
+  .device.available { border-color: var(--green); box-shadow: 0 0 28px rgba(60, 240, 122, 0.16); }
+  a.device.available:active { transform: scale(0.99); }
+  .device.available .badge { background: var(--green); color: var(--on-green); }
+
+  /* Coming soon — visibly not live. */
+  .device.soon .badge { border: 1px solid var(--border-strong); color: var(--muted); }
+  .device.soon[open] { border-color: var(--green-deep); }
+
+  form.wait { padding: 2px 14px 14px; }
+  form.wait p { color: var(--muted); font-size: 0.85rem; margin-bottom: 10px; }
+  .wait-row { display: flex; gap: 8px; }
+  .wait-row input {
+    flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border-strong);
+    border-radius: 10px; padding: 12px; color: var(--text); font-size: 1rem; font-family: inherit;
+  }
+  .wait-row input::placeholder { color: var(--muted); }
+  .wait-row input:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+  .wait-row button {
+    flex-shrink: 0; min-height: 44px; background: var(--green); color: var(--on-green); border: 0; border-radius: 10px;
+    padding: 0 18px; font-weight: 800; font-size: 0.95rem; font-family: inherit; cursor: pointer;
+  }
+  .wait-row button:disabled { opacity: 0.6; cursor: default; }
+  form.wait .msg { font-size: 0.85rem; margin: 0; }
+  form.wait .msg:not(:empty) { margin-top: 10px; }
+  form.wait .msg.success { color: var(--green); }
+  form.wait .msg.error { color: #ff8f8f; }
 
   .learn { margin-top: 20px; padding: 10px 6px; font-size: 0.9rem; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
   .learn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
-  footer { margin-top: 14px; display: flex; gap: 18px; font-size: 0.8rem; }
+  footer { margin-top: 10px; display: flex; gap: 18px; font-size: 0.8rem; }
   footer a { color: var(--muted); text-decoration: none; padding: 11px 8px; }
   footer a:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 
   @media (min-width: 720px) { .lead { font-size: 1.4rem; } }
+  @media (max-width: 360px) {
+    body { padding-left: 16px; padding-right: 16px; }
+    .device > summary, a.device { gap: 10px; padding-left: 10px; padding-right: 10px; }
+    .badge { font-size: 0.64rem; padding: 4px 8px; letter-spacing: 0.02em; }
+    .d-text span { font-size: 0.8rem; }
+    form.wait { padding-left: 10px; padding-right: 10px; }
+  }
 
   /* Short screens (phones, and in-app browsers like TikTok's that lose height
-     to their own toolbars): progressively tighter so the whole page —
-     both store buttons, the landline route, Learn more, Privacy/Terms —
-     stays on screen without scrolling. */
+     to their own toolbars): progressively tighter so the three device cards,
+     Learn more and Privacy/Terms stay on screen without scrolling. */
   @media (max-height: 760px) {
-    body { padding-top: 18px; padding-bottom: 12px; }
-    .shield-ring { width: 118px; height: 118px; margin-bottom: 14px; }
-    .shield-ring div { width: 88px; height: 88px; }
-    .shield-ring img { width: 62px; height: 62px; }
-    h1 { font-size: 1.75rem; }
-    .lead { font-size: 1.12rem; margin-top: 8px; }
-    .sub { font-size: 0.9rem; margin-top: 6px; }
-    .stores { margin-top: 18px; gap: 9px; }
-    .store { min-height: 58px; padding: 8px 16px; }
-    .store strong { font-size: 1.28rem; }
-    .store.alt { min-height: 58px; }
-    .store.alt strong { font-size: 1.08rem; }
-    .learn { margin-top: 10px; padding: 8px 6px; }
-    footer { margin-top: 2px; }
+    body { padding-top: 16px; padding-bottom: 10px; }
+    .shield-ring { width: 96px; height: 96px; margin-bottom: 10px; }
+    .shield-ring div { width: 72px; height: 72px; }
+    .shield-ring img { width: 50px; height: 50px; }
+    h1 { font-size: 1.7rem; }
+    .lead { font-size: 1.08rem; margin-top: 6px; }
+    .sub { font-size: 0.9rem; margin-top: 4px; }
+    .choose { margin-top: 14px; }
+    .devices { gap: 8px; margin-top: 8px; }
+    .device > summary, a.device { min-height: 56px; padding: 8px 12px; }
+    .d-text strong { font-size: 1.05rem; }
+    .learn { margin-top: 8px; padding: 8px 6px; }
+    footer { margin-top: 0; }
     footer a { padding: 9px 8px; }
   }
   @media (max-height: 640px) {
-    body { padding-top: 12px; padding-bottom: 8px; }
-    .shield-ring { width: 92px; height: 92px; margin-bottom: 10px; }
-    .shield-ring div { width: 70px; height: 70px; }
-    .shield-ring img { width: 48px; height: 48px; }
-    h1 { font-size: 1.55rem; }
-    .lead { font-size: 1.02rem; margin-top: 6px; }
+    body { padding-top: 10px; padding-bottom: 6px; }
+    .shield-ring { width: 76px; height: 76px; margin-bottom: 8px; }
+    .shield-ring div { width: 58px; height: 58px; }
+    .shield-ring img { width: 40px; height: 40px; }
+    h1 { font-size: 1.5rem; }
+    .lead { font-size: 1rem; margin-top: 4px; }
     .sub { display: none; }
-    .stores { margin-top: 14px; gap: 8px; }
-    .store, .store.alt { min-height: 52px; padding: 6px 14px; }
-    .store strong { font-size: 1.15rem; }
-    .store.alt strong { font-size: 1rem; }
-    .store.alt span { font-size: 0.78rem; }
-    .learn { margin-top: 4px; padding: 8px 6px; font-size: 0.85rem; }
-    footer { margin-top: 0; }
+    .choose { margin-top: 10px; }
+    .devices { gap: 6px; margin-top: 6px; }
+    .device > summary, a.device { min-height: 50px; padding: 6px 12px; }
+    .d-icon { width: 28px; height: 28px; }
+    .d-text strong { font-size: 1rem; }
+    .d-text span { font-size: 0.78rem; }
+    .learn { margin-top: 4px; padding: 7px 6px; font-size: 0.85rem; }
     footer a { padding: 8px 8px; }
   }
 </style>
+<noscript><style>form.wait .wait-row { display: none; }</style></noscript>
 </head>
 <body>
 <main>
-  <div class="shield-ring"><div><img src="/hcg-shield.png" width="84" height="84" alt=""></div></div>
+  <div class="shield-ring"><div><img src="/hcg-shield.png" width="66" height="66" alt=""></div></div>
 
   <h1>Home Call <span>Guard</span></h1>
   <p class="lead">Another layer of protection for you and your family.</p>
   <p class="sub">Protect yourself and the people you care about from scam calls.</p>
 
-  <div class="stores">
-    <a class="store" id="googlePlay" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener">
-      <small>Get it on</small>
-      <strong>Google Play</strong>
+  <p class="choose">Choose your device</p>
+  <div class="devices">
+    <a class="device available" id="android" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener">
+      <img class="d-icon" src="/go-icon-android.png" width="32" height="32" alt="">
+      <span class="d-text"><strong>Android</strong><span>Google Play</span></span>
+      <span class="badge">Available now</span>
     </a>
+
     <!--APP_STORE_BUTTON_START-->
-    <div class="store disabled" id="appStore" aria-disabled="true">
-      <small>Coming soon on the</small>
-      <strong>App Store</strong>
-    </div>
+    <details class="device soon" id="iphone">
+      <summary>
+        <img class="d-icon" src="/go-icon-iphone.png" width="32" height="32" alt="">
+        <span class="d-text"><strong>iPhone</strong><span>Join the waiting list</span></span>
+        <span class="badge">Coming soon</span>
+      </summary>
+      <form class="wait" data-reason="ios_coming_soon" data-device="iphone" data-success="Thanks — we'll email you as soon as Home Call Guard for iPhone is available." novalidate>
+        <p>We're waiting for final App Store approval. Join the waiting list and we'll let you know as soon as it's available.</p>
+        <div class="wait-row">
+          <input type="email" name="email" aria-label="Your email address" placeholder="you@example.com" autocomplete="email" required>
+          <button type="submit">Join</button>
+        </div>
+        <p class="msg" role="status"></p>
+        <noscript><p>Please turn on JavaScript to join the waiting list.</p></noscript>
+      </form>
+    </details>
     <!--APP_STORE_BUTTON_END-->
-    <a class="store alt" id="landline" href="/register.html" rel="noopener">
-      <strong>Protect a landline</strong>
-      <span>Set up Home Call Guard for your home phone</span>
-    </a>
+
+    <details class="device soon" id="landline">
+      <summary>
+        <img class="d-icon" src="/go-icon-landline.png" width="32" height="32" alt="">
+        <span class="d-text"><strong>Landline</strong><span>Join the waiting list</span></span>
+        <span class="badge">Coming soon</span>
+      </summary>
+      <form class="wait" data-reason="landline_coming_soon" data-device="landline" data-success="Thanks — we'll email you when Home Call Guard for landline is available." novalidate>
+        <p>Landline support is coming soon. Join the waiting list and we'll email you when it's available.</p>
+        <div class="wait-row">
+          <input type="email" name="email" aria-label="Your email address" placeholder="you@example.com" autocomplete="email" required>
+          <button type="submit">Join</button>
+        </div>
+        <p class="msg" role="status"></p>
+        <noscript><p>Please turn on JavaScript to join the waiting list.</p></noscript>
+      </form>
+    </details>
   </div>
 
   <a class="learn" id="learnMore" href="/">Learn more about Home Call Guard</a>
@@ -182,5 +249,69 @@
     <a href="/terms.html">Terms</a>
   </footer>
 </main>
+
+<script>
+(function () {
+  var each = function (list, fn) { Array.prototype.forEach.call(list, fn); };
+
+  // One card open at a time, so the page stays short in in-app browsers.
+  var cards = document.querySelectorAll('details.device');
+  each(cards, function (card) {
+    card.addEventListener('toggle', function () {
+      if (!card.open) return;
+      each(cards, function (other) { if (other !== card) other.open = false; });
+      var input = card.querySelector('input');
+      if (input) input.focus();
+    });
+  });
+
+  // Waiting list — the ONLY thing either "Coming soon" card can do: a POST
+  // to /api/v1/waiting-list (email + a reason code identifying which card).
+  // Nothing here navigates, and nothing here can reach registration,
+  // login, the dashboard, checkout or payment.
+  each(document.querySelectorAll('form.wait'), function (form) {
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var emailEl = form.querySelector('input');
+      var button = form.querySelector('button');
+      var msg = form.querySelector('.msg');
+      var email = emailEl.value.trim();
+
+      if (!email || email.indexOf('@') === -1) {
+        msg.textContent = 'Please enter a valid email address.';
+        msg.className = 'msg error';
+        return;
+      }
+
+      button.disabled = true;
+      msg.textContent = '';
+      msg.className = 'msg';
+
+      fetch('/api/v1/waiting-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          reason: form.getAttribute('data-reason'),
+          deviceType: form.getAttribute('data-device')
+        })
+      })
+        .then(function (res) {
+          if (!res.ok) throw new Error('failed');
+          msg.textContent = form.getAttribute('data-success');
+          msg.className = 'msg success';
+          emailEl.value = '';
+          emailEl.disabled = true;
+          button.hidden = true;
+        })
+        .catch(function () {
+          msg.textContent = "We couldn't save that just now — please try again.";
+          msg.className = 'msg error';
+          button.disabled = false;
+        });
+    });
+  });
+})();
+</script>
 </body>
 </html>

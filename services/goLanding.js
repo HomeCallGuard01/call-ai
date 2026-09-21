@@ -1,17 +1,21 @@
 // goLanding.js — renders public/go.html (the permanent "link in bio" /
-// QR / press download landing page) with the App Store button in the
-// right state.
+// QR / press landing page) with the iPhone card in the right state.
 //
-// The template ships with the App Store button in its DISABLED
-// ("Coming soon on the App Store", not a link) state. This module only
-// swaps in a live link when BOTH are true:
+// AVAILABILITY (2026-09-21): Android is the only live product. The iPhone
+// and Landline cards are "Coming soon" waiting-list cards. There is NO
+// landline route into registration/dashboard/checkout — this module only
+// ever touches the iPhone card and the "Learn more" link.
+//
+// The template ships with the iPhone card in its "Coming soon" waiting-list
+// state (an email form, never a purchase route). This module only swaps
+// in a live App Store link when BOTH are true:
 //   1. IOS_COMING_SOON is explicitly "false" (services/featureFlags.js —
 //      the same single switch the website, waiting list and mobile app
 //      already use to mean "Apple has approved the app"), AND
 //   2. APP_STORE_URL is a well-formed https://apps.apple.com/... URL.
 // Anything else — flag still on, no URL, a malformed URL, a URL on any
-// other host — leaves the safe disabled button. Nothing here ever
-// invents or defaults an Apple URL.
+// other host — leaves the safe "Coming soon" waiting-list card. Nothing
+// here ever invents or defaults an Apple URL.
 'use strict';
 
 const START = '<!--APP_STORE_BUTTON_START-->';
@@ -26,25 +30,26 @@ function isValidAppStoreUrl(url) {
   return typeof url === 'string' && url.length <= 300 && APP_STORE_URL_PATTERN.test(url);
 }
 
+// The live iPhone card: same layout as the Android card, an actual link to
+// the App Store, marked "Available now". Replaces the whole "Coming soon"
+// waiting-list card (including its form) — they never appear together.
 function liveAppStoreButton(url) {
   const safe = url.replace(/&/g, '&amp;');
   return (
-    '<a class="store" id="appStore" href="' + safe + '" rel="noopener">\n' +
-    '      <small>Download on the</small>\n' +
-    '      <strong>App Store</strong>\n' +
+    '<a class="device available" id="iphone" href="' + safe + '" rel="noopener">\n' +
+    '      <img class="d-icon" src="/go-icon-iphone.png" width="32" height="32" alt="">\n' +
+    '      <span class="d-text"><strong>iPhone</strong><span>Download on the App Store</span></span>\n' +
+    '      <span class="badge">Available now</span>\n' +
     '    </a>'
   );
 }
 
-// The landline route is the existing new-customer entry point,
-// /register.html (the same destination as every "Get protected" button on
-// the homepage; register.html reads utm_* from its own query string so a
-// TikTok/QR source is attributed all the way to registration). Only the
-// three UTM fields the analytics system already records are forwarded —
-// never any other query parameter — and each value is percent-encoded and
-// HTML-escaped, so a hostile query string cannot alter the link.
+// utm_* forwarding. Only the three UTM fields the analytics system already
+// records are ever forwarded — never any other query parameter — and each
+// value is percent-encoded and HTML-escaped, so a hostile query string
+// cannot alter the link.
 //
-// The same UTMs are forwarded onto "Learn more" (the homepage, "/"): a
+// They are forwarded onto "Learn more" (the homepage, "/"): a
 // visitor who reads the homepage first and registers afterwards is still
 // attributed to the social source, because the homepage forwards its own
 // query string onto its "get protected" buttons and records its own
@@ -56,7 +61,6 @@ function liveAppStoreButton(url) {
 // whereas without forwarding the source of a later registration would be
 // lost. To revert, delete LEARN_MORE_LINK and its replace() below plus the
 // matching checks in tests/go-landing-page.test.mjs.
-const LANDLINE_LINK = 'id="landline" href="/register.html"';
 const LEARN_MORE_LINK = 'id="learnMore" href="/"';
 
 function utmQuery(utm) {
@@ -70,9 +74,6 @@ function utmQuery(utm) {
 function renderGoPage(template, { iosComingSoon, appStoreUrl, utm }) {
   let html = template;
   const q = utmQuery(utm);
-  if (q && html.includes(LANDLINE_LINK)) {
-    html = html.replace(LANDLINE_LINK, 'id="landline" href="/register.html' + q + '"');
-  }
   if (q && html.includes(LEARN_MORE_LINK)) {
     html = html.replace(LEARN_MORE_LINK, 'id="learnMore" href="/' + q + '"');
   }

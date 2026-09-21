@@ -286,8 +286,8 @@ check(
   );
 }
 check(
-  serverSource.includes('const WAITING_LIST_REASONS = new Set(["ios_coming_soon", "unsupported_carrier"]);'),
-  'exactly the two required waiting-list reasons are supported — one reusable mechanism, not a bespoke table per reason'
+  serverSource.includes('const WAITING_LIST_REASONS = new Set(["ios_coming_soon", "unsupported_carrier", "landline_coming_soon"]);'),
+  'exactly the three supported waiting-list reasons (iPhone, unsupported carrier, and — since 2026-09-21 — the /go Landline card) — one reusable mechanism, not a bespoke table per reason'
 );
 
 // ============================================================
