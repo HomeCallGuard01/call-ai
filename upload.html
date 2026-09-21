@@ -1217,7 +1217,7 @@
         <label class="option-card">
           <input type="radio" name="carrierDeviceType" id="carrierDeviceLandline" value="landline">
           <span class="option-card-icon"><img src="/landline-device-mark.png" alt="" width="26" height="26"></span>
-          <span class="option-card-label">Landline</span>
+          <span class="option-card-label" id="carrierLandlineLabel">Landline — Coming soon</span>
           <span class="option-card-check" aria-hidden="true">&#10003;</span>
         </label>
         <!-- IOS_COMING_SOON (2026-09-19, services/featureFlags.js): the
@@ -1255,7 +1255,22 @@
           <p id="iosWaitingListError" class="error-banner" role="alert" hidden></p>
           <p id="iosWaitingListSuccess" hidden>Thanks — we'll email you as soon as Home Call Guard for iPhone is available.</p>
         </div>
-        <p class="field-hint">Protecting an Android phone or a landline instead? <button type="button" class="link-button" id="iosComingSoonChooseAnother">Choose a different option</button></p>
+        <p class="field-hint">Protecting an Android phone instead? <button type="button" class="link-button" id="iosComingSoonChooseAnother">Choose a different option</button></p>
+      </div>
+
+      <!-- LANDLINE_COMING_SOON (2026-09-21, services/featureFlags.js): shown
+           when Landline is chosen. Landline is not being sold yet, so this
+           never reaches provider questions, consent, or Stripe — Continue
+           is hidden for this state, and the server independently refuses
+           checkout for a landline household (customerState
+           "landline_coming_soon"). The landline provider row and its
+           supported-provider gate below are deliberately kept for when the
+           flag is turned off. -->
+      <div id="landlineComingSoonMessage" hidden>
+        <h3 class="field-hint-heading">Home Call Guard for landlines is coming soon</h3>
+        <p>We're not selling landline protection just yet, so we can't take a subscription for a landline today.</p>
+        <p>Home Call Guard is available for Android phones now. If you'd like to hear when landline protection is ready, email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a>.</p>
+        <p class="field-hint">Protecting an Android phone instead? <button type="button" class="link-button" id="landlineComingSoonChooseAnother">Choose a different option</button></p>
       </div>
 
       <div id="carrierNetworkRow">
@@ -1653,15 +1668,15 @@
       <h2>Common questions</h2>
       <details class="faq-item">
         <summary>What happens when someone I don't know calls?</summary>
-        <p class="faq-answer">The call connects as normal, but they'll first hear a brief message letting them know the line is protected. While you're talking, Home Call Guard listens for known scam patterns — if it detects one, it can warn a trusted contact by text message, or in serious cases, end the call to protect you.</p>
+        <p class="faq-answer">The call connects as normal, but they'll first hear a brief message letting them know the line is protected. While you're talking, Home Call Guard monitors the conversation for signs of a scam, and can end the call if it detects serious scam risk.</p>
       </details>
       <details class="faq-item">
         <summary>Will calls from my family and friends be affected?</summary>
-        <p class="faq-answer">No. Anyone in your trusted contacts is put straight through, every time, with no checks or delays.</p>
+        <p class="faq-answer">No. Trusted contacts ring straight through, and their calls aren't monitored.</p>
       </details>
       <details class="faq-item">
         <summary>Is my home phone number changing?</summary>
-        <p class="faq-answer">No — you keep your existing number. We simply check your calls for you before they reach you.</p>
+        <p class="faq-answer">No — you keep your existing number.</p>
       </details>
       <details class="faq-item">
         <summary>What if I need help?</summary>
@@ -1679,6 +1694,15 @@
 
 <script>
   const REFRESH_MS = 15000;
+
+  // LANDLINE_COMING_SOON (2026-09-21) — PRESENTATION state only. Defaults to
+  // true (fail closed: Landline is shown as "Coming soon" unless the server
+  // says otherwise via GET /api/v1/launch-flags). The AUTHORITATIVE block is
+  // server-side (services/providerPolicy.js's checkout eligibility, enforced
+  // by both create-checkout-session routes) — nothing on this page can grant
+  // a landline household access to payment. See
+  // docs/launch/LANDLINE_COMING_SOON_FLAG.md.
+  let landlineComingSoon = true;
   const EMPTY_ACTIVITY_MESSAGE = "No calls checked yet";
   const EMPTY_ACTIVITY_HINT = "Your recent call activity will appear here once Home Call Guard begins checking calls.";
 
@@ -1906,7 +1930,7 @@
       return {
         variant: "protected",
         title: "You're protected",
-        sub: "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.",
+        sub: "People you trust ring straight through. Calls from other numbers connect as normal and are monitored while you talk.",
       };
     }
 
@@ -2261,8 +2285,22 @@
   // dropdown (already ruled out) but still asks iPhone vs Android;
   // unknown/absent (different browser/session, or this page reached
   // directly) falls back to asking fresh, exactly as before this change.
+  // LANDLINE_COMING_SOON (2026-09-21): while landline is coming soon,
+  // "Home landline" is only offered here to a household that is ALREADY a
+  // landline household (server-persisted device_type), so an existing
+  // customer keeps working; nobody else can newly pick it. Sellable again
+  // (flag off) => offered to everyone, exactly as before.
+  function landlineSelectableForActivation() {
+    return !landlineComingSoon || !!(lastDashboardData && lastDashboardData.deviceType === "landline");
+  }
+
   function applyRememberedDeviceToManualForm(rememberedCategory) {
     if (!deviceTypeSelectEl) return;
+
+    const landlineSelectable = landlineSelectableForActivation();
+    // A remembered "landline" (e.g. stale local memory) is ignored when it
+    // can no longer be chosen — fall through to asking fresh.
+    if (rememberedCategory === "landline" && !landlineSelectable) rememberedCategory = null;
 
     if (rememberedCategory === "landline") {
       deviceTypeSelectEl.value = "landline";
@@ -2286,7 +2324,13 @@
       return;
     }
 
-    // No remembered answer — unchanged, original three-way question.
+    // No remembered answer — the original question, minus "Home landline"
+    // while landline is coming soon (see landlineSelectableForActivation).
+    const freshLandlineOption = deviceTypeSelectEl.querySelector('option[value="landline"]');
+    if (freshLandlineOption) freshLandlineOption.hidden = !landlineSelectable;
+    if (!landlineSelectable && deviceTypeSelectEl.value === "landline") deviceTypeSelectEl.value = "";
+    buildOptionCards(deviceTypeSelectEl, document.getElementById("deviceTypeCards"), DEVICE_TYPE_ICON_MAP);
+    if (landlineProviderRowEl && !landlineSelectable) landlineProviderRowEl.hidden = true;
     if (deviceTypeQuestionRowEl) deviceTypeQuestionRowEl.hidden = false;
     if (deviceTypeRememberedRowEl) deviceTypeRememberedRowEl.hidden = true;
   }
@@ -2294,7 +2338,7 @@
   if (deviceTypeChangeButtonEl) {
     deviceTypeChangeButtonEl.addEventListener("click", function () {
       const landlineOption = deviceTypeSelectEl && deviceTypeSelectEl.querySelector('option[value="landline"]');
-      if (landlineOption) landlineOption.hidden = false;
+      if (landlineOption) landlineOption.hidden = !landlineSelectableForActivation();
       if (deviceTypeSelectEl) deviceTypeSelectEl.value = "";
       buildOptionCards(deviceTypeSelectEl, document.getElementById("deviceTypeCards"), DEVICE_TYPE_ICON_MAP);
       if (landlineProviderRowEl) landlineProviderRowEl.hidden = true;
@@ -2347,6 +2391,16 @@
       if (!deviceType) {
         if (callForwardingErrorEl) {
           callForwardingErrorEl.textContent = "Please choose what you're forwarding calls from.";
+          callForwardingErrorEl.hidden = false;
+        }
+        return;
+      }
+
+      // LANDLINE_COMING_SOON (2026-09-21): defence in depth for a stale or
+      // hand-edited selection — see landlineSelectableForActivation.
+      if (deviceType === "landline" && !landlineSelectableForActivation()) {
+        if (callForwardingErrorEl) {
+          callForwardingErrorEl.textContent = "Landline protection is coming soon and isn't available yet. Please choose another option.";
           callForwardingErrorEl.hidden = false;
         }
         return;
@@ -2905,7 +2959,7 @@
 
     if (state === "protected") {
       title.textContent = "You're protected";
-      sub.textContent = "Calls to your phone are being checked for you. People you trust get straight through, while unknown callers are checked first.";
+      sub.textContent = "People you trust ring straight through. Calls from other numbers connect as normal and are monitored while you talk.";
     } else if (state === "unsubscribed") {
       title.textContent = "You don't currently have an active membership.";
       sub.textContent = "Protect your home phone from scam callers today.";
@@ -3311,6 +3365,9 @@
   const termsConsentErrorEl = document.getElementById("termsConsentError");
   const subscribeFormEl = document.getElementById("subscribeForm");
   const stripeReassuranceEl = document.getElementById("stripeReassurance");
+  const carrierLandlineLabelEl = document.getElementById("carrierLandlineLabel");
+  const landlineComingSoonMessageEl = document.getElementById("landlineComingSoonMessage");
+  const landlineComingSoonChooseAnotherEl = document.getElementById("landlineComingSoonChooseAnother");
 
   // Renders one tappable card per real, currently-visible <option> of a
   // <select> (the blank placeholder option, and any option a caller has
@@ -3392,7 +3449,11 @@
       if (landlineProviderUnsupportedMessageEl) landlineProviderUnsupportedMessageEl.hidden = true;
       if (landlineWaitingListErrorEl) landlineWaitingListErrorEl.hidden = true;
       if (landlineWaitingListSuccessEl) landlineWaitingListSuccessEl.hidden = true;
+      if (landlineComingSoonMessageEl) landlineComingSoonMessageEl.hidden = true;
       if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = false;
+      // Landline is chosen: while it is coming soon, go straight to the
+      // explanation — no provider question, no Continue, no payment.
+      if (isLandline && landlineComingSoon) enterLandlineComingSoon();
     });
   });
 
@@ -3477,6 +3538,7 @@
     if (carrierNeedsConfirmationMessageEl) carrierNeedsConfirmationMessageEl.hidden = true;
     if (iosComingSoonMessageEl) iosComingSoonMessageEl.hidden = true;
     if (landlineProviderUnsupportedMessageEl) landlineProviderUnsupportedMessageEl.hidden = true;
+    if (landlineComingSoonMessageEl) landlineComingSoonMessageEl.hidden = true;
 
     const isIphone = carrierDeviceIphoneEl && carrierDeviceIphoneEl.checked;
 
@@ -3518,6 +3580,14 @@
       return;
     }
 
+    // LANDLINE_COMING_SOON (2026-09-21): checked BEFORE anything is
+    // remembered or sent — a landline choice must neither be remembered as
+    // this household's category nor reach payment while it is coming soon.
+    if (!(carrierDeviceMobileEl && carrierDeviceMobileEl.checked) && landlineComingSoon) {
+      enterLandlineComingSoon();
+      return;
+    }
+
     const isMobile = carrierDeviceMobileEl && carrierDeviceMobileEl.checked;
     rememberDeviceCategory(isMobile ? "mobile" : "landline");
 
@@ -3555,6 +3625,12 @@
           body: JSON.stringify({ deviceType: "landline", provider: landlineProvider }),
         });
         const result = await response.json();
+        if (result.customerState === "landline_coming_soon") {
+          landlineComingSoon = true;
+          applyLandlineAvailabilityToUi();
+          enterLandlineComingSoon();
+          return;
+        }
         if (result.customerState === "landline_provider_unsupported") {
           if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = true;
           if (landlineProviderUnsupportedMessageEl) landlineProviderUnsupportedMessageEl.hidden = false;
@@ -3632,6 +3708,72 @@
     }
   }
 
+  // --- LANDLINE_COMING_SOON (2026-09-21) ---
+  // Shows the explanation, hides every control that could lead toward
+  // payment, and records the choice server-side (device_type "landline")
+  // so that ANY later checkout attempt for this household is refused by
+  // the server — not merely by this page never showing a button. The
+  // server, not this function, is what enforces the block.
+  function enterLandlineComingSoon() {
+    if (carrierLandlineProviderRowEl) carrierLandlineProviderRowEl.hidden = true;
+    if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = true;
+    if (landlineComingSoonMessageEl) landlineComingSoonMessageEl.hidden = false;
+    if (carrierCheckErrorEl) carrierCheckErrorEl.hidden = true;
+    fetch("/billing/carrier-compatibility", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceType: "landline" }),
+    })
+      .then(function (response) {
+        // A 400 here means the server no longer treats landline as coming
+        // soon (it now requires a provider): believe the server and let
+        // the customer continue the normal landline journey.
+        if (response.status === 400) {
+          landlineComingSoon = false;
+          applyLandlineAvailabilityToUi();
+        }
+      })
+      .catch(function () { /* network failure: stay on the safe "coming soon" state */ });
+  }
+
+  // Reflects the current landlineComingSoon value in the card label and,
+  // if Landline is the selected card, in which controls are visible.
+  function applyLandlineAvailabilityToUi() {
+    if (carrierLandlineLabelEl) {
+      carrierLandlineLabelEl.textContent = landlineComingSoon ? "Landline — Coming soon" : "Landline";
+    }
+    const landlineSelected = !!(carrierDeviceLandlineEl && carrierDeviceLandlineEl.checked);
+    if (landlineComingSoonMessageEl) landlineComingSoonMessageEl.hidden = !(landlineComingSoon && landlineSelected);
+    if (landlineSelected) {
+      if (carrierLandlineProviderRowEl) carrierLandlineProviderRowEl.hidden = landlineComingSoon;
+      if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = landlineComingSoon;
+    }
+    // The post-payment device chooser also hides Landline while coming soon.
+    if (!landlineComingSoon && deviceTypeSelectEl && deviceTypeQuestionRowEl && !deviceTypeQuestionRowEl.hidden) {
+      applyRememberedDeviceToManualForm((lastDashboardData && lastDashboardData.deviceType) || getRememberedDeviceCategory());
+    }
+  }
+
+  if (landlineComingSoonChooseAnotherEl) {
+    landlineComingSoonChooseAnotherEl.addEventListener("click", function () {
+      if (landlineComingSoonMessageEl) landlineComingSoonMessageEl.hidden = true;
+      if (checkCarrierButtonEl) checkCarrierButtonEl.hidden = false;
+      if (carrierDeviceMobileEl) {
+        carrierDeviceMobileEl.checked = true;
+        carrierDeviceMobileEl.dispatchEvent(new Event("change"));
+      }
+    });
+  }
+
+  // Fails closed: any error keeps landlineComingSoon === true.
+  fetch("/api/v1/launch-flags")
+    .then(function (r) { return r.json(); })
+    .then(function (flags) {
+      landlineComingSoon = !(flags && flags.landlineComingSoon === false);
+      applyLandlineAvailabilityToUi();
+    })
+    .catch(function () {});
+
   if (checkCarrierButtonEl) {
     checkCarrierButtonEl.addEventListener("click", evaluateCarrierCompatibility);
   }
@@ -3698,6 +3840,8 @@
               // string is ever shown.
               termsConsentErrorEl.textContent = result.customerState === "ios_coming_soon"
                 ? "Home Call Guard for iPhone is coming soon and isn't available to new customers yet."
+                : result.customerState === "landline_coming_soon"
+                ? "Home Call Guard for landlines is coming soon and isn't available to new customers yet."
                 : result.customerState === "landline_provider_unsupported"
                 ? "We don't currently have confirmed setup instructions for your landline provider. Please go back and join the waiting list."
                 : result.customerState === "needs_confirmation"

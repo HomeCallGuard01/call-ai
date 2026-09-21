@@ -1,2663 +1,758 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
-  <meta charset="UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050a07">
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+<!-- COPY STATUS (2026-09-20). Every statement about what Home Call Guard does during
+     a call uses ONLY the approved high-level proposition: it monitors calls from numbers
+     that aren't trusted contacts while the conversation is happening, and can end a call
+     when serious scam risk is detected. Deliberately absent: SMS/text warnings, warnings
+     to trusted contacts, scores/thresholds/risk stages, "before it reaches you", pre-call
+     screening, "no delays", "AI-powered". Search for APPROVED-BEHAVIOUR-COPY to find them.
+     LANDLINE COMING SOON (2026-09-21): HCG is not selling landline protection yet, so
+     Landline is shown only as a non-clickable "Coming soon" (same treatment as the
+     App Store) and nothing on this page claims or implies landline is available. The
+     removed "Protect a landline" tiles/panel and the steps to restore them are in
+     docs/launch/LANDLINE_COMING_SOON_FLAG.md. The server independently refuses
+     landline checkout (LANDLINE_COMING_SOON). -->
 
-  <meta
-    name="description"
-    content="Home Call Guard monitors unknown calls while the conversation is happening and can step in if danger is detected — protecting you and your family from scam and nuisance calls."
-  >
+<title>Home Call Guard | Protect Your Phone From Scam Callers</title>
+<meta name="description" content="Home Call Guard helps protect you and your family from scam and nuisance calls. It monitors calls from numbers you don't know while you're talking, and can end a call if it detects serious scam risk. £4.99 a month including VAT, no long-term contract.">
+<link rel="canonical" href="https://homecallguard.co.uk/">
 
-  <link rel="canonical" href="https://homecallguard.co.uk/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Home Call Guard">
+<meta property="og:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
+<meta property="og:description" content="An extra layer of protection against scam and nuisance calls, for you and your family. £4.99/month including VAT, no long-term contract.">
+<meta property="og:url" content="https://homecallguard.co.uk/">
+<meta property="og:image" content="https://homecallguard.co.uk/logo.png">
+<meta property="og:locale" content="en_GB">
 
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Home Call Guard">
-  <meta property="og:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-  <meta property="og:description" content="Home Call Guard monitors unknown calls while the conversation is happening and can step in if danger is detected. £4.99/month, no long-term contract.">
-  <meta property="og:url" content="https://homecallguard.co.uk/">
-  <meta property="og:image" content="https://homecallguard.co.uk/logo.png">
-  <meta property="og:locale" content="en_GB">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
+<meta name="twitter:description" content="An extra layer of protection against scam and nuisance calls, for you and your family.">
+<meta name="twitter:image" content="https://homecallguard.co.uk/logo.png">
 
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-  <meta name="twitter:description" content="Home Call Guard monitors unknown calls while the conversation is happening and can step in if danger is detected.">
-  <meta name="twitter:image" content="https://homecallguard.co.uk/logo.png">
-
-  <title>Home Call Guard | Protect Your Phone From Scam Callers</title>
-
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": "https://homecallguard.co.uk/#organization",
-        "name": "Home Call Guard",
-        "url": "https://homecallguard.co.uk/",
-        "logo": "https://homecallguard.co.uk/logo.png",
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://homecallguard.co.uk/#organization",
+      "name": "Home Call Guard",
+      "url": "https://homecallguard.co.uk/",
+      "logo": "https://homecallguard.co.uk/logo.png",
+      "email": "support@homecallguard.co.uk",
+      "contactPoint": {
+        "@type": "ContactPoint",
         "email": "support@homecallguard.co.uk",
-        "contactPoint": {
-          "@type": "ContactPoint",
-          "email": "support@homecallguard.co.uk",
-          "contactType": "customer support"
-        }
-      },
-      {
-        "@type": "WebSite",
-        "@id": "https://homecallguard.co.uk/#website",
-        "url": "https://homecallguard.co.uk/",
-        "name": "Home Call Guard",
-        "publisher": { "@id": "https://homecallguard.co.uk/#organization" }
-      },
-      {
-        "@type": "Service",
-        "name": "Home Call Guard",
-        "serviceType": "Scam call monitoring service",
-        "provider": { "@id": "https://homecallguard.co.uk/#organization" },
-        "areaServed": "GB",
-        "description": "A service that lets trusted contacts through immediately and monitors unknown calls while the conversation is happening, stepping in if signs of a scam are detected.",
-        "offers": {
-          "@type": "Offer",
+        "contactType": "customer support"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://homecallguard.co.uk/#website",
+      "url": "https://homecallguard.co.uk/",
+      "name": "Home Call Guard",
+      "publisher": { "@id": "https://homecallguard.co.uk/#organization" }
+    },
+    {
+      "@type": "Service",
+      "name": "Home Call Guard",
+      "serviceType": "Scam call monitoring service",
+      "provider": { "@id": "https://homecallguard.co.uk/#organization" },
+      "areaServed": "GB",
+      "description": "A service that lets trusted contacts ring straight through, monitors calls from other numbers while the conversation is happening, and can end a call when serious scam risk is detected.",
+      "offers": {
+        "@type": "Offer",
+        "price": "4.99",
+        "priceCurrency": "GBP",
+        "priceSpecification": {
+          "@type": "UnitPriceSpecification",
           "price": "4.99",
           "priceCurrency": "GBP",
-          "priceSpecification": {
-            "@type": "UnitPriceSpecification",
-            "price": "4.99",
-            "priceCurrency": "GBP",
-            "billingDuration": "P1M"
-          },
-          "url": "https://homecallguard.co.uk/register.html"
-        }
+          "billingDuration": "P1M",
+          "valueAddedTaxIncluded": true
+        },
+        "url": "https://homecallguard.co.uk/register.html"
       }
-    ]
+    }
+  ]
+}
+</script>
+
+<style>
+  :root {
+    /* Same tokens as the app's black/green identity (mobile/lib/theme.ts). */
+    --bg: #050a07;
+    --bg-2: #08110c;
+    --card: #0c130f;
+    --card-2: #111c16;
+    --border: #1d2b23;
+    --border-strong: #2b4136;
+    --text: #f3f7f4;
+    --muted: #a3b3aa;
+    --dim: #8a9b91;
+    --green: #3cf07a;
+    --green-deep: #18dd56;
+    --green-soft: rgba(60, 240, 122, 0.10);
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.14);
+    --neutral: #9aa8b6;
+    --radius: 20px;
   }
-  </script>
-
-  <style>
-    :root {
-      --background: #07111f;
-      --background-light: #0b1728;
-      --card: #101e31;
-      --card-light: #15263c;
-      --green: #22e59a;
-      --green-dark: #10b981;
-      --white: #ffffff;
-      --text: #d8e2ee;
-      --muted: #9babc0;
-      --border: rgba(255, 255, 255, 0.1);
-      --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-      --max-width: 1180px;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    html {
-      scroll-behavior: smooth;
-    }
-
-    body {
-      background: var(--background);
-      color: var(--white);
-      font-family:
-        Inter,
-        ui-sans-serif,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
-      line-height: 1.6;
-      overflow-x: hidden;
-    }
-
-    img {
-      display: block;
-      max-width: 100%;
-    }
-
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    button,
-    a {
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .container {
-      width: min(calc(100% - 40px), var(--max-width));
-      margin: 0 auto;
-    }
-
-    .site-header {
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      background: rgba(7, 17, 31, 0.9);
-      border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-    }
-
-    .navigation {
-      min-height: 220px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-shrink: 0;
-    }
-
-    .brand img {
-      width: 160px;
-      height: 160px;
-      object-fit: contain;
-    }
-
-    .brand-name {
-      color: var(--white);
-      font-size: 2rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-
-    .brand-name span {
-      color: var(--green);
-    }
-
-    .desktop-links {
-      display: flex;
-      align-items: center;
-      gap: 28px;
-      margin-left: auto;
-    }
-
-    .desktop-links a {
-      color: var(--text);
-      font-size: 0.95rem;
-      font-weight: 600;
-      transition:
-        color 0.2s ease,
-        opacity 0.2s ease;
-    }
-
-    .desktop-links a:hover {
-      color: var(--green);
-    }
-
-    .login-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      padding: 0 20px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      color: var(--white);
-      font-weight: 700;
-      transition:
-        background 0.2s ease,
-        border-color 0.2s ease;
-    }
-
-    .login-link:hover {
-      background: rgba(255, 255, 255, 0.06);
-      border-color: rgba(255, 255, 255, 0.22);
-    }
-
-    .nav-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-shrink: 0;
-    }
-
-    .nav-cta {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      padding: 0 22px;
-      border: 0;
-      border-radius: 999px;
-      background: var(--green);
-      box-shadow: 0 10px 26px rgba(34, 229, 154, 0.22);
-      color: #04130d;
-      font-size: 0.95rem;
-      font-weight: 800;
-      transition:
-        transform 0.2s ease,
-        background 0.2s ease,
-        box-shadow 0.2s ease;
-    }
-
-    .nav-cta:hover {
-      transform: translateY(-1px);
-      background: #42f2ae;
-      box-shadow: 0 14px 32px rgba(34, 229, 154, 0.3);
-    }
-
-    .hero {
-      position: relative;
-      min-height: calc(100vh - 78px);
-      display: flex;
-      align-items: center;
-      padding: 82px 0 94px;
-      overflow: hidden;
-    }
-
-    .hero::before {
-      content: "";
-      position: absolute;
-      top: -140px;
-      right: -160px;
-      width: 600px;
-      height: 600px;
-      border-radius: 50%;
-      background: rgba(34, 229, 154, 0.12);
-      filter: blur(110px);
-      pointer-events: none;
-    }
-
-    .hero::after {
-      content: "";
-      position: absolute;
-      bottom: -260px;
-      left: -200px;
-      width: 620px;
-      height: 620px;
-      border-radius: 50%;
-      background: rgba(38, 113, 255, 0.09);
-      filter: blur(130px);
-      pointer-events: none;
-    }
-
-    .hero-grid {
-      position: relative;
-      z-index: 1;
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(350px, 0.9fr);
-      gap: 70px;
-      align-items: center;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      margin-bottom: 24px;
-      padding: 9px 14px;
-      border: 1px solid rgba(34, 229, 154, 0.28);
-      border-radius: 999px;
-      background: rgba(34, 229, 154, 0.08);
-      color: var(--green);
-      font-size: 0.86rem;
-      font-weight: 800;
-      letter-spacing: 0.02em;
-    }
-
-    .eyebrow-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 0 6px rgba(34, 229, 154, 0.12);
-    }
-
-    .hero h1 {
-      max-width: 780px;
-      color: var(--white);
-      font-size: clamp(3rem, 6vw, 5.6rem);
-      font-weight: 850;
-      letter-spacing: -0.055em;
-      line-height: 0.98;
-    }
-
-    .hero h1 span {
-      color: var(--green);
-    }
-
-    .hero-copy {
-      max-width: 660px;
-      margin-top: 28px;
-      color: var(--text);
-      font-size: clamp(1.08rem, 2vw, 1.28rem);
-      line-height: 1.65;
-    }
-
-    .hero-points {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px 22px;
-      margin-top: 28px;
-    }
-
-    .hero-point {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      color: var(--text);
-      font-size: 0.98rem;
-      font-weight: 700;
-    }
-
-    .check {
-      display: inline-flex;
-      width: 22px;
-      height: 22px;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-      background: rgba(34, 229, 154, 0.13);
-      color: var(--green);
-      font-size: 0.78rem;
-      font-weight: 900;
-    }
-
-    .reassurance-panel {
-      max-width: 560px;
-      margin-top: 26px;
-      padding: 22px 24px;
-      border: 1px solid rgba(34, 229, 154, 0.28);
-      border-radius: 18px;
-      background: var(--card);
-    }
-
-    .reassurance-panel p {
-      color: var(--text);
-      font-size: 0.95rem;
-      line-height: 1.6;
-    }
-
-    .reassurance-panel p + p {
-      margin-top: 8px;
-    }
-
-    .reassurance-lead {
-      color: var(--white);
-      font-size: 1rem;
-      font-weight: 800;
-    }
-
-    .hero-actions {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 18px;
-      margin-top: 38px;
-    }
-
-    .primary-button {
-      display: inline-flex;
-      min-height: 58px;
-      align-items: center;
-      justify-content: center;
-      padding: 0 28px;
-      border: 0;
-      border-radius: 14px;
-      background: var(--green);
-      box-shadow: 0 14px 36px rgba(34, 229, 154, 0.2);
-      color: #04130d;
-      font-size: 1rem;
-      font-weight: 850;
-      transition:
-        transform 0.2s ease,
-        background 0.2s ease,
-        box-shadow 0.2s ease;
-    }
-
-    .primary-button:hover {
-      transform: translateY(-2px);
-      background: #42f2ae;
-      box-shadow: 0 18px 46px rgba(34, 229, 154, 0.28);
-    }
-
-    .secondary-button {
-      display: inline-flex;
-      min-height: 58px;
-      align-items: center;
-      justify-content: center;
-      padding: 0 22px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      color: var(--white);
-      font-size: 1rem;
-      font-weight: 750;
-      transition:
-        background 0.2s ease,
-        border-color 0.2s ease;
-    }
-
-    .secondary-button:hover {
-      background: rgba(255, 255, 255, 0.05);
-      border-color: rgba(255, 255, 255, 0.22);
-    }
-
-    .price-note {
-      margin-top: 18px;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-
-    .price-note strong {
-      color: var(--white);
-    }
-
-    .reassurance-badge {
-      display: inline-flex;
-      flex-wrap: wrap;
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 0.84rem;
-    }
-
-    .compat-line {
-      max-width: 620px;
-      margin-top: 18px;
-      padding: 14px 18px;
-      border: 1px solid rgba(34, 229, 154, 0.22);
-      border-radius: 14px;
-      background: rgba(34, 229, 154, 0.06);
-      color: var(--text);
-      font-size: 0.98rem;
-      line-height: 1.6;
-    }
-
-    .compat-line strong {
-      color: var(--white);
-    }
-
-    .reassurance-line {
-      margin-top: 30px;
-      color: var(--text);
-      font-size: 1rem;
-      font-weight: 700;
-      text-align: center;
-    }
-
-    .steps-grid.steps-grid-4 {
-      grid-template-columns: repeat(4, 1fr);
-    }
-
-    .compat-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-    }
-
-    .compat-card {
-      padding: 30px 22px;
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      background: var(--card);
-      text-align: center;
-    }
-
-    .compat-icon {
-      font-size: 2rem;
-      margin-bottom: 12px;
-    }
-
-    .compat-card h3 {
-      font-size: 1.08rem;
-      letter-spacing: -0.02em;
-    }
-
-    .compat-card p {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 0.92rem;
-      line-height: 1.6;
-    }
-
-    .differentiator {
-      max-width: 760px;
-      margin: 0 auto;
-      padding: 38px 42px;
-      border: 1px solid rgba(34, 229, 154, 0.28);
-      border-radius: 26px;
-      background: var(--card);
-      box-shadow: var(--shadow);
-      text-align: center;
-    }
-
-    .differentiator p {
-      margin-top: 16px;
-      color: var(--text);
-      font-size: 1.02rem;
-      line-height: 1.7;
-    }
-
-    .differentiator p:first-of-type {
-      margin-top: 18px;
-    }
-
-    .differentiator strong {
-      color: var(--white);
-    }
-
-    .risk-flow {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: stretch;
-      justify-content: center;
-      gap: 10px;
-    }
-
-    .risk-node {
-      flex: 1 1 130px;
-      min-width: 110px;
-      padding: 20px 12px;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.025);
-      text-align: center;
-    }
-
-    .risk-node .node-icon {
-      font-size: 1.6rem;
-    }
-
-    .risk-node strong {
-      display: block;
-      margin-top: 10px;
-      font-size: 0.9rem;
-    }
-
-    .risk-node span {
-      display: block;
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 0.76rem;
-    }
-
-    .risk-node.state-caution {
-      border-color: rgba(245, 158, 11, 0.32);
-      background: rgba(245, 158, 11, 0.07);
-    }
-
-    .risk-node.state-suspicious {
-      border-color: rgba(245, 158, 11, 0.48);
-      background: rgba(245, 158, 11, 0.12);
-    }
-
-    .risk-node.state-high-risk {
-      border-color: rgba(239, 68, 68, 0.4);
-      background: rgba(239, 68, 68, 0.1);
-    }
-
-    .risk-node.state-ended {
-      border-color: rgba(239, 68, 68, 0.55);
-      background: rgba(239, 68, 68, 0.16);
-    }
-
-    .flow-caption {
-      margin-top: 22px;
-      color: var(--muted);
-      font-size: 0.85rem;
-      text-align: center;
-    }
-
-    .home-phone-card {
-      max-width: 640px;
-      margin: 0 auto;
-      padding: 26px 28px;
-      border: 1px solid rgba(34, 229, 154, 0.28);
-      border-radius: 18px;
-      background: var(--card);
-    }
-
-    .home-phone-card h3 {
-      color: var(--white);
-      font-size: 1.08rem;
-      margin-bottom: 14px;
-    }
-
-    .home-phone-card ul {
-      margin: 0;
-      padding-left: 20px;
-      color: var(--text);
-    }
-
-    .home-phone-card li {
-      font-size: 0.95rem;
-      line-height: 1.6;
-    }
-
-    .home-phone-card li + li {
-      margin-top: 6px;
-    }
-
-    .phone-stage {
-      position: relative;
-      display: flex;
-      justify-content: center;
-      padding: 30px;
-    }
-
-    .phone-glow {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 410px;
-      height: 410px;
-      border-radius: 50%;
-      background: rgba(34, 229, 154, 0.13);
-      filter: blur(74px);
-      transform: translate(-50%, -50%);
-    }
-
-    .phone {
-      position: relative;
-      z-index: 2;
-      width: 310px;
-      padding: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 44px;
-      background: linear-gradient(145deg, #2c3541, #080c12);
-      box-shadow:
-        0 40px 100px rgba(0, 0, 0, 0.55),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-    }
-
-    .phone-screen {
-      position: relative;
-      min-height: 590px;
-      overflow: hidden;
-      border-radius: 34px;
-      background:
-        radial-gradient(circle at 50% 18%, rgba(34, 229, 154, 0.12), transparent 35%),
-        linear-gradient(180deg, #0d1a2b 0%, #07111f 100%);
-      padding: 24px 22px;
-      text-align: center;
-    }
-
-    .phone-island {
-      width: 104px;
-      height: 27px;
-      margin: -10px auto 46px;
-      border-radius: 999px;
-      background: #020408;
-    }
-
-    .incoming-label {
-      color: var(--muted);
-      font-size: 0.86rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
-    .caller-avatar {
-      display: flex;
-      width: 92px;
-      height: 92px;
-      align-items: center;
-      justify-content: center;
-      margin: 22px auto 18px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.06);
-      font-size: 2.3rem;
-    }
-
-    .caller-name {
-      font-size: 1.55rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-    }
-
-    .caller-number {
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
-
-    .screening-card {
-      margin-top: 44px;
-      padding: 22px 18px;
-      border: 1px solid rgba(34, 229, 154, 0.25);
-      border-radius: 20px;
-      background: rgba(34, 229, 154, 0.08);
-    }
-
-    .shield-icon {
-      display: flex;
-      width: 48px;
-      height: 48px;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 13px;
-      border-radius: 14px;
-      background: var(--green);
-      color: #04130d;
-      font-size: 1.35rem;
-      font-weight: 900;
-    }
-
-    .screening-card strong {
-      display: block;
-      font-size: 1.02rem;
-    }
-
-    .screening-card p {
-      margin-top: 7px;
-      color: var(--text);
-      font-size: 0.88rem;
-      line-height: 1.5;
-    }
-
-    .screening-status {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 9px;
-      margin-top: 16px;
-      color: var(--green);
-      font-size: 0.84rem;
-      font-weight: 800;
-    }
-
-    .pulse {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      animation: pulse 1.6s infinite;
-    }
-
-    @keyframes pulse {
-      0% {
-        box-shadow: 0 0 0 0 rgba(34, 229, 154, 0.5);
-      }
-
-      70% {
-        box-shadow: 0 0 0 9px rgba(34, 229, 154, 0);
-      }
-
-      100% {
-        box-shadow: 0 0 0 0 rgba(34, 229, 154, 0);
-      }
-    }
-
-    .trust-strip {
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.025);
-    }
-
-    .trust-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-    }
-
-    .trust-item {
-      padding: 25px 18px;
-      border-right: 1px solid var(--border);
-      text-align: center;
-    }
-
-    .trust-item:last-child {
-      border-right: 0;
-    }
-
-    .trust-item strong {
-      display: block;
-      color: var(--white);
-      font-size: 0.96rem;
-    }
-
-    .trust-item span {
-      display: block;
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 0.84rem;
-    }
-
-    .section {
-      padding: 108px 0;
-    }
-
-    .section-light {
-      background: var(--background-light);
-    }
-
-    .section-heading {
-      max-width: 760px;
-      margin-bottom: 54px;
-    }
-
-    .section-heading.centered {
-      margin-right: auto;
-      margin-left: auto;
-      text-align: center;
-    }
-
-    .section-label {
-      display: block;
-      margin-bottom: 14px;
-      color: var(--green);
-      font-size: 0.85rem;
-      font-weight: 850;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-
-    .section-heading h2 {
-      color: var(--white);
-      font-size: clamp(2.2rem, 4vw, 3.7rem);
-      font-weight: 840;
-      letter-spacing: -0.045em;
-      line-height: 1.08;
-    }
-
-    .section-heading p {
-      margin-top: 20px;
-      color: var(--text);
-      font-size: 1.08rem;
-      line-height: 1.7;
-    }
-
-    .problem-grid {
-      display: grid;
-      grid-template-columns: 0.95fr 1.05fr;
-      gap: 70px;
-      align-items: center;
-    }
-
-    .problem-panel {
-      padding: 34px;
-      border: 1px solid var(--border);
-      border-radius: 26px;
-      background: var(--card);
-      box-shadow: var(--shadow);
-    }
-
-    .problem-panel h3 {
-      font-size: 1.25rem;
-      letter-spacing: -0.02em;
-    }
-
-    .scam-list {
-      display: grid;
-      gap: 13px;
-      margin-top: 24px;
-    }
-
-    .scam-item {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 16px;
-      border: 1px solid var(--border);
-      border-radius: 15px;
-      background: rgba(255, 255, 255, 0.025);
-    }
-
-    .scam-icon {
-      display: flex;
-      width: 42px;
-      height: 42px;
-      flex-shrink: 0;
-      align-items: center;
-      justify-content: center;
-      border-radius: 12px;
-      background: rgba(34, 229, 154, 0.1);
-      font-size: 1.15rem;
-    }
-
-    .scam-item strong {
-      display: block;
-      font-size: 0.96rem;
-    }
-
-    .scam-item span {
-      display: block;
-      margin-top: 2px;
-      color: var(--muted);
-      font-size: 0.84rem;
-    }
-
-    .steps-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 22px;
-    }
-
-    .step-card {
-      position: relative;
-      padding: 34px 28px;
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      background: var(--card);
-      transition:
-        transform 0.22s ease,
-        border-color 0.22s ease;
-    }
-
-    .step-card:hover {
-      transform: translateY(-5px);
-      border-color: rgba(34, 229, 154, 0.28);
-    }
-
-    .step-number {
-      display: flex;
-      width: 42px;
-      height: 42px;
-      align-items: center;
-      justify-content: center;
-      border-radius: 12px;
-      background: rgba(34, 229, 154, 0.12);
-      color: var(--green);
-      font-size: 0.9rem;
-      font-weight: 900;
-    }
-
-    .step-icon {
-      margin-top: 32px;
-      font-size: 2rem;
-    }
-
-    .step-card h3 {
-      margin-top: 20px;
-      font-size: 1.25rem;
-      letter-spacing: -0.025em;
-    }
-
-    .step-card p {
-      margin-top: 11px;
-      color: var(--muted);
-      font-size: 0.95rem;
-      line-height: 1.65;
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 22px;
-    }
-
-    .feature-card {
-      display: flex;
-      gap: 20px;
-      padding: 28px;
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.025);
-    }
-
-    .feature-icon {
-      display: flex;
-      width: 52px;
-      height: 52px;
-      flex: 0 0 52px;
-      align-items: center;
-      justify-content: center;
-      border-radius: 15px;
-      background: rgba(34, 229, 154, 0.11);
-      font-size: 1.35rem;
-    }
-
-    .feature-card h3 {
-      font-size: 1.08rem;
-      letter-spacing: -0.02em;
-    }
-
-    .feature-card p {
-      margin-top: 7px;
-      color: var(--muted);
-      font-size: 0.92rem;
-      line-height: 1.6;
-    }
-
-    .flow-card {
-      padding: 36px;
-      border: 1px solid var(--border);
-      border-radius: 28px;
-      background: var(--card);
-      box-shadow: var(--shadow);
-    }
-
-    .flow {
-      display: grid;
-      grid-template-columns:
-        minmax(140px, 1fr)
-        60px
-        minmax(160px, 1fr)
-        60px
-        minmax(160px, 1fr);
-      align-items: center;
-      gap: 10px;
-    }
-
-    .flow-node {
-      padding: 25px 18px;
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      background: rgba(255, 255, 255, 0.025);
-      text-align: center;
-    }
-
-    .flow-node.good {
-      border-color: rgba(34, 229, 154, 0.28);
-      background: rgba(34, 229, 154, 0.07);
-    }
-
-    .flow-node .node-icon {
-      font-size: 1.8rem;
-    }
-
-    .flow-node strong {
-      display: block;
-      margin-top: 12px;
-      font-size: 1rem;
-    }
-
-    .flow-node span {
-      display: block;
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: 0.82rem;
-    }
-
-    .flow-arrow {
-      color: var(--green);
-      font-size: 1.7rem;
-      font-weight: 800;
-      text-align: center;
-    }
-
-    .pricing-wrap {
-      max-width: 580px;
-      margin: 0 auto;
-    }
-
-    .pricing-card {
-      position: relative;
-      padding: 46px;
-      overflow: hidden;
-      border: 1px solid rgba(34, 229, 154, 0.3);
-      border-radius: 30px;
-      background:
-        linear-gradient(180deg, rgba(34, 229, 154, 0.07), transparent 40%),
-        var(--card);
-      box-shadow: var(--shadow);
-    }
-
-    .pricing-card::before {
-      content: "";
-      position: absolute;
-      top: -160px;
-      right: -120px;
-      width: 330px;
-      height: 330px;
-      border-radius: 50%;
-      background: rgba(34, 229, 154, 0.12);
-      filter: blur(70px);
-    }
-
-    .pricing-content {
-      position: relative;
-      z-index: 1;
-    }
-
-    .pricing-card h3 {
-      font-size: 1.35rem;
-      letter-spacing: -0.02em;
-    }
-
-    .price {
-      display: flex;
-      align-items: flex-end;
-      gap: 8px;
-      margin-top: 24px;
-    }
-
-    .price-amount {
-      font-size: clamp(3.8rem, 8vw, 5.7rem);
-      font-weight: 880;
-      letter-spacing: -0.065em;
-      line-height: 0.9;
-    }
-
-    .price-term {
-      padding-bottom: 9px;
-      color: var(--muted);
-      font-size: 1rem;
-    }
-
-    .pricing-description {
-      margin-top: 20px;
-      color: var(--text);
-      font-size: 1rem;
-    }
-
-    .pricing-list {
-      display: grid;
-      gap: 14px;
-      margin: 30px 0 34px;
-      list-style: none;
-    }
-
-    .pricing-list li {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: var(--text);
-      font-size: 0.98rem;
-    }
-
-    .pricing-button {
-      display: flex;
-      width: 100%;
-      min-height: 60px;
-      align-items: center;
-      justify-content: center;
-      border-radius: 15px;
-      background: var(--green);
-      color: #04130d;
-      font-size: 1.04rem;
-      font-weight: 880;
-      transition:
-        transform 0.2s ease,
-        background 0.2s ease;
-    }
-
-    .pricing-button:hover {
-      transform: translateY(-2px);
-      background: #42f2ae;
-    }
-
-    .pricing-smallprint {
-      margin-top: 16px;
-      color: var(--muted);
-      font-size: 0.82rem;
-      text-align: center;
-    }
-
-    .faq-list {
-      max-width: 850px;
-      margin: 0 auto;
-      border-top: 1px solid var(--border);
-    }
-
-    .faq-item {
-      border-bottom: 1px solid var(--border);
-    }
-
-    .faq-question {
-      display: flex;
-      width: 100%;
-      align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      padding: 25px 0;
-      border: 0;
-      background: transparent;
-      color: var(--white);
-      font: inherit;
-      font-size: 1.05rem;
-      font-weight: 760;
-      text-align: left;
-      cursor: pointer;
-    }
-
-    .faq-icon {
-      color: var(--green);
-      font-size: 1.5rem;
-      font-weight: 400;
-      transition: transform 0.25s ease;
-    }
-
-    .faq-answer {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease;
-    }
-
-    .faq-answer p {
-      max-width: 750px;
-      padding: 0 0 25px;
-      color: var(--muted);
-      font-size: 0.96rem;
-      line-height: 1.7;
-    }
-
-    .faq-item.open .faq-answer {
-      /* Generous fixed cap, not a tight fit to current content — a plain
-         max-height transition can't animate to "auto", so this needs to
-         comfortably exceed the tallest realistic answer at narrow widths
-         and larger accessibility text sizes, not just today's longest
-         (443px at 320px wide) with no margin. */
-      max-height: 1000px;
-    }
-
-    .faq-item.open .faq-icon {
-      transform: rotate(45deg);
-    }
-
-    .final-cta {
-      padding: 105px 0;
-    }
-
-    .cta-card {
-      position: relative;
-      overflow: hidden;
-      padding: 68px 50px;
-      border: 1px solid rgba(34, 229, 154, 0.25);
-      border-radius: 32px;
-      background:
-        radial-gradient(circle at 80% 25%, rgba(34, 229, 154, 0.13), transparent 35%),
-        var(--card);
-      text-align: center;
-      box-shadow: var(--shadow);
-    }
-
-    .cta-card h2 {
-      max-width: 760px;
-      margin: 0 auto;
-      font-size: clamp(2.2rem, 5vw, 4.1rem);
-      font-weight: 850;
-      letter-spacing: -0.05em;
-      line-height: 1.07;
-    }
-
-    .cta-card p {
-      max-width: 630px;
-      margin: 20px auto 30px;
-      color: var(--text);
-      font-size: 1.08rem;
-    }
-
-    .site-footer {
-      padding: 40px 0;
-      border-top: 1px solid var(--border);
-      background: #050d18;
-    }
-
-    .footer-content {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 30px;
-    }
-
-    .footer-brand {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-    }
-
-    .footer-brand img {
-      width: 42px;
-      height: 42px;
-      object-fit: contain;
-    }
-
-    .footer-brand strong {
-      font-size: 0.95rem;
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 20px;
-    }
-
-    .footer-links a {
-      color: var(--muted);
-      font-size: 0.87rem;
-      transition: color 0.2s ease;
-    }
-
-    .footer-links a:hover {
-      color: var(--green);
-    }
-
-    .copyright {
-      margin-top: 22px;
-      color: #718096;
-      font-size: 0.79rem;
-      text-align: center;
-    }
-
-    @media (max-width: 960px) {
-      .desktop-links {
-        display: none;
-      }
-
-      .hero {
-        min-height: auto;
-        padding: 70px 0 85px;
-      }
-
-      .hero-grid,
-      .problem-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .hero-grid {
-        gap: 65px;
-      }
-
-      .hero-copy {
-        max-width: 740px;
-      }
-
-      .phone-stage {
-        justify-content: center;
-      }
-
-      .steps-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .flow {
-        grid-template-columns: 1fr;
-        gap: 14px;
-      }
-
-      .flow-arrow {
-        transform: rotate(90deg);
-      }
-
-      .risk-flow {
-        flex-direction: column;
-      }
-
-      .steps-grid.steps-grid-4 {
-        grid-template-columns: 1fr;
-      }
-
-      .compat-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .trust-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
-      .trust-item:nth-child(2) {
-        border-right: 0;
-      }
-
-      .trust-item:nth-child(-n + 2) {
-        border-bottom: 1px solid var(--border);
-      }
-    }
-
-    @media (max-width: 680px) {
-      .container {
-        width: min(calc(100% - 28px), var(--max-width));
-      }
-
-      .navigation {
-        min-height: 130px;
-        flex-wrap: wrap;
-        row-gap: 10px;
-      }
-
-      .brand img {
-        width: 100px;
-        height: 100px;
-      }
-
-      .brand-name {
-        font-size: 1.12rem;
-      }
-
-      .nav-actions {
-        margin-left: auto;
-        gap: 8px;
-      }
-
-      .login-link {
-        min-height: 40px;
-        padding: 0 15px;
-        font-size: 0.88rem;
-      }
-
-      .nav-cta {
-        min-height: 40px;
-        padding: 0 16px;
-        font-size: 0.85rem;
-      }
-
-      .hero {
-        padding: 54px 0 70px;
-      }
-
-      .hero h1 {
-        font-size: clamp(2.65rem, 14vw, 4rem);
-      }
-
-      .hero-copy {
-        margin-top: 22px;
-        font-size: 1.03rem;
-      }
-
-      .hero-points {
-        display: grid;
-        gap: 11px;
-      }
-
-
-      .home-phone-card {
-        padding: 22px 20px;
-      }
-
-      .hero-actions {
-        display: grid;
-        gap: 12px;
-      }
-
-      .primary-button,
-      .secondary-button {
-        width: 100%;
-      }
-
-      .phone-stage {
-        padding: 10px 0 0;
-      }
-
-      .phone {
-        width: min(100%, 300px);
-      }
-
-      .phone-screen {
-        min-height: 550px;
-      }
-
-      .section {
-        padding: 78px 0;
-      }
-
-      .section-heading {
-        margin-bottom: 38px;
-      }
-
-      .section-heading h2 {
-        font-size: clamp(2rem, 10vw, 3rem);
-      }
-
-      .problem-grid {
-        gap: 40px;
-      }
-
-      .problem-panel,
-      .flow-card,
-      .pricing-card {
-        padding: 24px;
-      }
-
-      .features-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .feature-card {
-        padding: 23px 20px;
-      }
-
-      .trust-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .trust-item {
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .trust-item:last-child {
-        border-bottom: 0;
-      }
-
-      .price {
-        align-items: flex-end;
-      }
-
-      .cta-card {
-        padding: 48px 22px;
-      }
-
-      .footer-content {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .footer-links {
-        justify-content: flex-start;
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      html {
-        scroll-behavior: auto;
-      }
-
-      *,
-      *::before,
-      *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
-        transition-duration: 0.01ms !important;
-      }
-    }
-
-    .ios-coming-soon-banner {
-      background: #eef2ff;
-      border-bottom: 1px solid #c7d2fe;
-      padding: 10px 0;
-      font-size: 14px;
-      text-align: center;
-    }
-    .ios-coming-soon-banner .container {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    .ios-coming-soon-banner a {
-      font-weight: 600;
-      white-space: nowrap;
-    }
-  </style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); scroll-padding-top: 84px; }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  body {
+    background: radial-gradient(ellipse 90% 40% at 50% 0%, rgba(60, 240, 122, 0.10), transparent 70%), var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 1.125rem; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  img { max-width: 100%; display: block; }
+  .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .eyebrow { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green); }
+  h1, h2, h3 { letter-spacing: -0.025em; line-height: 1.15; }
+  h1 { font-size: clamp(2.1rem, 6.4vw, 3.5rem); font-weight: 800; }
+  h2 { font-size: clamp(1.7rem, 4.4vw, 2.5rem); font-weight: 800; }
+  h3 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.015em; }
+  .lead { font-size: 1.2rem; color: var(--muted); max-width: 34em; }
+  section { padding: 64px 0; }
+  .band { background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .section-head { max-width: 42rem; margin-bottom: 36px; }
+  .section-head p { color: var(--muted); margin-top: 12px; }
+  :focus-visible { outline: 3px solid var(--green); outline-offset: 3px; border-radius: 6px; }
+
+  .skip { position: absolute; left: 16px; top: -80px; background: var(--green); color: #04100a; font-weight: 800; padding: 12px 18px; border-radius: 10px; text-decoration: none; z-index: 100; }
+  .skip:focus { top: 12px; }
+
+  /* ---------- header ---------- */
+  .site-header { border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50; background: rgba(5, 10, 7, 0.92); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; min-height: 44px; text-decoration: none; font-weight: 800; font-size: 1.2rem; letter-spacing: -0.02em; white-space: nowrap; }
+  .brand img { width: 34px; height: 34px; }
+  .brand span span { color: var(--green); }
+  .nav { display: none; gap: 22px; font-size: 0.98rem; }
+  .nav a { text-decoration: none; color: var(--muted); padding: 10px 2px; min-height: 44px; display: inline-flex; align-items: center; }
+  .nav a:hover { color: var(--text); }
+  .header-actions { display: flex; align-items: center; gap: 14px; }
+  .login { color: var(--muted); text-decoration: none; font-size: 0.98rem; padding: 10px 4px; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; }
+  .login:hover { color: var(--text); }
+  .btn-sm { background: var(--green); color: #04100a; font-weight: 800; text-decoration: none; padding: 11px 18px; border-radius: 12px; font-size: 0.98rem; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; }
+  @media (min-width: 980px) { .nav { display: flex; } }
+
+  /* ---------- route buttons (same language as /go) ---------- */
+  .routes { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 420px; margin-top: 28px; }
+  .route {
+    display: flex; flex-direction: column; justify-content: center; text-align: center;
+    min-height: 70px; padding: 10px 20px; border-radius: 16px; text-decoration: none;
+    border: 1.5px solid var(--green); background: var(--card); color: var(--text);
+    box-shadow: 0 0 28px rgba(60, 240, 122, 0.14);
+  }
+  .route small { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .route strong { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+  a.route:hover { background: var(--card-2); }
+  .route.alt { box-shadow: none; border-color: var(--border-strong); min-height: 68px; }
+  .route.alt strong { font-size: 1.15rem; }
+  .route.alt span { font-size: 0.9rem; color: var(--muted); line-height: 1.35; margin-top: 2px; }
+  .route.disabled { border-style: dashed; border-color: var(--border-strong); background: transparent; box-shadow: none; cursor: default; color: var(--dim); }
+  .route.disabled small { color: var(--dim); }
+  .route-note { font-size: 0.95rem; color: var(--muted); margin-top: -2px; }
+  .route-note a { color: var(--green); text-underline-offset: 3px; }
+  .reassure { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 26px; font-size: 0.98rem; color: var(--muted); list-style: none; }
+  .reassure li::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 9px; vertical-align: middle; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 48px 0 56px; }
+  .hero .grid { display: grid; gap: 44px; align-items: center; }
+  .hero h1 { margin-top: 14px; }
+  .hero .lead { margin-top: 18px; }
+  .hero-visual { display: flex; justify-content: center; }
+  @media (min-width: 900px) { .hero { padding: 72px 0 80px; } .hero .grid { grid-template-columns: 1.1fr 0.9fr; gap: 64px; } }
+
+  .phone { width: 250px; border: 8px solid #16221b; border-radius: 40px; overflow: hidden; background: #000;
+           box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 70px rgba(60, 240, 122, 0.10); }
+  .phone img { width: 100%; height: auto; }
+  .caption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 14px; }
+
+  /* ---------- problem ---------- */
+  .problem-grid { display: grid; gap: 16px; margin-top: 8px; }
+  .problem { display: grid; grid-template-columns: 48px 1fr; gap: 6px 16px; align-items: start; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+  .problem .ico { grid-row: 1 / span 2; width: 48px; height: 48px; border-radius: 14px; background: var(--green-soft); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; color: var(--green); }
+  .problem .ico svg { width: 24px; height: 24px; }
+  .problem h3 { font-size: 1.1rem; align-self: end; }
+  .problem p { color: var(--muted); font-size: 1rem; }
+  .problem-foot { margin-top: 28px; max-width: 46rem; color: var(--muted); }
+  .problem-foot a { color: var(--green); font-weight: 700; text-underline-offset: 4px; }
+  @media (min-width: 700px) { .problem-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1000px) { .problem-grid { grid-template-columns: repeat(4, 1fr); } .problem { grid-template-columns: 1fr; } .problem .ico { grid-row: auto; margin-bottom: 8px; } .problem h3 { align-self: start; } }
+
+  /* ---------- how it works: three steps ---------- */
+  .steps3 { display: grid; gap: 16px; list-style: none; counter-reset: s; }
+  .step3 { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; border-top: 3px solid var(--border-strong); display: flex; flex-direction: column; }
+  .step3.trusted { border-top-color: var(--neutral); }
+  .step3.unknown { border-top-color: var(--green); }
+  .step3.serious { border-top-color: var(--amber); }
+  .step3 .n { width: 38px; height: 38px; border-radius: 50%; background: var(--green-soft); border: 1px solid var(--green-deep); color: var(--green); font-weight: 800; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+  .step3 .tag { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .step3 p.body { color: var(--muted); margin-top: 10px; font-size: 1.02rem; flex: 1; }
+  .outcome { margin-top: 18px; font-size: 0.85rem; color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 7px 14px; border-radius: 999px; font-weight: 700; font-size: 0.92rem; border: 1px solid var(--border-strong); color: var(--text); }
+  .chip::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--neutral); }
+  .chip.green { background: var(--green-soft); border-color: var(--green-deep); } .chip.green::before { background: var(--green); }
+  .chip.amber { background: var(--amber-soft); border-color: var(--amber); color: #fde68a; } .chip.amber::before { background: var(--amber); }
+  @media (min-width: 900px) { .steps3 { grid-template-columns: repeat(3, 1fr); } }
+  .honest { margin-top: 24px; border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 22px 26px; background: rgba(255,255,255,0.02); max-width: 60rem; }
+  .honest strong { color: var(--text); }
+  .honest p { color: var(--muted); font-size: 1rem; }
+
+  /* ---------- split sections (text + phone) ---------- */
+  .split { display: grid; gap: 40px; align-items: center; }
+  .split .copy p { color: var(--muted); margin-top: 14px; }
+  .ticks { list-style: none; margin-top: 20px; display: grid; gap: 12px; }
+  .ticks li { padding-left: 32px; position: relative; }
+  .ticks li::before { content: ""; position: absolute; left: 0; top: 6px; width: 20px; height: 20px; border-radius: 50%; background: var(--green-soft); border: 1px solid var(--green-deep); }
+  .ticks li::after { content: ""; position: absolute; left: 6px; top: 11px; width: 8px; height: 4px; border-left: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(-45deg); }
+  .ticks li strong { color: var(--text); }
+  .split .visual { display: flex; flex-direction: column; align-items: center; }
+  @media (min-width: 900px) { .split { grid-template-columns: 1fr 1fr; gap: 72px; } .split.flip .visual { order: -1; } }
+
+  /* ---------- panels ---------- */
+  .two { display: grid; gap: 18px; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; }
+  .panel p { color: var(--muted); margin-top: 10px; font-size: 1.02rem; }
+  .panel .routes { margin-top: 20px; max-width: none; }
+  .fine { font-size: 0.92rem; color: var(--muted); }
+  .panel .fine { display: block; margin-top: 14px; }
+  @media (min-width: 800px) { .two { grid-template-columns: 1fr 1fr; } }
+
+  .family { display: grid; gap: 28px; }
+  @media (min-width: 900px) { .family { grid-template-columns: 1.1fr 0.9fr; gap: 64px; align-items: center; } }
+  .family .copy p { color: var(--muted); margin-top: 14px; max-width: 34em; }
+
+  /* ---------- setup steps ---------- */
+  .steps { display: grid; gap: 16px; list-style: none; }
+  .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+  .step .n { width: 40px; height: 40px; border-radius: 50%; background: var(--green-soft); border: 1px solid var(--green-deep); color: var(--green); font-weight: 800; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+  .step p { color: var(--muted); margin-top: 8px; font-size: 1.02rem; }
+  @media (min-width: 700px) { .steps { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1000px) { .steps { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 699px) {
+    .step { display: grid; grid-template-columns: 40px 1fr; column-gap: 16px; padding: 20px; }
+    .step .n { grid-row: 1 / span 2; margin-bottom: 0; }
+    .step h3, .step p { grid-column: 2; } .step p { margin-top: 6px; }
+  }
+
+  /* ---------- pricing ---------- */
+  .price-card { max-width: 560px; background: var(--card); border: 1.5px solid var(--green); border-radius: 24px; padding: 32px; box-shadow: 0 0 50px rgba(60, 240, 122, 0.10); }
+  .price { font-size: clamp(2.6rem, 8vw, 3.6rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1; margin-top: 8px; }
+  .price small { display: block; margin-top: 8px; font-size: 1.05rem; font-weight: 600; color: var(--muted); letter-spacing: 0; line-height: 1.3; }
+  .price-card .ticks { margin-top: 22px; }
+  .price-card .routes { max-width: none; margin-top: 26px; }
+
+  /* ---------- FAQ ---------- */
+  .faq { max-width: 52rem; display: grid; gap: 12px; }
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 16px; }
+  summary { cursor: pointer; list-style: none; padding: 20px 56px 20px 22px; font-weight: 700; position: relative; font-size: 1.08rem; min-height: 60px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; position: absolute; right: 22px; top: 50%; transform: translateY(-50%); font-size: 1.6rem; font-weight: 400; color: var(--green); }
+  details[open] summary::after { content: "–"; }
+  details p { padding: 0 22px 22px; color: var(--muted); font-size: 1.04rem; }
+  details a, .faq a { color: var(--green); text-underline-offset: 3px; }
+
+  /* ---------- advice / waiting list / final ---------- */
+  .advice { display: flex; flex-direction: column; gap: 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; max-width: 52rem; }
+  .advice p { color: var(--muted); }
+  .advice a.link { color: var(--green); font-weight: 700; text-underline-offset: 4px; display: inline-flex; align-items: center; min-height: 44px; }
+  .notify { background: var(--card); border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 26px; max-width: 40rem; }
+  .notify p { color: var(--muted); font-size: 1rem; margin: 8px 0 14px; }
+  .notify label { display: block; font-weight: 700; margin-bottom: 8px; font-size: 1rem; }
+  .notify .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .notify input { flex: 1 1 220px; min-width: 0; min-height: 52px; background: rgba(255,255,255,0.05); border: 1.5px solid var(--border-strong); border-radius: 12px; padding: 14px; color: var(--text); font-size: 1rem; }
+  .notify button { background: var(--green); color: #04100a; font-weight: 800; border: 0; border-radius: 12px; padding: 14px 22px; font-size: 1rem; min-height: 52px; cursor: pointer; }
+  .notify button:disabled { opacity: 0.6; cursor: default; }
+  .notify .msg-error { color: #fde68a; margin: 12px 0 0; }
+  .notify .msg-ok { color: var(--green); margin: 12px 0 0; }
+  .final { text-align: center; }
+  .final .routes { margin-left: auto; margin-right: auto; }
+  .final p { color: var(--muted); max-width: 34em; margin: 14px auto 0; }
+  [hidden] { display: none !important; }
+
+  footer { border-top: 1px solid var(--border); padding: 40px 0 48px; color: var(--muted); font-size: 0.95rem; }
+  .foot { display: grid; gap: 22px; }
+  .foot nav { display: flex; flex-wrap: wrap; gap: 0 22px; }
+  .foot nav a { text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+  .foot nav a:hover { color: var(--text); }
+  .foot .small { font-size: 0.85rem; line-height: 1.6; max-width: 46rem; }
+  @media (max-width: 480px) {
+    .wrap { padding: 0 20px; } section { padding: 48px 0; }
+    .site-header .wrap { height: 64px; gap: 8px; }
+    .brand { font-size: 1.02rem; gap: 8px; } .brand img { width: 28px; height: 28px; }
+    .header-actions { gap: 6px; } .login { font-size: 0.9rem; padding: 10px 6px; }
+    .btn-sm { padding: 9px 13px; font-size: 0.9rem; }
+    html { scroll-padding-top: 76px; }
+    .eyebrow { letter-spacing: 0.06em; font-size: 0.76rem; }
+  }
+  /* Very small phones (≤359px): header can't fit brand + Log in + CTA. Keep the
+     brand and the main CTA; "Customer login" remains in the footer. */
+  @media (max-width: 359px) { .header-actions .login { display: none; } }
+</style>
 </head>
-
 <body>
+<a class="skip" href="#main">Skip to main content</a>
 
-  <header class="site-header">
-    <div class="container navigation">
-
-      <a class="brand" href="#top" aria-label="Home Call Guard home">
-        <img src="/logo.png" alt="Home Call Guard logo">
-
-        <div class="brand-name">
-          Home Call <span>Guard</span>
-        </div>
-      </a>
-
-      <nav class="desktop-links" aria-label="Main navigation">
-        <a href="#how-it-works">How it works</a>
-        <a href="#benefits">Benefits</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#faq">Questions</a>
-        <a href="/guides/">Scam Advice</a>
-      </nav>
-
-      <div class="nav-actions">
-        <a class="login-link" href="/login.html">
-          Log in
-        </a>
-
-        <a class="nav-cta" href="/register.html">
-          Get Protected
-        </a>
-      </div>
-
-    </div>
-  </header>
-
-  <!-- IOS_COMING_SOON (2026-09-19, services/featureFlags.js): hidden by
-       default so a viewer whose browser blocks/delays JS never sees a
-       stale claim either way; shown only once GET /api/v1/launch-flags
-       confirms the flag is on. Removing this banner entirely once Apple
-       approves the app is exactly "set IOS_COMING_SOON to false" — no
-       markup change needed, since it simply stops being shown. Never
-       says HCG itself is unavailable — only the iPhone app. -->
-  <div id="iosComingSoonBanner" class="ios-coming-soon-banner" hidden>
-    <div class="container">
-      <span>
-        <strong>iPhone app coming soon</strong> — Home Call Guard is currently available for supported Android phones and landlines.
-        Our iPhone app is awaiting final App Store approval.
-      </span>
-      <a href="#ios-waiting-list">Join the iPhone waiting list →</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Home Call Guard — home"><img src="/hcg-shield.png" alt="" width="34" height="34"><span>Home Call <span>Guard</span></span></a>
+    <nav class="nav" aria-label="Main">
+      <a href="#how-it-works">How it works</a>
+      <a href="#activity">Activity</a>
+      <a href="#phones">Supported phones</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">Questions</a>
+      <a href="/guides/">Scam advice</a>
+    </nav>
+    <div class="header-actions">
+      <a class="login" href="/login.html">Log in</a>
+      <a class="btn-sm" href="#get-started">Get started</a>
     </div>
   </div>
-  <script>
-    (function () {
-      fetch("/api/v1/launch-flags")
-        .then(function (r) { return r.json(); })
-        .then(function (flags) {
-          if (!flags || !flags.iosComingSoon) return;
-          var banner = document.getElementById("iosComingSoonBanner");
-          if (banner) banner.hidden = false;
-        })
-        .catch(function () {
-          // Fails closed toward NOT showing the banner on a network
-          // error, rather than guessing — the homepage must never claim
-          // something about availability it can't actually confirm.
-        });
-    })();
-  </script>
-
-  <main id="top">
-
-    <section class="hero">
-      <div class="container hero-grid">
-
-        <div class="hero-content">
-
-          <div class="eyebrow">
-            <span class="eyebrow-dot"></span>
-            AI-powered call protection
-          </div>
-
-          <h1>
-            Protection <span>while the conversation is happening</span>.
-          </h1>
-
-          <p class="hero-copy">
-            Home Call Guard adds an extra layer of protection when an unknown
-            caller contacts you. It monitors the conversation as it happens,
-            looking for signs of scams or manipulation. If the call becomes
-            dangerous, Home Call Guard can step in and end it.
-          </p>
-
-          <p class="compat-line">
-            <strong>Protect your landline or mobile.</strong>
-            Works with landlines and Android now — iPhone coming soon.
-            <strong>£4.99 per month.</strong>
-          </p>
-
-          <div class="hero-points">
-            <div class="hero-point">
-              <span class="check">✓</span>
-              Keep your existing phone number
-            </div>
-
-            <div class="hero-point">
-              <span class="check">✓</span>
-              Trusted contacts connect normally, every time
-            </div>
-
-            <div class="hero-point">
-              <span class="check">✓</span>
-              Unknown callers are monitored while you talk, not just checked beforehand
-            </div>
-          </div>
-
-          <div class="reassurance-panel">
-            <p class="reassurance-lead">
-              Your trusted contacts call exactly as they do today.
-            </p>
-            <p>
-              Friends, family and saved contacts are never monitored or delayed.
-            </p>
-            <p>
-              Only calls from unknown numbers are monitored, and only while
-              the conversation is happening.
-            </p>
-          </div>
-
-          <div class="hero-actions">
-            <a class="primary-button" href="/register.html">
-              Get Protected
-            </a>
-
-            <a class="secondary-button" href="#how-it-works">
-              See how it works
-            </a>
-          </div>
-
-          <p class="reassurance-badge">
-            🔒 Setup takes under 2 minutes · Keep your existing phone number · Cancel anytime
-          </p>
-
-        </div>
-
-        <div class="phone-stage" aria-label="Home Call Guard monitoring a call from an unknown caller">
-
-          <div class="phone-glow"></div>
-
-          <div class="phone">
-            <div class="phone-screen">
-
-              <div class="phone-island"></div>
-
-              <div class="incoming-label">
-                Incoming call
-              </div>
-
-              <div class="caller-avatar">
-                ☎
-              </div>
-
-              <div class="caller-name">
-                Unknown caller
-              </div>
-
-              <div class="caller-number">
-                Number not in your contacts
-              </div>
-
-              <div class="screening-card">
-
-                <div class="shield-icon">
-                  ✓
-                </div>
-
-                <strong>
-                  Home Call Guard
-                </strong>
-
-                <p>
-                  Monitoring this call for your safety.
-                </p>
-
-                <div class="screening-status">
-                  <span class="pulse"></span>
-                  Live monitoring active
-                </div>
-
-              </div>
-
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section" id="how-it-works">
-      <div class="container">
-
-        <div class="section-heading centered">
-          <span class="section-label">How it works</span>
-          <h2>How Home Call Guard works</h2>
-        </div>
-
-        <div class="steps-grid steps-grid-4">
-
-          <article class="step-card">
-            <div class="step-number">1</div>
-            <div class="step-icon">📞</div>
-            <h3>An unknown caller calls</h3>
-            <p>
-              Someone who isn't one of your trusted contacts calls your
-              landline or mobile.
-            </p>
-          </article>
-
-          <article class="step-card">
-            <div class="step-number">2</div>
-            <div class="step-icon">👂</div>
-            <h3>Home Call Guard monitors the conversation</h3>
-            <p>
-              Home Call Guard looks for signs that the conversation may be
-              becoming suspicious while you are talking.
-            </p>
-          </article>
-
-          <article class="step-card">
-            <div class="step-number">3</div>
-            <div class="step-icon">⚠️</div>
-            <h3>Risk develops</h3>
-            <p>
-              HCG can recognise warning signs as the conversation progresses.
-            </p>
-          </article>
-
-          <article class="step-card">
-            <div class="step-number">4</div>
-            <div class="step-icon">🛑</div>
-            <h3>Home Call Guard steps in</h3>
-            <p>
-              If sufficient danger is detected, Home Call Guard can intervene
-              and end the call to help protect you.
-            </p>
-          </article>
-
-        </div>
-
-        <p class="reassurance-line">
-          Calls from your trusted contacts connect normally.
-        </p>
-
-      </div>
-    </section>
-
-    <section class="section section-light">
-      <div class="container">
-
-        <div class="section-heading centered">
-          <span class="section-label">Compatibility</span>
-          <h2>Works with the phone you already have.</h2>
-        </div>
-
-        <div class="compat-grid">
-
-          <article class="compat-card">
-            <div class="compat-icon" aria-hidden="true">☎️</div>
-            <h3>Landline</h3>
-            <p>Protect your home telephone.</p>
-          </article>
-
-          <article class="compat-card">
-            <div class="compat-icon" aria-hidden="true">🤖</div>
-            <h3>Android</h3>
-            <p>Protect calls on your Android mobile.</p>
-          </article>
-
-          <article class="compat-card">
-            <div class="compat-icon" aria-hidden="true">🍎</div>
-            <h3>iPhone — Coming soon</h3>
-            <p>Our iPhone app is awaiting final App Store approval. <a href="#ios-waiting-list">Join the waiting list →</a></p>
-          </article>
-
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="container">
-        <div class="differentiator">
-          <span class="section-label">More than a call blocker</span>
-          <p>
-            Traditional call blocking tries to identify unwanted numbers
-            before you answer. But sophisticated scam calls can come from
-            unfamiliar numbers and may initially sound completely genuine.
-          </p>
-          <p>
-            <strong>Home Call Guard is different.</strong> It provides an
-            extra layer of protection while the conversation is taking place.
-          </p>
-        </div>
-      </div>
-    </section>
-
-    <section class="trust-strip">
-      <div class="container trust-grid">
-
-        <div class="trust-item">
-          <strong>Keep your number</strong>
-          <span>No need to change it</span>
-        </div>
-
-        <div class="trust-item">
-          <strong>Trusted contacts</strong>
-          <span>People you know can get through</span>
-        </div>
-
-        <div class="trust-item">
-          <strong>Simple to set up</strong>
-          <span>Nothing complicated to learn</span>
-        </div>
-
-        <div class="trust-item">
-          <strong>Cancel anytime</strong>
-          <span>No long contract</span>
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section section-light">
-      <div class="container problem-grid">
-
-        <div class="section-heading">
-
-          <span class="section-label">
-            The problem
-          </span>
-
-          <h2>
-            Scam calls are becoming harder to recognise.
-          </h2>
-
-          <p>
-            Fraudsters can sound convincing, create urgency and pretend to be
-            organisations you trust. Home Call Guard adds another layer of
-            protection on every call from a number you don't already know.
-          </p>
-
-        </div>
-
-        <div class="problem-panel">
-
-          <h3>
-            Scam callers may pretend to be:
-          </h3>
-
-          <div class="scam-list">
-
-            <div class="scam-item">
-              <div class="scam-icon">🏦</div>
-              <div>
-                <strong>Your bank</strong>
-                <span>Claiming there is a problem with your account</span>
-              </div>
-            </div>
-
-            <div class="scam-item">
-              <div class="scam-icon">📦</div>
-              <div>
-                <strong>A delivery company</strong>
-                <span>Asking for payment or personal information</span>
-              </div>
-            </div>
-
-            <div class="scam-item">
-              <div class="scam-icon">⚡</div>
-              <div>
-                <strong>Your energy provider</strong>
-                <span>Offering refunds or threatening disconnection</span>
-              </div>
-            </div>
-
-            <div class="scam-item">
-              <div class="scam-icon">🏛</div>
-              <div>
-                <strong>A government department</strong>
-                <span>Creating pressure with an urgent or alarming claim</span>
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section" id="get-started">
-      <div class="container">
-
-        <div class="section-heading centered">
-
-          <span class="section-label">
-            Getting started
-          </span>
-
-          <h2>
-            Your trusted contacts call you exactly as they do today.
-          </h2>
-
-          <p>
-            Home Call Guard leaves trusted contacts alone. Only unknown callers
-            are monitored during the call.
-          </p>
-
-        </div>
-
-        <div class="steps-grid">
-
-          <article class="step-card">
-
-            <div class="step-number">01</div>
-            <div class="step-icon">📇</div>
-
-            <h3>
-              Upload your trusted contacts
-            </h3>
-
-            <p>
-              <strong>Your phone doesn't need contacts.</strong>
-            </p>
-
-            <p>
-              Simply upload the people you trust from your mobile phone or
-              computer. Home Call Guard securely creates your trusted caller
-              list in under two minutes.
-            </p>
-
-          </article>
-
-          <article class="step-card">
-
-            <div class="step-number">02</div>
-            <div class="step-icon">☎</div>
-
-            <h3>
-              Keep using your existing phone
-            </h3>
-
-            <p>
-              <strong>Nothing changes for your family and friends.</strong>
-            </p>
-
-            <p>
-              They continue calling your existing phone number exactly as
-              they always have.
-            </p>
-
-            <p>
-              No new handset.<br>
-              No new phone number.<br>
-              Nothing new to learn.
-            </p>
-
-          </article>
-
-          <article class="step-card">
-
-            <div class="step-number">03</div>
-            <div class="step-icon">🛡</div>
-
-            <h3>
-              Unknown callers are monitored
-            </h3>
-
-            <p>
-              Anyone not on your trusted list is connected as normal, then
-              monitored while the conversation happens.
-            </p>
-
-            <p>
-              Trusted callers are connected immediately.<br>
-              Unknown callers are monitored by AI during the call.<br>
-              Home Call Guard can step in if the conversation turns dangerous.
-            </p>
-
-          </article>
-
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section section-light" id="benefits">
-      <div class="container">
-
-        <div class="section-heading">
-
-          <span class="section-label">
-            Why Home Call Guard
-          </span>
-
-          <h2>
-            More confidence every time your phone rings.
-          </h2>
-
-          <p>
-            Designed to make call protection simple, understandable and easy
-            to manage.
-          </p>
-
-        </div>
-
-        <div class="features-grid">
-
-          <article class="feature-card">
-            <div class="feature-icon">🛡</div>
-
-            <div>
-              <h3>Monitor unknown callers</h3>
-              <p>
-                Add protection while you talk to callers you don't recognise.
-              </p>
-            </div>
-          </article>
-
-          <article class="feature-card">
-            <div class="feature-icon">👨‍👩‍👧</div>
-
-            <div>
-              <h3>Help protect family members</h3>
-              <p>
-                Give relatives greater confidence when answering their phone.
-              </p>
-            </div>
-          </article>
-
-          <article class="feature-card">
-            <div class="feature-icon">☎</div>
-
-            <div>
-              <h3>Keep your existing number</h3>
-              <p>
-                Continue using the phone number that friends and family already
-                know.
-              </p>
-            </div>
-          </article>
-
-          <article class="feature-card">
-            <div class="feature-icon">✓</div>
-
-            <div>
-              <h3>Control trusted contacts</h3>
-              <p>
-                Add people you know so their calls can be handled appropriately.
-              </p>
-            </div>
-          </article>
-
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="container">
-
-        <div class="section-heading centered">
-
-          <span class="section-label">
-            While the call is happening
-          </span>
-
-          <h2>
-            What happens when somebody calls?
-          </h2>
-
-          <p>
-            A genuine call from a trusted contact never enters this process —
-            it connects immediately. This is what happens for an unknown
-            caller.
-          </p>
-
-        </div>
-
-        <div class="flow-card">
-          <div class="risk-flow">
-
-            <div class="risk-node">
-              <div class="node-icon">☎</div>
-              <strong>Unknown caller</strong>
-              <span>A number you don't recognise</span>
-            </div>
-
-            <div class="flow-arrow">→</div>
-
-            <div class="risk-node">
-              <div class="node-icon">👂</div>
-              <strong>Monitoring</strong>
-              <span>Home Call Guard listens as you talk</span>
-            </div>
-
-            <div class="flow-arrow">→</div>
-
-            <div class="risk-node state-caution">
-              <div class="node-icon">🤔</div>
-              <strong>Caution</strong>
-              <span>Early warning signs noticed</span>
-            </div>
-
-            <div class="flow-arrow">→</div>
-
-            <div class="risk-node state-suspicious">
-              <div class="node-icon">⚠️</div>
-              <strong>Suspicious</strong>
-              <span>The pattern looks concerning</span>
-            </div>
-
-            <div class="flow-arrow">→</div>
-
-            <div class="risk-node state-high-risk">
-              <div class="node-icon">🚨</div>
-              <strong>High risk</strong>
-              <span>Strong signs of a scam</span>
-            </div>
-
-            <div class="flow-arrow">→</div>
-
-            <div class="risk-node state-ended">
-              <div class="node-icon">⛔</div>
-              <strong>Call ended</strong>
-              <span>Home Call Guard steps in</span>
-            </div>
-
-          </div>
-          <p class="flow-caption">
-            Most calls never progress past monitoring — this shows what
-            happens if genuine danger is detected.
-          </p>
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section section-light" id="pricing">
-      <div class="container">
-
-        <div class="section-heading centered">
-
-          <span class="section-label">
-            Simple pricing
-          </span>
-
-          <h2>
-            Affordable protection without a long contract.
-          </h2>
-
-        </div>
-
-        <div class="pricing-wrap">
-
-          <div class="pricing-card">
-            <div class="pricing-content">
-
-              <h3>
-                Home Call Guard
-              </h3>
-
-              <div class="price">
-                <span class="price-amount">£4.99</span>
-                <span class="price-term">per month</span>
-              </div>
-
-              <p class="pricing-description">
-                Everything you need to start protecting your phone from unknown
-                callers.
-              </p>
-
-              <ul class="pricing-list">
-                <li>
-                  <span class="check">✓</span>
-                  Unknown caller monitoring
-                </li>
-
-                <li>
-                  <span class="check">✓</span>
-                  Trusted contact management
-                </li>
-
-                <li>
-                  <span class="check">✓</span>
-                  Keep your existing number
-                </li>
-
-                <li>
-                  <span class="check">✓</span>
-                  Online protection dashboard
-                </li>
-
-                <li>
-                  <span class="check">✓</span>
-                  Cancel anytime
-                </li>
-              </ul>
-
-              <a class="pricing-button" href="/register.html">
-                Get Protected
-              </a>
-
-              <p class="pricing-smallprint">
-                Secure online registration. No long-term commitment.
-              </p>
-
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="container">
-        <div class="home-phone-card">
-          <h3>How does this work with my phone?</h3>
-          <ul>
-            <li>Upload the phone numbers of your trusted callers once.</li>
-            <li>Family and friends come straight through as normal.</li>
-            <li>Unknown callers hear a short message that the line is protected, then are connected as normal — Home Call Guard keeps listening throughout the call and can step in if it hears the signs of a scam.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- IOS_COMING_SOON: hidden by default, shown only when the banner
-         above confirms the flag is on (same fetch, same element toggled
-         together — see the script below). -->
-    <section class="section section-light" id="ios-waiting-list" hidden>
-      <div class="container">
-        <div class="home-phone-card">
-          <h3>Home Call Guard for iPhone is coming soon</h3>
-          <p>We're waiting for final approval of our iPhone app. Home Call Guard isn't currently available for new iPhone customers.</p>
-          <p>Join the waiting list and we'll let you know as soon as it's available.</p>
-          <div id="homepageWaitingListForm">
-            <label for="homepageWaitingListEmail">Email address</label>
-            <input type="email" id="homepageWaitingListEmail" autocomplete="email" placeholder="you@example.com">
-            <button type="button" id="homepageWaitingListSubmit">Join the waiting list</button>
-            <p id="homepageWaitingListError" hidden></p>
-            <p id="homepageWaitingListSuccess" hidden>Thanks — we'll email you as soon as Home Call Guard for iPhone is available.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-    <script>
-      (function () {
-        fetch("/api/v1/launch-flags")
-          .then(function (r) { return r.json(); })
-          .then(function (flags) {
-            if (!flags || !flags.iosComingSoon) return;
-            var section = document.getElementById("ios-waiting-list");
-            if (section) section.hidden = false;
-          })
-          .catch(function () {});
-
-        var submitBtn = document.getElementById("homepageWaitingListSubmit");
-        if (!submitBtn) return;
-        submitBtn.addEventListener("click", function () {
-          var errorEl = document.getElementById("homepageWaitingListError");
-          var successEl = document.getElementById("homepageWaitingListSuccess");
-          var emailEl = document.getElementById("homepageWaitingListEmail");
-          if (errorEl) errorEl.hidden = true;
-          if (successEl) successEl.hidden = true;
-          var email = emailEl ? emailEl.value.trim() : "";
-          if (!email || email.indexOf("@") === -1) {
-            if (errorEl) { errorEl.textContent = "Please enter a valid email address."; errorEl.hidden = false; }
-            return;
-          }
-          fetch("/api/v1/waiting-list", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: email, reason: "ios_coming_soon", deviceType: "iphone" }),
-          })
-            .then(function (r) { if (!r.ok) throw new Error("failed"); })
-            .then(function () {
-              if (successEl) successEl.hidden = false;
-              submitBtn.disabled = true;
-            })
-            .catch(function () {
-              if (errorEl) { errorEl.textContent = "We couldn't save that just now. Please check your connection and try again."; errorEl.hidden = false; }
-            });
-        });
-      })();
-    </script>
-
-    <section class="section" id="faq">
-      <div class="container">
-
-        <div class="section-heading centered">
-
-          <span class="section-label">
-            Common questions
-          </span>
-
-          <h2>
-            Everything you need to know before getting started.
-          </h2>
-
-        </div>
-
-        <div class="faq-list">
-
-          <div class="faq-item open">
-
-            <button
-              class="faq-question"
-              type="button"
-              aria-expanded="true"
-            >
-              <span>Can I keep my existing phone number?</span>
-              <span class="faq-icon">+</span>
-            </button>
-
-            <div class="faq-answer">
-              <p>
-                Yes. Home Call Guard is designed so that you can continue using
-                the phone number your friends, family and important contacts
-                already know.
-              </p>
-            </div>
-
-          </div>
-
-          <div class="faq-item">
-
-            <button
-              class="faq-question"
-              type="button"
-              aria-expanded="false"
-            >
-              <span>Do I need contacts on my phone?</span>
-              <span class="faq-icon">+</span>
-            </button>
-
-            <div class="faq-answer">
-              <p>
-                Your phone doesn't need contacts. During setup you'll
-                upload the people you trust (usually in under two minutes).
-                Home Call Guard securely stores that trusted caller list and
-                checks every incoming call against it. Trusted callers ring
-                through immediately. Unknown callers are screened
-                automatically.
-              </p>
-            </div>
-
-          </div>
-
-          <div class="faq-item">
-
-            <button
-              class="faq-question"
-              type="button"
-              aria-expanded="false"
-            >
-              <span>What happens to calls from people I know?</span>
-              <span class="faq-icon">+</span>
-            </button>
-
-            <div class="faq-answer">
-              <p>
-                You can add trusted contacts to your account. This helps Home
-                Call Guard recognise callers who should be able to reach you
-                normally.
-              </p>
-            </div>
-
-          </div>
-
-          <div class="faq-item">
-
-            <button
-              class="faq-question"
-              type="button"
-              aria-expanded="false"
-            >
-              <span>Do I need to install an app?</span>
-              <span class="faq-icon">+</span>
-            </button>
-
-            <div class="faq-answer">
-              <p>
-                Your account and trusted contacts are always managed through
-                a simple online dashboard. If you're protecting a landline,
-                no app is needed at all. For mobile protection, Home Call
-                Guard uses a companion app — available for Android now. Our
-                iPhone app is coming soon, awaiting final App Store approval.
-              </p>
-            </div>
-
-          </div>
-
-          <div class="faq-item">
-
-            <button
-              class="faq-question"
-              type="button"
-              aria-expanded="false"
-            >
-              <span>What do I need to do after I subscribe?</span>
-              <span class="faq-icon">+</span>
-            </button>
-
-            <div class="faq-answer">
-              <p>
-                After subscribing you'll upload your trusted contacts, then
-                follow a short, one-time setup step shown on your dashboard:
-                dialling a simple code on your own phone so that unknown
-                calls are sent to Home Call Guard to be screened. Full,
-                step-by-step instructions for your specific phone line are
-                given on the dashboard — this usually takes a couple of
-                minutes. If your home phone is provided by Sky or Virgin
-                Media, your provider may charge a small additional monthly
-                fee (typically around £2.50) for the call-divert feature
-                this setup step relies on — your dashboard instructions will
-                say if this applies to you.
-              </p>
-            </div>
-
-          </div>
-
-          <div class="faq-item">
-
-            <button
-              class="faq-question"
-              type="button"
-              aria-expanded="false"
-            >
-              <span>Will every unknown caller be blocked?</span>
-              <span class="faq-icon">+</span>
-            </button>
-
-            <div class="faq-answer">
-              <p>
-                Home Call Guard screens unknown callers rather than assuming
-                every unfamiliar number is fraudulent. This helps genuine
-                callers while adding protection from suspicious calls.
-              </p>
-            </div>
-
-          </div>
-
-          <div class="faq-item">
-
-            <button
-              class="faq-question"
-              type="button"
-              aria-expanded="false"
-            >
-              <span>Can I cancel my subscription?</span>
-              <span class="faq-icon">+</span>
-            </button>
-
-            <div class="faq-answer">
-              <p>
-                Yes. The service is charged monthly and there is no long-term
-                contract.
-              </p>
-            </div>
-
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <section class="final-cta">
-      <div class="container">
-
-        <div class="cta-card">
-
-          <span class="section-label">
-            Start today
-          </span>
-
-          <h2>
-            Feel more confident answering your phone.
-          </h2>
-
-          <p>
-            Add an extra layer of protection from unknown and suspicious
-            callers for just £4.99 per month.
-          </p>
-
-          <a class="primary-button" href="/register.html">
-            Get Protected
+</header>
+
+<main id="main">
+<div id="top"></div>
+
+  <!-- ============ A. HERO ============ -->
+  <section class="hero">
+    <div class="wrap grid">
+      <div>
+        <p class="eyebrow">An extra layer of protection for UK phones</p>
+        <h1>Help protect you and your family from scam phone calls.</h1>
+        <!-- APPROVED-BEHAVIOUR-COPY -->
+        <p class="lead">Home Call Guard monitors calls from numbers you don't know while you're talking, and can end a call if it detects serious scam risk. The people you trust ring straight through.</p>
+
+        <div class="routes" id="get-started">
+          <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener">
+            <small>Get it on</small><strong>Google Play</strong>
           </a>
-
+          <!-- APP_STORE_TILE: stays "Coming soon" until the script at the foot of this page
+               is given a genuine App Store URL AND /api/v1/launch-flags reports
+               iosComingSoon:false. No Apple URL is invented here. -->
+          <div class="route disabled" data-app-store>
+            <small>Coming soon on the</small><strong>App Store</strong>
+          </div>
+          <p class="route-note" data-ios-notify hidden>Have an iPhone? <a href="#ios-waiting-list">Tell me when it's ready</a></p>
+          <div class="route disabled" data-landline-soon>
+            <small>Coming soon</small><strong>Landline</strong>
+          </div>
         </div>
 
-      </div>
-    </section>
-
-  </main>
-
-  <footer class="site-footer">
-    <div class="container">
-
-      <div class="footer-content">
-
-        <a class="footer-brand" href="#top">
-          <img src="/logo.png" alt="Home Call Guard logo">
-          <strong>Home Call Guard</strong>
-        </a>
-
-        <div class="footer-links">
-          <a href="/guides/">Scam Advice</a>
-          <a href="/login.html">Customer login</a>
-          <a href="/terms.html">Terms and Conditions</a>
-          <a href="/privacy.html">Privacy Policy</a>
-          <a href="/support.html">Support</a>
-          <a href="mailto:support@homecallguard.co.uk">Contact</a>
-        </div>
-
+        <ul class="reassure">
+          <li>£4.99 a month, including VAT</li>
+          <li>No contract — cancel any time</li>
+          <li>Keep your existing number</li>
+        </ul>
       </div>
 
-      <p class="copyright">
-        © <span id="currentYear"></span> Home Call Guard. All rights reserved.
-      </p>
-
+      <div class="hero-visual">
+        <figure>
+          <div class="phone"><img src="/img/app-home.png" alt="The Home Call Guard app showing 'You're protected', with a summary of trusted contacts and recent activity" width="520" height="1125"></div>
+          <figcaption class="caption">The Home Call Guard app (example data)</figcaption>
+        </figure>
+      </div>
     </div>
-  </footer>
+  </section>
 
-  <script>
-    // Acquisition analytics (2026-09) — if this homepage was reached with
-    // UTM query parameters (e.g. from an ad campaign), preserve them
-    // through to the registration page so /register.html's own capture
-    // (see public/register.html) can record them. Pure URL query-string
-    // passthrough: no cookie, no localStorage, no fingerprinting — only
-    // ever appends this exact page's own current, already-visible query
-    // string to the existing registration links.
-    if (window.location.search) {
-      document.querySelectorAll('a[href="/register.html"]').forEach(function (link) {
-        link.href = "/register.html" + window.location.search;
-      });
-    }
+  <!-- ============ B. THE PROBLEM ============ -->
+  <section class="band" id="problem">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">The problem</p>
+        <h2>Scam calls don't always sound like scams.</h2>
+        <p>Scam callers can sound polite, professional and convincing. They create urgency and pretend to be organisations you trust. It can happen to anyone.</p>
+      </div>
+      <div class="problem-grid">
+        <div class="problem">
+          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18"/></svg></div>
+          <h3>Your bank</h3>
+          <p>Claiming there's a problem with your account.</p>
+        </div>
+        <div class="problem">
+          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg></div>
+          <h3>A delivery company</h3>
+          <p>Asking for a payment or personal details.</p>
+        </div>
+        <div class="problem">
+          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></div>
+          <h3>Your energy supplier</h3>
+          <p>Offering a refund or threatening disconnection.</p>
+        </div>
+        <div class="problem">
+          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6"/></svg></div>
+          <h3>A government department</h3>
+          <p>Making an urgent or alarming claim.</p>
+        </div>
+      </div>
+      <p class="problem-foot">Blocking a number only helps once that number is known, and scammers change and disguise the numbers they call from. Home Call Guard adds another layer: protection during the call itself. <a href="/guides/">Read our scam advice guides →</a></p>
+    </div>
+  </section>
 
-    const faqQuestions = document.querySelectorAll(".faq-question");
+  <!-- ============ C. HOW IT WORKS ============ -->
+  <section id="how-it-works">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">How Home Call Guard works</p>
+        <h2>Three things happen on a call.</h2>
+        <!-- APPROVED-BEHAVIOUR-COPY -->
+        <p>Protection happens <strong>during</strong> the conversation, not before your phone rings. Home Call Guard doesn't block or delay a call before it reaches your phone.</p>
+      </div>
+      <ol class="steps3">
+        <li class="step3 trusted">
+          <div class="n" aria-hidden="true">1</div>
+          <p class="tag">A trusted contact calls</p>
+          <h3>It rings straight through.</h3>
+          <p class="body">Calls from the people you've added to your trusted list aren't monitored.</p>
+          <p class="outcome">Shown in Activity as<br><span class="chip">Rang straight through</span></p>
+        </li>
+        <li class="step3 unknown">
+          <div class="n" aria-hidden="true">2</div>
+          <p class="tag">Anyone else calls</p>
+          <h3>It connects as normal — and is monitored.</h3>
+          <!-- APPROVED-BEHAVIOUR-COPY -->
+          <p class="body">Calls from numbers that aren't on your trusted list still ring your phone. While you talk, Home Call Guard monitors the conversation for signs of a scam.</p>
+          <p class="outcome">Shown in Activity as<br><span class="chip green">Screened, no concerns</span></p>
+        </li>
+        <li class="step3 serious">
+          <div class="n" aria-hidden="true">3</div>
+          <p class="tag">Serious scam risk is detected</p>
+          <h3>Home Call Guard can end the call.</h3>
+          <!-- APPROVED-BEHAVIOUR-COPY -->
+          <p class="body">If the system detects serious scam risk during a call, it can end the call to help protect you.</p>
+          <p class="outcome">Shown in Activity as<br><span class="chip amber">High risk — call stopped</span></p>
+        </li>
+      </ol>
+      <div class="honest">
+        <!-- APPROVED-BEHAVIOUR-COPY -->
+        <p><strong>Good to know.</strong> Home Call Guard can't promise to catch every scam, so please stay cautious with any unexpected call. We don't store call audio or a transcript of what's said.</p>
+      </div>
+    </div>
+  </section>
 
-    faqQuestions.forEach(function (question) {
-      question.addEventListener("click", function () {
-        const faqItem = question.closest(".faq-item");
-        const isOpen = faqItem.classList.contains("open");
+  <!-- ============ D. ACTIVITY ============ -->
+  <section class="band" id="activity">
+    <div class="wrap split flip">
+      <div class="copy">
+        <p class="eyebrow">Activity</p>
+        <h2>See how each call was handled.</h2>
+        <p>Your Activity list shows how each call was handled, and when.</p>
+        <ul class="ticks">
+          <li><strong>Rang straight through</strong> — a trusted contact called</li>
+          <li><strong>Screened, no concerns</strong> — another caller was monitored and nothing worrying was found</li>
+          <li><strong>High risk</strong> — a call was stopped because of serious scam risk</li>
+        </ul>
+        <p>You see the outcome — not a recording.</p>
+      </div>
+      <div class="visual">
+        <figure>
+          <div class="phone"><img src="/img/app-activity.png" alt="The Activity list in the Home Call Guard app, showing calls marked 'Rang straight through', 'Screened, no concerns' and 'High risk — call stopped'" width="520" height="1125" loading="lazy"></div>
+          <figcaption class="caption">Activity (example data)</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
 
-        document.querySelectorAll(".faq-item").forEach(function (item) {
-          item.classList.remove("open");
+  <!-- ============ E. TRUSTED CONTACTS ============ -->
+  <section id="trusted-contacts">
+    <div class="wrap split">
+      <div class="copy">
+        <p class="eyebrow">Trusted contacts</p>
+        <h2>The people you trust are never in the way.</h2>
+        <p>Add the people who should always get through — family, friends, your doctor. Their calls ring straight through and aren't monitored.</p>
+        <ul class="ticks">
+          <li>Sync from your phone's contacts, or add people one by one</li>
+          <li>Change the list whenever you like</li>
+          <li>Manage it from the app or your online account</li>
+        </ul>
+      </div>
+      <div class="visual">
+        <figure>
+          <div class="phone"><img src="/img/app-contacts.png" alt="The Trusted Contacts list in the Home Call Guard app" width="520" height="1125" loading="lazy"></div>
+          <figcaption class="caption">Trusted Contacts (example names)</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
 
-          const button = item.querySelector(".faq-question");
+  <!-- ============ F. SUPPORTED PHONES ============ -->
+  <section class="band" id="phones">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Your phone</p>
+        <h2>Available on Android. More phones coming soon.</h2>
+        <p>Home Call Guard is available for Android phones today, and you keep your existing number. We're working on iPhone and landline support.</p>
+      </div>
+      <div class="two">
+        <div class="panel">
+          <h3>Android</h3>
+          <p>Get the Home Call Guard app on Google Play. We check your mobile network before you pay.</p>
+          <div class="routes">
+            <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>iPhone and landline — coming soon</h3>
+          <p><span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is coming soon.">iPhone and landline protection are coming soon. They aren't available to new customers yet.</span></p>
+          <div class="routes">
+            <div class="route disabled" data-app-store><small>Coming soon on the</small><strong>App Store</strong></div>
+            <div class="route disabled" data-landline-soon><small>Coming soon</small><strong>Landline</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-          if (button) {
-            button.setAttribute("aria-expanded", "false");
-          }
-        });
+  <!-- ============ G. FAMILY / PEACE OF MIND ============ -->
+  <section id="benefits">
+    <div class="wrap family">
+      <div class="copy">
+        <p class="eyebrow">Peace of mind</p>
+        <h2>Another layer of protection for someone you care about.</h2>
+        <p>Whether it's for you, a parent, a partner or a friend who worries about unexpected calls, Home Call Guard adds another layer of protection to the calls they receive. Their number stays the same, and the people they trust still ring straight through.</p>
+      </div>
+      <ul class="ticks">
+        <li>Keeps the number everyone already knows</li>
+        <li>Trusted contacts ring straight through</li>
+        <li>We show you each setup step</li>
+        <li>See how each call was handled in Activity</li>
+      </ul>
+    </div>
+  </section>
 
-        if (!isOpen) {
-          faqItem.classList.add("open");
-          question.setAttribute("aria-expanded", "true");
-        }
-      });
+  <!-- ============ SETUP ============ -->
+  <section class="band" id="setup">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Getting started</p>
+        <h2>Simple to set up, step by step.</h2>
+        <p>Setting up usually takes a few minutes.</p>
+      </div>
+      <ol class="steps">
+        <li class="step"><div class="n" aria-hidden="true">1</div><h3>Choose your phone</h3><p>Tell us which phone you're protecting. We check that your mobile network is one we currently support <strong>before you pay</strong>.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">2</div><h3>Add the people you trust</h3><p>Family, friends, your GP. Their calls ring straight through. Sync them from your phone or add them one by one.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">3</div><h3>Turn on call forwarding</h3><p>A one-time step: dial a short code so calls to your number come through Home Call Guard first. We show you exactly what to dial for your provider.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">4</div><h3>You're protected</h3><p>Trusted contacts ring straight through. Anyone else's call connects as normal, and Home Call Guard monitors it while you talk.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ H. PRICING ============ -->
+  <section id="pricing">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Pricing</p>
+        <h2>One simple price.</h2>
+      </div>
+      <div class="price-card">
+        <h3>Home Call Guard</h3>
+        <p class="price">£4.99 <small>a month, including VAT</small></p>
+        <ul class="ticks">
+          <li>Monitoring of calls from numbers you don't know</li>
+          <li>Trusted contacts who ring straight through</li>
+          <li>Your Activity list</li>
+          <li>Android phones — iPhone and landline coming soon</li>
+          <li>No long-term contract — cancel any time</li>
+        </ul>
+        <div class="routes">
+          <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
+          <div class="route disabled" data-app-store><small>Coming soon on the</small><strong>App Store</strong></div>
+          <div class="route disabled" data-landline-soon><small>Coming soon</small><strong>Landline</strong></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ I. FAQ ============ -->
+  <section class="band" id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Questions</p>
+        <h2>Everything you need to know.</h2>
+      </div>
+      <div class="faq">
+        <details><summary>Does it stop scam calls before my phone rings?</summary>
+          <!-- APPROVED-BEHAVIOUR-COPY -->
+          <p>No. Calls connect as normal and your phone rings. Home Call Guard works during the conversation: it monitors calls from numbers you don't know and can end a call if it detects serious scam risk. It can't promise to catch every scam, so please stay cautious with any unexpected call.</p></details>
+        <details><summary>What does "monitoring" mean?</summary>
+          <!-- APPROVED-BEHAVIOUR-COPY -->
+          <p>While you're on a call with someone who isn't a trusted contact, Home Call Guard monitors the conversation for signs of a scam.</p></details>
+        <details><summary>What happens if it detects a scam call?</summary>
+          <!-- APPROVED-BEHAVIOUR-COPY -->
+          <p>If Home Call Guard detects serious scam risk, it can end the call to help protect you. You can see how each call was handled in your Activity list.</p></details>
+        <details><summary>Will calls from my family and friends be affected?</summary>
+          <p>No. Trusted contacts ring straight through and aren't monitored.</p></details>
+        <details><summary>Are my calls recorded?</summary>
+          <p>Home Call Guard doesn't store call audio or a transcript of what's said. Calls are analysed while they happen, using automated checks and a third-party transcription service. See our <a href="/privacy.html">Privacy Policy</a> for details.</p></details>
+        <details><summary>Do I need to install an app?</summary>
+          <p>To protect an Android phone you use the Home Call Guard app from Google Play. You can also manage your account, trusted contacts and Activity from your online account. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is coming soon.">iPhone and landline protection are coming soon.</span></p></details>
+        <details><summary>Can I use Home Call Guard on my landline?</summary>
+          <p>Not yet. Landline protection is coming soon and we aren't selling it today. Home Call Guard is currently available for Android phones.</p></details>
+        <details><summary>Which phones and networks are supported?</summary>
+          <p>Home Call Guard is available for Android phones on many UK mobile networks. We check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="Landline support is coming soon.">iPhone and landline support are coming soon.</span></p></details>
+        <details><summary>Can I keep my phone number?</summary>
+          <p>Yes. Your number stays exactly as it is.</p></details>
+        <details><summary>How long does setup take?</summary>
+          <p>Usually a few minutes: sign up, add your trusted contacts, then dial a one-time code. We show you the exact steps.</p></details>
+        <details><summary>How much does it cost, and can I cancel?</summary>
+          <p>£4.99 a month, including VAT. There's no long-term contract and you can cancel at any time from your account. See our <a href="/terms.html">Terms and Conditions</a> for full details.</p></details>
+        <details><summary>Who can I contact for help?</summary>
+          <p>Visit our <a href="/support.html">support page</a> or email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> and we'll be glad to help — including if you're setting this up for someone else.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCAM ADVICE ============ -->
+  <section style="padding-bottom:0">
+    <div class="wrap">
+      <div class="advice">
+        <p class="eyebrow">Scam advice</p>
+        <h3>Not sure what a scam call sounds like?</h3>
+        <p>Our plain-English guides explain the most common phone scams and what to do if you've been targeted.</p>
+        <a class="link" href="/guides/">Read the scam advice guides →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ IPHONE WAITING LIST (existing endpoint, unchanged behaviour) ============ -->
+  <section id="ios-waiting-list" data-ios-notify hidden style="padding-bottom:0">
+    <div class="wrap">
+      <div class="notify">
+        <h3>Home Call Guard for iPhone is coming soon</h3>
+        <p>We're waiting for App Store approval. Leave your email and we'll let you know as soon as it's available.</p>
+        <form id="homepageWaitingListForm" novalidate>
+          <label for="homepageWaitingListEmail">Email address</label>
+          <div class="row">
+            <input type="email" id="homepageWaitingListEmail" autocomplete="email" placeholder="you@example.com" required>
+            <button type="submit" id="homepageWaitingListSubmit">Notify me</button>
+          </div>
+          <p class="msg-error" id="homepageWaitingListError" role="alert" hidden></p>
+          <p class="msg-ok" id="homepageWaitingListSuccess" role="status" hidden>Thanks — we'll email you as soon as Home Call Guard for iPhone is available.</p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ J. FINAL CTA ============ -->
+  <section class="final" style="margin-top:64px; background: var(--bg-2); border-top: 1px solid var(--border);">
+    <div class="wrap">
+      <h2>Feel more confident answering your phone.</h2>
+      <p>An extra layer of protection for you and your family — £4.99 a month including VAT, no contract.</p>
+      <div class="routes">
+        <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
+        <div class="route disabled" data-app-store><small>Coming soon on the</small><strong>App Store</strong></div>
+        <div class="route disabled" data-landline-soon><small>Coming soon</small><strong>Landline</strong></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ K. FOOTER ============ -->
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#top" aria-label="Home Call Guard — back to top"><img src="/hcg-shield.png" alt="" width="34" height="34"><span>Home Call <span>Guard</span></span></a>
+    <nav aria-label="Footer">
+      <a href="/login.html">Customer login</a>
+      <a href="/terms.html">Terms and Conditions</a>
+      <a href="/privacy.html">Privacy Policy</a>
+      <a href="/support.html">Support</a>
+      <a href="/guides/">Scam advice</a>
+      <a href="mailto:support@homecallguard.co.uk">Contact</a>
+    </nav>
+    <p class="small">Home Call Guard is a trading name of AFMD Ltd, registered in England and Wales, company number 07075723. Registered office: 128 City Road, London, EC1V 2NX.<br>© <span id="currentYear">2026</span> Home Call Guard. All rights reserved.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // 1. Acquisition analytics passthrough — unchanged behaviour from the previous
+  //    homepage: if this page was reached with UTM (or any) query parameters,
+  //    append this exact page's own query string to the existing registration
+  //    links so /register.html's own capture can record them. No cookie, no
+  //    localStorage, no fingerprinting.
+  if (window.location.search) {
+    document.querySelectorAll('a[href="/register.html"]').forEach(function (link) {
+      link.href = "/register.html" + window.location.search;
     });
+  }
 
-    document.getElementById("currentYear").textContent =
-      new Date().getFullYear();
-  </script>
+  var yearEl = document.getElementById("currentYear");
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
 
+  // 2. iPhone / App Store state. Default (and any failure) = "Coming soon" +
+  //    waiting list, so the page never claims availability it can't confirm.
+  //    The App Store tiles become real links only when BOTH:
+  //      (a) GET /api/v1/launch-flags reports iosComingSoon === false, AND
+  //      (b) APP_STORE_URL below is a well-formed https://apps.apple.com URL.
+  //    To activate after Apple approves: paste the genuine listing URL into
+  //    APP_STORE_URL and set IOS_COMING_SOON=false on the backend. Same two-key
+  //    rule /go uses (services/goLanding.js). Do NOT invent a URL.
+  var APP_STORE_URL = "";
+  var APP_STORE_URL_PATTERN = /^https:\/\/apps\.apple\.com\/[A-Za-z0-9\/_.\-%]+(\?[A-Za-z0-9_.\-%=&]+)?$/;
+
+  document.querySelectorAll("[data-ios-notify]").forEach(function (el) { el.hidden = false; });
+
+  fetch("/api/v1/launch-flags")
+    .then(function (r) { return r.json(); })
+    .then(function (flags) {
+      var appleLive = flags && flags.iosComingSoon === false && APP_STORE_URL.length <= 300 && APP_STORE_URL_PATTERN.test(APP_STORE_URL);
+      if (!appleLive) return;
+      document.querySelectorAll("[data-app-store]").forEach(function (tile) {
+        var a = document.createElement("a");
+        a.className = "route";
+        a.href = APP_STORE_URL;
+        a.rel = "noopener";
+        a.innerHTML = "<small>Download on the</small><strong>App Store</strong>";
+        tile.replaceWith(a);
+      });
+      document.querySelectorAll("[data-ios-notify]").forEach(function (el) { el.hidden = true; });
+      document.querySelectorAll("[data-ios-soon]").forEach(function (el) { el.textContent = el.getAttribute("data-ios-live"); });
+    })
+    .catch(function () { /* fail closed: keep "Coming soon" */ });
+
+  // 3. iPhone waiting list — same public endpoint and payload as before.
+  var form = document.getElementById("homepageWaitingListForm");
+  if (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var errorEl = document.getElementById("homepageWaitingListError");
+      var successEl = document.getElementById("homepageWaitingListSuccess");
+      var submitBtn = document.getElementById("homepageWaitingListSubmit");
+      var emailEl = document.getElementById("homepageWaitingListEmail");
+      errorEl.hidden = true; successEl.hidden = true;
+      var email = emailEl.value.trim();
+      if (!email || email.indexOf("@") === -1) {
+        errorEl.textContent = "Please enter a valid email address.";
+        errorEl.hidden = false;
+        return;
+      }
+      fetch("/api/v1/waiting-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email, reason: "ios_coming_soon", deviceType: "iphone" })
+      })
+        .then(function (r) { if (!r.ok) throw new Error("failed"); })
+        .then(function () { successEl.hidden = false; submitBtn.disabled = true; })
+        .catch(function () {
+          errorEl.textContent = "We couldn't save that just now. Please check your connection and try again.";
+          errorEl.hidden = false;
+        });
+    });
+  }
+})();
+</script>
 </body>
 </html>
