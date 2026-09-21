@@ -3,19 +3,21 @@
 //   2. the £4.99 price states "including VAT" where it is presented without it
 //      (mobile welcome/complete, and the Membership priceLabel the server sends
 //      to both the app and the website) — the price itself is unchanged
-//   3. the 30-day money-back guarantee wording is gone from the mobile
-//      welcome and complete screens, and is NOT replaced by another guarantee
+//   3. the 30-day money-back guarantee and the "30 days to change my mind"
+//      wording are gone from EVERY HCG-controlled customer-facing source — mobile
+//      welcome, complete, Subscribe and confirmation screens, and the web
+//      onboarding consent line in upload.html — and are NOT replaced by any other
+//      refund / guarantee / cooling-off promise (a repo-wide scan below guards
+//      against them returning anywhere)
 //   4. the repo's Google Play listing draft no longer claims landline
 //      protection or calls stopped "before they reach you", and reflects the
 //      current availability (Android now; iPhone + Landline Coming Soon)
 //
 // Deliberately NOT asserted here (outside this correction's scope, flagged for a
-// separate decision): the guarantee box / consent text on the Subscribe screen,
-// the guarantee sentence on the post-payment confirmation screen, the web
-// consent line, the Stripe Checkout page text, and the Terms.
+// separate decision): the Stripe Checkout page text and the Terms.
 //
 // Run with: node tests/release-copy-corrections.test.mjs
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,6 +54,50 @@ for (const [name, src] of [['welcome.tsx', welcome], ['complete.tsx', complete]]
   check(!/30[- ]day|money[- ]back|guarantee|refund/i.test(code(src)), `mobile ${name}: no 30-day / money-back / guarantee / refund wording`);
 }
 check(!/Platform/.test(code(complete)), 'mobile complete.tsx: the platform-specific (Apple refund) branch that only served the guarantee line is gone');
+
+// ---- 3b. Subscribe / confirmation / upload.html: no 30-day guarantee, no change-my-mind, nothing substituted ----
+const confirmation = read('mobile', 'app', '(setup)', 'confirmation.tsx');
+const upload = read('upload.html');
+check(!/guaranteeBox|guaranteeTitle|guaranteeBody|guaranteeNote/.test(code(subscribe)), 'Subscribe: the guarantee box (JSX and styles) is gone');
+check(!/30[- ]?days?|money[- ]?back|guarantee|refund|change (my|your) mind|cooling/i.test(code(subscribe)), 'Subscribe: no 30-day / money-back / guarantee / refund / change-my-mind / cooling-off wording in code');
+check(/<Text style=\{styles\.consentText\}>\s*I'd like my protection to start right away\.\s*<\/Text>/.test(subscribe), 'Subscribe: the consent line is exactly "I\'d like my protection to start right away." — nothing else promised');
+check(subscribe.includes('accessibilityLabel="I\'d like my protection to start right away"') && subscribe.includes('id="') === false, 'Subscribe: the start-immediately checkbox and its accessibility label are unchanged (separate from the Terms checkbox)');
+check(confirmation.includes('<Text style={styles.body}>Welcome to Home Call Guard — your protection starts now.</Text>'), 'confirmation: reads "Welcome to Home Call Guard — your protection starts now." only');
+check(!/30[- ]?days?|money[- ]?back|guarantee|refund|change (my|your) mind|Platform/i.test(code(confirmation)), 'confirmation: no 30-day / money-back / guarantee / refund wording, and no platform branch left for it');
+check(upload.includes('<input type="checkbox" id="startImmediatelyCheckbox"> I\'d like my protection to start right away.</label>'), 'upload.html: the consent line is exactly "I\'d like my protection to start right away." — nothing else promised');
+check(!/30[- ]?days?|money[- ]?back|change (my|your) mind|full refund/i.test(upload.replace(/<!--[\s\S]*?-->/g, '')), 'upload.html: no 30-day / money-back / change-my-mind / full-refund wording (comments excluded)');
+
+// ---- 3c. Repo-wide guard over every customer-facing source ----
+// Patterns are specific to the removed PROMISES, so unrelated uses (data-retention periods, admin
+// durations, "not a guarantee" scam-detection disclaimers) do not trip them.
+const PROMISE = /money[- ]?back|\b30[- ]?days?\b[^.\n]{0,40}\b(guarantee|refund)|\b(guarantee|refund)[^.\n]{0,40}\b30[- ]?days?\b|\bchange (my|your) mind\b|\bfull refund\b|\bcooling[- ]off (period|window|guarantee)\b/i;
+function walk(dir, exts) {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name === 'build-output') continue;
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walk(full, exts));
+    else if (exts.some((x) => e.name.endsWith(x))) out.push(full);
+  }
+  return out;
+}
+const customerFacing = [
+  ...walk(path.join(root, 'mobile', 'app'), ['.tsx', '.ts']),
+  ...walk(path.join(root, 'mobile', 'components'), ['.tsx']),
+  ...walk(path.join(root, 'mobile', 'lib'), ['.ts']),
+  ...walk(path.join(root, 'public'), ['.html', '.js']),
+  ...walk(path.join(root, 'services'), ['.js']),
+  ...walk(path.join(root, 'routes'), ['.js']),
+  path.join(root, 'server.js'), path.join(root, 'upload.html'), path.join(root, 'MARKETING_FACTS.md'),
+].filter((f) => existsSync(f));
+const offenders = [];
+for (const f of customerFacing) {
+  const raw = readFileSync(f, 'utf8');
+  const text = f.endsWith('.html') ? raw.replace(/<!--[\s\S]*?-->/g, '') : code(raw);
+  const m = text.match(PROMISE);
+  if (m) offenders.push(`${path.relative(root, f)}: "${m[0].slice(0, 60)}"`);
+}
+check(offenders.length === 0, `repo-wide: none of ${customerFacing.length} customer-facing source files contains a 30-day guarantee / money-back / change-my-mind / full-refund promise${offenders.length ? ' — found: ' + offenders.join(' | ') : ''}`);
 
 // ---- 4. Google Play listing draft ----
 const listing = read('docs', 'launch', 'STORE_LISTING_COPY.md');

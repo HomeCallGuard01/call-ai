@@ -3,13 +3,15 @@
 // trusting the browser's own success/cancel signal alone (a webhook can
 // genuinely be delayed past the moment Checkout itself completes).
 //
-// Reflects the approved launch model: paid from day one, no free trial,
-// a 30-day money-back guarantee as the risk-reversal mechanism. The
-// Founding Member / "first 500 customers" framing and 12-month price-lock
+// Reflects the approved launch model: paid from day one, no free trial.
+// The Founding Member / "first 500 customers" framing and 12-month price-lock
 // claim were removed 2026-08-29 for the App Store release — Apple's
-// review guidance is to keep subscription screens plain and accurate,
-// and the guarantee's own wording needs to be honest about who actually
-// issues a refund on each platform (see the guaranteeBody text below).
+// review guidance is to keep subscription screens plain and accurate.
+// 2026-09-21: the "30-day money-back guarantee" box and the "I still have 30
+// days to change my mind" wording were REMOVED from this screen. No
+// replacement refund, guarantee or cooling-off promise is made here — do not
+// reintroduce one without explicit approval (tests/release-copy-corrections
+// .test.mjs guards this).
 // The Stripe price/checkout mechanics themselves are unchanged for
 // Android/web — this is presentation only.
 //
@@ -19,15 +21,14 @@
 // unless the customer explicitly requests it — which, for a protection
 // product whose entire point is starting now, is the whole premise. The
 // checkbox and its copy are a reasonable working draft, not a legal
-// sign-off; flagged in this session's report as needing a real legal
-// review pass before launch, same as the exact guarantee terms text.
+// sign-off; flagged as needing a real legal review pass before launch.
 //
 // A SEPARATE Terms & Conditions / Privacy Policy agreement checkbox was
 // added 2026-09-13 (carrier-onboarding-gate audit finding: this screen
 // linked Terms/Privacy but recorded no evidence anyone had actually
 // agreed to them, and had no dedicated agreement control at all — the
-// existing checkbox above is about cooling-off timing, not Terms
-// acceptance, and deliberately stays separate rather than being merged
+// existing checkbox above is about starting the service immediately, not
+// Terms acceptance, and deliberately stays separate rather than being merged
 // into one tickbox covering two different legal facts). Unticked by
 // default; acceptTerms() (POST /api/v1/onboarding/terms-acceptance)
 // writes a durable, append-only evidence row (migration 039) the moment
@@ -279,24 +280,6 @@ export default function Subscribe() {
         subscription that renews automatically every month until you cancel — cancel anytime.
       </Text>
 
-      <View style={styles.guaranteeBox}>
-        <Text style={styles.guaranteeTitle}>30-day money-back guarantee</Text>
-        <Text style={styles.guaranteeBody}>
-          {Platform.OS === "ios"
-            ? // Apple, not Home Call Guard, controls and issues App Store
-              // refunds — "just ask [us]" would misrepresent who actually
-              // grants it for an Apple-billed purchase. This still honours
-              // the guarantee (we support the request) without claiming a
-              // capability only Apple has.
-              "Not right for you, for any reason? Apple handles all App Store refunds directly — " +
-              "request one any time within your first 30 days from Settings on your iPhone " +
-              "(your name → Subscriptions) or at reportaproblem.apple.com. Contact us any time if you'd " +
-              "like help with your request."
-            : "Not right for you, for any reason? Get a full refund within your first 30 days — just ask, " +
-              "no forms to fill in."}
-        </Text>
-      </View>
-
       {error && <Banner variant="error" message={error} />}
 
       <View style={styles.legalLinks}>
@@ -333,8 +316,7 @@ export default function Subscribe() {
           {startImmediately && <Text style={styles.checkboxTick}>✓</Text>}
         </View>
         <Text style={styles.consentText}>
-          I'd like my protection to start right away. I understand I still have 30 days to change my
-          mind either way.
+          I'd like my protection to start right away.
         </Text>
       </Pressable>
 
@@ -364,25 +346,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textMuted,
     marginBottom: spacing.lg,
-  },
-  guaranteeBox: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.card,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  guaranteeTitle: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: "700",
-    marginBottom: spacing.xs,
-  },
-  guaranteeBody: {
-    ...typography.caption,
-    color: colors.textMuted,
-    lineHeight: 18,
   },
   consentRow: {
     flexDirection: "row",
