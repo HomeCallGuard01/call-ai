@@ -201,6 +201,57 @@ if (sources.some(s => !s)) {
   );
 }
 
+// --- Operations list rendering escapes customer data (security regression, 2026-09) ---
+// A customer-chosen email address (or a caller-controlled number) must
+// never reach innerHTML as live markup. Uses the same escapeHtml helper
+// as the Customers tab, extracted from the real page.
+
+{
+  const renderers = extractBetween(html, 'operationsListRenderers');
+  const helpers = extractBetween(html, 'customerMonitorHelpers');
+  const describers = ['describeActivityEvent', 'describeAlert', 'describeAdminAction', 'formatQuickActionResult'].map(n => extractBetween(html, n));
+
+  if (!renderers || !helpers || describers.some(s => !s)) {
+    check(false, 'operationsListRenderers / customerMonitorHelpers TEST-EXTRACT markers found in admin-business.html');
+  } else {
+    const ops = new Function(
+      `${helpers}\n${describers.join('\n')}\n${renderers}\nreturn { renderListHtml, renderCallsHtml, renderSearchResultsHtml, describeActivityEvent, describeAlert, describeAdminAction };`
+    )();
+
+    const evil = '"><img src=x onerror=alert(1)>@example.com';
+    const escaped = '&quot;&gt;&lt;img src=x onerror=alert(1)&gt;@example.com';
+    const noLiveTag = (out) => !out.includes('<img') && !out.includes('onerror=alert(1)>');
+
+    const signups = ops.renderListHtml([{ type: 'signup', email: evil, at: '2026-09-23T10:00:00Z' }], 'none', ops.describeActivityEvent);
+    check(noLiveTag(signups) && signups.includes(escaped), 'Recent registrations: a malicious email is rendered as escaped text, not markup');
+
+    const alerts = ops.renderListHtml(
+      [{ type: 'provisioning_failed', severity: 'high', email: evil, message: '<script>x</script>', at: '2026-09-23T10:00:00Z' }],
+      'none',
+      ops.describeAlert
+    );
+    check(noLiveTag(alerts) && !alerts.includes('<script>') && alerts.includes('&lt;script&gt;'), 'Recent errors: malicious email and error message are escaped');
+
+    const actions = ops.renderListHtml(
+      [{ type: 'grant_complimentary', email: evil, result: { granted: true }, at: '2026-09-23T10:00:00Z' }],
+      'none',
+      ops.describeAdminAction
+    );
+    check(noLiveTag(actions) && actions.includes(escaped), 'Admin actions: a malicious email is escaped');
+
+    const calls = ops.renderCallsHtml([{ number: '<b>+44</b>', result: 'SAFE', householdEmail: evil, time: '2026-09-23T10:00:00Z' }]);
+    check(noLiveTag(calls) && calls.includes(escaped) && !calls.includes('<b>') && calls.includes('&lt;b&gt;+44&lt;/b&gt;'), 'Recent calls: household email and caller number are escaped');
+
+    const search = ops.renderSearchResultsHtml([{ email: evil, id: 'h1', twilio_number: '+447700900001', twilio_provisioning_status: 'active', status: 'active' }]);
+    check(noLiveTag(search) && search.includes(escaped), 'Customer search: a malicious email is escaped');
+
+    const normal = ops.renderListHtml([{ type: 'signup', email: 'jane@example.com', at: '2026-09-23T10:00:00Z' }], 'none', ops.describeActivityEvent);
+    check(normal.includes('jane@example.com signed up') && normal.includes('<div class="list-title ">'), 'ordinary emails render unchanged (no functional change)');
+
+    check(ops.renderListHtml([], 'No signups yet.', ops.describeActivityEvent).includes('No signups yet.'), 'empty-state message unchanged');
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);
   process.exit(1);

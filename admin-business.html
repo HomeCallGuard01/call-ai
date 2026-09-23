@@ -1025,11 +1025,17 @@ function renderStatCardsHtml(cards) {
   return cards.map((c) => '<div class="stat-card"><div class="stat-number' + (c.className ? ' ' + c.className : '') + '">' + c.value + '</div><div class="stat-label">' + c.label + '</div></div>').join('');
 }
 
+// Security fix (2026-09): customer emails (and caller numbers, which
+// the caller controls) used to be concatenated into innerHTML raw, so a
+// crafted email address could inject markup/script into the admin page.
+// Every data-derived value is now passed through escapeHtml — the same
+// helper the Customers tab uses. icon/className are page constants.
+// TEST-EXTRACT-START: operationsListRenderers
 function renderListHtml(items, emptyMessage, describe) {
   if (!items || items.length === 0) return '<div class="empty-state">' + emptyMessage + '</div>';
   return items.map((item) => {
     const dsc = describe(item);
-    return '<div class="list-item"><div class="list-icon">' + dsc.icon + '</div><div class="list-details"><div class="list-title ' + (dsc.className || '') + '">' + dsc.title + '</div><div class="list-meta">' + (dsc.meta || '') + '</div></div></div>';
+    return '<div class="list-item"><div class="list-icon">' + dsc.icon + '</div><div class="list-details"><div class="list-title ' + (dsc.className || '') + '">' + escapeHtml(dsc.title) + '</div><div class="list-meta">' + escapeHtml(dsc.meta || '') + '</div></div></div>';
   }).join('');
 }
 
@@ -1038,7 +1044,7 @@ function renderCallsHtml(calls) {
   return calls.map((call) => {
     const icon = call.result === 'SCAM' ? '🚫' : '✅';
     const who = call.householdEmail || 'Unknown household';
-    return '<div class="list-item"><div class="list-icon">' + icon + '</div><div class="list-details"><div class="list-title">' + call.number + ' — ' + call.result + '</div><div class="list-meta">' + who + ' · ' + call.time + '</div></div></div>';
+    return '<div class="list-item"><div class="list-icon">' + icon + '</div><div class="list-details"><div class="list-title">' + escapeHtml(call.number) + ' — ' + escapeHtml(call.result) + '</div><div class="list-meta">' + escapeHtml(who) + ' · ' + escapeHtml(call.time) + '</div></div></div>';
   }).join('');
 }
 
@@ -1061,8 +1067,9 @@ function renderLaunchReadinessHtml(launchReadiness) {
 
 function renderSearchResultsHtml(results) {
   if (!results || results.length === 0) return '<div class="empty-state">No matches.</div>';
-  return results.map((h) => '<div class="search-result"><div class="search-result-email">' + h.email + '</div><div class="search-result-meta">ID: ' + h.id + '<br>Number: ' + (h.twilio_number || '—') + ' · Provisioning: ' + h.twilio_provisioning_status + '<br>Status: ' + h.status + '</div></div>').join('');
+  return results.map((h) => '<div class="search-result"><div class="search-result-email">' + escapeHtml(h.email) + '</div><div class="search-result-meta">ID: ' + escapeHtml(h.id) + '<br>Number: ' + escapeHtml(h.twilio_number || '—') + ' · Provisioning: ' + escapeHtml(h.twilio_provisioning_status) + '<br>Status: ' + escapeHtml(h.status) + '</div></div>').join('');
 }
+// TEST-EXTRACT-END: operationsListRenderers
 
 function renderOperationsTab(data) {
   let html = '';
