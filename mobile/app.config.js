@@ -57,9 +57,35 @@ module.exports = {
       // default base manifest template. HCG only reads contacts — never
       // writes to the device address book — and never draws overlays, so
       // both are unused and blocked here.
+      //
+      // USE_FULL_SCREEN_INTENT (2026-09-23, Google Play policy rejection
+      // of versionCode 10 — "Permission use is not directly related to
+      // your app's core purpose"): declared unconditionally by
+      // @twilio/voice-react-native-sdk's own AndroidManifest.xml, not by
+      // any HCG code or Expo config plugin — confirmed the sole
+      // contributor across every dependency in node_modules. Blocked here
+      // using the same tools:node="remove" manifest-merger mechanism as
+      // the two permissions above.
+      //
+      // KNOWN, NOT-YET-ACCEPTED BEHAVIOURAL TRADEOFF — do not build/ship
+      // this until Andrew has explicitly signed off: mobile/patches/
+      // @twilio+voice-react-native-sdk+...patch (2026-08-20) exists
+      // specifically because removing/losing setFullScreenIntent() on a
+      // LOCKED phone was already found, on a real Android 10 device, to
+      // leave the incoming-call notification as a heads-up banner that
+      // Android's SystemUI auto-collapses after ~5-6 seconds, with no
+      // persistently visible way to answer for the rest of the ~55s ring
+      // window (see NotificationUtility.java's own patched comment for
+      // the full incident). Blocking this permission reintroduces exactly
+      // that regression for a locked/backgrounded phone — the ringtone,
+      // vibration and the notification itself (reachable from the lock
+      // screen's notification list) still work, but the automatic
+      // full-screen takeover does not. This does NOT affect a call
+      // received while the app is already foregrounded.
       blockedPermissions: [
         "android.permission.WRITE_CONTACTS",
         "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.USE_FULL_SCREEN_INTENT",
       ],
     },
     web: {
