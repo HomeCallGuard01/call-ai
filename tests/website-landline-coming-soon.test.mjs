@@ -115,11 +115,18 @@ const homeVisible = visible(home);
 check(!/href="\/register\.html"/.test(strip(home)), 'homepage: no link to /register.html remains (the only landline sign-up route)');
 check(!/Protect a landline|Set up Home Call Guard for your home phone/.test(homeVisible), 'homepage: no "Protect a landline" call to action');
 check(!/Call Divert|BT, Sky|Sign-up currently accepts|Works with BT/.test(homeVisible), 'homepage: no landline provider list or Call Divert fee note');
+// 2026-09-23 (homepage simplification round 2, redesign/homepage-simplification):
+// "Supported phones" is no longer a standalone section — device availability is
+// stated once in the hero and once (consolidated) in the FAQ — so the tile count
+// drops from 4 to 3 (hero, pricing, final CTA), and wording changed from "Coming
+// soon" to "In development" (a label change only; the gate itself is untouched,
+// proven in section 1/2 above). Same protective intent, updated to match.
 const landlineTiles = [...strip(home).matchAll(/<(\w+)[^>]*data-landline-soon[^>]*>/g)];
-check(landlineTiles.length === 4 && landlineTiles.every((m) => m[1] === 'div'), 'homepage: Landline appears as 4 non-clickable "Coming soon" tiles — all <div>, none a link');
-check(/Can I use Home Call Guard on my landline\?[\s\S]{0,200}Not yet\. Landline protection is coming soon and we aren't selling it today/.test(home), 'homepage FAQ: "Can I use Home Call Guard on my landline?" => "Not yet … we aren\'t selling it today"');
+check(landlineTiles.length === 3 && landlineTiles.every((m) => m[1] === 'div'), 'homepage: Landline appears as 3 non-clickable "In development" tiles — all <div>, none a link');
+check(/Which phones and networks are supported\?[\s\S]{0,600}>iPhone and landline support are in development and aren't available to new customers yet/.test(home), 'homepage FAQ: the consolidated "Which phones and networks are supported?" answer says iPhone/landline are in development and not available to new customers');
 const homeLandlineLines = homeVisible.split('\n').filter((l) => /landline/i.test(l)).map((l) => l.trim()).filter(Boolean);
-check(homeLandlineLines.length > 0 && homeLandlineLines.every((l) => /coming soon|^Landline$|Can I use Home Call Guard on my landline\?|working on iPhone and landline support|Not yet|available for Android/i.test(l)), `homepage: EVERY visible mention of landline says coming soon / not available (${homeLandlineLines.length} mentions)`);
+check(homeLandlineLines.length > 0 && homeLandlineLines.every((l) => /in development|^Landline$|not available to new customers/i.test(l)), `homepage: EVERY visible mention of landline says in development / not available (${homeLandlineLines.length} mentions)`);
+check(!/Can I use Home Call Guard on my landline\?/.test(home), 'homepage: the old standalone "Can I use Home Call Guard on my landline?" FAQ is gone (consolidated into "Which phones and networks are supported?")');
 check(home.includes('href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app"') && !/data-app-store[^>]*href/.test(strip(home)), 'homepage: Google Play links to the real listing; the App Store tile is a non-link "Coming soon"');
 check(/£4\.99 a month, including VAT/.test(home), 'homepage: £4.99 is shown VAT-inclusive');
 check(!home.includes('LANDLINE_COMING_SOON_FLAG.md'), 'homepage: no reference to the superseded doc');
