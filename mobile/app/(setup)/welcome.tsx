@@ -13,6 +13,7 @@ import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import { hasProvenActivation } from "../../lib/homeStatus";
+import { loadSetupCompletedAt } from "../../lib/setupCompletionStorage";
 import { colors, radius, spacing, typography } from "../../lib/theme";
 
 const RESUME_ROUTE: Record<string, string> = {
@@ -29,13 +30,19 @@ export default function SetupWelcome() {
   useEffect(() => {
     let isMounted = true;
 
-    fetchDashboard(session?.access_token)
-      .then(data => {
+    // Onboarding-verification UX change (2026-09-23): also load the
+    // local "setup completed" flag alongside the dashboard fetch, so a
+    // customer who has completed activation but isn't verified yet
+    // resumes at "complete", not back at device-picker — see
+    // resumeSetupAt's own comment for the bug this fixes.
+    Promise.all([fetchDashboard(session?.access_token), loadSetupCompletedAt()])
+      .then(([data, setupCompletedAt]) => {
         if (!isMounted) return;
         const target = resumeSetupAt({
           isEntitled: true,
           contactCount: data.contacts.length,
           isActivationProven: hasProvenActivation(data),
+          hasCompletedActivationStep: !!setupCompletedAt,
         });
         if (target.screen === "subscribe") {
           // Shouldn't happen (fetchDashboard succeeded, so entitlement

@@ -501,6 +501,56 @@ function looksLikeUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
+// Onboarding-verification UX change (2026-09-23) — Admin Dashboard
+// requirement: an authorised admin must be able to see a household's
+// real protection evidence (entitlement, Twilio provisioning, forwarding
+// verified, Voice SDK registration, end-to-end delivery, derived
+// protection status) without querying production directly. Reuses
+// services/callRouting.js's computeProtectionStatus — the exact same
+// derivation the customer-facing web/mobile dashboards already use — so
+// this can never show the admin a different "protected" answer than the
+// customer sees. No secret/credential is added to the response; every
+// field here is either already returned by this function's existing
+// `select("*")` or a derived boolean/status string.
+//
+// Pure shaping logic split out from the I/O (the entitlement lookup)
+// deliberately, matching this file's established convention (see this
+// file's own header comment) of testing pure functions directly without
+// a real Supabase call — see tests/admin-metrics.test.mjs.
+function buildProtectionEvidence(household, entitlement, protection) {
+  return {
+    entitlementStatus: entitlement ? entitlement.status : "none",
+    entitlementType: entitlement ? entitlement.entitlement_type : null,
+    entitlementSource: entitlement ? entitlement.source : null,
+    twilioProvisioningStatus: household.twilio_provisioning_status,
+    forwardingVerified: protection.forwardingVerified,
+    activationVerifiedAt: household.activation_verified_at,
+    voiceSdkRegistered: protection.deliveryReady,
+    voiceClientRegisteredAt: household.voice_client_registered_at,
+    endToEndDeliveryVerified: protection.endToEndDeliveryVerified,
+    deliveryVerifiedAt: household.delivery_verified_at,
+    fullyProtected: protection.fullyProtected,
+  };
+}
+
+async function attachProtectionEvidence(households) {
+  if (!households || households.length === 0) return households;
+  const { computeProtectionStatus } = require("../services/callRouting");
+  const { getActiveEntitlement } = require("./billing");
+  const now = new Date();
+  // One entitlement lookup per matched household — search results are
+  // capped at 25 and this is an admin-triggered manual action, not a
+  // customer-facing hot path, so the small N+1 here is a deliberate,
+  // acceptable tradeoff rather than a new batched query.
+  return Promise.all(
+    households.map(async h => {
+      const entitlement = await getActiveEntitlement(h.id);
+      const protection = computeProtectionStatus(h, now);
+      return { ...h, protectionEvidence: buildProtectionEvidence(h, entitlement, protection) };
+    })
+  );
+}
+
 async function searchCustomers(query) {
   if (!supabaseAdmin || !query || !query.trim()) return [];
 
@@ -522,7 +572,7 @@ async function searchCustomers(query) {
     return [];
   }
 
-  return data || [];
+  return attachProtectionEvidence(data || []);
 }
 
 module.exports = {
@@ -536,6 +586,7 @@ module.exports = {
   mergeAlerts,
   getAlerts,
   searchCustomers,
+  buildProtectionEvidence,
   looksLikeUuid,
   computeBusinessOverview,
   getBusinessOverview,

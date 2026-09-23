@@ -2,15 +2,22 @@
 // APP_DECISION_003/007: the single highest-value screen in the whole
 // activation flow — replaces "did I do this right?" with a real,
 // server-checked answer instead of a static help page. Polls once on
-// arrival (a customer just came back from dialling the code — no
-// "keep checking forever" spinner needed), with a manual retry and a
-// troubleshooting panel on failure rather than a dead end.
+// arrival, with a manual re-check and a troubleshooting panel on failure
+// rather than a dead end.
 //
-// Routes to B9 (setup complete) on success, not B6-B8 (the native
-// contact picker) — those are explicitly deferred post-launch per the
-// approved Launch Feature Matrix. V1's trusted-contact flow is manual
-// entry only (C2/C3), added from the Contacts tab after setup, same as
-// the spec's own "Skip for now" path already describes.
+// Onboarding-verification UX change (2026-09-23): NO LONGER a mandatory
+// gate in the setup flow — B9 (complete.tsx) is reached directly from
+// activate.tsx now, before this screen ever runs. This screen is reached
+// two ways instead: (1) complete.tsx's clearly secondary "Test my
+// protection now (optional)" action, usually moments after activation,
+// and (2) the Home tab's "unverified setup" reminder, potentially days
+// later, when the customer likely hasn't made a test call yet at all.
+// Copy below is written for both: it explains what to do before it
+// reports a result, and never blocks navigation — "Continue"/back always
+// work. Same endpoint (verifyActivation, POST /api/v1/activation/verify)
+// and same passive backend stamp (services/activationVerification.js)
+// as before — nothing about the verification mechanism itself changed,
+// only when/whether the customer is made to look at it.
 import { useState, useEffect, useRef } from "react";
 import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
@@ -72,7 +79,11 @@ export default function Verify() {
         <SetupProgress currentStep={3} />
         <Text style={styles.title} accessibilityRole="header">Verified!</Text>
         <Text style={styles.body}>Your calls are now forwarding correctly.</Text>
-        <PrimaryButton label="Continue" onPress={() => router.push("/(setup)/complete")} />
+        {/* 2026-09-23: goes to Home, not back to complete.tsx — this
+            screen is reachable from two different places now (see file
+            header), and Home is always a correct destination from
+            either. */}
+        <PrimaryButton label="Continue" onPress={() => router.replace("/(tabs)")} />
       </Screen>
     );
   }
@@ -80,10 +91,10 @@ export default function Verify() {
   return (
     <Screen>
       <SetupProgress currentStep={3} />
-      <Text style={styles.title} accessibilityRole="header">Still checking...</Text>
+      <Text style={styles.title} accessibilityRole="header">Not detected yet</Text>
       <Text style={styles.body}>
-        We haven't detected a forwarded call yet. This is normal if it's only been a moment —
-        try calling your own number from another phone to test it, then check again.
+        Use another phone to call your normal mobile number. We'll confirm when Home Call Guard receives the
+        forwarded call.
       </Text>
 
       {hasCheckedOnce && (
@@ -93,7 +104,13 @@ export default function Verify() {
         />
       )}
 
-      <PrimaryButton label="Try again" onPress={runCheck} />
+      <PrimaryButton label="Check again" onPress={runCheck} />
+      {/* 2026-09-23: always available to leave without blocking, on top
+          of the existing troubleshooting options below — this screen was
+          already reachable via "Continue"/back before this change, but
+          is now explicitly optional rather than a gate, so a direct way
+          back to Home is added alongside them. */}
+      <PrimaryButton label="Back to Home" variant="secondary" onPress={() => router.replace("/(tabs)")} />
       <PrimaryButton
         label="Change device or provider"
         variant="secondary"

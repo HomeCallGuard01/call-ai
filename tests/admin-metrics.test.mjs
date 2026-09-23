@@ -22,6 +22,7 @@ const {
   computeReadinessSummary,
   deriveMembershipStatus,
   latestRowPerHousehold,
+  buildProtectionEvidence,
 } = require('../database/adminMetrics.js');
 
 let failures = 0;
@@ -214,6 +215,56 @@ check(latest.get('missing') === undefined, 'latestRowPerHousehold has no entry f
 check(looksLikeUuid('00000000-0000-0000-0000-000000000000') === true, 'looksLikeUuid accepts a well-formed UUID');
 check(looksLikeUuid('not-a-uuid') === false, 'looksLikeUuid rejects a non-UUID search term');
 check(looksLikeUuid('andrew@example.com') === false, 'looksLikeUuid rejects an email address');
+
+// --- buildProtectionEvidence (2026-09-23, onboarding-verification UX
+// change — Admin Dashboard requirement) ---
+
+const settingUpHousehold = {
+  twilio_provisioning_status: 'pending',
+  activation_verified_at: null,
+  voice_client_registered_at: null,
+  delivery_verified_at: null,
+};
+const settingUpEvidence = buildProtectionEvidence(
+  settingUpHousehold,
+  null,
+  { forwardingVerified: false, deliveryReady: false, endToEndDeliveryVerified: false, fullyProtected: false }
+);
+check(settingUpEvidence.entitlementStatus === 'none', 'buildProtectionEvidence: no active entitlement is reported as "none", not null/undefined');
+check(settingUpEvidence.entitlementType === null && settingUpEvidence.entitlementSource === null, 'buildProtectionEvidence: entitlementType/entitlementSource are null when there is no active entitlement');
+check(settingUpEvidence.fullyProtected === false, 'buildProtectionEvidence: an unproven household is never reported as fullyProtected');
+
+const protectedHousehold = {
+  twilio_provisioning_status: 'active',
+  activation_verified_at: '2026-09-01T00:00:00Z',
+  voice_client_registered_at: '2026-09-20T00:00:00Z',
+  delivery_verified_at: '2026-09-10T00:00:00Z',
+};
+const protectedEntitlement = { status: 'active', entitlement_type: 'paid', source: 'stripe' };
+const protectedEvidence = buildProtectionEvidence(
+  protectedHousehold,
+  protectedEntitlement,
+  { forwardingVerified: true, deliveryReady: true, endToEndDeliveryVerified: true, fullyProtected: true }
+);
+check(protectedEvidence.entitlementStatus === 'active' && protectedEvidence.entitlementSource === 'stripe', 'buildProtectionEvidence: a real active entitlement surfaces its status and source');
+check(protectedEvidence.twilioProvisioningStatus === 'active', 'buildProtectionEvidence: twilioProvisioningStatus passes through the raw household field');
+check(protectedEvidence.forwardingVerified === true && protectedEvidence.activationVerifiedAt === '2026-09-01T00:00:00Z', 'buildProtectionEvidence: forwarding-verified evidence includes both the derived boolean and the raw timestamp');
+check(protectedEvidence.voiceSdkRegistered === true && protectedEvidence.voiceClientRegisteredAt === '2026-09-20T00:00:00Z', 'buildProtectionEvidence: Voice SDK registration includes both the derived boolean (deliveryReady) and the raw timestamp');
+check(protectedEvidence.endToEndDeliveryVerified === true && protectedEvidence.deliveryVerifiedAt === '2026-09-10T00:00:00Z', 'buildProtectionEvidence: end-to-end delivery evidence includes both the derived boolean and the raw timestamp');
+check(protectedEvidence.fullyProtected === true, 'buildProtectionEvidence: a genuinely fully-protected household is reported as such — matches computeProtectionStatus exactly, never a separate/weaker admin-only definition');
+
+// Onboarding-verification UX change's own "awaiting_confirmation" case:
+// setup done, no backend evidence yet — an admin must see this plainly
+// as NOT protected, never a false-positive "Protected" in the dashboard.
+const awaitingConfirmationEvidence = buildProtectionEvidence(
+  settingUpHousehold,
+  { status: 'active', entitlement_type: 'paid', source: 'stripe' },
+  { forwardingVerified: false, deliveryReady: false, endToEndDeliveryVerified: false, fullyProtected: false }
+);
+check(
+  awaitingConfirmationEvidence.fullyProtected === false && awaitingConfirmationEvidence.forwardingVerified === false,
+  'buildProtectionEvidence: an entitled household with no protection evidence yet (the new "awaiting_confirmation" case) is never shown as protected/forwarding-verified in the admin view, regardless of entitlement status'
+);
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);

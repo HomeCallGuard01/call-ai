@@ -12,10 +12,14 @@
 // then a plain-English explanation, then a real-data protection summary,
 // recent activity preview, and trusted-contacts status — all from the
 // exact same DashboardResponse this screen already fetched, nothing
-// invented. Every state-derivation function below (deriveLoadOutcome,
-// isSettingUp, resumeSetupAt, the load()/useEffect/useFocusEffect
-// wiring) is untouched from the previous version — only the JSX/styles
-// changed.
+// invented.
+//
+// Onboarding-verification UX change (2026-09-23): computeHomeProtectionState
+// and resumeSetupAt now also take a local, per-device "setup completed"
+// signal (lib/setupCompletionStorage.ts) alongside the backend-confirmed
+// data — see lib/homeStatus.ts's own comment for the new
+// "awaiting_confirmation" state this adds, and lib/setupFlow.ts's for why
+// resumeSetupAt needed it too.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Text, View, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, Image } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -29,12 +33,25 @@ import { Ionicons } from "@expo/vector-icons";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
-import { deriveLoadOutcome, isSettingUp as computeIsSettingUp, computeHomeProtectionState, hasProvenActivation } from "../../lib/homeStatus";
+import { deriveLoadOutcome, computeHomeProtectionState, hasProvenActivation } from "../../lib/homeStatus";
 import { classifyLoadFailure, type LoadFailureReason } from "../../lib/loadFailure";
 import { resetVoiceRegistrationState } from "../../lib/voiceClient";
 import { resumeSetupAt } from "../../lib/setupFlow";
+import { loadSetupCompletedAt, clearSetupCompletedAt } from "../../lib/setupCompletionStorage";
 import type { DashboardActivityItem, DashboardResponse } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
+
+// Onboarding-verification UX change (2026-09-23): how long a household
+// can sit in "awaiting_confirmation" (setup done, no forwarded call seen
+// yet) before the Home tab actively prompts them to check, rather than
+// silently waiting forever. Not a scheduled job or a push notification —
+// purely a local read of markSetupCompleted's timestamp, evaluated the
+// next time this screen loads (app open, pull-to-refresh, tab focus).
+// 24 hours: long enough that a customer who hasn't happened to make or
+// receive any call yet isn't nagged the same day they finished setup,
+// short enough that "protection silently never worked" is caught within
+// a day, not left for a customer to discover only when they need it.
+const UNVERIFIED_SETUP_REMINDER_MS = 24 * 60 * 60 * 1000;
 
 // "ready" is the only state in which `data` is guaranteed non-null and
 // backend-confirmed for the *current* user — every other state must never
@@ -132,6 +149,11 @@ export default function Home() {
   // become true from a state that already had real data.
   const [isStale, setIsStale] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Local-device-only, per household — see lib/setupCompletionStorage.ts.
+  // null means either "never completed setup on this device" (a genuine
+  // setting_up household) or "not loaded yet" (loading state); both
+  // correctly fall back to today's existing setting_up behaviour below.
+  const [setupCompletedAt, setSetupCompletedAt] = useState<string | null>(null);
 
   // load() is triggered from two independent sources — useFocusEffect
   // (every time this tab regains focus) and pull-to-refresh — so two
@@ -160,6 +182,10 @@ export default function Home() {
     setData(null);
     setIsStale(false);
     setState("loading");
+    // setupCompletedAt is per-household (see setupCompletionStorage.ts);
+    // clearing it here matches the identity-change reset applied to
+    // every other piece of this screen's state.
+    setSetupCompletedAt(null);
   }, [session?.user?.id]);
 
   const load = useCallback(async (isRefresh = false) => {
@@ -227,6 +253,7 @@ export default function Home() {
   // back in.
   function handleSessionExpired() {
     resetVoiceRegistrationState();
+    clearSetupCompletedAt();
     supabase.auth.signOut().finally(() => {
       router.replace("/(auth)/login");
     });
@@ -235,6 +262,13 @@ export default function Home() {
   useFocusEffect(
     useCallback(() => {
       load();
+      // Re-read on every focus, not just once on mount — this screen is
+      // reached right after complete.tsx writes this timestamp for the
+      // first time, and a stale in-memory null would otherwise show
+      // "Setting up"/send the customer through device-picker for one
+      // extra visit before the next unrelated re-render happened to
+      // catch up.
+      loadSetupCompletedAt().then(setSetupCompletedAt);
     }, [load])
   );
 
@@ -307,9 +341,17 @@ export default function Home() {
   // state === "ready" from here on — `data` is guaranteed non-null and
   // was positively confirmed by the backend for the current user (or is
   // the last such confirmation, with isStale flagging that explicitly).
-  const isSettingUp = computeIsSettingUp(data!);
-  const homeProtectionState = computeHomeProtectionState(data!);
+  const hasCompletedActivationStep = !!setupCompletedAt;
+  const homeProtectionState = computeHomeProtectionState(data!, hasCompletedActivationStep);
   const hasNoContacts = data!.contacts.length === 0;
+
+  // Onboarding-verification UX change (2026-09-23): only meaningful while
+  // homeProtectionState === "awaiting_confirmation" — how long it's been
+  // since setup completed, compared against UNVERIFIED_SETUP_REMINDER_MS.
+  const showUnverifiedSetupReminder =
+    homeProtectionState === "awaiting_confirmation" &&
+    !!setupCompletedAt &&
+    Date.now() - new Date(setupCompletedAt).getTime() >= UNVERIFIED_SETUP_REMINDER_MS;
 
   // Same decision point B1 uses to skip already-done steps — reused here
   // so "Finish setup" always sends the customer to the actual next
@@ -320,6 +362,7 @@ export default function Home() {
     isEntitled: true,
     contactCount: data!.contacts.length,
     isActivationProven: hasProvenActivation(data!),
+    hasCompletedActivationStep,
   });
   // No "subscribe" entry: `isEntitled: true` above is hardcoded, not
   // read from `data`, because `state === "ready"` is only reachable once
@@ -362,6 +405,37 @@ export default function Home() {
               label={finishSetupLabel}
               onPress={() => router.push(resumeRoute as any)}
             />
+          </>
+        ) : homeProtectionState === "awaiting_confirmation" ? (
+          <>
+            {/* Onboarding-verification UX change (2026-09-23): every
+                concrete setup step — including turning on call forwarding
+                — is done. No customer action is required; this resolves
+                automatically the moment the first genuine forwarded call
+                reaches Home Call Guard, same as every other automatic
+                transition in this state machine. "Test my protection
+                now" below is optional, never required to use the app. */}
+            <Hero muted />
+            <Text style={styles.giantTitleMuted} accessibilityRole="header">Setting up / awaiting confirmation</Text>
+            <Text style={styles.statusBody}>
+              Home Call Guard is set up. We'll confirm your protection automatically when your first forwarded
+              call reaches Home Call Guard.
+            </Text>
+            <PrimaryButton
+              label="Test my protection now"
+              variant="secondary"
+              onPress={() => router.push("/(setup)/verify")}
+            />
+            {showUnverifiedSetupReminder && (
+              <View style={styles.reminderCard}>
+                <Text style={styles.reminderTitle}>Let's check your protection</Text>
+                <Text style={styles.reminderBody}>
+                  We haven't yet seen a call come through Home Call Guard. Let's make sure everything is
+                  connected correctly.
+                </Text>
+                <PrimaryButton label="Check now" onPress={() => router.push("/(setup)/verify")} />
+              </View>
+            )}
           </>
         ) : homeProtectionState === "confirming_delivery" ? (
           <>
@@ -663,6 +737,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   nudgeText: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
+  reminderCard: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  reminderTitle: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: "700",
+    marginBottom: spacing.xs,
+  },
+  reminderBody: {
     ...typography.body,
     color: colors.textMuted,
     marginBottom: spacing.sm,

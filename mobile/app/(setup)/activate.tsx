@@ -110,7 +110,13 @@ export default function Activate() {
     const subscription = AppState.addEventListener("change", nextState => {
       if (nextState === "active" && dialerOpened.current) {
         dialerOpened.current = false;
-        router.push("/(setup)/verify");
+        // Onboarding-verification UX change (2026-09-23): setup is
+        // complete the moment the customer has done this — routes
+        // straight to B9, not the old mandatory B5 verify gate. See
+        // complete.tsx for the explanation shown there and the optional
+        // "Test my protection now" action (still verify.tsx, just no
+        // longer required before the customer can use the app).
+        router.push("/(setup)/complete");
       }
     });
     return () => subscription.remove();
@@ -237,8 +243,10 @@ export default function Activate() {
     if (!canAutoDial) {
       // Landline: nothing to open on this device — the customer has
       // already dialled from their landline phone by the time they tap
-      // this, so go straight to verification.
-      router.push("/(setup)/verify");
+      // this, so setup is complete (2026-09-23: no longer a mandatory
+      // verify gate — see the AppState listener above for the same
+      // change on the auto-dial path).
+      router.push("/(setup)/complete");
       return;
     }
 
@@ -420,16 +428,19 @@ export default function Activate() {
       {/* The carrier's own "Setting Activation Succeeded" confirmation is
           outside this app entirely — dismissing it can land the customer
           back in the iOS Phone app, not here, so the AppState listener
-          above (which auto-advances to /verify once they DO return) isn't
-          a guarantee. This is the explicit fallback so they're never
-          stuck on this screen unsure what to do next. */}
+          above (which auto-advances once they DO return) isn't a
+          guarantee. This is the explicit fallback so they're never stuck
+          on this screen unsure what to do next. 2026-09-23: same
+          destination as the AppState listener now (setup complete, not
+          the old mandatory verify gate) — this is another "I'm done with
+          activation" signal, not a request to actively check anything. */}
       {canAutoDial && (
         <Pressable
-          onPress={() => router.push("/(setup)/verify")}
+          onPress={() => router.push("/(setup)/complete")}
           accessibilityRole="button"
           style={styles.manualVerifyLink}
         >
-          <Text style={styles.manualVerifyLinkText}>Already done this? Check now</Text>
+          <Text style={styles.manualVerifyLinkText}>Already done this? Continue</Text>
         </Pressable>
       )}
 

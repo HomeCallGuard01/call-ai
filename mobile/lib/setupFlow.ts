@@ -27,6 +27,20 @@ export interface SetupResumeState {
   // never gets set for a customer who dialled the forwarding code
   // manually or whose only proof is a real delivered call.
   isActivationProven: boolean;
+  // Onboarding-verification UX change (2026-09-23): distinct from
+  // isActivationProven. True the moment the customer completes the
+  // activation *step* (dialled/confirmed the forwarding code and reached
+  // B9) — see lib/setupCompletionStorage.ts — regardless of whether a
+  // real forwarded call has proven it yet. Before this field existed, an
+  // activated-but-not-yet-verified customer was indistinguishable from
+  // one who had never attempted activation at all, so resumeSetupAt
+  // below sent BOTH back to device-picker/MMI setup — asking someone who
+  // had already correctly dialled their carrier code to do it again, for
+  // no reason, every time they reopened the app before their first
+  // forwarded call arrived. Optional/defaults to false so every existing
+  // caller/test that doesn't know about this yet keeps its exact
+  // previous behaviour.
+  hasCompletedActivationStep?: boolean;
 }
 
 export type SetupResumeTarget =
@@ -43,7 +57,7 @@ export type SetupResumeTarget =
 export function resumeSetupAt(state: SetupResumeState): SetupResumeTarget {
   if (!state.isEntitled) return { screen: "subscribe" };
   if (state.contactCount === 0) return { screen: "contacts" };
-  if (!state.isActivationProven) return { screen: "device-picker" };
+  if (!state.isActivationProven && !state.hasCompletedActivationStep) return { screen: "device-picker" };
   return { screen: "complete" };
 }
 

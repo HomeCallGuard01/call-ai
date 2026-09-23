@@ -107,17 +107,42 @@ export function isSettingUp(data: {
 // automatically the next time the app is opened in the foreground. This
 // also preserves the existing fail-safe: an unreachable client is never
 // described as "protected" (fullyProtected still requires deliveryReady).
-export type HomeProtectionState = "setting_up" | "confirming_delivery" | "reconnect_needed" | "protected";
+// Onboarding-verification UX change (2026-09-23) — "awaiting_confirmation"
+// is a NEW fifth state, inserted between "setting_up" (real steps still
+// left: no contacts, no device/carrier chosen, forwarding never even
+// attempted) and "confirming_delivery" (forwarding proven, delivery not
+// yet). It covers a customer who has completed every concrete setup
+// action — including turning on call forwarding — but for whom neither
+// activation_verified_at nor endToEndDeliveryVerified exists yet: setup
+// is genuinely finished, only evidence is outstanding. Before this state
+// existed, this customer was shown "setting_up" with a "Finish setup"
+// button that sent them back to device-picker/MMI setup to redo
+// something they'd already done correctly (the exact bug
+// hasCompletedActivationStep/resumeSetupAt above also fixes). No
+// customer action is required here either — it resolves automatically
+// the moment the first genuine forwarded call reaches /voice, same as
+// every other automatic transition in this state machine.
+export type HomeProtectionState =
+  | "setting_up"
+  | "awaiting_confirmation"
+  | "confirming_delivery"
+  | "reconnect_needed"
+  | "protected";
 
-export function computeHomeProtectionState(data: {
-  protection: {
-    activationVerifiedAt: string | null;
-    endToEndDeliveryVerified: boolean;
-    deliveryReady: boolean;
-    fullyProtected: boolean;
-  };
-}): HomeProtectionState {
-  if (isSettingUp(data)) return "setting_up";
+export function computeHomeProtectionState(
+  data: {
+    protection: {
+      activationVerifiedAt: string | null;
+      endToEndDeliveryVerified: boolean;
+      deliveryReady: boolean;
+      fullyProtected: boolean;
+    };
+  },
+  hasCompletedActivationStep = false
+): HomeProtectionState {
+  if (isSettingUp(data)) {
+    return hasCompletedActivationStep ? "awaiting_confirmation" : "setting_up";
+  }
   if (data.protection.fullyProtected) return "protected";
   if (!data.protection.endToEndDeliveryVerified) return "confirming_delivery";
   return "reconnect_needed";

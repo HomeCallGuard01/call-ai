@@ -129,6 +129,7 @@
   .search-result:last-child { border-bottom: none; }
   .search-result-email { font-weight: 600; font-size: 14px; }
   .search-result-meta { color: #93a3b8; margin-top: 2px; }
+  .evidence-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .quick-action-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .quick-action-row input, .quick-action-row select { flex: 1; background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 8px 10px; font-size: 13px; }
   button.action-button { background: #22d3ee; border: none; padding: 9px 16px; color: #04222b; font-weight: bold; font-size: 13px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
@@ -759,9 +760,40 @@ function renderLaunchReadinessHtml(launchReadiness) {
   return html;
 }
 
+// Onboarding-verification UX change (2026-09-23) — Admin Dashboard
+// requirement: shows the same protection evidence the customer-facing
+// dashboards derive from (services/callRouting.js's computeProtectionStatus,
+// attached server-side by database/adminMetrics.js's searchCustomers), so
+// an admin can see entitlement, Twilio provisioning, forwarding verified,
+// Voice SDK registration, and end-to-end delivery for one household
+// without a direct production query. No secret/credential is rendered —
+// every value here is a status string, a boolean, or a timestamp.
+function protectionEvidenceHtml(ev) {
+  if (!ev) return '';
+  const entitlementClass = ev.entitlementStatus === 'active' ? 'good' : (ev.entitlementStatus === 'none' ? 'bad' : '');
+  const provisioningClass = ev.twilioProvisioningStatus === 'active' ? 'good' : (ev.twilioProvisioningStatus === 'failed' ? 'bad' : '');
+  const voiceClass = ev.voiceSdkRegistered ? 'good' : 'warn';
+  const protectedClass = ev.fullyProtected ? 'good' : 'warn';
+  const pill = (cls, label) => '<span class="status-pill ' + cls + '">' + label + '</span>';
+  let html = '<div class="evidence-row">' +
+    pill(entitlementClass, 'Entitlement: ' + ev.entitlementStatus + (ev.entitlementSource ? ' (' + ev.entitlementSource + ')' : '')) +
+    pill(provisioningClass, 'Twilio: ' + ev.twilioProvisioningStatus) +
+    pill(ev.forwardingVerified ? 'good' : '', 'Forwarding verified: ' + (ev.forwardingVerified ? 'Yes' : 'No')) +
+    pill(voiceClass, 'Voice SDK registered: ' + (ev.voiceSdkRegistered ? 'Yes' : 'No')) +
+    pill(ev.endToEndDeliveryVerified ? 'good' : '', 'Delivery verified: ' + (ev.endToEndDeliveryVerified ? 'Yes' : 'No')) +
+    pill(protectedClass, 'Protected: ' + (ev.fullyProtected ? 'Yes' : 'Not yet')) +
+    '</div>';
+  const timestamps = [];
+  if (ev.activationVerifiedAt) timestamps.push('Activation verified: ' + new Date(ev.activationVerifiedAt).toLocaleString('en-GB'));
+  if (ev.deliveryVerifiedAt) timestamps.push('Delivery verified: ' + new Date(ev.deliveryVerifiedAt).toLocaleString('en-GB'));
+  if (ev.voiceClientRegisteredAt) timestamps.push('Voice SDK last registered: ' + new Date(ev.voiceClientRegisteredAt).toLocaleString('en-GB'));
+  if (timestamps.length > 0) html += '<div class="search-result-meta">' + timestamps.join('<br>') + '</div>';
+  return html;
+}
+
 function renderSearchResultsHtml(results) {
   if (!results || results.length === 0) return '<div class="empty-state">No matches.</div>';
-  return results.map((h) => '<div class="search-result"><div class="search-result-email">' + h.email + '</div><div class="search-result-meta">ID: ' + h.id + '<br>Number: ' + (h.twilio_number || '—') + ' · Provisioning: ' + h.twilio_provisioning_status + '<br>Status: ' + h.status + '</div></div>').join('');
+  return results.map((h) => '<div class="search-result"><div class="search-result-email">' + h.email + '</div><div class="search-result-meta">ID: ' + h.id + '<br>Number: ' + (h.twilio_number || '—') + ' · Provisioning: ' + h.twilio_provisioning_status + '<br>Status: ' + h.status + '</div>' + protectionEvidenceHtml(h.protectionEvidence) + '</div>').join('');
 }
 
 function renderOperationsTab(data) {

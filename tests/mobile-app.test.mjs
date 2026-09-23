@@ -305,6 +305,38 @@ function check(condition, message) {
     computeHomeProtectionState({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false, deliveryReady: false, fullyProtected: false } }) !== 'reconnect_needed',
     'computeHomeProtectionState: a household that has never had delivery proven at all is "setting_up", never "reconnect_needed" — these are genuinely distinct states'
   );
+
+  // --- "awaiting_confirmation" (2026-09-23, onboarding-verification UX
+  // change): a customer who has completed activation locally
+  // (hasCompletedActivationStep — see lib/setupCompletionStorage.ts) but
+  // has no backend evidence at all yet must never be told "Setting up" /
+  // "Finish setup" (which used to send them back to device-picker) — a
+  // real distinct state instead, requiring no customer action ---
+  check(
+    computeHomeProtectionState(
+      { protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false, deliveryReady: false, fullyProtected: false } },
+      true
+    ) === 'awaiting_confirmation',
+    'computeHomeProtectionState: hasCompletedActivationStep true with no backend evidence yet is "awaiting_confirmation", not "setting_up"'
+  );
+  check(
+    computeHomeProtectionState(
+      { protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false, deliveryReady: false, fullyProtected: false } },
+      false
+    ) === 'setting_up',
+    'computeHomeProtectionState: hasCompletedActivationStep false (the default) preserves the exact previous "setting_up" behaviour — no regression for existing callers/tests'
+  );
+  check(
+    computeHomeProtectionState({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: false, deliveryReady: false, fullyProtected: false } }) === 'setting_up',
+    'computeHomeProtectionState: omitting hasCompletedActivationStep entirely (2-arg call, exactly as every pre-existing test above does) defaults to false and is unaffected by this change'
+  );
+  check(
+    computeHomeProtectionState(
+      { protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: false, deliveryReady: true, fullyProtected: false } },
+      true
+    ) === 'confirming_delivery',
+    'computeHomeProtectionState: once real backend evidence exists (activationVerifiedAt), hasCompletedActivationStep no longer matters — never overrides a stronger, already-proven state'
+  );
 }
 
 // --- forwardingNumber (2026-09-12 physical-test finding): the customer
@@ -603,6 +635,28 @@ function check(condition, message) {
       isActivationProven: hasProvenActivation({ protection: { activationVerifiedAt: null, endToEndDeliveryVerified: true } }),
     }).screen === 'complete',
     'resumeSetupAt: a household proven only via real delivery evidence (activationVerifiedAt null) reaches "complete", not "device-picker" — real case, 2026-09-12 physical test'
+  );
+
+  // --- hasCompletedActivationStep (2026-09-23, onboarding-verification
+  // UX change): a customer who completed activation locally
+  // (lib/setupCompletionStorage.ts) but has no backend evidence at all
+  // yet must resume at "complete", never be bounced back to
+  // device-picker/MMI setup to redo something they already did. ---
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: false, hasCompletedActivationStep: true }).screen === 'complete',
+    'resumeSetupAt: hasCompletedActivationStep true reaches "complete" even with isActivationProven false — the exact bug this change fixes (an activated-but-unverified customer used to be sent back to device-picker)'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: false, hasCompletedActivationStep: false }).screen === 'device-picker',
+    'resumeSetupAt: hasCompletedActivationStep false (never attempted activation at all) still correctly sends the customer to device-picker — this state is genuinely different from "done but unverified"'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: false }).screen === 'device-picker',
+    'resumeSetupAt: omitting hasCompletedActivationStep entirely (exactly as every pre-existing test above does) defaults to false/undefined and is unaffected by this change — no regression'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationProven: false, hasCompletedActivationStep: true }).screen === 'contacts',
+    'resumeSetupAt: hasCompletedActivationStep never overrides the earlier, more fundamental "zero contacts" check — contacts must still come first'
   );
 
   check(

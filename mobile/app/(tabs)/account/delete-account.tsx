@@ -26,6 +26,7 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/AuthContext";
 import { deleteAccount, fetchDashboard, ApiError } from "../../../lib/api";
 import { resetVoiceRegistrationState } from "../../../lib/voiceClient";
+import { clearSetupCompletedAt } from "../../../lib/setupCompletionStorage";
 import { colors, spacing, typography } from "../../../lib/theme";
 
 // Whether the account currently has an active Apple/RevenueCat
@@ -84,6 +85,7 @@ export default function DeleteAccount() {
       // listener handles navigating away — this screen never navigates
       // itself.
       resetVoiceRegistrationState();
+      clearSetupCompletedAt();
       await supabase.auth.signOut();
     } catch (err) {
       setIsDeleting(false);

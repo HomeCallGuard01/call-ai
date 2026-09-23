@@ -10,6 +10,8 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/AuthContext";
 import { fetchDashboard, NotEntitledError } from "../../../lib/api";
 import { resetVoiceRegistrationState } from "../../../lib/voiceClient";
+import { hasProvenActivation } from "../../../lib/homeStatus";
+import { clearSetupCompletedAt } from "../../../lib/setupCompletionStorage";
 import type { MembershipStatus } from "../../../lib/types";
 import { colors, radius, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -57,7 +59,15 @@ export default function Account() {
       fetchDashboard(session?.access_token)
         .then(result => {
           setMembershipStatus(result.membership.status);
-          setIsProtected(!!result.protection.activationVerifiedAt);
+          // 2026-09-23 fix: was `!!result.protection.activationVerifiedAt`
+          // alone — the exact same false-negative homeStatus.ts's own
+          // 2026-09-12 correction closes on the Home tab (a household
+          // proven only via real delivery evidence, activationVerifiedAt
+          // still null, was shown "Not yet active" here even though Home
+          // correctly showed it as protected). Using the same shared
+          // OR-logic keeps this screen consistent with Home instead of a
+          // second, narrower definition of "protected".
+          setIsProtected(hasProvenActivation(result));
           setStatusState("loaded");
         })
         .catch(err => {
@@ -87,6 +97,7 @@ export default function Account() {
   // skipped.
   function signOutAndResetVoiceRegistration() {
     resetVoiceRegistrationState();
+    clearSetupCompletedAt();
     supabase.auth.signOut();
   }
 
