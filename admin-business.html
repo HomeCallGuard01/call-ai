@@ -560,8 +560,7 @@ function renderBusinessTab(d) {
   html += '<div class="section"><div class="section-header"><h2>Fair use — top Unknown-caller volume this month (count-based proxy, not £)</h2></div>';
   html += '<table><tr><th>Household</th><th>Unknown calls (MTD)</th><th>Tier</th></tr>';
   for (const h of d.fairUse.households) {
-    const tierBadge = h.tier === 'over_hard_threshold' ? badge('RED') : h.tier === 'approaching_threshold' ? badge('AMBER') : badge('GREEN');
-    html += '<tr><td>' + (h.email || h.householdId) + '</td><td>' + h.unknownCallCount + '</td><td>' + tierBadge + ' ' + h.tier + '</td></tr>';
+    html += renderFairUseRowHtml(h);
   }
   if (d.fairUse.households.length === 0) html += '<tr><td colspan="3" style="color:#64748b;">No Unknown-caller calls recorded this month.</td></tr>';
   html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div></div>';
@@ -582,6 +581,16 @@ function renderBusinessTab(d) {
 
   document.getElementById('business').innerHTML = html;
 }
+
+// Security fix (2026-09): the customer email used to be concatenated
+// into innerHTML raw — escaped with the same escapeHtml helper as the
+// Customers and Operations tabs. Output is otherwise unchanged.
+// TEST-EXTRACT-START: renderFairUseRowHtml
+function renderFairUseRowHtml(h) {
+  const tierBadge = h.tier === 'over_hard_threshold' ? badge('RED') : h.tier === 'approaching_threshold' ? badge('AMBER') : badge('GREEN');
+  return '<tr><td>' + escapeHtml(h.email || h.householdId) + '</td><td>' + h.unknownCallCount + '</td><td>' + tierBadge + ' ' + h.tier + '</td></tr>';
+}
+// TEST-EXTRACT-END: renderFairUseRowHtml
 
 function callStatsTable(cs) {
   if (!cs.available) return '<div class="error">Unavailable: ' + cs.reason + '</div>';

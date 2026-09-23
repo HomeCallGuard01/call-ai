@@ -252,6 +252,37 @@ if (sources.some(s => !s)) {
   }
 }
 
+// --- Business tab fair-use table escapes customer email (security regression, 2026-09) ---
+
+{
+  const rowRenderer = extractBetween(html, 'renderFairUseRowHtml');
+  const helpers = extractBetween(html, 'customerMonitorHelpers');
+  const badgeMatch = html.match(/function badge\(status\) \{[^\n]*\}/);
+
+  if (!rowRenderer || !helpers || !badgeMatch) {
+    check(false, 'renderFairUseRowHtml / customerMonitorHelpers / badge found in admin-business.html');
+  } else {
+    const { renderFairUseRowHtml } = new Function(`${badgeMatch[0]}\n${helpers}\n${rowRenderer}\nreturn { renderFairUseRowHtml };`)();
+
+    const evil = renderFairUseRowHtml({ email: '"><img src=x onerror=alert(1)>@example.com', householdId: 'h1', unknownCallCount: 12, tier: 'normal' });
+    check(
+      !evil.includes('<img') && evil.includes('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;@example.com'),
+      'Fair use table: a malicious email is rendered as escaped text, not markup'
+    );
+
+    const normal = renderFairUseRowHtml({ email: 'jane@example.com', householdId: 'h1', unknownCallCount: 250, tier: 'over_hard_threshold' });
+    check(
+      normal === '<tr><td>jane@example.com</td><td>250</td><td><span class="badge badge-RED">RED</span> over_hard_threshold</td></tr>',
+      'Fair use table: an ordinary row renders exactly as before (no functional change)'
+    );
+
+    const noEmail = renderFairUseRowHtml({ email: null, householdId: 'h-123', unknownCallCount: 1, tier: 'approaching_threshold' });
+    check(noEmail.startsWith('<tr><td>h-123</td>') && noEmail.includes('badge-AMBER'), 'Fair use table: falls back to household ID when no email');
+
+    check(html.includes('html += renderFairUseRowHtml(h);'), 'Business tab fair-use loop uses the escaping row renderer');
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);
   process.exit(1);
