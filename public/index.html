@@ -5,18 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#050a07">
 
-<!-- COPY STATUS (2026-09-20). Every statement about what Home Call Guard does during
-     a call uses ONLY the approved high-level proposition: it monitors calls from numbers
-     that aren't trusted contacts while the conversation is happening, and can end a call
-     when serious scam risk is detected. Deliberately absent: SMS/text warnings, warnings
-     to trusted contacts, scores/thresholds/risk stages, "before it reaches you", pre-call
-     screening, "no delays", "AI-powered". Search for APPROVED-BEHAVIOUR-COPY to find them.
-     LANDLINE COMING SOON (2026-09-21): HCG is not selling landline protection yet, so
-     Landline is shown only as a non-clickable "Coming soon" (same treatment as the
-     App Store) and nothing on this page claims or implies landline is available. The
-     removed "Protect a landline" tiles/panel and the steps to restore them are in
-     docs/launch/LANDLINE_COMING_SOON_LAUNCH_FLAG.md. The server independently refuses
-     landline checkout (LANDLINE_COMING_SOON). -->
+<!-- COPY STATUS (2026-09-23, homepage simplification). Every statement about what Home
+     Call Guard does during a call uses ONLY the approved high-level proposition: it
+     monitors calls from numbers that aren't trusted contacts while the conversation is
+     happening, and can end a call when serious scam risk is detected. Deliberately
+     absent: SMS/text warnings, warnings to trusted contacts, scores/thresholds/risk
+     stages, "before it reaches you", pre-call screening, "no delays", "AI-powered",
+     any claim of guaranteed/complete detection. Search for APPROVED-BEHAVIOUR-COPY to
+     find every such statement.
+     STRUCTURE (revised 2026-09-23, round 2): Hero -> Protection beyond blocking known
+     numbers -> How Home Call Guard works (absorbs trusted contacts + Activity) ->
+     Protect yourself or someone you care about -> Simple setup -> Pricing -> FAQ ->
+     Final CTA -> Footer. Trusted Contacts and Supported Phones are no longer their own
+     sections: trusted-caller behaviour is explained once, in "How it works"; device
+     availability is stated once in the hero and once (consolidated) in the FAQ.
+     AGE POSITIONING: no "elderly", "senior" or "vulnerable" wording anywhere on this
+     page — the "someone you care about" section is deliberately age-neutral (self,
+     parent, partner or anyone else).
+     SETUP-TIME CLAIM: "Set up in a few minutes" was removed from the hero reassurance
+     trio (no evidence cited for a specific duration). The pre-existing "usually a few
+     minutes" copy in the Setup section heading/FAQ is unchanged production wording,
+     not introduced by this pass — flagged to Andrew rather than silently altered.
+     DEVICE AVAILABILITY WORDING: "Coming soon" -> "In development" throughout (route
+     tiles, FAQ) per this round's brief. Purely a label change — see
+     services/goLanding.js / services/providerPolicy.js for the actual (unchanged)
+     availability logic; nothing here alters any gate.
+     LANDLINE (2026-09-21, unchanged logic): Landline is a non-clickable tile; nothing
+     on this page claims or implies it's available. The server independently refuses
+     landline checkout (LANDLINE_COMING_SOON) — see
+     docs/launch/LANDLINE_COMING_SOON_LAUNCH_FLAG.md.
+     Anchors #how-it-works, #pricing and #faq are linked from all 12 /guides/ pages and
+     from /go's own test — kept on the same sections. -->
 
 <title>Home Call Guard | Protect Your Phone From Scam Callers</title>
 <meta name="description" content="Home Call Guard helps protect you and your family from scam and nuisance calls. It monitors calls from numbers you don't know while you're talking, and can end a call if it detects serious scam risk. £4.99 a month including VAT, no long-term contract.">
@@ -86,7 +105,7 @@
 
 <style>
   :root {
-    /* Same tokens as the app's black/green identity (mobile/lib/theme.ts). */
+    /* Same tokens as production / the app's black/green identity (mobile/lib/theme.ts). */
     --bg: #050a07;
     --bg-2: #08110c;
     --card: #0c130f;
@@ -121,8 +140,8 @@
   h1 { font-size: clamp(2.1rem, 6.4vw, 3.5rem); font-weight: 800; }
   h2 { font-size: clamp(1.7rem, 4.4vw, 2.5rem); font-weight: 800; }
   h3 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.015em; }
-  .lead { font-size: 1.2rem; color: var(--muted); max-width: 34em; }
-  section { padding: 64px 0; }
+  .lead { font-size: 1.2rem; color: var(--muted); max-width: 36em; }
+  section { padding: 60px 0; }
   .band { background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
   .section-head { max-width: 42rem; margin-bottom: 36px; }
   .section-head p { color: var(--muted); margin-top: 12px; }
@@ -147,7 +166,7 @@
   @media (min-width: 980px) { .nav { display: flex; } }
 
   /* ---------- route buttons (same language as /go) ---------- */
-  .routes { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 420px; margin-top: 28px; }
+  .routes { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 420px; }
   .route {
     display: flex; flex-direction: column; justify-content: center; text-align: center;
     min-height: 70px; padding: 10px 20px; border-radius: 16px; text-decoration: none;
@@ -164,33 +183,44 @@
   .route.disabled small { color: var(--dim); }
   .route-note { font-size: 0.95rem; color: var(--muted); margin-top: -2px; }
   .route-note a { color: var(--green); text-underline-offset: 3px; }
-  .reassure { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 26px; font-size: 0.98rem; color: var(--muted); list-style: none; }
-  .reassure li::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 9px; vertical-align: middle; }
 
   /* ---------- hero ---------- */
-  .hero { padding: 48px 0 56px; }
+  .hero { padding: 44px 0 52px; }
   .hero .grid { display: grid; gap: 44px; align-items: center; }
   .hero h1 { margin-top: 14px; }
   .hero .lead { margin-top: 18px; }
   .hero-visual { display: flex; justify-content: center; }
-  @media (min-width: 900px) { .hero { padding: 72px 0 80px; } .hero .grid { grid-template-columns: 1.1fr 0.9fr; gap: 64px; } }
+  @media (min-width: 900px) { .hero { padding: 68px 0 76px; } .hero .grid { grid-template-columns: 1.1fr 0.9fr; gap: 64px; } }
+
+  /* Price + reassurance trio, prominent, directly under the lead — this is the
+     objective ("£4.99/month needs to be considerably more prominent in the first
+     screen"; "No contract · Cancel anytime · Keep your existing number" near the
+     price, not buried further down). */
+  .hero-price-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 16px; margin-top: 30px; }
+  .hero-price { font-size: clamp(2.6rem, 7vw, 3.4rem); font-weight: 850; letter-spacing: -0.03em; line-height: 1; color: var(--text); }
+  .hero-price span { color: var(--green); }
+  .hero-price-term { font-size: 1.05rem; font-weight: 600; color: var(--muted); }
+  .reassure-line { margin-top: 14px; font-size: 1.02rem; font-weight: 600; color: var(--text); }
+  .availability-line { margin-top: 18px; font-size: 0.95rem; color: var(--muted); }
+
+  .hero-actions { margin-top: 24px; }
 
   .phone { width: 250px; border: 8px solid #16221b; border-radius: 40px; overflow: hidden; background: #000;
            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 70px rgba(60, 240, 122, 0.10); }
   .phone img { width: 100%; height: auto; }
   .caption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 14px; }
 
-  /* ---------- problem ---------- */
-  .problem-grid { display: grid; gap: 16px; margin-top: 8px; }
-  .problem { display: grid; grid-template-columns: 48px 1fr; gap: 6px 16px; align-items: start; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
-  .problem .ico { grid-row: 1 / span 2; width: 48px; height: 48px; border-radius: 14px; background: var(--green-soft); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; color: var(--green); }
-  .problem .ico svg { width: 24px; height: 24px; }
-  .problem h3 { font-size: 1.1rem; align-self: end; }
-  .problem p { color: var(--muted); font-size: 1rem; }
-  .problem-foot { margin-top: 28px; max-width: 46rem; color: var(--muted); }
-  .problem-foot a { color: var(--green); font-weight: 700; text-underline-offset: 4px; }
-  @media (min-width: 700px) { .problem-grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (min-width: 1000px) { .problem-grid { grid-template-columns: repeat(4, 1fr); } .problem { grid-template-columns: 1fr; } .problem .ico { grid-row: auto; margin-bottom: 8px; } .problem h3 { align-self: start; } }
+  /* ---------- differentiator: "beyond blocking known numbers" ---------- */
+  .diff-grid { display: grid; gap: 16px; margin-top: 8px; align-items: stretch; }
+  .diff-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; display: flex; flex-direction: column; gap: 10px; }
+  .diff-panel .ico { width: 46px; height: 46px; border-radius: 13px; background: var(--green-soft); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; color: var(--green); }
+  .diff-panel.plus .ico { color: var(--neutral); background: rgba(154, 168, 182, 0.10); }
+  .diff-panel .ico svg { width: 22px; height: 22px; }
+  .diff-panel p { color: var(--muted); font-size: 1rem; }
+  .diff-join { display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 1.6rem; font-weight: 800; }
+  @media (min-width: 900px) { .diff-grid { grid-template-columns: 1fr auto 1fr; gap: 20px; } .diff-join { padding: 0 4px; } }
+  @media (max-width: 899px) { .diff-join { transform: rotate(90deg); margin: -4px 0; } }
+  .diff-note { margin-top: 22px; color: var(--muted); font-size: 0.98rem; max-width: 46rem; }
 
   /* ---------- how it works: three steps ---------- */
   .steps3 { display: grid; gap: 16px; list-style: none; counter-reset: s; }
@@ -231,10 +261,6 @@
   .panel .fine { display: block; margin-top: 14px; }
   @media (min-width: 800px) { .two { grid-template-columns: 1fr 1fr; } }
 
-  .family { display: grid; gap: 28px; }
-  @media (min-width: 900px) { .family { grid-template-columns: 1.1fr 0.9fr; gap: 64px; align-items: center; } }
-  .family .copy p { color: var(--muted); margin-top: 14px; max-width: 34em; }
-
   /* ---------- setup steps ---------- */
   .steps { display: grid; gap: 16px; list-style: none; }
   .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
@@ -264,11 +290,10 @@
   details[open] summary::after { content: "–"; }
   details p { padding: 0 22px 22px; color: var(--muted); font-size: 1.04rem; }
   details a, .faq a { color: var(--green); text-underline-offset: 3px; }
+  .faq-foot { margin-top: 22px; color: var(--muted); font-size: 0.98rem; }
+  .faq-foot a { color: var(--green); font-weight: 700; text-underline-offset: 4px; }
 
-  /* ---------- advice / waiting list / final ---------- */
-  .advice { display: flex; flex-direction: column; gap: 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; max-width: 52rem; }
-  .advice p { color: var(--muted); }
-  .advice a.link { color: var(--green); font-weight: 700; text-underline-offset: 4px; display: inline-flex; align-items: center; min-height: 44px; }
+  /* ---------- waiting list / final ---------- */
   .notify { background: var(--card); border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 26px; max-width: 40rem; }
   .notify p { color: var(--muted); font-size: 1rem; margin: 8px 0 14px; }
   .notify label { display: block; font-weight: 700; margin-bottom: 8px; font-size: 1rem; }
@@ -290,7 +315,7 @@
   .foot nav a:hover { color: var(--text); }
   .foot .small { font-size: 0.85rem; line-height: 1.6; max-width: 46rem; }
   @media (max-width: 480px) {
-    .wrap { padding: 0 20px; } section { padding: 48px 0; }
+    .wrap { padding: 0 20px; } section { padding: 44px 0; }
     .site-header .wrap { height: 64px; gap: 8px; }
     .brand { font-size: 1.02rem; gap: 8px; } .brand img { width: 28px; height: 28px; }
     .header-actions { gap: 6px; } .login { font-size: 0.9rem; padding: 10px 6px; }
@@ -311,8 +336,6 @@
     <a class="brand" href="#top" aria-label="Home Call Guard — home"><img src="/hcg-shield.png" alt="" width="34" height="34"><span>Home Call <span>Guard</span></span></a>
     <nav class="nav" aria-label="Main">
       <a href="#how-it-works">How it works</a>
-      <a href="#activity">Activity</a>
-      <a href="#phones">Supported phones</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">Questions</a>
       <a href="/guides/">Scam advice</a>
@@ -327,36 +350,40 @@
 <main id="main">
 <div id="top"></div>
 
-  <!-- ============ A. HERO ============ -->
+  <!-- ============ A. HERO ============
+       Answers, in order: what it is, what makes it different, how much it costs —
+       all before the fold, per the brief's 5-10-second objective. -->
   <section class="hero">
     <div class="wrap grid">
       <div>
         <p class="eyebrow">An extra layer of protection for UK phones</p>
         <h1>Help protect you and your family from scam phone calls.</h1>
         <!-- APPROVED-BEHAVIOUR-COPY -->
-        <p class="lead">Home Call Guard monitors calls from numbers you don't know while you're talking, and can end a call if it detects serious scam risk. The people you trust ring straight through.</p>
+        <p class="lead">Scammers can spoof or change the number they're calling from, so number-blocking apps can miss them. Home Call Guard adds another layer of protection: it watches for scam risk as the conversation itself develops, and can end the call if it detects serious risk. The people you trust always ring straight through.</p>
 
-        <div class="routes" id="get-started">
+        <div class="hero-price-block">
+          <p class="hero-price"><span>£4.99</span></p>
+          <p class="hero-price-term">a month, including VAT</p>
+        </div>
+        <p class="reassure-line">No contract &middot; Cancel anytime &middot; Keep your number</p>
+
+        <p class="availability-line">Available now on Android. iPhone and landline are in development.</p>
+
+        <div class="routes hero-actions" id="get-started">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener">
             <small>Get it on</small><strong>Google Play</strong>
           </a>
-          <!-- APP_STORE_TILE: stays "Coming soon" until the script at the foot of this page
-               is given a genuine App Store URL AND /api/v1/launch-flags reports
+          <!-- APP_STORE_TILE: stays "In development" until the script at the foot of this
+               page is given a genuine App Store URL AND /api/v1/launch-flags reports
                iosComingSoon:false. No Apple URL is invented here. -->
           <div class="route disabled" data-app-store>
-            <small>Coming soon on the</small><strong>App Store</strong>
+            <small>In development</small><strong>App Store</strong>
           </div>
           <p class="route-note" data-ios-notify hidden>Have an iPhone? <a href="#ios-waiting-list">Tell me when it's ready</a></p>
           <div class="route disabled" data-landline-soon>
-            <small>Coming soon</small><strong>Landline</strong>
+            <small>In development</small><strong>Landline</strong>
           </div>
         </div>
-
-        <ul class="reassure">
-          <li>£4.99 a month, including VAT</li>
-          <li>No contract — cancel any time</li>
-          <li>Keep your existing number</li>
-        </ul>
       </div>
 
       <div class="hero-visual">
@@ -368,41 +395,41 @@
     </div>
   </section>
 
-  <!-- ============ B. THE PROBLEM ============ -->
-  <section class="band" id="problem">
+  <!-- ============ PROTECTION BEYOND BLOCKING KNOWN NUMBERS ============
+       Gives the differentiator its own moment, rather than leaving it only inside the
+       hero paragraph. Deliberately visual/concise (two panels + a joining "+", not a
+       paragraph): number-based blocking is presented as genuinely useful, not
+       disparaged — Home Call Guard is framed as an addition, not a replacement. No
+       claim of catching every scam. -->
+  <section class="band">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">The problem</p>
-        <h2>Scam calls don't always sound like scams.</h2>
-        <p>Scam callers can sound polite, professional and convincing. They create urgency and pretend to be organisations you trust. It can happen to anyone.</p>
+        <p class="eyebrow">Why it's different</p>
+        <h2>Protection that goes beyond blocking known numbers.</h2>
+        <p>Scammers can change or spoof the number they're calling from — so a call from an unfamiliar or unexpected number isn't automatically a warning sign, and a familiar-looking number isn't automatically safe.</p>
       </div>
-      <div class="problem-grid">
-        <div class="problem">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18"/></svg></div>
-          <h3>Your bank</h3>
-          <p>Claiming there's a problem with your account.</p>
+      <div class="diff-grid">
+        <div class="diff-panel">
+          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+          <h3>Number-based blocking</h3>
+          <p>Checks the number that's calling against lists of known risks — useful, and worth keeping.</p>
         </div>
-        <div class="problem">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg></div>
-          <h3>A delivery company</h3>
-          <p>Asking for a payment or personal details.</p>
-        </div>
-        <div class="problem">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></div>
-          <h3>Your energy supplier</h3>
-          <p>Offering a refund or threatening disconnection.</p>
-        </div>
-        <div class="problem">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6"/></svg></div>
-          <h3>A government department</h3>
-          <p>Making an urgent or alarming claim.</p>
+        <div class="diff-join" aria-hidden="true">+</div>
+        <div class="diff-panel">
+          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.5 0-2.91-.32-4.15-.9L3 20l1.05-3.16C3.38 15.58 3 13.85 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg></div>
+          <h3>Home Call Guard</h3>
+          <p>Also looks for scam risk as the conversation itself develops — while you're talking, not just at the moment the phone rings.</p>
         </div>
       </div>
-      <p class="problem-foot">Blocking a number only helps once that number is known, and scammers change and disguise the numbers they call from. Home Call Guard adds another layer: protection during the call itself. <a href="/guides/">Read our scam advice guides →</a></p>
+      <p class="diff-note">Both matter. Home Call Guard is an extra layer on top of number-based protection, not a replacement for it.</p>
     </div>
   </section>
 
-  <!-- ============ C. HOW IT WORKS ============ -->
+  <!-- ============ HOW IT WORKS ============
+       Absorbs the previous "Activity" section and most of "Trusted contacts" — each
+       outcome (rings through / screened / stopped) was previously explained in up to
+       three places; it's now explained once, here, with the exact wording shown in the
+       app's own Activity list. -->
   <section id="how-it-works">
     <div class="wrap">
       <div class="section-head">
@@ -416,7 +443,7 @@
           <div class="n" aria-hidden="true">1</div>
           <p class="tag">A trusted contact calls</p>
           <h3>It rings straight through.</h3>
-          <p class="body">Calls from the people you've added to your trusted list aren't monitored.</p>
+          <p class="body">Calls from the people you've added to your trusted list aren't monitored. Add family, friends or anyone else any time, from the app or your online account.</p>
           <p class="outcome">Shown in Activity as<br><span class="chip">Rang straight through</span></p>
         </li>
         <li class="step3 unknown">
@@ -438,46 +465,23 @@
       </ol>
       <div class="honest">
         <!-- APPROVED-BEHAVIOUR-COPY -->
-        <p><strong>Good to know.</strong> Home Call Guard can't promise to catch every scam, so please stay cautious with any unexpected call. We don't store call audio or a transcript of what's said.</p>
+        <p><strong>Good to know.</strong> Home Call Guard can't promise to catch every scam, so please stay cautious with any unexpected call. We don't store call audio or a transcript of what's said. You can see how every call was handled in your Activity list at any time.</p>
       </div>
     </div>
   </section>
 
-  <!-- ============ D. ACTIVITY ============ -->
-  <section class="band" id="activity">
+  <!-- ============ PROTECT YOURSELF OR SOMEONE YOU CARE ABOUT ============
+       Restored per Andrew's brief: age-neutral family/self framing — deliberately no
+       "elderly"/"senior"/"vulnerable" wording. Concise: one short paragraph, no
+       repeated feature list. Reuses the trusted-contacts screenshot, since adding
+       someone you care about as a trusted contact is the concrete action this section
+       points to. -->
+  <section class="band">
     <div class="wrap split flip">
       <div class="copy">
-        <p class="eyebrow">Activity</p>
-        <h2>See how each call was handled.</h2>
-        <p>Your Activity list shows how each call was handled, and when.</p>
-        <ul class="ticks">
-          <li><strong>Rang straight through</strong> — a trusted contact called</li>
-          <li><strong>Screened, no concerns</strong> — another caller was monitored and nothing worrying was found</li>
-          <li><strong>High risk</strong> — a call was stopped because of serious scam risk</li>
-        </ul>
-        <p>You see the outcome — not a recording.</p>
-      </div>
-      <div class="visual">
-        <figure>
-          <div class="phone"><img src="/img/app-activity.png" alt="The Activity list in the Home Call Guard app, showing calls marked 'Rang straight through', 'Screened, no concerns' and 'High risk — call stopped'" width="520" height="1125" loading="lazy"></div>
-          <figcaption class="caption">Activity (example data)</figcaption>
-        </figure>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ E. TRUSTED CONTACTS ============ -->
-  <section id="trusted-contacts">
-    <div class="wrap split">
-      <div class="copy">
-        <p class="eyebrow">Trusted contacts</p>
-        <h2>The people you trust are never in the way.</h2>
-        <p>Add the people who should always get through — family, friends, your doctor. Their calls ring straight through and aren't monitored.</p>
-        <ul class="ticks">
-          <li>Sync from your phone's contacts, or add people one by one</li>
-          <li>Change the list whenever you like</li>
-          <li>Manage it from the app or your online account</li>
-        </ul>
+        <p class="eyebrow">Peace of mind</p>
+        <h2>Protect yourself, or someone you care about.</h2>
+        <p>Use Home Call Guard for your own phone, or help add another layer of protection for a parent, partner or anyone else you care about. Their number stays the same, and the people they trust still ring straight through.</p>
       </div>
       <div class="visual">
         <figure>
@@ -488,58 +492,13 @@
     </div>
   </section>
 
-  <!-- ============ F. SUPPORTED PHONES ============ -->
-  <section class="band" id="phones">
-    <div class="wrap">
-      <div class="section-head">
-        <p class="eyebrow">Your phone</p>
-        <h2>Available on Android. More phones coming soon.</h2>
-        <p>Home Call Guard is available for Android phones today, and you keep your existing number. We're working on iPhone and landline support.</p>
-      </div>
-      <div class="two">
-        <div class="panel">
-          <h3>Android</h3>
-          <p>Get the Home Call Guard app on Google Play. We check your mobile network before you pay.</p>
-          <div class="routes">
-            <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>iPhone and landline — coming soon</h3>
-          <p><span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is coming soon.">iPhone and landline protection are coming soon. They aren't available to new customers yet.</span></p>
-          <div class="routes">
-            <div class="route disabled" data-app-store><small>Coming soon on the</small><strong>App Store</strong></div>
-            <div class="route disabled" data-landline-soon><small>Coming soon</small><strong>Landline</strong></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ G. FAMILY / PEACE OF MIND ============ -->
-  <section id="benefits">
-    <div class="wrap family">
-      <div class="copy">
-        <p class="eyebrow">Peace of mind</p>
-        <h2>Another layer of protection for someone you care about.</h2>
-        <p>Whether it's for you, a parent, a partner or a friend who worries about unexpected calls, Home Call Guard adds another layer of protection to the calls they receive. Their number stays the same, and the people they trust still ring straight through.</p>
-      </div>
-      <ul class="ticks">
-        <li>Keeps the number everyone already knows</li>
-        <li>Trusted contacts ring straight through</li>
-        <li>We show you each setup step</li>
-        <li>See how each call was handled in Activity</li>
-      </ul>
-    </div>
-  </section>
-
   <!-- ============ SETUP ============ -->
   <section class="band" id="setup">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Getting started</p>
-        <h2>Simple to set up, step by step.</h2>
-        <p>Setting up usually takes a few minutes.</p>
+        <h2>Simple, guided setup.</h2>
+        <p>We guide you through every step, from choosing your phone to turning on call forwarding.</p>
       </div>
       <ol class="steps">
         <li class="step"><div class="n" aria-hidden="true">1</div><h3>Choose your phone</h3><p>Tell us which phone you're protecting. We check that your mobile network is one we currently support <strong>before you pay</strong>.</p></li>
@@ -550,7 +509,7 @@
     </div>
   </section>
 
-  <!-- ============ H. PRICING ============ -->
+  <!-- ============ E. PRICING ============ -->
   <section id="pricing">
     <div class="wrap">
       <div class="section-head">
@@ -562,21 +521,26 @@
         <p class="price">£4.99 <small>a month, including VAT</small></p>
         <ul class="ticks">
           <li>Monitoring of calls from numbers you don't know</li>
-          <li>Trusted contacts who ring straight through</li>
-          <li>Your Activity list</li>
-          <li>Android phones — iPhone and landline coming soon</li>
+          <li>Your Activity list — see how every call was handled</li>
+          <li>Available now on Android — iPhone and landline in development</li>
           <li>No long-term contract — cancel any time</li>
         </ul>
         <div class="routes">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
-          <div class="route disabled" data-app-store><small>Coming soon on the</small><strong>App Store</strong></div>
-          <div class="route disabled" data-landline-soon><small>Coming soon</small><strong>Landline</strong></div>
+          <div class="route disabled" data-app-store><small>In development</small><strong>App Store</strong></div>
+          <div class="route disabled" data-landline-soon><small>In development</small><strong>Landline</strong></div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============ I. FAQ ============ -->
+  <!-- ============ FAQ ============
+       Trimmed to essential questions only. Device-availability questions (previously
+       three overlapping entries — "Do I need an app?", "Which phones/networks?", "Can
+       I use it on my landline?") are consolidated into one; "Will calls from my family
+       and friends be affected?" is dropped as redundant with "How it works" and
+       "Protect yourself or someone you care about"; the three questions restating
+       "How it works" itself were already removed in the previous pass. -->
   <section class="band" id="faq">
     <div class="wrap">
       <div class="section-head">
@@ -584,46 +548,20 @@
         <h2>Everything you need to know.</h2>
       </div>
       <div class="faq">
-        <details><summary>Does it stop scam calls before my phone rings?</summary>
-          <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p>No. Calls connect as normal and your phone rings. Home Call Guard works during the conversation: it monitors calls from numbers you don't know and can end a call if it detects serious scam risk. It can't promise to catch every scam, so please stay cautious with any unexpected call.</p></details>
-        <details><summary>What does "monitoring" mean?</summary>
-          <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p>While you're on a call with someone who isn't a trusted contact, Home Call Guard monitors the conversation for signs of a scam.</p></details>
-        <details><summary>What happens if it detects a scam call?</summary>
-          <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p>If Home Call Guard detects serious scam risk, it can end the call to help protect you. You can see how each call was handled in your Activity list.</p></details>
-        <details><summary>Will calls from my family and friends be affected?</summary>
-          <p>No. Trusted contacts ring straight through and aren't monitored.</p></details>
+        <details><summary>Which phones and networks are supported?</summary>
+          <p>Home Call Guard is available now for Android phones, on many UK mobile networks — we check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is in development.">iPhone and landline support are in development and aren't available to new customers yet.</span></p></details>
         <details><summary>Are my calls recorded?</summary>
           <p>Home Call Guard doesn't store call audio or a transcript of what's said. Calls are analysed while they happen, using automated checks and a third-party transcription service. See our <a href="/privacy.html">Privacy Policy</a> for details.</p></details>
-        <details><summary>Do I need to install an app?</summary>
-          <p>To protect an Android phone you use the Home Call Guard app from Google Play. You can also manage your account, trusted contacts and Activity from your online account. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is coming soon.">iPhone and landline protection are coming soon.</span></p></details>
-        <details><summary>Can I use Home Call Guard on my landline?</summary>
-          <p>Not yet. Landline protection is coming soon and we aren't selling it today. Home Call Guard is currently available for Android phones.</p></details>
-        <details><summary>Which phones and networks are supported?</summary>
-          <p>Home Call Guard is available for Android phones on many UK mobile networks. We check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="Landline support is coming soon.">iPhone and landline support are coming soon.</span></p></details>
         <details><summary>Can I keep my phone number?</summary>
           <p>Yes. Your number stays exactly as it is.</p></details>
         <details><summary>How long does setup take?</summary>
-          <p>Usually a few minutes: sign up, add your trusted contacts, then dial a one-time code. We show you the exact steps.</p></details>
+          <p>There's no fixed length of time — we guide you through each step, from choosing your phone to adding trusted contacts and turning on call forwarding, so you always know what to do next.</p></details>
         <details><summary>How much does it cost, and can I cancel?</summary>
           <p>£4.99 a month, including VAT. There's no long-term contract and you can cancel at any time from your account. See our <a href="/terms.html">Terms and Conditions</a> for full details.</p></details>
         <details><summary>Who can I contact for help?</summary>
           <p>Visit our <a href="/support.html">support page</a> or email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> and we'll be glad to help — including if you're setting this up for someone else.</p></details>
       </div>
-    </div>
-  </section>
-
-  <!-- ============ SCAM ADVICE ============ -->
-  <section style="padding-bottom:0">
-    <div class="wrap">
-      <div class="advice">
-        <p class="eyebrow">Scam advice</p>
-        <h3>Not sure what a scam call sounds like?</h3>
-        <p>Our plain-English guides explain the most common phone scams and what to do if you've been targeted.</p>
-        <a class="link" href="/guides/">Read the scam advice guides →</a>
-      </div>
+      <p class="faq-foot">Not sure what a scam call sounds like? Our plain-English guides explain the most common phone scams. <a href="/guides/">Read the scam advice guides →</a></p>
     </div>
   </section>
 
@@ -631,7 +569,7 @@
   <section id="ios-waiting-list" data-ios-notify hidden style="padding-bottom:0">
     <div class="wrap">
       <div class="notify">
-        <h3>Home Call Guard for iPhone is coming soon</h3>
+        <h3>Home Call Guard for iPhone is in development</h3>
         <p>We're waiting for App Store approval. Leave your email and we'll let you know as soon as it's available.</p>
         <form id="homepageWaitingListForm" novalidate>
           <label for="homepageWaitingListEmail">Email address</label>
@@ -646,21 +584,21 @@
     </div>
   </section>
 
-  <!-- ============ J. FINAL CTA ============ -->
-  <section class="final" style="margin-top:64px; background: var(--bg-2); border-top: 1px solid var(--border);">
+  <!-- ============ G. FINAL CTA ============ -->
+  <section class="final" style="margin-top:60px; background: var(--bg-2); border-top: 1px solid var(--border);">
     <div class="wrap">
       <h2>Feel more confident answering your phone.</h2>
       <p>An extra layer of protection for you and your family — £4.99 a month including VAT, no contract.</p>
       <div class="routes">
         <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
-        <div class="route disabled" data-app-store><small>Coming soon on the</small><strong>App Store</strong></div>
-        <div class="route disabled" data-landline-soon><small>Coming soon</small><strong>Landline</strong></div>
+        <div class="route disabled" data-app-store><small>In development</small><strong>App Store</strong></div>
+        <div class="route disabled" data-landline-soon><small>In development</small><strong>Landline</strong></div>
       </div>
     </div>
   </section>
 </main>
 
-<!-- ============ K. FOOTER ============ -->
+<!-- ============ FOOTER ============ -->
 <footer>
   <div class="wrap foot">
     <a class="brand" href="#top" aria-label="Home Call Guard — back to top"><img src="/hcg-shield.png" alt="" width="34" height="34"><span>Home Call <span>Guard</span></span></a>
@@ -678,11 +616,10 @@
 
 <script>
 (function () {
-  // 1. Acquisition analytics passthrough — unchanged behaviour from the previous
-  //    homepage: if this page was reached with UTM (or any) query parameters,
-  //    append this exact page's own query string to the existing registration
-  //    links so /register.html's own capture can record them. No cookie, no
-  //    localStorage, no fingerprinting.
+  // 1. Acquisition analytics passthrough — unchanged behaviour from production: if
+  //    this page was reached with UTM (or any) query parameters, append this exact
+  //    page's own query string to the existing registration links so /register.html's
+  //    own capture can record them. No cookie, no localStorage, no fingerprinting.
   if (window.location.search) {
     document.querySelectorAll('a[href="/register.html"]').forEach(function (link) {
       link.href = "/register.html" + window.location.search;
@@ -692,9 +629,10 @@
   var yearEl = document.getElementById("currentYear");
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
-  // 2. iPhone / App Store state. Default (and any failure) = "Coming soon" +
-  //    waiting list, so the page never claims availability it can't confirm.
-  //    The App Store tiles become real links only when BOTH:
+  // 2. iPhone / App Store state — unchanged from production. Default (and any
+  //    failure) = "Coming soon" + waiting list, so the page never claims
+  //    availability it can't confirm. The App Store tiles become real links only
+  //    when BOTH:
   //      (a) GET /api/v1/launch-flags reports iosComingSoon === false, AND
   //      (b) APP_STORE_URL below is a well-formed https://apps.apple.com URL.
   //    To activate after Apple approves: paste the genuine listing URL into
@@ -723,7 +661,7 @@
     })
     .catch(function () { /* fail closed: keep "Coming soon" */ });
 
-  // 3. iPhone waiting list — same public endpoint and payload as before.
+  // 3. iPhone waiting list — same public endpoint and payload as production.
   var form = document.getElementById("homepageWaitingListForm");
   if (form) {
     form.addEventListener("submit", function (e) {
