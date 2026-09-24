@@ -97,7 +97,7 @@ index 6b9a9f0..23f44ba 100644
    public static final String JS_EVENT_KEY_CALL_INFO = "call";
    public static final String JS_EVENT_KEY_CALL_INVITE_INFO = "callInvite";
 diff --git a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
-index 782b76e..5f46bd9 100644
+index 782b76e..83b3ed1 100644
 --- a/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
 +++ b/node_modules/@twilio/voice-react-native-sdk/android/src/main/java/com/twiliovoicereactnative/NotificationUtility.java
 @@ -151,6 +151,36 @@ class NotificationUtility {
@@ -137,12 +137,33 @@ index 782b76e..5f46bd9 100644
      Intent rejectIntent = constructMessage(
        context,
        Constants.ACTION_REJECT_CALL,
-@@ -170,7 +200,7 @@ class NotificationUtility {
+@@ -170,7 +200,28 @@ class NotificationUtility {
        .setCategory(Notification.CATEGORY_CALL)
        .setAutoCancel(true)
        .setContentIntent(piForegroundIntent)
 -      .setFullScreenIntent(piForegroundIntent, true)
 +      .setFullScreenIntent(piFullScreenIntent, true)
++      // PATCHED (call-ai, 2026-09-23 — Build 11 physical-test finding):
++      // without USE_FULL_SCREEN_INTENT (blocked, see app.config.js and the
++      // 2026-09-23 patch above), setFullScreenIntent() above can never
++      // actually launch on any Android version — the notification is only
++      // ever shown as an ordinary notification. NotificationCompat.Builder
++      // defaults to VISIBILITY_PRIVATE, which Android redacts on a LOCKED
++      // device — hiding not just the caller's name but this CallStyle's
++      // Answer/Decline actions themselves. That was the exact real,
++      // physically-reproduced Build 11 defect: the phone rang and
++      // identified "Home Call Guard" (the always-shown app identity) but
++      // had no visible way to answer. VISIBILITY_PUBLIC is the standard,
++      // Play-policy-compliant fix for a CATEGORY_CALL notification to show
++      // its full content and actions on the lock screen without a working
++      // full-screen intent — the same visibility every native phone/VoIP
++      // app already uses for this. Deliberately NOT applied to the
++      // ongoing-call/outgoing-call notifications below: by the time either
++      // of those is shown, the call has already been answered (this fix's
++      // whole purpose), so their visibility has no bearing on the ability
++      // to answer a locked-screen incoming call — broadening the patch to
++      // them would be unrelated scope, not this fix.
++      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
        .addPerson(incomingCaller)
        .setStyle(NotificationCompat.CallStyle.forIncomingCall(
          incomingCaller, piRejectIntent, piAcceptIntent))

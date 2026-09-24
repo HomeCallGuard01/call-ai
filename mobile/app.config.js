@@ -3,7 +3,14 @@ module.exports = {
     name: "Home Call Guard",
     slug: "home-call-guard",
     scheme: "homecallguard",
-    version: "1.0.0",
+    // 1.0.1 (2026-09-23): Build 12, same source as Build 11 plus the
+    // locked-screen incoming-call notification visibility fix (see
+    // mobile/patches/@twilio+voice-react-native-sdk+2.0.0-preview.2.patch)
+    // — same "same source + fix -> 1.0.1" convention already used for
+    // iOS Build 14. versionCode itself is managed remotely by EAS
+    // (eas.json's appVersionSource: "remote" + production autoIncrement),
+    // not this field.
+    version: "1.0.1",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
