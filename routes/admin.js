@@ -13,6 +13,9 @@ const {
   getSubscriptionStatusBreakdown,
   getProvisioningStatusBreakdown,
   computeReadinessSummary,
+  getOnboardingMonitor,
+  getHouseholdStatusDetail,
+  looksLikeUuid,
 } = require("../database/adminMetrics");
 const { getLaunchReadinessItems } = require("../services/launchReadiness");
 const { supabaseAdmin } = require("../services/supabaseClients");
@@ -93,6 +96,36 @@ router.get("/admin/api/search", requireAuth, requireAdmin, async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q : "";
   const results = await searchCustomers(q);
   res.json({ results });
+});
+
+// Admin onboarding monitoring (2026-09) — read-only. The Customers tab's
+// attention queue: every household with its derived admin state
+// (services/adminOnboardingStatus.js). Never writes, never contacts a
+// customer; the 24-hour "Needs attention" state is computed on read from
+// existing timestamps, so no scheduled job exists or is needed.
+router.get("/admin/api/customers/onboarding", requireAuth, requireAdmin, async (req, res) => {
+  const result = await getOnboardingMonitor(new Date());
+  if (!result.available) {
+    return res.status(503).json({ error: "unavailable", reason: result.reason });
+  }
+  res.json(result);
+});
+
+// Read-only per-household setup/protection timeline for the Customers
+// tab's detail panel. Technical fields are a curated allow-list (see
+// getHouseholdStatusDetail) — never select("*").
+router.get("/admin/api/households/:id/status", requireAuth, requireAdmin, async (req, res) => {
+  if (!looksLikeUuid(req.params.id)) {
+    return res.status(404).json({ error: "household_not_found" });
+  }
+  const detail = await getHouseholdStatusDetail(req.params.id, new Date());
+  if (!detail.available) {
+    return res.status(503).json({ error: "unavailable", reason: detail.reason });
+  }
+  if (!detail.found) {
+    return res.status(404).json({ error: "household_not_found" });
+  }
+  res.json(detail);
 });
 
 // Quick action: retry Twilio provisioning for one household. Reuses the

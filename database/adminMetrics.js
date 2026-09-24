@@ -1,5 +1,7 @@
 const { supabaseAdmin } = require("../services/supabaseClients");
 const { stripe } = require("../services/stripeClient");
+const { deriveAdminCustomerState, ONBOARDING_ATTENTION_THRESHOLD_MS } = require("../services/adminOnboardingStatus");
+const { getClassificationMap, classifyHousehold } = require("../services/businessMetrics/accountClassification");
 
 // Cached in-process: the price of the one product this app sells changes
 // rarely, and fetching it from Stripe on every dashboard load would add
@@ -626,7 +628,242 @@ async function searchCustomers(query) {
   return attachProtectionEvidence(data || []);
 }
 
+// ------------------------------------------------------------------
+// Admin onboarding monitoring (2026-09) — data for the Customers tab's
+// attention queue and per-household setup timeline. All state
+// derivation lives in services/adminOnboardingStatus.js (pure); these
+// functions only fetch and shape. Only admin-useful, non-secret fields
+// leave the server: no Twilio SIDs, Stripe IDs, auth user IDs or the
+// customer's own phone number.
+// ------------------------------------------------------------------
+
+const ONBOARDING_HOUSEHOLD_COLUMNS =
+  "id, email, created_at, twilio_number, twilio_provisioning_status, twilio_provisioning_updated_at, " +
+  "activation_verified_at, voice_client_registered_at, delivery_verified_at";
+
+const ONBOARDING_HOUSEHOLD_LIMIT = 500;
+
+// One limit-1 query per household (bounded concurrency) rather than one
+// big calls read: a single busy household could otherwise fill the row
+// cap and hide everyone else's last call. Uses calls_household_id_idx.
+async function getLastCallAtByHousehold(householdIds, concurrency = 20) {
+  const result = new Map();
+  if (!supabaseAdmin) return result;
+
+  for (let i = 0; i < householdIds.length; i += concurrency) {
+    const batch = householdIds.slice(i, i + concurrency);
+    const responses = await Promise.all(
+      batch.map(id =>
+        supabaseAdmin
+          .from("calls")
+          .select("created_at")
+          .eq("household_id", id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+      )
+    );
+    responses.forEach(({ data, error }, idx) => {
+      if (error) {
+        console.error("ADMIN METRICS: LAST CALL READ ERROR:", error.message);
+        return;
+      }
+      result.set(batch[idx], data && data[0] ? data[0].created_at : null);
+    });
+  }
+
+  return result;
+}
+
+function groupByHousehold(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    if (!map.has(row.household_id)) map.set(row.household_id, []);
+    map.get(row.household_id).push(row);
+  }
+  return map;
+}
+
+// Pure — one Customers-tab row from already-fetched pieces.
+function buildOnboardingRow({ household, entitlements, subscription, lastCallAt, classification }, now) {
+  const derived = deriveAdminCustomerState({ household, entitlements, lastCallAt }, now);
+  const membershipStatus = derived.currentEntitlement
+    ? deriveMembershipStatus(derived.currentEntitlement, subscription)
+    : derived.latestEntitlement ? "inactive" : "none";
+
+  return {
+    householdId: household.id,
+    email: household.email,
+    signedUpAt: household.created_at,
+    classification,
+    membershipStatus,
+    provisioningStatus: household.twilio_provisioning_status,
+    state: derived.state,
+    reason: derived.reason,
+    forwardingProven: derived.forwardingProven,
+    appRegistered: derived.protection.deliveryReady,
+    deliveryVerified: derived.protection.endToEndDeliveryVerified,
+    fullyProtected: derived.protection.fullyProtected,
+    setupClock: derived.setupClock,
+    lastCallAt: derived.lastCallAt,
+  };
+}
+
+async function getOnboardingMonitor(now = new Date()) {
+  if (!supabaseAdmin) return { available: false, reason: "SUPABASE_SERVICE_ROLE_KEY not configured" };
+
+  const [{ data: households, error: hErr }, { data: entitlements, error: eErr }, { data: subscriptions, error: sErr }, classification] =
+    await Promise.all([
+      supabaseAdmin
+        .from("households")
+        .select(ONBOARDING_HOUSEHOLD_COLUMNS)
+        .order("created_at", { ascending: false })
+        .limit(ONBOARDING_HOUSEHOLD_LIMIT),
+      supabaseAdmin.from("entitlements").select("household_id, entitlement_type, status, starts_at, ends_at, updated_at"),
+      supabaseAdmin.from("subscriptions").select("household_id, status, cancel_at_period_end, updated_at"),
+      getClassificationMap(),
+    ]);
+
+  if (hErr) return { available: false, reason: hErr.message };
+  if (eErr) return { available: false, reason: eErr.message };
+  if (sErr) console.error("ADMIN METRICS: ONBOARDING SUBSCRIPTIONS READ ERROR:", sErr.message);
+
+  const entitlementsByHousehold = groupByHousehold(entitlements);
+  const latestSubscriptionByHousehold = latestRowPerHousehold(subscriptions || []);
+  const lastCallByHousehold = await getLastCallAtByHousehold((households || []).map(h => h.id));
+
+  const rows = (households || []).map(h =>
+    buildOnboardingRow(
+      {
+        household: h,
+        entitlements: entitlementsByHousehold.get(h.id) || [],
+        subscription: latestSubscriptionByHousehold.get(h.id),
+        lastCallAt: lastCallByHousehold.get(h.id) || null,
+        classification: classifyHousehold(h.id, classification.map),
+      },
+      now
+    )
+  );
+
+  return {
+    available: true,
+    generatedAt: now.toISOString(),
+    thresholdHours: ONBOARDING_ATTENTION_THRESHOLD_MS / 3600000,
+    classificationAvailable: classification.available,
+    truncated: (households || []).length >= ONBOARDING_HOUSEHOLD_LIMIT,
+    rows,
+  };
+}
+
+async function getHouseholdStatusDetail(householdId, now = new Date()) {
+  if (!supabaseAdmin) return { available: false, reason: "SUPABASE_SERVICE_ROLE_KEY not configured" };
+
+  const { data: household, error } = await supabaseAdmin
+    .from("households")
+    .select(
+      ONBOARDING_HOUSEHOLD_COLUMNS +
+        ", twilio_provisioning_attempts, twilio_provisioning_last_error, device_type, carrier_provider_key, carrier_compatibility_captured_at" +
+        // Diagnostic instrumentation (2026-09-24, folded in during
+        // reconciliation with the onboarding monitor — see this
+        // function's technical.appVersion/mostRecentDialOutcome below):
+        // app_version/app_build_version/app_platform were previously
+        // unanswerable ("has he actually updated?") for any real support
+        // conversation.
+        ", app_version, app_build_version, app_platform"
+    )
+    .eq("id", householdId)
+    .maybeSingle();
+
+  if (error) return { available: false, reason: error.message };
+  if (!household) return { available: true, found: false };
+
+  const { getMostRecentDialOutcome } = require("./calls");
+  const [{ data: entitlements, error: eErr }, { data: subscriptions }, lastCallByHousehold, classification, mostRecentDialOutcome] = await Promise.all([
+    supabaseAdmin
+      .from("entitlements")
+      .select("household_id, entitlement_type, status, source, starts_at, ends_at, updated_at")
+      .eq("household_id", householdId),
+    supabaseAdmin
+      .from("subscriptions")
+      .select("household_id, status, cancel_at_period_end, updated_at")
+      .eq("household_id", householdId),
+    getLastCallAtByHousehold([householdId]),
+    getClassificationMap(),
+    getMostRecentDialOutcome(householdId),
+  ]);
+
+  if (eErr) return { available: false, reason: eErr.message };
+
+  const lastCallAt = lastCallByHousehold.get(householdId) || null;
+  const derived = deriveAdminCustomerState({ household, entitlements: entitlements || [], lastCallAt }, now);
+  const row = buildOnboardingRow(
+    {
+      household,
+      entitlements: entitlements || [],
+      subscription: latestRowPerHousehold(subscriptions || []).get(householdId),
+      lastCallAt,
+      classification: classifyHousehold(householdId, classification.map),
+    },
+    now
+  );
+
+  const shownEntitlement = derived.currentEntitlement || derived.latestEntitlement;
+
+  return {
+    available: true,
+    found: true,
+    customer: row,
+    timeline: derived.timeline,
+    technical: {
+      householdId: household.id,
+      hcgNumber: household.twilio_number || null,
+      provisioningStatus: household.twilio_provisioning_status,
+      provisioningAttempts: household.twilio_provisioning_attempts,
+      provisioningLastError: household.twilio_provisioning_last_error || null,
+      provisioningUpdatedAt: household.twilio_provisioning_updated_at || null,
+      deviceType: household.device_type || null,
+      carrierProviderKey: household.carrier_provider_key || null,
+      carrierCapturedAt: household.carrier_compatibility_captured_at || null,
+      activationVerifiedAt: household.activation_verified_at || null,
+      voiceClientRegisteredAt: household.voice_client_registered_at || null,
+      deliveryVerifiedAt: household.delivery_verified_at || null,
+      // Diagnostic instrumentation (2026-09-24) — appVersion is reported
+      // by the app itself (mobile/lib/voiceClient.ts, via the existing
+      // POST /api/v1/voice/registered call), never validated server-side,
+      // so this and every other field here goes through escapeHtml at
+      // render time exactly like every other technical-details row.
+      appVersion: household.app_version || null,
+      appBuildVersion: household.app_build_version || null,
+      appPlatform: household.app_platform || null,
+      // The most recent real dial attempt's outcome, distinct from
+      // deliveryVerifiedAt above (a historical, set-once "it has worked at
+      // least once" fact) — see services/callRouting.js's
+      // hasRecentDeliveryProblem for how the mobile app's own Home tab
+      // uses the same underlying data.
+      mostRecentDialOutcome: mostRecentDialOutcome
+        ? {
+            dialCallStatus: mostRecentDialOutcome.dial_call_status || null,
+            at: mostRecentDialOutcome.created_at || null,
+            clientInviteReceivedAt: mostRecentDialOutcome.client_invite_received_at || null,
+            clientOutcome: mostRecentDialOutcome.client_outcome || null,
+          }
+        : null,
+      entitlement: shownEntitlement
+        ? {
+            type: shownEntitlement.entitlement_type,
+            source: shownEntitlement.source || null,
+            status: shownEntitlement.status,
+            startsAt: shownEntitlement.starts_at,
+            endsAt: shownEntitlement.ends_at || null,
+          }
+        : null,
+    },
+  };
+}
+
 module.exports = {
+  buildOnboardingRow,
+  getOnboardingMonitor,
+  getHouseholdStatusDetail,
   getSubscriptionPrice,
   mergeCustomerActivity,
   getRecentCustomerActivity,

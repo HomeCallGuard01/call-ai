@@ -201,6 +201,188 @@ if (sources.some(s => !s)) {
   );
 }
 
+// --- Operations list rendering escapes customer data (security regression, 2026-09) ---
+// A customer-chosen email address (or a caller-controlled number) must
+// never reach innerHTML as live markup. Uses the same escapeHtml helper
+// as the Customers tab, extracted from the real page.
+
+{
+  const renderers = extractBetween(html, 'operationsListRenderers');
+  const helpers = extractBetween(html, 'customerMonitorHelpers');
+  const describers = ['describeActivityEvent', 'describeAlert', 'describeAdminAction', 'formatQuickActionResult'].map(n => extractBetween(html, n));
+
+  if (!renderers || !helpers || describers.some(s => !s)) {
+    check(false, 'operationsListRenderers / customerMonitorHelpers TEST-EXTRACT markers found in admin-business.html');
+  } else {
+    const ops = new Function(
+      `${helpers}\n${describers.join('\n')}\n${renderers}\nreturn { renderListHtml, renderCallsHtml, renderSearchResultsHtml, describeActivityEvent, describeAlert, describeAdminAction };`
+    )();
+
+    const evil = '"><img src=x onerror=alert(1)>@example.com';
+    const escaped = '&quot;&gt;&lt;img src=x onerror=alert(1)&gt;@example.com';
+    const noLiveTag = (out) => !out.includes('<img') && !out.includes('onerror=alert(1)>');
+
+    const signups = ops.renderListHtml([{ type: 'signup', email: evil, at: '2026-09-23T10:00:00Z' }], 'none', ops.describeActivityEvent);
+    check(noLiveTag(signups) && signups.includes(escaped), 'Recent registrations: a malicious email is rendered as escaped text, not markup');
+
+    const alerts = ops.renderListHtml(
+      [{ type: 'provisioning_failed', severity: 'high', email: evil, message: '<script>x</script>', at: '2026-09-23T10:00:00Z' }],
+      'none',
+      ops.describeAlert
+    );
+    check(noLiveTag(alerts) && !alerts.includes('<script>') && alerts.includes('&lt;script&gt;'), 'Recent errors: malicious email and error message are escaped');
+
+    const actions = ops.renderListHtml(
+      [{ type: 'grant_complimentary', email: evil, result: { granted: true }, at: '2026-09-23T10:00:00Z' }],
+      'none',
+      ops.describeAdminAction
+    );
+    check(noLiveTag(actions) && actions.includes(escaped), 'Admin actions: a malicious email is escaped');
+
+    const calls = ops.renderCallsHtml([{ number: '<b>+44</b>', result: 'SAFE', householdEmail: evil, time: '2026-09-23T10:00:00Z' }]);
+    check(noLiveTag(calls) && calls.includes(escaped) && !calls.includes('<b>') && calls.includes('&lt;b&gt;+44&lt;/b&gt;'), 'Recent calls: household email and caller number are escaped');
+
+    const search = ops.renderSearchResultsHtml([{ email: evil, id: 'h1', twilio_number: '+447700900001', twilio_provisioning_status: 'active', status: 'active' }]);
+    check(noLiveTag(search) && search.includes(escaped), 'Customer search: a malicious email is escaped');
+
+    const normal = ops.renderListHtml([{ type: 'signup', email: 'jane@example.com', at: '2026-09-23T10:00:00Z' }], 'none', ops.describeActivityEvent);
+    check(normal.includes('jane@example.com signed up') && normal.includes('<div class="list-title ">'), 'ordinary emails render unchanged (no functional change)');
+
+    check(ops.renderListHtml([], 'No signups yet.', ops.describeActivityEvent).includes('No signups yet.'), 'empty-state message unchanged');
+  }
+}
+
+// --- Business tab fair-use table escapes customer email (security regression, 2026-09) ---
+
+{
+  const rowRenderer = extractBetween(html, 'renderFairUseRowHtml');
+  const helpers = extractBetween(html, 'customerMonitorHelpers');
+  const badgeMatch = html.match(/function badge\(status\) \{[^\n]*\}/);
+
+  if (!rowRenderer || !helpers || !badgeMatch) {
+    check(false, 'renderFairUseRowHtml / customerMonitorHelpers / badge found in admin-business.html');
+  } else {
+    const { renderFairUseRowHtml } = new Function(`${badgeMatch[0]}\n${helpers}\n${rowRenderer}\nreturn { renderFairUseRowHtml };`)();
+
+    const evil = renderFairUseRowHtml({ email: '"><img src=x onerror=alert(1)>@example.com', householdId: 'h1', unknownCallCount: 12, tier: 'normal' });
+    check(
+      !evil.includes('<img') && evil.includes('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;@example.com'),
+      'Fair use table: a malicious email is rendered as escaped text, not markup'
+    );
+
+    const normal = renderFairUseRowHtml({ email: 'jane@example.com', householdId: 'h1', unknownCallCount: 250, tier: 'over_hard_threshold' });
+    check(
+      normal === '<tr><td>jane@example.com</td><td>250</td><td><span class="badge badge-RED">RED</span> over_hard_threshold</td></tr>',
+      'Fair use table: an ordinary row renders exactly as before (no functional change)'
+    );
+
+    const noEmail = renderFairUseRowHtml({ email: null, householdId: 'h-123', unknownCallCount: 1, tier: 'approaching_threshold' });
+    check(noEmail.startsWith('<tr><td>h-123</td>') && noEmail.includes('badge-AMBER'), 'Fair use table: falls back to household ID when no email');
+
+    check(html.includes('html += renderFairUseRowHtml(h);'), 'Business tab fair-use loop uses the escaping row renderer');
+  }
+}
+
+// --- Customer detail panel escapes diagnostic telemetry (security
+// regression, 2026-09-24) --- Reconciliation finding: this release
+// branch's original customerRow() concatenated c.email and other fields
+// into innerHTML completely unescaped (no escapeHtml call existed
+// anywhere in this file at that point on this branch) — a real,
+// newly-introduced XSS hole, independent of and in addition to the two
+// already-fixed holes production's admin-onboarding-monitoring branch
+// closed (operationsListRenderers / renderFairUseRowHtml above).
+// customerRow() itself was removed during reconciliation (superseded by
+// production's onboarding-monitor customerMonitorRow, already covered
+// above), so this test targets its replacement: the detail panel
+// (renderCustomerDetailHtml) that now carries the diagnostic fields
+// (appVersion, mostRecentDialOutcome) folded in from this release's own
+// work. appVersion in particular is reported by the customer's own app
+// build and never validated server-side (mobile/lib/voiceClient.ts ->
+// POST /api/v1/voice/registered), making it a genuine, realistic attack
+// vector, not just a defensive theoretical.
+{
+  const helpers = extractBetween(html, 'customerMonitorHelpers');
+  const timelineStage = extractBetween(html, 'describeTimelineStage');
+  const dateTime = extractBetween(html, 'fmtDateTime');
+  const detailHtml = extractBetween(html, 'renderCustomerDetailHtml');
+
+  if (!helpers || !timelineStage || !dateTime || !detailHtml) {
+    check(false, 'customerMonitorHelpers / describeTimelineStage / fmtDateTime / renderCustomerDetailHtml TEST-EXTRACT markers found in admin-business.html');
+  } else {
+    const { renderCustomerDetailHtml } = new Function(
+      `${helpers}\n${timelineStage}\n${dateTime}\n${detailHtml}\nreturn { renderCustomerDetailHtml };`
+    )();
+
+    const evil = '"><img src=x onerror=alert(1)>';
+    const noLiveTag = (out) => !out.includes('<img') && !out.includes('onerror=alert(1)>');
+
+    const maliciousDetail = {
+      customer: { state: 'protected', reason: 'ok', setupClock: null },
+      timeline: [],
+      technical: {
+        householdId: 'h1',
+        hcgNumber: '+447700900001',
+        provisioningStatus: 'active',
+        provisioningAttempts: 1,
+        provisioningLastError: null,
+        provisioningUpdatedAt: null,
+        entitlement: null,
+        deviceType: 'android',
+        carrierProviderKey: 'ee',
+        carrierCapturedAt: null,
+        activationVerifiedAt: null,
+        voiceClientRegisteredAt: null,
+        deliveryVerifiedAt: null,
+        appVersion: evil,
+        appBuildVersion: evil,
+        appPlatform: evil,
+        mostRecentDialOutcome: { dialCallStatus: evil, at: '2026-09-24T10:00:00Z', clientInviteReceivedAt: null, clientOutcome: evil },
+      },
+    };
+    const out = renderCustomerDetailHtml(maliciousDetail);
+    check(
+      noLiveTag(out) && out.includes('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;'),
+      'Customer detail panel: a malicious app-reported appVersion/dial-outcome value is rendered as escaped text, not markup'
+    );
+
+    const ordinaryDetail = {
+      customer: { state: 'protected', reason: 'All good', setupClock: null },
+      timeline: [],
+      technical: {
+        householdId: 'h2',
+        hcgNumber: '+447700900002',
+        provisioningStatus: 'active',
+        provisioningAttempts: 1,
+        provisioningLastError: null,
+        provisioningUpdatedAt: null,
+        entitlement: null,
+        deviceType: 'iphone',
+        carrierProviderKey: null,
+        carrierCapturedAt: null,
+        activationVerifiedAt: null,
+        voiceClientRegisteredAt: null,
+        deliveryVerifiedAt: null,
+        appVersion: '1.0.1',
+        appBuildVersion: '12',
+        appPlatform: 'android',
+        mostRecentDialOutcome: { dialCallStatus: 'completed', at: '2026-09-24T10:00:00Z', clientInviteReceivedAt: '2026-09-24T10:00:05Z', clientOutcome: 'accepted' },
+      },
+    };
+    const ordinaryOut = renderCustomerDetailHtml(ordinaryDetail);
+    check(
+      ordinaryOut.includes('1.0.1 (12) · android') && ordinaryOut.includes('completed at') && ordinaryOut.includes('client: accepted'),
+      'Customer detail panel: ordinary app version and dial-outcome values render as expected, unescaped-looking but functionally correct (no regression)'
+    );
+
+    const noEvidenceDetail = { ...ordinaryDetail, technical: { ...ordinaryDetail.technical, appVersion: null, mostRecentDialOutcome: null } };
+    const noEvidenceOut = renderCustomerDetailHtml(noEvidenceDetail);
+    check(
+      (noEvidenceOut.match(/<td>—<\/td>/g) || []).length >= 2,
+      'Customer detail panel: missing app version / no dial attempt yet render as an honest em dash, never a fabricated value'
+    );
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed.`);
   process.exit(1);
