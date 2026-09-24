@@ -962,18 +962,31 @@ function check(condition, message) {
   // existing unauthenticated /debug/voice-beacon pattern this same file
   // also has, left untouched).
   check(
-    voiceClientSource.includes('reportCallInviteReceived(callSid).catch((err) => {'),
+    voiceClientSource.includes('reportWithRetry(() => reportCallInviteReceived(callSid)).catch((err) => {'),
     'a CallInvite received event is reported fire-and-forget the moment one arrives — the closest available proxy for "the push notification was actually delivered"'
   );
   check(
-    voiceClientSource.includes("reportCallInviteOutcome(callSid, \"accepted\").catch(() => {});") &&
-      voiceClientSource.includes("reportCallInviteOutcome(callSid, \"rejected\").catch(() => {});") &&
-      voiceClientSource.includes("reportCallInviteOutcome(callSid, \"cancelled\").catch(() => {});"),
+    voiceClientSource.includes('reportWithRetry(() => reportCallInviteOutcome(callSid, "accepted")).catch(() => {});') &&
+      voiceClientSource.includes('reportWithRetry(() => reportCallInviteOutcome(callSid, "rejected")).catch(() => {});') &&
+      voiceClientSource.includes('reportWithRetry(() => reportCallInviteOutcome(callSid, "cancelled")).catch(() => {});'),
     'Accepted/Rejected/Cancelled outcomes are each reported — able to distinguish a genuine customer action from a call that was never resolved at all'
   );
   check(
     !voiceClientSource.includes('reportCallInviteReceived(callSid, undefined'),
     'call-invite telemetry relies on authorizedFetch\'s own session fallback rather than threading a token through the module-level CallInvite listener (which has none available)'
+  );
+
+  // Release-quality audit (2026-09-24) — real gap found and fixed: the
+  // module-level CallInvite listener has no accessToken in scope (unlike
+  // reportVoiceRegistered, always called with one), and this app's own
+  // architecture means Supabase session hydration can genuinely still be
+  // in progress at the exact moment a cold-started app (locked phone, app
+  // fully closed) receives its first CallInvite — precisely the scenario
+  // this telemetry most needs to observe. reportWithRetry gives hydration
+  // one short, real chance to finish before giving up.
+  check(
+    voiceClientSource.includes('async function reportWithRetry(fn: () => Promise<void>): Promise<void> {'),
+    'reportWithRetry exists: one retry after a short delay, specifically for the cold-start session-not-yet-hydrated case'
   );
 
   check(

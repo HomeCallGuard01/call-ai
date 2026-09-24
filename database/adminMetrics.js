@@ -125,7 +125,7 @@ async function getRecentCustomers(limit = 20) {
   const { data: households, error: hErr } = await supabaseAdmin
     .from("households")
     .select(
-      "id, email, created_at, twilio_provisioning_status, activation_verified_at, voice_client_registered_at, " +
+      "id, email, created_at, twilio_provisioning_status, twilio_number, activation_verified_at, voice_client_registered_at, " +
         "delivery_verified_at, device_type, carrier_provider_key, app_version, app_build_version, app_platform"
     )
     .order("created_at", { ascending: false })
@@ -178,6 +178,7 @@ async function getRecentCustomers(limit = 20) {
       // function's own header for why.
       activationStatus: h.activation_verified_at ? "verified" : "not_verified",
       provisioningStatus: h.twilio_provisioning_status,
+      twilioNumber: h.twilio_number || null,
       protectionStatus: protection,
       deviceType: h.device_type || null,
       carrierProviderKey: h.carrier_provider_key || null,
@@ -189,6 +190,16 @@ async function getRecentCustomers(limit = 20) {
       recentCallProblem: hasRecentDeliveryProblem(dialOutcome, h.delivery_verified_at),
       recentCallOutcome: dialOutcome ? dialOutcome.dial_call_status : null,
       recentCallAt: dialOutcome ? dialOutcome.created_at : null,
+      // Release-quality audit (2026-09-24) — found missing: the diagnostic
+      // instrumentation just added (migration 045) wrote these two fields
+      // but nothing read them anywhere, including here. Distinguishes
+      // "Twilio attempted the dial but the Android client never even
+      // received the invite" (recentCallOutcome set, recentClientInviteReceivedAt
+      // null) from "received but never resolved" (received, no outcome) from
+      // a genuine customer action (outcome set) — exactly the ambiguity a
+      // real production failure (2026-09-24) could not be diagnosed through.
+      recentClientInviteReceivedAt: dialOutcome ? dialOutcome.client_invite_received_at || null : null,
+      recentClientOutcome: dialOutcome ? dialOutcome.client_outcome || null : null,
     };
   });
 }

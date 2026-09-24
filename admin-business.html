@@ -682,19 +682,36 @@ function customerRow(c) {
   const mobileLabel = c.deviceType
     ? c.deviceType + (c.carrierProviderKey ? ' · ' + c.carrierProviderKey : '')
     : (c.hasDeviceOnRecord === false ? 'Not on record' : '—');
+  const hcgNumberLine = c.twilioNumber ? '<br><span class="status-pill">' + c.twilioNumber + '</span>' : '';
+  const recentCallTime = c.recentCallAt ? '<br><span class="status-pill">' + new Date(c.recentCallAt).toLocaleString('en-GB') + '</span>' : '';
   const lastConfirmed = c.lastConfirmedProtectedAt ? new Date(c.lastConfirmedProtectedAt).toLocaleDateString('en-GB') : '—';
   const appVersion = c.appVersion ? c.appVersion + (c.appBuildVersion ? ' (' + c.appBuildVersion + ')' : '') : '—';
-  const callOutcome = c.recentCallOutcome
-    ? '<span class="status-pill ' + (c.recentCallOutcome === 'completed' ? 'good' : 'warn') + '">' + c.recentCallOutcome + '</span>'
-    : '<span class="status-pill">No recent call</span>';
+  // Release-quality audit (2026-09-24) — the "Recent call" cell now
+  // shows exactly where a failed attempt stopped: Twilio's own dial
+  // outcome, PLUS whether the Android client ever received the invite at
+  // all (the one distinction a real production failure could not
+  // previously be diagnosed through — see database/adminMetrics.js's own
+  // comment on these two new fields).
+  let callOutcome;
+  if (!c.recentCallOutcome) {
+    callOutcome = '<span class="status-pill">No recent call</span>';
+  } else {
+    callOutcome = '<span class="status-pill ' + (c.recentCallOutcome === 'completed' ? 'good' : 'warn') + '">' + c.recentCallOutcome + '</span>';
+    if (c.recentCallOutcome !== 'completed') {
+      const clientNote = c.recentClientInviteReceivedAt
+        ? (c.recentClientOutcome ? 'client: ' + c.recentClientOutcome : 'client received, no outcome')
+        : 'client never received the invite';
+      callOutcome += '<br><span class="status-pill warn">' + clientNote + '</span>';
+    }
+  }
   return '<tr>' +
-    '<td>' + c.email + '<br><span class="status-pill classification">' + c.classification + '</span></td>' +
+    '<td>' + c.email + '<br><span class="status-pill classification">' + c.classification + '</span>' + hcgNumberLine + '</td>' +
     '<td><span class="status-pill ' + membership.className + '">' + membership.label + '</span></td>' +
     '<td><span class="status-pill ' + protection.className + '">' + protection.label + '</span></td>' +
     '<td>' + mobileLabel + (c.hasDeviceOnRecord === false ? ' <span class="status-pill warn">needs confirming</span>' : '') + '</td>' +
     '<td>' + lastConfirmed + '</td>' +
     '<td>' + appVersion + '</td>' +
-    '<td>' + callOutcome + '</td>' +
+    '<td>' + callOutcome + recentCallTime + '</td>' +
     '</tr>';
 }
 

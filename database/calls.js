@@ -192,7 +192,7 @@ async function getMostRecentDialOutcome(householdId) {
 
   const { data, error } = await supabaseAdmin
     .from("calls")
-    .select("dial_call_status, created_at")
+    .select("dial_call_status, created_at, client_invite_received_at, client_outcome")
     .eq("household_id", householdId)
     .not("dial_call_status", "is", null)
     .order("created_at", { ascending: false })

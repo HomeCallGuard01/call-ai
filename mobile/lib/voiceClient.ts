@@ -22,6 +22,34 @@ import { fetchVoiceToken, reportVoiceRegistered, reportCallInviteReceived, repor
 const APP_VERSION = Application.nativeApplicationVersion;
 const APP_BUILD_VERSION = Application.nativeBuildVersion;
 
+// Release-quality audit (2026-09-24) — real gap found: the CallInvite
+// listener below is registered at module load, unconditionally, exactly
+// like the base Voice.Event.CallInvite listener it sits inside — it has
+// no accessToken in scope, unlike reportVoiceRegistered (always called
+// with one from a mounted screen's live AuthContext). It falls back to
+// authorizedFetch's own supabase.auth.getSession() lookup instead — which
+// this app's own architecture (see app/_layout.tsx's import-order
+// comment: voiceClient.ts loads and registers its listeners BEFORE
+// Supabase session hydration can even begin) means can genuinely still be
+// unresolved at the exact moment a cold-started app — locked phone, app
+// fully closed, woken only by the incoming VoIP push — receives its
+// first CallInvite. That is precisely the scenario this telemetry most
+// needs to observe. One short retry gives hydration a real chance to
+// finish without meaningfully delaying reporting for the common (already
+// running) case.
+async function reportWithRetry(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      await fn();
+    } catch (retryErr) {
+      throw retryErr;
+    }
+  }
+}
+
 const voice = new Voice();
 
 let activeCall: Call | null = null;
@@ -401,14 +429,14 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // presentation or a genuine no-answer instead. Fire-and-forget, same
   // established pattern as reportVoiceRegistered — never blocks or
   // delays presenting the real incoming call.
-  reportCallInviteReceived(callSid).catch((err) => {
-    console.error("CALL INVITE RECEIVED REPORT FAILED:", err);
+  reportWithRetry(() => reportCallInviteReceived(callSid)).catch((err) => {
+    console.error("CALL INVITE RECEIVED REPORT FAILED (after retry):", err);
   });
   callInvite.on(CallInvite.Event.Rejected, () => {
-    reportCallInviteOutcome(callSid, "rejected").catch(() => {});
+    reportWithRetry(() => reportCallInviteOutcome(callSid, "rejected")).catch(() => {});
   });
   callInvite.on(CallInvite.Event.Cancelled, () => {
-    reportCallInviteOutcome(callSid, "cancelled").catch(() => {});
+    reportWithRetry(() => reportCallInviteOutcome(callSid, "cancelled")).catch(() => {});
   });
 
   // Audio-quality fix (2026-09-13): CallInvite.Event.Accepted fires with
@@ -426,7 +454,7 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // comment on why iOS's CallKit-owned audio routing must not be
   // touched here.
   callInvite.on(CallInvite.Event.Accepted, () => {
-    reportCallInviteOutcome(callSid, "accepted").catch(() => {});
+    reportWithRetry(() => reportCallInviteOutcome(callSid, "accepted")).catch(() => {});
   });
   if (Platform.OS === "android") {
     callInvite.on(CallInvite.Event.Accepted, (call: Call) => {
