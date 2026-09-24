@@ -66,10 +66,15 @@ function run() {
   );
 
   // --- <Dial><Client> structure itself is untouched ---
+  // ringTone: "uk" added 2026-09-24 (bf3abe4, brought into this release
+  // path) — action/timeout/client identity themselves are still the
+  // exact same values; only the cosmetic ringback-tone override was
+  // added. See tests/call-delivery-ringback.test.mjs for the dedicated,
+  // focused coverage of that fix specifically.
   check(
-    fnBody.includes('const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20 });') &&
+    fnBody.includes('const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk" });') &&
       fnBody.includes('dial.client(plan.clientIdentity);'),
-    '<Dial><Client> construction (action, timeout, client identity) is byte-for-byte unchanged'
+    '<Dial><Client> construction (action, timeout, client identity) is unchanged aside from the cosmetic ringTone addition'
   );
 
   // --- trusted-contact routing is untouched: the known-contact branch of
