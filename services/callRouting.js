@@ -157,9 +157,36 @@ function computeProtectionStatus(household, now) {
   return { forwardingVerified, deliveryReady, endToEndDeliveryVerified, fullyProtected };
 }
 
+// Diagnostic instrumentation (2026-09-24) — a genuine, OBSERVED delivery
+// failure is real evidence of a problem, distinct from fullyProtected's
+// historical-evidence-based "protected" (which this function does not
+// change or weaken — see this file's own header note on that). Pure and
+// separately testable: takes the most recent dial outcome
+// (database/calls.js's getMostRecentDialOutcome) and the household's own
+// delivery_verified_at, and answers "is there a real failed attempt more
+// recent than our last confirmed success" — never flags a problem purely
+// from silence/staleness (that's UNAVAILABLE information, not evidence of
+// one), and never flags a problem for a call that was never actually
+// dialled (dialCallStatus null — e.g. screened out, or genuinely
+// unreachable and routed to self-protecting-unreachable without ever
+// building a <Dial> at all).
+function hasRecentDeliveryProblem(mostRecentDialOutcome, deliveryVerifiedAt) {
+  if (!mostRecentDialOutcome || !mostRecentDialOutcome.dial_call_status) return false;
+  if (mostRecentDialOutcome.dial_call_status === "completed") return false;
+
+  if (!deliveryVerifiedAt) return true;
+
+  const failedAt = new Date(mostRecentDialOutcome.created_at).getTime();
+  const verifiedAt = new Date(deliveryVerifiedAt).getTime();
+  if (!Number.isFinite(failedAt) || !Number.isFinite(verifiedAt)) return true;
+
+  return failedAt > verifiedAt;
+}
+
 module.exports = {
   resolveForwardingDestination,
   decideCallDeliveryPlan,
   hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
+  hasRecentDeliveryProblem,
 };

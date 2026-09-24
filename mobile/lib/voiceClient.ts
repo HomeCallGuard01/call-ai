@@ -11,7 +11,16 @@
 // this.
 import { Voice, CallInvite, Call, AudioDevice } from "@twilio/voice-react-native-sdk";
 import { Platform, AppState } from "react-native";
-import { fetchVoiceToken, reportVoiceRegistered } from "./api";
+import * as Application from "expo-application";
+import { fetchVoiceToken, reportVoiceRegistered, reportCallInviteReceived, reportCallInviteOutcome } from "./api";
+
+// Diagnostic instrumentation (2026-09-24, migration 045) — read once at
+// module load, not per-call: these are static facts about the installed
+// build, not something that changes at runtime. Application.* can return
+// null in edge cases (e.g. certain dev/simulator builds) — reported as
+// null rather than a guessed value either way.
+const APP_VERSION = Application.nativeApplicationVersion;
+const APP_BUILD_VERSION = Application.nativeBuildVersion;
 
 const voice = new Voice();
 
@@ -301,7 +310,11 @@ async function performRegistration(accessToken?: string): Promise<void> {
   // already succeeded above) — the backend simply won't see this
   // household as reachable until the next successful report, exactly the
   // same fail-safe direction as every other gap this signal covers.
-  reportVoiceRegistered(accessToken).catch((err) => {
+  reportVoiceRegistered(accessToken, {
+    appVersion: APP_VERSION,
+    appBuildVersion: APP_BUILD_VERSION,
+    appPlatform: Platform.OS,
+  }).catch((err) => {
     console.error("VOICE REGISTERED REPORT FAILED:", err);
   });
 
@@ -377,6 +390,27 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
 
   console.log("Voice SDK: CallInvite received", callSid);
 
+  // Diagnostic instrumentation (2026-09-24, migration 045) — the closest
+  // available proxy for "the push notification was actually delivered
+  // and the SDK genuinely invoked the app": that handoff itself happens
+  // entirely between Twilio and Apple/Google's own push infrastructure,
+  // not observable server-side at all. If this event never arrives for a
+  // callSid the backend knows it dialled (dial_call_status set), that
+  // isolates push/SDK delivery as the cause; if it arrives with no
+  // Accepted/Rejected/Cancelled outcome following, that isolates UI-
+  // presentation or a genuine no-answer instead. Fire-and-forget, same
+  // established pattern as reportVoiceRegistered — never blocks or
+  // delays presenting the real incoming call.
+  reportCallInviteReceived(callSid).catch((err) => {
+    console.error("CALL INVITE RECEIVED REPORT FAILED:", err);
+  });
+  callInvite.on(CallInvite.Event.Rejected, () => {
+    reportCallInviteOutcome(callSid, "rejected").catch(() => {});
+  });
+  callInvite.on(CallInvite.Event.Cancelled, () => {
+    reportCallInviteOutcome(callSid, "cancelled").catch(() => {});
+  });
+
   // Audio-quality fix (2026-09-13): CallInvite.Event.Accepted fires with
   // the resulting Call object regardless of how the call was actually
   // accepted — including the native notification's own Answer action,
@@ -391,6 +425,9 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // Android-only, matching selectSpeakerForRinging's own scoping and its
   // comment on why iOS's CallKit-owned audio routing must not be
   // touched here.
+  callInvite.on(CallInvite.Event.Accepted, () => {
+    reportCallInviteOutcome(callSid, "accepted").catch(() => {});
+  });
   if (Platform.OS === "android") {
     callInvite.on(CallInvite.Event.Accepted, (call: Call) => {
       call.on(Call.Event.Connected, () => {

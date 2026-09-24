@@ -122,11 +122,26 @@ export function isSettingUp(data: {
 // customer action is required here either — it resolves automatically
 // the moment the first genuine forwarded call reaches /voice, same as
 // every other automatic transition in this state machine.
+// Home protection-status wording improvement (2026-09-24) — "delivery_problem"
+// is a SIXTH state: a household that would otherwise be "protected" (real
+// past evidence, currently reachable) but whose most recent actual dial
+// attempt genuinely failed (services/callRouting.js's
+// hasRecentDeliveryProblem — a real, OBSERVED Twilio DialCallStatus other
+// than "completed", more recent than the last confirmed success). This is
+// the one state in this whole model that is NOT purely reassuring: it
+// reflects a real, known event, not an absence of recent confirmation
+// (that distinction — "known problem" vs. "just no recent news" — is the
+// entire point of this addition; see Home's own render for the "Test my
+// protection now" route offered here). Deliberately does not override
+// "awaiting_confirmation"/"confirming_delivery"/"reconnect_needed" — those
+// already correctly withhold "protected" for their own reasons; this only
+// ever downgrades what would otherwise have been shown as "protected".
 export type HomeProtectionState =
   | "setting_up"
   | "awaiting_confirmation"
   | "confirming_delivery"
   | "reconnect_needed"
+  | "delivery_problem"
   | "protected";
 
 export function computeHomeProtectionState(
@@ -136,6 +151,7 @@ export function computeHomeProtectionState(
       endToEndDeliveryVerified: boolean;
       deliveryReady: boolean;
       fullyProtected: boolean;
+      recentDeliveryProblem?: boolean;
     };
   },
   hasCompletedActivationStep = false
@@ -143,7 +159,9 @@ export function computeHomeProtectionState(
   if (isSettingUp(data)) {
     return hasCompletedActivationStep ? "awaiting_confirmation" : "setting_up";
   }
-  if (data.protection.fullyProtected) return "protected";
+  if (data.protection.fullyProtected) {
+    return data.protection.recentDeliveryProblem ? "delivery_problem" : "protected";
+  }
   if (!data.protection.endToEndDeliveryVerified) return "confirming_delivery";
   return "reconnect_needed";
 }

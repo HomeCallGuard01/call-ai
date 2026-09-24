@@ -41,12 +41,37 @@ export interface SetupResumeState {
   // caller/test that doesn't know about this yet keeps its exact
   // previous behaviour.
   hasCompletedActivationStep?: boolean;
+  // Complimentary/admin-account onboarding fix (2026-09-24): whether
+  // households.device_type (or carrier_provider_key, for a mobile
+  // household) is on record at all. A household whose entitlement was
+  // granted directly (grantComplimentaryEntitlement, admin_manual) can
+  // reach real, evidenced protection — a genuine forwarded call stamps
+  // activation_verified_at/delivery_verified_at regardless of how the
+  // customer dialled the code — without ever having passed through
+  // device-picker.tsx's carrier-capture step at all, since that step is
+  // normally only reached via the paid Subscribe flow. Real production
+  // case (2026-09-24): a complimentary household with two genuinely
+  // successful delivered calls, and device_type/carrier_provider_key
+  // both still null. Optional/defaults to true (not false) — the
+  // opposite default from hasCompletedActivationStep above, deliberately:
+  // an unset value here must never manufacture a new gate for every
+  // existing test/caller that doesn't pass it, and "assume it's fine"
+  // is the correct fail-safe default for a support-information gap, as
+  // opposed to hasCompletedActivationStep's "assume not done yet".
+  hasDeviceOnRecord?: boolean;
 }
 
 export type SetupResumeTarget =
   | { screen: "subscribe" }
   | { screen: "contacts" }
   | { screen: "device-picker" }
+  // Complimentary/admin-account onboarding fix (2026-09-24): distinct
+  // from "device-picker" — this household is already genuinely,
+  // evidence-based protected (isActivationProven or
+  // hasCompletedActivationStep is true); it is missing only the support
+  // information (device/provider), never routed here to redo activation.
+  // See device-picker.tsx's own "confirm" mode.
+  | { screen: "confirm-device" }
   | { screen: "complete" };
 
 // The single source of truth for "where does this customer continue
@@ -58,6 +83,14 @@ export function resumeSetupAt(state: SetupResumeState): SetupResumeTarget {
   if (!state.isEntitled) return { screen: "subscribe" };
   if (state.contactCount === 0) return { screen: "contacts" };
   if (!state.isActivationProven && !state.hasCompletedActivationStep) return { screen: "device-picker" };
+  // Explicit "!== false": missing/undefined defaults to "on record" (see
+  // this field's own comment) — only a caller that positively knows and
+  // reports false ever routes here. Never gates on this alone before the
+  // activation checks above: an activated household must never be sent
+  // to "confirm-device" instead of "complete" as if support-information
+  // completeness were a stronger requirement than real protection
+  // evidence — it is explicitly the opposite, per this fix's own brief.
+  if (state.hasDeviceOnRecord === false) return { screen: "confirm-device" };
   return { screen: "complete" };
 }
 

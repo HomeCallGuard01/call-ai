@@ -176,6 +176,72 @@ async function recordCallDuration(callSid, durationSeconds) {
   }
 }
 
+// Diagnostic instrumentation (2026-09-24) — see migration 044's own
+// comment: dial_call_status is the raw Twilio DialCallStatus for the
+// most recent approved-call delivery attempt this household actually
+// had. Used to derive a "genuine known problem" signal for the mobile
+// Home screen (lib/homeStatus.ts), distinct from the existing evidence-
+// based fullyProtected: a call that reached HCG and genuinely failed to
+// deliver is real, observed evidence of a problem, not just an absence
+// of recent confirmation. Only rows with dial_call_status set even
+// considered (a screened-but-never-dialled call, e.g. terminated by the
+// red-line system, has none) — an unattempted dial is not a delivery
+// failure. Read-only, no write path here.
+async function getMostRecentDialOutcome(householdId) {
+  if (!supabaseAdmin) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("calls")
+    .select("dial_call_status, created_at")
+    .eq("household_id", householdId)
+    .not("dial_call_status", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("SUPABASE RECENT DIAL OUTCOME READ ERROR:", error);
+    return null;
+  }
+
+  return data || null;
+}
+
+// Diagnostic instrumentation (2026-09-24, migration 045) — see that
+// migration's own comment for what this closes. Scoped to householdId as
+// well as callSid (never just callSid) so one household's client can
+// never write to another's call row. Fails open (logs, never throws):
+// this is diagnostics-only, reported fire-and-forget from the client
+// (mobile/lib/voiceClient.ts), and must never surface as a customer-
+// visible error either there or here.
+async function recordClientCallInviteReceived(callSid, householdId) {
+  if (!supabaseAdmin) return;
+
+  const { error } = await supabaseAdmin
+    .from("calls")
+    .update({ client_invite_received_at: new Date().toISOString() })
+    .eq("call_sid", callSid)
+    .eq("household_id", householdId);
+
+  if (error) {
+    console.error("SUPABASE CLIENT INVITE RECEIVED WRITE ERROR:", error);
+  }
+}
+
+async function recordClientCallOutcome(callSid, householdId, outcome) {
+  if (!supabaseAdmin) return;
+
+  const { error } = await supabaseAdmin
+    .from("calls")
+    .update({ client_outcome: outcome })
+    .eq("call_sid", callSid)
+    .eq("household_id", householdId);
+
+  if (error) {
+    console.error("SUPABASE CLIENT CALL OUTCOME WRITE ERROR:", error);
+  }
+}
+
 function toClientCall(call) {
   return {
     number: call.number,
@@ -197,8 +263,11 @@ function toClientCall(call) {
 module.exports = {
   getCallsToday,
   getRecentCalls,
+  getMostRecentDialOutcome,
   logCall,
   recordCallDuration,
   recordMonitoringOutcome,
+  recordClientCallInviteReceived,
+  recordClientCallOutcome,
   toClientCall,
 };

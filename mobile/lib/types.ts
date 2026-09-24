@@ -70,6 +70,20 @@ export interface DashboardResponse {
     deliveryReady: boolean;
     endToEndDeliveryVerified: boolean;
     fullyProtected: boolean;
+    // Diagnostic instrumentation / protection-status wording (2026-09-24):
+    // a real, OBSERVED delivery failure (Twilio's own DialCallStatus, not
+    // "completed") more recent than the last confirmed success — never
+    // inferred from staleness/silence alone. See
+    // services/callRouting.js's hasRecentDeliveryProblem.
+    recentDeliveryProblem: boolean;
+    // The more recent of activationVerifiedAt/delivery evidence — a
+    // quiet, honest "when was this last genuinely confirmed" fact, never
+    // a claim that carrier forwarding is currently, actively known-good
+    // (HCG cannot observe that).
+    lastConfirmedProtectedAt: string | null;
+    // Server-authoritative device classification (households.device_type)
+    // — parity with web's /dashboard-data.
+    deviceType: DeviceType | null;
   };
   membership: {
     planName: string;

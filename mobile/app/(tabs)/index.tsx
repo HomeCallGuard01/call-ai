@@ -30,7 +30,7 @@ import { BrandMark } from "../../components/BrandMark";
 import { OutcomeRow, type OutcomeTone } from "../../components/OutcomeRow";
 import { EmptyState } from "../../components/EmptyState";
 import { Ionicons } from "@expo/vector-icons";
-import { fetchDashboard, NotEntitledError } from "../../lib/api";
+import { fetchDashboard, fetchActivationDevice, NotEntitledError } from "../../lib/api";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { deriveLoadOutcome, computeHomeProtectionState, hasProvenActivation } from "../../lib/homeStatus";
@@ -154,6 +154,12 @@ export default function Home() {
   // setting_up household) or "not loaded yet" (loading state); both
   // correctly fall back to today's existing setting_up behaviour below.
   const [setupCompletedAt, setSetupCompletedAt] = useState<string | null>(null);
+  // Complimentary/admin-account onboarding fix (2026-09-24) — see
+  // lib/setupFlow.ts's own comment. Defaults to true ("assume on record")
+  // for the same reason resumeSetupAt's own default does: a load failure
+  // or not-yet-loaded state must never manufacture a nudge that isn't
+  // genuinely known to be needed.
+  const [hasDeviceOnRecord, setHasDeviceOnRecord] = useState(true);
 
   // load() is triggered from two independent sources — useFocusEffect
   // (every time this tab regains focus) and pull-to-refresh — so two
@@ -269,7 +275,14 @@ export default function Home() {
       // extra visit before the next unrelated re-render happened to
       // catch up.
       loadSetupCompletedAt().then(setSetupCompletedAt);
-    }, [load])
+      // Complimentary/admin-account onboarding fix (2026-09-24): same
+      // server-authoritative endpoint the Account tab already uses —
+      // fails open (assumes on record) rather than ever showing a nudge
+      // on an uncertain read.
+      fetchActivationDevice(session?.access_token)
+        .then(d => setHasDeviceOnRecord(!!d.deviceType))
+        .catch(() => setHasDeviceOnRecord(true));
+    }, [load, session?.access_token])
   );
 
   if (state === "loading") {
@@ -363,6 +376,7 @@ export default function Home() {
     contactCount: data!.contacts.length,
     isActivationProven: hasProvenActivation(data!),
     hasCompletedActivationStep,
+    hasDeviceOnRecord,
   });
   // No "subscribe" entry: `isEntitled: true` above is hardcoded, not
   // read from `data`, because `state === "ready"` is only reachable once
@@ -375,6 +389,7 @@ export default function Home() {
   const RESUME_ROUTE: Record<string, string> = {
     contacts: "/(setup)/contacts",
     "device-picker": "/(setup)/device-picker",
+    "confirm-device": "/(setup)/device-picker?confirm=1",
     complete: "/(setup)/complete",
   };
   const resumeRoute = RESUME_ROUTE[resumeTarget.screen] ?? "/(setup)/welcome";
@@ -383,6 +398,14 @@ export default function Home() {
     resumeTarget.screen === "contacts"
       ? "Add at least one trusted contact, then turn on call forwarding to complete your protection."
       : "Finish activating call forwarding to complete your protection.";
+  // Complimentary/admin-account onboarding fix (2026-09-24): only ever
+  // true once resumeTarget has already resolved past every real setup
+  // step (entitled, has contacts, activation proven/completed) — the
+  // household is genuinely, evidence-based set up; this is purely a
+  // missing piece of support information, never shown as if protection
+  // itself were in question. Deliberately separate from
+  // homeProtectionState's own rendering below, not folded into it.
+  const showConfirmDeviceNudge = resumeTarget.screen === "confirm-device";
 
   const recentActivity = data!.activity.slice(0, 3);
 
@@ -472,6 +495,24 @@ export default function Home() {
               Home Call Guard has protected you before — we just can't currently reach this app. Keep it open for a moment to reconnect. You don't need to redo call forwarding.
             </Text>
           </>
+        ) : homeProtectionState === "delivery_problem" ? (
+          <>
+            {/* Diagnostic instrumentation / protection-status wording
+                (2026-09-24): a REAL, observed delivery failure — never
+                inferred from silence or staleness (see
+                hasRecentDeliveryProblem's own comment). This is the one
+                state in this whole model that names an actual, known
+                event rather than reassuring — deliberately not alarmist
+                wording, and deliberately offers a concrete next action
+                (a real test call) rather than nothing. */}
+            <Hero muted />
+            <Text style={styles.giantTitleMuted} accessibilityRole="header">Let's check your protection</Text>
+            <Text style={styles.statusBody}>
+              A recent call to your protected number didn't come through as expected. Your protection has worked
+              before — this may be a one-off, but we'd recommend testing it now.
+            </Text>
+            <PrimaryButton label="Test my protection now" onPress={() => router.push("/(setup)/verify")} />
+          </>
         ) : (
           <>
             {/* Dominant hero: the real brand shield, large, with a soft
@@ -486,6 +527,21 @@ export default function Home() {
             <Text style={styles.reassurance}>
               Home Call Guard is monitoring unknown callers and helping protect you from scams.
             </Text>
+            {/* Protection-status wording precision (2026-09-24): a quiet,
+                honest "when was this last genuinely confirmed" fact —
+                never a claim that carrier forwarding is currently,
+                actively known to be on (HCG cannot observe that; see
+                DashboardResponse.lastConfirmedProtectedAt's own comment).
+                Deliberately small/muted, not a warning. */}
+            {data!.protection.lastConfirmedProtectedAt && (
+              <Text style={styles.lastConfirmedText}>
+                Last confirmed {formatActivityTime(data!.protection.lastConfirmedProtectedAt)}
+                {"  ·  "}
+                <Text style={styles.lastConfirmedLink} onPress={() => router.push("/(setup)/verify")}>
+                  Test my protection
+                </Text>
+              </Text>
+            )}
 
             {/* Real-data protection summary — no invented numbers, same
                 stats.* fields the previous version already read, just
@@ -563,6 +619,25 @@ export default function Home() {
               <PrimaryButton label="See all activity" variant="secondary" onPress={() => router.push("/(tabs)/activity")} />
             )}
           </>
+        )}
+
+        {/* Complimentary/admin-account onboarding fix (2026-09-24): a
+            friendly, clearly-secondary nudge — never shown while
+            homeProtectionState is "setting_up" (resumeTarget never
+            resolves to "confirm-device" until every real setup step is
+            already done), and never claims protection is in question. */}
+        {showConfirmDeviceNudge && (
+          <View style={styles.nudge}>
+            <Text style={styles.nudgeText}>
+              Help us support your protection — confirm your phone and network. This doesn't change anything about
+              your existing protection.
+            </Text>
+            <PrimaryButton
+              label="Confirm your phone and network"
+              variant="secondary"
+              onPress={() => router.push(resumeRoute as any)}
+            />
+          </View>
         )}
 
         {data!.membership.status === "payment_issue" && (
@@ -651,6 +726,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 23,
     marginBottom: spacing.lg,
+  },
+  lastConfirmedText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: -spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  lastConfirmedLink: {
+    color: colors.accent,
+    fontWeight: "600",
   },
   statusBody: {
     ...typography.body,

@@ -204,9 +204,14 @@ check(
   !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(devicePickerSource),
   'no emoji characters anywhere in device-picker.tsx (the device-selection UI this fix targets)'
 );
+// Landline positioning (2026-09-24): the landline card itself is
+// genuinely removed from DEVICE_OPTIONS (not just relabelled) — see
+// tests/mobile-landline-coming-soon.test.mjs for the full coverage of
+// that change. Nothing in DEVICE_OPTIONS uses icon: "call" any more —
+// only the two remaining (iPhone/Android) image-based cards.
 check(
-  devicePickerSource.includes('icon: "call"'),
-  'the landline option keeps its existing generic Ionicons "call" glyph — only the platform-brand icons changed'
+  !devicePickerSource.slice(0, devicePickerSource.indexOf('const LANDLINE_PROVIDERS')).includes('icon: "call"'),
+  'the device-selection cards (DEVICE_OPTIONS) no longer include a landline option at all — removed, not relabelled'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

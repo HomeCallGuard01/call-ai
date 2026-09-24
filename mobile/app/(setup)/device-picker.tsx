@@ -26,20 +26,17 @@
 // screen is no longer adjacent to activate.tsx in the flow, so params
 // alone would not survive the Subscribe → Confirmation → Contacts hops
 // in between.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, View, Pressable, StyleSheet, ActivityIndicator, TextInput, Image } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
 import { Banner } from "../../components/Banner";
 import { PrimaryButton } from "../../components/PrimaryButton";
-import { checkCarrierCompatibility, setHouseholdLandline, setHouseholdIphone, joinWaitingList, ApiError } from "../../lib/api";
+import { checkCarrierCompatibility, setHouseholdLandline, setHouseholdIphone, joinWaitingList, fetchActivationDevice, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { saveActivationDevice } from "../../lib/activationDeviceStorage";
 import { MOBILE_CARRIERS } from "../../lib/carriers";
-import { LANDLINE_CARD_LABEL_AVAILABLE, LANDLINE_CARD_LABEL_COMING_SOON } from "../../lib/landlineAvailability";
-import { isLandlineComingSoon, useLandlineComingSoon } from "../../lib/landlineFlag";
-import { LandlineComingSoon } from "../../components/LandlineComingSoon";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 import type { DeviceType, LandlineProvider, MobileCarrierKey, TariffType } from "../../lib/types";
 
@@ -71,6 +68,21 @@ import type { DeviceType, LandlineProvider, MobileCarrierKey, TariffType } from 
 //    a generic pictogram, not another platform's brand mark, so there
 //    is no equivalent concern.
 // See mobile/assets/android-device-mark.png and iphone-device-mark.png.
+// Landline positioning (2026-09-24): mirrors the same product decision
+// already applied to the website (commit "Website: position HCG as
+// mobile-only; remove landline sign-up routes") — HCG currently protects
+// compatible mobile phones (Android now, iPhone coming soon). Landline
+// is no longer a selectable route for a NEW customer at all: no card, no
+// "coming soon" claim, no waiting list — only one restrained line below
+// the cards. The landline option card that used to sit here (previously
+// relabelled to a coming-soon state) is genuinely removed, not hidden.
+// Existing landline households are unaffected — see the
+// existing-landline carve-out below, which detects
+// households.device_type === "landline" (already durable, migration 040)
+// and routes straight to their own landline-provider flow, mirroring the
+// website's "not silently re-classified as mobile" carve-out exactly.
+// The backend's own fail-closed landline block (services/callRouting.js)
+// is completely untouched by this — this is a signup-route change only.
 const DEVICE_OPTIONS: {
   type: DeviceType;
   label: string;
@@ -79,14 +91,6 @@ const DEVICE_OPTIONS: {
 }[] = [
   { type: "iphone", label: "iPhone — Coming soon", iconSource: require("../../assets/iphone-device-mark.png") },
   { type: "android", label: "Android phone", iconSource: require("../../assets/android-device-mark.png") },
-  // Landline Coming soon (2026-09-21): the backend flag LANDLINE_COMING_SOON
-  // (published as landlineComingSoon by /api/v1/launch-flags) decides, and the
-  // app fails closed — see lib/landlineAvailability.ts / lib/landlineFlag.ts.
-  // While Coming soon the card stays, relabelled at render time below exactly
-  // like iPhone above; selectDevice routes it to its own dead-end step and it
-  // can never reach the provider list, Subscribe or payment. The provider list
-  // and setHouseholdLandline further down are deliberately kept, not deleted.
-  { type: "landline", label: LANDLINE_CARD_LABEL_AVAILABLE, icon: "call" },
 ];
 
 const LANDLINE_PROVIDERS: { provider: LandlineProvider; label: string }[] = [
@@ -104,6 +108,8 @@ const TARIFF_OPTIONS: { type: TariffType; label: string }[] = [
 ];
 
 type Step =
+  | { name: "checking-existing-device" }
+  | { name: "existing-landline" }
   | { name: "device" }
   | { name: "landline-provider" }
   | { name: "carrier" }
@@ -111,36 +117,67 @@ type Step =
   | { name: "checking" }
   | { name: "blocked"; customerState: "not_currently_supported" | "needs_confirmation" }
   | { name: "ios-coming-soon" }
-  | { name: "landline-coming-soon" }
   | { name: "landline-provider-unsupported"; provider: LandlineProvider };
 
 export default function DevicePicker() {
   const { session } = useAuth();
-  // True (Coming soon) until the server explicitly says landline is open.
-  const landlineComingSoon = useLandlineComingSoon();
+  // Complimentary/admin-account onboarding fix (2026-09-24): "confirm"
+  // mode is reached only via resumeSetupAt's "confirm-device" target —
+  // an already-protected household (real evidence: activation_verified_at
+  // or a completed activation step) that's simply missing device/carrier
+  // support information. Reuses this exact screen/UI, as required, but
+  // skips the payment-eligibility gate below (evaluate()) entirely: that
+  // gate exists to decide whether a NEW customer may proceed to
+  // Subscribe, which is meaningless for a customer who is already an
+  // active, working customer. See evaluate()'s own confirm-mode branch.
+  const params = useLocalSearchParams<{ confirm?: string }>();
+  const isConfirmMode = params.confirm === "1";
   const [deviceType, setDeviceType] = useState<DeviceType | null>(null);
-  const [step, setStep] = useState<Step>({ name: "device" });
+  const [step, setStep] = useState<Step>({ name: "checking-existing-device" });
   const [error, setError] = useState<string | null>(null);
   const [waitingListEmail, setWaitingListEmail] = useState("");
   const [waitingListStatus, setWaitingListStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
+  // Landline positioning (2026-09-24) — existing-household carve-out,
+  // mirroring the website's own: a household that already has
+  // households.device_type === "landline" persisted (durable,
+  // migration 040 — set the one time landline was still selectable, or
+  // by an admin) must never be silently shown only the mobile-only
+  // picker as if landline were never an option for them. Checked once,
+  // on arrival, via the same GET /api/v1/me/activation-device endpoint
+  // the Account-tab "Turn off protection" screen already uses as its own
+  // server-authoritative fallback — no new endpoint. Fails open to the
+  // normal (mobile-only) picker on any error: this is a UX carve-out for
+  // an existing customer, not a security gate, and a transient failure
+  // here must never strand a brand-new signup who has no such record at
+  // all (the overwhelmingly common case) on a dead screen.
+  useEffect(() => {
+    let cancelled = false;
+    fetchActivationDevice(session?.access_token)
+      .then(result => {
+        if (cancelled) return;
+        setStep(result.deviceType === "landline" ? { name: "existing-landline" } : { name: "device" });
+      })
+      .catch(() => {
+        if (!cancelled) setStep({ name: "device" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
+
   // IOS_COMING_SOON (2026-09-19): persists device_type="iphone" server-
-  // side (setHouseholdIphone, migration 041) — same discipline as
-  // landline below, real server state, not a client-only shortcut — then
-  // shows the dead-end step regardless of what the backend actually
-  // returned, since this UI's job while the flag is on is simply "never
-  // let an iPhone selection reach carrier/consent/Stripe." A network
-  // failure here doesn't block the customer from seeing the coming-soon
-  // message; it only means the household record won't yet reflect
-  // "iphone" — genuinely low-stakes, so the step shows either way rather
-  // than stranding the customer on a spinner for a non-critical write.
+  // side (setHouseholdIphone, migration 041) — real server state, not a
+  // client-only shortcut — then shows the dead-end step regardless of
+  // what the backend actually returned, since this UI's job while the
+  // flag is on is simply "never let an iPhone selection reach carrier/
+  // consent/Stripe." A network failure here doesn't block the customer
+  // from seeing the coming-soon message; it only means the household
+  // record won't yet reflect "iphone" — genuinely low-stakes, so the
+  // step shows either way rather than stranding the customer on a
+  // spinner for a non-critical write.
   function selectDevice(type: DeviceType) {
     setDeviceType(type);
-    if (type === "landline") {
-      // Coming soon: no provider list, no server write, no Subscribe.
-      setStep(isLandlineComingSoon("landline") ? { name: "landline-coming-soon" } : { name: "landline-provider" });
-      return;
-    }
     if (type === "iphone") {
       setStep({ name: "ios-coming-soon" });
       setHouseholdIphone(session?.access_token).catch(() => {});
@@ -191,12 +228,14 @@ export default function DevicePicker() {
   // unproven assumption a default dial code will work; it goes to its
   // own dead-end step instead, same shape as the iOS coming-soon one.
   async function selectLandlineProvider(provider: LandlineProvider) {
-    // Defence in depth: even if this step were somehow reached, Landline
-    // never progresses to setHouseholdLandline / Subscribe while Coming soon.
-    if (isLandlineComingSoon("landline")) {
-      setStep({ name: "landline-coming-soon" });
-      return;
-    }
+    // Landline positioning (2026-09-24): this step is reached only from
+    // the existing-landline carve-out above — households.device_type is
+    // already "landline" for anyone who gets here, so the old "coming
+    // soon" gate (which existed to stop a NEW signup reaching this while
+    // landline wasn't yet selectable) no longer applies; there is no
+    // longer any UI path that lets a new customer reach this screen at
+    // all. The backend's own fail-closed landline block
+    // (services/callRouting.js) is unrelated and unaffected.
     setStep({ name: "checking" });
     setError(null);
     resetWaitingListForm();
@@ -221,6 +260,21 @@ export default function DevicePicker() {
       const result = await checkCarrierCompatibility(provider, tariffType, session?.access_token);
       if (result.reason === "tariff_type_required") {
         setStep({ name: "tariff", provider });
+        return;
+      }
+      // Complimentary/admin-account onboarding fix (2026-09-24): in
+      // confirm mode, checkCarrierCompatibility's own eligibility verdict
+      // (canProceedToPayment / blocked) is irrelevant — this customer is
+      // already active and already protected by real evidence; the only
+      // thing this screen exists to do here is persist the device/carrier
+      // support information the call above already wrote server-side
+      // (households.carrier_provider_key). Never routes to Subscribe and
+      // never shows the "we can't protect this network yet" dead end,
+      // which would be confusing and wrong for a network that
+      // demonstrably already works for them.
+      if (isConfirmMode) {
+        saveActivationDevice({ deviceType: deviceType as DeviceType });
+        router.replace("/(tabs)");
         return;
       }
       if (result.canProceedToPayment) {
@@ -383,13 +437,34 @@ export default function DevicePicker() {
     );
   }
 
-  if (step.name === "landline-coming-soon") {
+  if (step.name === "checking-existing-device") {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      </Screen>
+    );
+  }
+
+  // Landline positioning (2026-09-24) — existing-household carve-out.
+  // Reached only when households.device_type is already "landline" —
+  // never for a new signup. Deliberately plain and unhurried, matching
+  // the website's own restrained tone: this customer already has a real
+  // landline setup on record, so this simply continues it, rather than
+  // presenting the (now mobile-only) picker as if landline had never
+  // been an option for them.
+  if (step.name === "existing-landline") {
     return (
       <Screen>
-        <Pressable onPress={() => setStep({ name: "device" })} accessibilityRole="button" style={styles.backLink}>
-          <Text style={styles.backLinkText}>‹ Back</Text>
-        </Pressable>
-        <LandlineComingSoon actionLabel="Choose a different option" onAction={() => setStep({ name: "device" })} />
+        <Text style={styles.title} accessibilityRole="header">This account is set up for a landline</Text>
+        <Text style={styles.subtitle}>
+          We'll continue with your existing landline setup.
+        </Text>
+        <PrimaryButton
+          label="Continue"
+          onPress={() => setStep({ name: "landline-provider" })}
+        />
       </Screen>
     );
   }
@@ -457,18 +532,18 @@ export default function DevicePicker() {
     );
   }
 
-  // Card list as shown: the Landline card carries "— Coming soon" while the
-  // server says so (and, failing closed, while the answer isn't known yet).
-  const deviceOptions = DEVICE_OPTIONS.map(option =>
-    option.type === "landline" && landlineComingSoon ? { ...option, label: LANDLINE_CARD_LABEL_COMING_SOON } : option
-  );
-
   return (
     <Screen brand>
-      <Text style={styles.title} accessibilityRole="header">What are we setting up protection on?</Text>
-      <Text style={styles.subtitle}>Pick the phone whose calls you want screened.</Text>
+      <Text style={styles.title} accessibilityRole="header">
+        {isConfirmMode ? "Confirm your phone and network" : "What are we setting up protection on?"}
+      </Text>
+      <Text style={styles.subtitle}>
+        {isConfirmMode
+          ? "This helps us support your protection if you ever need help — it doesn't change anything about your existing setup."
+          : "Pick the phone whose calls you want screened."}
+      </Text>
       <View style={styles.cards}>
-        {deviceOptions.map(({ type, label, icon, iconSource }) => (
+        {DEVICE_OPTIONS.map(({ type, label, icon, iconSource }) => (
           <Pressable
             key={type}
             onPress={() => selectDevice(type)}
@@ -485,6 +560,10 @@ export default function DevicePicker() {
           </Pressable>
         ))}
       </View>
+      {/* Landline positioning (2026-09-24): one restrained line, no CTA,
+          no timeline, no waiting list — matches the website's own single
+          FAQ mention exactly. */}
+      <Text style={styles.landlineNote}>What about landlines? We're exploring landline protection for the future.</Text>
     </Screen>
   );
 }
@@ -552,6 +631,12 @@ const styles = StyleSheet.create({
   cardText: {
     ...typography.title,
     color: colors.text,
+  },
+  landlineNote: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: spacing.lg,
   },
   list: {
     gap: spacing.sm,

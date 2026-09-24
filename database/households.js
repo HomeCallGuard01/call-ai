@@ -271,6 +271,27 @@ async function markVoiceClientRegistered(householdId) {
   return data;
 }
 
+// Diagnostic instrumentation (2026-09-24, migration 045) — see that
+// migration's own comment. Fails open (logs, never throws): reporting
+// the app's own version must never block or fail the real registration
+// flow it piggybacks on (mobile/lib/voiceClient.ts's
+// registerForIncomingCalls calls this best-effort, same as
+// reportVoiceRegistered's own established convention).
+async function markHouseholdAppVersion(householdId, appVersion, appBuildVersion, appPlatform) {
+  if (!supabaseAdmin) return;
+
+  const { error } = await supabaseAdmin.rpc("mark_household_app_version", {
+    p_household_id: householdId,
+    p_app_version: appVersion || null,
+    p_app_build_version: appBuildVersion || null,
+    p_app_platform: appPlatform || null,
+  });
+
+  if (error) {
+    console.error("HOUSEHOLD APP VERSION MARK ERROR:", error);
+  }
+}
+
 // Records real, Twilio-reported evidence that an approved call actually
 // connected to this household's protected phone (migration 036) — called
 // only from server.js's recordApprovedCallDeliveryOutcome, itself called
@@ -397,6 +418,7 @@ module.exports = {
   recordTwilioProvisioningFailure,
   markActivationVerified,
   markVoiceClientRegistered,
+  markHouseholdAppVersion,
   markHouseholdDeliveryVerified,
   markTwilioNumberPendingRelease,
   cancelTwilioNumberPendingRelease,

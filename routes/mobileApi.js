@@ -20,17 +20,25 @@ const {
   upsertActiveEntitlementFromRevenueCat,
   expireEntitlementFromRevenueCat,
 } = require("../database/billing");
-const { getCallsToday, getRecentCalls, toClientCall } = require("../database/calls");
+const {
+  getCallsToday,
+  getRecentCalls,
+  getMostRecentDialOutcome,
+  recordClientCallInviteReceived,
+  recordClientCallOutcome,
+  toClientCall,
+} = require("../database/calls");
 const {
   markActivationVerified,
   getHouseholdByAuthUserId,
   markVoiceClientRegistered,
+  markHouseholdAppVersion,
   setHouseholdCarrierCompatibility,
   recordTermsAcceptance,
 } = require("../database/households");
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
-const { computeProtectionStatus } = require("../services/callRouting");
+const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
 const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources } = require("../services/revenuecatWebhook");
@@ -522,11 +530,12 @@ router.post("/api/v1/me/bootstrap", async (req, res) => {
 // contract (APP_VISUAL_SPECIFICATION.md) rather than inventing a new one.
 router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (req, res) => {
   try {
-    const [callsToday, recentCalls, contacts, subscription] = await Promise.all([
+    const [callsToday, recentCalls, contacts, subscription, mostRecentDialOutcome] = await Promise.all([
       getCallsToday(req.household.id),
       getRecentCalls(req.household.id, 30),
       getContacts(req.household.id),
       getSubscriptionByHouseholdId(req.household.id),
+      getMostRecentDialOutcome(req.household.id),
     ]);
 
     // Same membership-status derivation as /dashboard-data (server.js) —
@@ -557,6 +566,20 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // /dashboard-data — the app must use fullyProtected for any
     // "You're protected" claim, not activationVerifiedAt alone.
     const protectionStatus = computeProtectionStatus(req.household, new Date());
+    // Diagnostic instrumentation (2026-09-24) — see services/callRouting.js's
+    // hasRecentDeliveryProblem and migration 044's own comment. A real,
+    // observed delivery failure more recent than the last confirmed
+    // success — never a staleness/silence inference, never a change to
+    // fullyProtected itself.
+    const recentDeliveryProblem = hasRecentDeliveryProblem(mostRecentDialOutcome, req.household.delivery_verified_at);
+    // "Last confirmed" (2026-09-24, Home protection-status wording
+    // improvement): the more recent of the two real evidence timestamps
+    // this app already has — never a live/current claim, just what it
+    // actually is: when either fact was last genuinely established.
+    const lastConfirmedProtectedAt = [req.household.activation_verified_at, req.household.delivery_verified_at]
+      .filter(Boolean)
+      .sort()
+      .pop() || null;
 
     res.json({
       protection: {
@@ -569,6 +592,8 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         deliveryReady: protectionStatus.deliveryReady,
         endToEndDeliveryVerified: protectionStatus.endToEndDeliveryVerified,
         fullyProtected: protectionStatus.fullyProtected,
+        recentDeliveryProblem,
+        lastConfirmedProtectedAt,
         // Server-authoritative Mobile/Landline (households.device_type,
         // migration 040) — parity with web's /dashboard-data. Lets the
         // app prefer this over any client-remembered device category for
@@ -902,14 +927,59 @@ router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req
 // either. Deliberately called on every successful registration, not just
 // once — see markVoiceClientRegistered's own comment for why this must
 // never be idempotent-once.
-router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, async (req, res) => {
+// express.json() scoped to this route (matching this codebase's existing
+// convention — see /household/phone-number, /confirm-session,
+// /admin/api/households/:id/grant-complimentary): server.js applies only
+// bodyParser.urlencoded() globally, so this route's optional JSON body
+// (app version/build/platform — diagnostic instrumentation, 2026-09-24,
+// migration 045) would otherwise never actually parse. The body is
+// entirely optional and best-effort: an old app build that never sends
+// it, or a request with no body at all, behaves exactly as before this
+// change — markHouseholdAppVersion is fire-and-forget and never affects
+// the response.
+router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, express.json(), async (req, res) => {
   try {
     const registeredAt = await markVoiceClientRegistered(req.household.id);
+    const { appVersion, appBuildVersion, appPlatform } = req.body || {};
+    if (appVersion || appBuildVersion || appPlatform) {
+      markHouseholdAppVersion(req.household.id, appVersion, appBuildVersion, appPlatform).catch(() => {});
+    }
     res.json({ ok: true, registeredAt });
   } catch (err) {
     console.error("VOICE CLIENT REGISTERED ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
+});
+
+// Diagnostic instrumentation (2026-09-24, migration 045) — see that
+// migration's own comment. Both routes are authenticated (requireAuthApi)
+// and write only to the calling household's own call row (never
+// cross-household) — the correct pattern for real telemetry in this
+// codebase, per the existing unauthenticated /debug/voice-beacon
+// diagnostic elsewhere in this file, which this deliberately does NOT
+// follow. No entitlement gate: a call invite can genuinely arrive in the
+// narrow window around an entitlement lapsing, and this is diagnostics-
+// only, never a capability grant.
+router.post("/api/v1/voice/call-invite-received", requireAuthApi, express.json(), async (req, res) => {
+  const { callSid } = req.body || {};
+  if (typeof callSid !== "string" || !callSid.trim()) {
+    return res.status(400).json({ error: "invalid_input", message: "callSid is required" });
+  }
+  await recordClientCallInviteReceived(callSid.trim(), req.household.id);
+  res.json({ ok: true });
+});
+
+const CALL_OUTCOME_VALUES = new Set(["accepted", "rejected", "cancelled"]);
+router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(), async (req, res) => {
+  const { callSid, outcome } = req.body || {};
+  if (typeof callSid !== "string" || !callSid.trim() || !CALL_OUTCOME_VALUES.has(outcome)) {
+    return res.status(400).json({
+      error: "invalid_input",
+      message: `callSid is required and outcome must be one of: ${[...CALL_OUTCOME_VALUES].join(", ")}`,
+    });
+  }
+  await recordClientCallOutcome(callSid.trim(), req.household.id, outcome);
+  res.json({ ok: true });
 });
 
 // POST /api/v1/activation/verify

@@ -78,9 +78,13 @@ check(
 // ============================================================
 
 check(
-  devicePickerSource.includes('checkCarrierCompatibility, setHouseholdLandline, setHouseholdIphone, joinWaitingList, ApiError') &&
+  devicePickerSource.includes('checkCarrierCompatibility, setHouseholdLandline, setHouseholdIphone, joinWaitingList, fetchActivationDevice, ApiError') &&
     devicePickerSource.includes('from "../../lib/api"'),
-  'device-picker.tsx imports setHouseholdLandline alongside the existing mobile-carrier check, plus (2026-09-19) setHouseholdIphone/joinWaitingList for the IOS_COMING_SOON flow'
+  // fetchActivationDevice added 2026-09-24 (landline positioning /
+  // complimentary-account onboarding fix) — the existing-landline
+  // carve-out and "confirm" mode both check the durable server record
+  // via this same endpoint the Account tab already used.
+  'device-picker.tsx imports setHouseholdLandline alongside the existing mobile-carrier check, plus (2026-09-19) setHouseholdIphone/joinWaitingList for the IOS_COMING_SOON flow, plus (2026-09-24) fetchActivationDevice'
 );
 
 const selectLandlineFnStart = devicePickerSource.indexOf('async function selectLandlineProvider(');

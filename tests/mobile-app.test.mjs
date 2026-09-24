@@ -337,6 +337,38 @@ function check(condition, message) {
     ) === 'confirming_delivery',
     'computeHomeProtectionState: once real backend evidence exists (activationVerifiedAt), hasCompletedActivationStep no longer matters — never overrides a stronger, already-proven state'
   );
+
+  // --- "delivery_problem" (2026-09-24, diagnostic instrumentation /
+  // protection-status wording improvement): a household that would
+  // otherwise be "protected" but whose most recent actual dial attempt
+  // genuinely failed (services/callRouting.js's hasRecentDeliveryProblem,
+  // computed server-side and passed through as
+  // protection.recentDeliveryProblem). Real case, 2026-09-24
+  // (p_deane@sky.com). ---
+  check(
+    computeHomeProtectionState({
+      protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: true, deliveryReady: true, fullyProtected: true, recentDeliveryProblem: true },
+    }) === 'delivery_problem',
+    'computeHomeProtectionState: fullyProtected true but recentDeliveryProblem true is "delivery_problem", not "protected" — a real, observed failure must be shown, not hidden behind historical evidence'
+  );
+  check(
+    computeHomeProtectionState({
+      protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: true, deliveryReady: true, fullyProtected: true, recentDeliveryProblem: false },
+    }) === 'protected',
+    'computeHomeProtectionState: fullyProtected true and recentDeliveryProblem false is "protected" as before — no regression when there is no real, observed failure'
+  );
+  check(
+    computeHomeProtectionState({
+      protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: true, deliveryReady: true, fullyProtected: true },
+    }) === 'protected',
+    'computeHomeProtectionState: omitting recentDeliveryProblem entirely (exactly as every pre-existing test above does) is treated as false — no regression for any existing caller/test'
+  );
+  check(
+    computeHomeProtectionState({
+      protection: { activationVerifiedAt: '2026-07-31T00:00:00Z', endToEndDeliveryVerified: false, deliveryReady: true, fullyProtected: false, recentDeliveryProblem: true },
+    }) === 'confirming_delivery',
+    'computeHomeProtectionState: recentDeliveryProblem never overrides a state that already correctly withholds "protected" for its own reason — only ever downgrades what would otherwise have been "protected"'
+  );
 }
 
 // --- forwardingNumber (2026-09-12 physical-test finding): the customer
@@ -659,6 +691,37 @@ function check(condition, message) {
     'resumeSetupAt: hasCompletedActivationStep never overrides the earlier, more fundamental "zero contacts" check — contacts must still come first'
   );
 
+  // --- hasDeviceOnRecord (2026-09-24, complimentary/admin-account
+  // onboarding fix): real production case (p_deane@sky.com) — a
+  // household with genuine, evidenced protection (two real completed
+  // deliveries) whose entitlement was granted directly, never having
+  // passed through device-picker.tsx, leaving device_type/
+  // carrier_provider_key permanently null. ---
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: true, hasDeviceOnRecord: false }).screen === 'confirm-device',
+    'resumeSetupAt: a fully-proven household missing device/provider on record resumes at "confirm-device" — a support-information gap, never sent back to device-picker to redo real activation'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: true, hasDeviceOnRecord: true }).screen === 'complete',
+    'resumeSetupAt: hasDeviceOnRecord true reaches "complete" as before — no change for a normally-onboarded household'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: true }).screen === 'complete',
+    'resumeSetupAt: omitting hasDeviceOnRecord entirely (exactly as every pre-existing test above does) defaults to "on record" — no regression for any existing caller/test'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: false, hasCompletedActivationStep: true, hasDeviceOnRecord: false }).screen === 'confirm-device',
+    'resumeSetupAt: hasDeviceOnRecord false applies identically whether proven via isActivationProven or hasCompletedActivationStep — both mean "real activation is done"'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 3, isActivationProven: false, hasDeviceOnRecord: false }).screen === 'device-picker',
+    'resumeSetupAt: hasDeviceOnRecord never overrides the earlier, more fundamental "activation not proven at all" check — a genuinely new/unproven household still goes to device-picker, never "confirm-device" (which would wrongly imply setup is otherwise done)'
+  );
+  check(
+    resumeSetupAt({ isEntitled: true, contactCount: 0, isActivationProven: true, hasDeviceOnRecord: false }).screen === 'contacts',
+    'resumeSetupAt: hasDeviceOnRecord never overrides the "zero contacts" check either — contacts still comes first'
+  );
+
   check(
     stepIndexForScreen('subscribe') === 1 && stepIndexForScreen('contacts') === 2,
     'stepIndexForScreen: subscribe and contacts map to their own distinct macro-steps'
@@ -864,20 +927,53 @@ function check(condition, message) {
   );
 
   check(
-    voiceClientSource.includes('import { fetchVoiceToken, reportVoiceRegistered } from "./api"'),
-    'voiceClient.ts imports reportVoiceRegistered from lib/api.ts'
+    voiceClientSource.includes('reportVoiceRegistered, reportCallInviteReceived, reportCallInviteOutcome } from "./api"'),
+    // Diagnostic instrumentation (2026-09-24): the import line also now
+    // brings in reportCallInviteReceived/reportCallInviteOutcome — see
+    // the checks further below for those.
+    'voiceClient.ts imports reportVoiceRegistered (and the new call-invite telemetry functions) from lib/api.ts'
   );
 
   const registerCallIndex = voiceClientSource.indexOf('await voice.register(token);');
-  const reportCallIndex = voiceClientSource.indexOf('reportVoiceRegistered(accessToken)');
+  const reportCallIndex = voiceClientSource.indexOf('reportVoiceRegistered(accessToken, {');
   check(
     registerCallIndex !== -1 && reportCallIndex !== -1 && registerCallIndex < reportCallIndex,
     'reportVoiceRegistered is called after voice.register(token) resolves, not before — only a genuine successful registration is ever reported'
   );
 
   check(
-    voiceClientSource.includes('reportVoiceRegistered(accessToken).catch((err) => {'),
+    voiceClientSource.includes('reportVoiceRegistered(accessToken, {') &&
+      voiceClientSource.includes('}).catch((err) => {\n    console.error("VOICE REGISTERED REPORT FAILED:", err);\n  });'),
     'reportVoiceRegistered is fire-and-forget (caught, not awaited into the main try/catch) — a reporting failure can never undo or delay the real registration voice.register() already achieved'
+  );
+
+  // Diagnostic instrumentation (2026-09-24) — app version/build reporting.
+  check(
+    voiceClientSource.includes('import * as Application from "expo-application"') &&
+      voiceClientSource.includes('const APP_VERSION = Application.nativeApplicationVersion') &&
+      voiceClientSource.includes('const APP_BUILD_VERSION = Application.nativeBuildVersion') &&
+      voiceClientSource.includes('appVersion: APP_VERSION') &&
+      voiceClientSource.includes('appBuildVersion: APP_BUILD_VERSION'),
+    'app version/build (from expo-application) is read once at module load and sent alongside every registration report'
+  );
+
+  // Diagnostic instrumentation (2026-09-24) — CallInvite lifecycle
+  // telemetry: reported fire-and-forget, authenticated (never the
+  // existing unauthenticated /debug/voice-beacon pattern this same file
+  // also has, left untouched).
+  check(
+    voiceClientSource.includes('reportCallInviteReceived(callSid).catch((err) => {'),
+    'a CallInvite received event is reported fire-and-forget the moment one arrives — the closest available proxy for "the push notification was actually delivered"'
+  );
+  check(
+    voiceClientSource.includes("reportCallInviteOutcome(callSid, \"accepted\").catch(() => {});") &&
+      voiceClientSource.includes("reportCallInviteOutcome(callSid, \"rejected\").catch(() => {});") &&
+      voiceClientSource.includes("reportCallInviteOutcome(callSid, \"cancelled\").catch(() => {});"),
+    'Accepted/Rejected/Cancelled outcomes are each reported — able to distinguish a genuine customer action from a call that was never resolved at all'
+  );
+  check(
+    !voiceClientSource.includes('reportCallInviteReceived(callSid, undefined'),
+    'call-invite telemetry relies on authorizedFetch\'s own session fallback rather than threading a token through the module-level CallInvite listener (which has none available)'
   );
 
   check(
@@ -936,7 +1032,13 @@ function check(condition, message) {
   // registered inside a CallInvite.Event.Accepted listener — never called
   // directly from the top-level CallInvite handler or from
   // selectSpeakerForRinging's own ringing-time code path.
-  const acceptedListenerIndex = voiceClientSource.indexOf('callInvite.on(CallInvite.Event.Accepted');
+  // Diagnostic instrumentation (2026-09-24) added a SECOND, earlier,
+  // platform-agnostic callInvite.on(CallInvite.Event.Accepted, ...)
+  // listener purely for telemetry (see the checks above) — lastIndexOf
+  // here specifically locates the original, Android-gated one that wires
+  // Call.Event.Connected -> selectEarpieceForConnectedCall, which is what
+  // these three checks are actually about.
+  const acceptedListenerIndex = voiceClientSource.lastIndexOf('callInvite.on(CallInvite.Event.Accepted');
   const connectedListenerIndex = voiceClientSource.indexOf('call.on(Call.Event.Connected');
   const earpieceCallIndex = voiceClientSource.indexOf('selectEarpieceForConnectedCall();');
   check(

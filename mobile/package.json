@@ -8,6 +8,7 @@
     "@supabase/supabase-js": "^2.111.0",
     "@twilio/voice-react-native-sdk": "^2.0.0-preview.2",
     "expo": "^54.0.0",
+    "expo-application": "~7.0.8",
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-contacts": "~15.0.11",

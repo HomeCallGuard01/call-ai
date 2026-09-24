@@ -354,7 +354,12 @@ function initialTab() {
 // ============================================================
 let lastBusinessData = null;
 let lastOperationsData = null;
-let showAllCustomers = false;
+// Dashboard simplification (2026-09-24): defaults to true (every
+// household, operational view) — the previous default (genuine/revenue
+// customers only) hid real, active accounts from the primary support
+// view purely because of their revenue classification. See
+// renderCustomersTab's own comment.
+let showAllCustomers = true;
 
 async function loadAll() {
   await Promise.all([loadBusinessOverview(), loadOperationsOverview()]);
@@ -629,6 +634,17 @@ function acquisitionSection(acquisition) {
 // visible per row — nothing is deleted or reclassified to produce
 // either view.
 // ============================================================
+// Dashboard simplification (2026-09-24) — found missing while diagnosing
+// a real production household: revenue classification and operational/
+// support visibility are separate concepts, and the default view must be
+// the operational one (every household, easy to find and diagnose), not
+// the revenue-filtered one. An admin_manual/complimentary household is
+// correctly excluded from the Business tab's genuine-customer revenue
+// KPIs (unchanged, untouched by this) but must never be hard-to-find
+// here just because of that classification — classification is now a
+// small badge on every row, not a row-hiding filter. The toggle is kept,
+// inverted: the secondary "revenue view" filters TO genuine customers
+// only, for when that specific subset is wanted.
 const CUSTOMER_MEMBERSHIP_LABELS = {
   active: { label: "Active", className: "good" },
   trial: { label: "Trial", className: "good" },
@@ -637,36 +653,65 @@ const CUSTOMER_MEMBERSHIP_LABELS = {
   inactive: { label: "Inactive", className: "bad" },
   none: { label: "No entitlement", className: "" },
 };
-const CUSTOMER_PROVISIONING_CLASSNAMES = { active: "good", pending: "", failed: "bad" };
 
-function customerRow(c, showClassification) {
-  const membership = CUSTOMER_MEMBERSHIP_LABELS[c.membershipStatus] || { label: c.membershipStatus, className: "" };
-  const provisioningClassName = CUSTOMER_PROVISIONING_CLASSNAMES[c.provisioningStatus] || "";
+// Same protection-state derivation the mobile app's lib/homeStatus.ts
+// uses (computeHomeProtectionState), kept in sync deliberately rather
+// than shared (this is plain browser JS, no build step to import a
+// mobile TS module from) — never a separate/weaker admin definition of
+// "protected".
+function protectionLabel(c) {
+  const p = c.protectionStatus;
+  if (!p) return { label: 'Unknown', className: '' };
+  if (!p.forwardingVerified && !p.endToEndDeliveryVerified) {
+    return c.hasDeviceOnRecord === false && c.membershipStatus !== 'none'
+      ? { label: 'Setting up', className: '' }
+      : { label: 'Setting up', className: '' };
+  }
+  if (p.fullyProtected) {
+    return c.recentCallProblem
+      ? { label: 'Protected — recent call problem', className: 'warn' }
+      : { label: 'Protected', className: 'good' };
+  }
+  if (!p.endToEndDeliveryVerified) return { label: 'Confirming delivery', className: '' };
+  return { label: 'Reconnecting', className: 'warn' };
+}
+
+function customerRow(c) {
+  const membership = CUSTOMER_MEMBERSHIP_LABELS[c.membershipStatus] || { label: c.membershipStatus, className: '' };
+  const protection = protectionLabel(c);
+  const mobileLabel = c.deviceType
+    ? c.deviceType + (c.carrierProviderKey ? ' · ' + c.carrierProviderKey : '')
+    : (c.hasDeviceOnRecord === false ? 'Not on record' : '—');
+  const lastConfirmed = c.lastConfirmedProtectedAt ? new Date(c.lastConfirmedProtectedAt).toLocaleDateString('en-GB') : '—';
+  const appVersion = c.appVersion ? c.appVersion + (c.appBuildVersion ? ' (' + c.appBuildVersion + ')' : '') : '—';
+  const callOutcome = c.recentCallOutcome
+    ? '<span class="status-pill ' + (c.recentCallOutcome === 'completed' ? 'good' : 'warn') + '">' + c.recentCallOutcome + '</span>'
+    : '<span class="status-pill">No recent call</span>';
   return '<tr>' +
-    '<td>' + new Date(c.signedUpAt).toLocaleString('en-GB') + '</td>' +
-    '<td>' + c.email + '</td>' +
+    '<td>' + c.email + '<br><span class="status-pill classification">' + c.classification + '</span></td>' +
     '<td><span class="status-pill ' + membership.className + '">' + membership.label + '</span></td>' +
-    '<td><span class="status-pill ' + (c.activationStatus === 'verified' ? 'good' : '') + '">' + (c.activationStatus === 'verified' ? 'Verified' : 'Not yet verified') + '</span></td>' +
-    '<td><span class="status-pill ' + provisioningClassName + '">' + c.provisioningStatus + '</span></td>' +
-    (showClassification ? '<td><span class="status-pill classification">' + c.classification + '</span></td>' : '') +
+    '<td><span class="status-pill ' + protection.className + '">' + protection.label + '</span></td>' +
+    '<td>' + mobileLabel + (c.hasDeviceOnRecord === false ? ' <span class="status-pill warn">needs confirming</span>' : '') + '</td>' +
+    '<td>' + lastConfirmed + '</td>' +
+    '<td>' + appVersion + '</td>' +
+    '<td>' + callOutcome + '</td>' +
     '</tr>';
 }
 
-function customerTable(list, showClassification) {
+function customerTable(list) {
   if (!list || list.length === 0) {
-    return '<div class="empty-state">' + (showClassification ? 'No accounts recorded yet.' : 'No genuine customers yet — Home Call Guard has not yet acquired any genuine external customers. All historical activity is internal/test — see "Show all (diagnostics)".') + '</div>';
+    return '<div class="empty-state">No accounts recorded yet.</div>';
   }
-  const rows = list.map((c) => customerRow(c, showClassification)).join('');
+  const rows = list.map(customerRow).join('');
   return '<div class="customer-table-wrap"><table class="customer-table"><thead><tr>' +
-    '<th>Signed up</th><th>Email</th><th>Membership / payment</th><th>Activation</th><th>Provisioning</th>' +
-    (showClassification ? '<th>Classification</th>' : '') +
+    '<th>Customer</th><th>Subscription</th><th>Protection</th><th>Mobile / provider</th><th>Last confirmed</th><th>App version</th><th>Recent call</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
 function renderCustomersTab(d) {
   const list = d.customers.recentList;
-  let html = '<div class="section"><div class="section-header"><h2>Customers ' + (showAllCustomers ? '' : tag('confirmed')) + '</h2>' +
-    '<button type="button" class="action-button" onclick="toggleCustomerDiagnostics()">' + (showAllCustomers ? 'Show genuine customers only' : 'Show all (diagnostics)') + '</button>' +
+  let html = '<div class="section"><div class="section-header"><h2>Customers</h2>' +
+    '<button type="button" class="action-button" onclick="toggleCustomerDiagnostics()">' + (showAllCustomers ? 'Show revenue customers only' : 'Show all customers') + '</button>' +
     '</div>';
 
   if (!list || !list.available) {
@@ -676,11 +721,11 @@ function renderCustomersTab(d) {
   }
 
   if (showAllCustomers) {
-    html += '<p class="sub" style="margin-bottom:14px;">Every historical account — internal/test/admin/reviewer/QA/anonymised/unclassified — stored but hidden from the normal customer view. Nothing here has been deleted or reclassified.</p>';
-    html += customerTable(list.all, true);
+    html += '<p class="sub" style="margin-bottom:14px;">Every account, regardless of classification — the working view for support/diagnosis. Classification badge shown per row; nothing here has been deleted or reclassified.</p>';
+    html += customerTable(list.all);
   } else {
-    html += '<p class="sub" style="margin-bottom:14px;">Genuine external customers only. An unclassified or internal/test/admin/reviewer/QA account is never shown here by default.</p>';
-    html += customerTable(list.genuine, false);
+    html += '<p class="sub" style="margin-bottom:14px;">Genuine, paying external customers only — for revenue figures. See the Business tab for the confirmed-revenue headline numbers this matches.</p>';
+    html += customerTable(list.genuine);
   }
   html += '</div>';
   document.getElementById('customers').innerHTML = html;

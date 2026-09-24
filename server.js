@@ -533,6 +533,14 @@ async function recordMonitoringOutcome({
 // APP_DECISION_008's 2026-09-07 refinement). Fails open: never throws,
 // never affects the TwiML response already being returned to Twilio for
 // this request.
+//
+// dial_call_status (migration 044, 2026-09-24): persists the raw
+// dialCallStatus value itself alongside duration_seconds — diagnostic
+// gap found tracing a real production failure: this value was already
+// received here, used only for a transient console.error/email alert,
+// then discarded, leaving duration_seconds (0 for any non-"completed"
+// outcome) as the only queryable signal — unable to distinguish
+// "no-answer" from "failed" from "busy" from "canceled" after the fact.
 async function recordApprovedCallDeliveryOutcome(callSid, dialCallStatus, durationSeconds) {
   if (!supabaseAdmin) {
     console.error("SUPABASE CALL DURATION ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
@@ -541,7 +549,7 @@ async function recordApprovedCallDeliveryOutcome(callSid, dialCallStatus, durati
 
   const { data, error } = await supabaseAdmin
     .from("calls")
-    .update({ duration_seconds: durationSeconds })
+    .update({ duration_seconds: durationSeconds, dial_call_status: dialCallStatus || null })
     .eq("call_sid", callSid)
     .select("household_id")
     .maybeSingle();

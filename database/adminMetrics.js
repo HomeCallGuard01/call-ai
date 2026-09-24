@@ -106,12 +106,28 @@ function latestRowPerHousehold(rows) {
 // subscriptions are fetched scoped to just this batch of household IDs
 // (not the whole table, unlike the platform-wide breakdown functions
 // above) since only these households' latest rows are needed here.
+// Dashboard simplification (2026-09-24) — the operational customer view
+// found missing while diagnosing a real production household (Paul):
+// this is the SAME household list every admin household action already
+// works from, now carrying the fields needed to answer "is this person a
+// customer, are they paying, are they protected, is their phone
+// connected, are calls working, is there a problem" without visiting
+// three different tabs. protectionStatus reuses services/callRouting.js's
+// computeProtectionStatus — the exact same definition the customer-facing
+// app itself uses, never a separate/weaker admin-only one. recentDialOutcome
+// is a bounded N+1 (one row per household, capped at `limit`) — an
+// admin-triggered, low-frequency list, not a customer-facing hot path,
+// same tradeoff already accepted for buildProtectionEvidence's own
+// entitlement lookup.
 async function getRecentCustomers(limit = 20) {
   if (!supabaseAdmin) return [];
 
   const { data: households, error: hErr } = await supabaseAdmin
     .from("households")
-    .select("id, email, created_at, twilio_provisioning_status, activation_verified_at")
+    .select(
+      "id, email, created_at, twilio_provisioning_status, activation_verified_at, voice_client_registered_at, " +
+        "delivery_verified_at, device_type, carrier_provider_key, app_version, app_build_version, app_platform"
+    )
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -123,7 +139,11 @@ async function getRecentCustomers(limit = 20) {
   const householdIds = (households || []).map(h => h.id);
   if (householdIds.length === 0) return [];
 
-  const [{ data: entitlements, error: eErr }, { data: subscriptions, error: sErr }] = await Promise.all([
+  const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
+  const { getMostRecentDialOutcome } = require("./calls");
+  const now = new Date();
+
+  const [{ data: entitlements, error: eErr }, { data: subscriptions, error: sErr }, dialOutcomes] = await Promise.all([
     supabaseAdmin
       .from("entitlements")
       .select("household_id, entitlement_type, status, updated_at")
@@ -132,6 +152,7 @@ async function getRecentCustomers(limit = 20) {
       .from("subscriptions")
       .select("household_id, status, cancel_at_period_end, updated_at")
       .in("household_id", householdIds),
+    Promise.all(households.map(h => getMostRecentDialOutcome(h.id))),
   ]);
 
   if (eErr) console.error("ADMIN METRICS: RECENT CUSTOMERS ENTITLEMENTS READ ERROR:", eErr.message);
@@ -140,17 +161,36 @@ async function getRecentCustomers(limit = 20) {
   const latestEntitlementByHousehold = latestRowPerHousehold(entitlements || []);
   const latestSubscriptionByHousehold = latestRowPerHousehold(subscriptions || []);
 
-  return households.map(h => ({
-    householdId: h.id,
-    email: h.email,
-    signedUpAt: h.created_at,
-    membershipStatus: deriveMembershipStatus(
-      latestEntitlementByHousehold.get(h.id),
-      latestSubscriptionByHousehold.get(h.id)
-    ),
-    activationStatus: h.activation_verified_at ? "verified" : "not_verified",
-    provisioningStatus: h.twilio_provisioning_status,
-  }));
+  return households.map((h, i) => {
+    const protection = computeProtectionStatus(h, now);
+    const dialOutcome = dialOutcomes[i];
+    return {
+      householdId: h.id,
+      email: h.email,
+      signedUpAt: h.created_at,
+      membershipStatus: deriveMembershipStatus(
+        latestEntitlementByHousehold.get(h.id),
+        latestSubscriptionByHousehold.get(h.id)
+      ),
+      // Kept for backward compatibility with any existing caller reading
+      // this field directly — activation_verified_at alone. Prefer
+      // protectionStatus.fullyProtected for anything new; see this
+      // function's own header for why.
+      activationStatus: h.activation_verified_at ? "verified" : "not_verified",
+      provisioningStatus: h.twilio_provisioning_status,
+      protectionStatus: protection,
+      deviceType: h.device_type || null,
+      carrierProviderKey: h.carrier_provider_key || null,
+      hasDeviceOnRecord: !!h.device_type,
+      lastConfirmedProtectedAt: [h.activation_verified_at, h.delivery_verified_at].filter(Boolean).sort().pop() || null,
+      appVersion: h.app_version || null,
+      appBuildVersion: h.app_build_version || null,
+      appPlatform: h.app_platform || null,
+      recentCallProblem: hasRecentDeliveryProblem(dialOutcome, h.delivery_verified_at),
+      recentCallOutcome: dialOutcome ? dialOutcome.dial_call_status : null,
+      recentCallAt: dialOutcome ? dialOutcome.created_at : null,
+    };
+  });
 }
 
 async function getRecentCallsAcrossHouseholds(limit = 20) {

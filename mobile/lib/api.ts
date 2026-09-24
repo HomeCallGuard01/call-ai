@@ -380,9 +380,43 @@ export async function fetchVoiceToken(accessToken?: string): Promise<VoiceTokenR
 // matching fetchVoiceToken's own pattern right above — the caller
 // already has a known-good session token in hand from the same
 // registration flow.
-export async function reportVoiceRegistered(accessToken?: string): Promise<VoiceRegisteredResponse> {
-  const response = await authorizedFetch("/api/v1/voice/registered", { method: "POST" }, accessToken);
+// Diagnostic instrumentation (2026-09-24, migration 045): appInfo is
+// optional and entirely best-effort — omitting it (or any of its fields)
+// behaves exactly as before this change, matching
+// routes/mobileApi.js's own optional handling of it server-side.
+export async function reportVoiceRegistered(
+  accessToken?: string,
+  appInfo?: { appVersion?: string | null; appBuildVersion?: string | null; appPlatform?: string | null }
+): Promise<VoiceRegisteredResponse> {
+  const response = await authorizedFetch(
+    "/api/v1/voice/registered",
+    { method: "POST", body: JSON.stringify(appInfo || {}) },
+    accessToken
+  );
   return parseJsonOrThrow<VoiceRegisteredResponse>(response, true);
+}
+
+// Diagnostic instrumentation (2026-09-24, migration 045) — both
+// fire-and-forget from mobile/lib/voiceClient.ts's CallInvite lifecycle
+// listeners, same established pattern as reportVoiceRegistered: never
+// awaited into the real registration/call-handling flow, a reporting
+// failure can never affect it.
+export async function reportCallInviteReceived(callSid: string, accessToken?: string): Promise<void> {
+  await authorizedFetch(
+    "/api/v1/voice/call-invite-received",
+    { method: "POST", body: JSON.stringify({ callSid }) },
+    accessToken
+  );
+}
+
+export type CallInviteOutcome = "accepted" | "rejected" | "cancelled";
+
+export async function reportCallInviteOutcome(callSid: string, outcome: CallInviteOutcome, accessToken?: string): Promise<void> {
+  await authorizedFetch(
+    "/api/v1/voice/call-invite-outcome",
+    { method: "POST", body: JSON.stringify({ callSid, outcome }) },
+    accessToken
+  );
 }
 
 export async function verifyActivation(accessToken?: string): Promise<ActivationVerifyResponse> {

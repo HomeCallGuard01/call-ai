@@ -9,7 +9,7 @@ import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
-import { fetchDashboard, NotEntitledError } from "../../lib/api";
+import { fetchDashboard, fetchActivationDevice, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import { hasProvenActivation } from "../../lib/homeStatus";
@@ -20,6 +20,7 @@ const RESUME_ROUTE: Record<string, string> = {
   subscribe: "/(setup)/subscribe",
   contacts: "/(setup)/contacts",
   "device-picker": "/(setup)/device-picker",
+  "confirm-device": "/(setup)/device-picker?confirm=1",
   complete: "/(setup)/complete",
 };
 
@@ -35,14 +36,28 @@ export default function SetupWelcome() {
     // customer who has completed activation but isn't verified yet
     // resumes at "complete", not back at device-picker — see
     // resumeSetupAt's own comment for the bug this fixes.
-    Promise.all([fetchDashboard(session?.access_token), loadSetupCompletedAt()])
-      .then(([data, setupCompletedAt]) => {
+    //
+    // Complimentary/admin-account onboarding fix (2026-09-24): also
+    // checks the durable server record for device/provider
+    // (fetchActivationDevice — the same endpoint the Account tab's "Turn
+    // off protection" screen already uses) — a household whose
+    // entitlement was granted directly can be genuinely, evidence-based
+    // protected while still missing this support information. A failure
+    // here fails open (assumes on-record) rather than ever blocking
+    // access to an already-working account on a non-critical read.
+    Promise.all([
+      fetchDashboard(session?.access_token),
+      loadSetupCompletedAt(),
+      fetchActivationDevice(session?.access_token).then(d => !!d.deviceType).catch(() => true),
+    ])
+      .then(([data, setupCompletedAt, hasDeviceOnRecord]) => {
         if (!isMounted) return;
         const target = resumeSetupAt({
           isEntitled: true,
           contactCount: data.contacts.length,
           isActivationProven: hasProvenActivation(data),
           hasCompletedActivationStep: !!setupCompletedAt,
+          hasDeviceOnRecord,
         });
         if (target.screen === "subscribe") {
           // Shouldn't happen (fetchDashboard succeeded, so entitlement

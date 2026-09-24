@@ -177,38 +177,45 @@ check(
 check(componentSource.includes('LANDLINE_COMING_SOON_TITLE') && componentSource.includes('LANDLINE_COMING_SOON_BODY'), 'the shared LandlineComingSoon component renders the single source of Coming-soon copy');
 
 // ============================================================
-// 4. Device picker (onboarding)
+// 4. Device picker (onboarding) — landline positioning (2026-09-24):
+// mirrors the website's own "position HCG as mobile-only; remove
+// landline sign-up routes" decision. Landline is no longer a selectable
+// card for a NEW customer at all (no "coming soon" gate needed — there
+// is nothing left to gate); an existing household whose device_type is
+// already "landline" is detected via the same GET /api/v1/me/
+// activation-device endpoint the Account tab already uses, and routed
+// straight to the existing landline-provider flow untouched. The
+// backend's own fail-closed landline block is unrelated and unchanged.
 // ============================================================
 check(
-  pickerSource.includes('from "../../lib/landlineFlag"') && pickerSource.includes('const landlineComingSoon = useLandlineComingSoon();'),
-  'device picker: driven by the shared server-flag state'
+  !pickerSource.includes('{ type: "landline",') && !pickerSource.includes('LANDLINE_CARD_LABEL_AVAILABLE') && !pickerSource.includes('LANDLINE_CARD_LABEL_COMING_SOON'),
+  'device picker: the Landline card no longer exists at all — not kept-and-relabelled, genuinely removed for new customers'
 );
 check(
-  pickerSource.includes('{ type: "landline", label: LANDLINE_CARD_LABEL_AVAILABLE, icon: "call" }') &&
-    pickerSource.includes('option.type === "landline" && landlineComingSoon ? { ...option, label: LANDLINE_CARD_LABEL_COMING_SOON } : option') &&
-    pickerSource.includes('{deviceOptions.map('),
-  'device picker: the Landline card is KEPT (same "call" glyph) and marked "— Coming soon" whenever the flag is on — including while the answer is still unknown'
+  pickerSource.includes("Text style={styles.landlineNote}") && pickerSource.includes('exploring landline protection for the future') &&
+    !/join.*waiting list/i.test(pickerSource.match(/landlineNote[\s\S]{0,300}/)?.[0] || ''),
+  'device picker: one restrained informational line replaces the card — no CTA, no waiting list, no timeline'
 );
 
 const selectDeviceBody = slice(pickerSource, 'function selectDevice(type: DeviceType) {', '\n  }\n');
 check(
-  selectDeviceBody.includes('setStep(isLandlineComingSoon("landline") ? { name: "landline-coming-soon" } : { name: "landline-provider" });'),
-  'selecting Landline routes to the dead-end "landline-coming-soon" step (the provider list is only reachable if the server opens landline)'
-);
-check(!slice(selectDeviceBody, 'if (type === "landline") {', 'if (type === "iphone") {').includes('setHouseholdLandline'), 'selecting the Landline card writes nothing server-side');
-
-const selectLandlineBody = slice(pickerSource, 'async function selectLandlineProvider(', '\n  }\n');
-const guardIdx = selectLandlineBody.indexOf('if (isLandlineComingSoon("landline")) {');
-check(
-  guardIdx !== -1 && guardIdx < selectLandlineBody.indexOf('setHouseholdLandline(') && guardIdx < selectLandlineBody.indexOf('router.push("/(setup)/subscribe")') && selectLandlineBody.slice(guardIdx).includes('return;'),
-  'defence in depth: selectLandlineProvider returns to Coming soon BEFORE persisting the provider or navigating to Subscribe'
+  !selectDeviceBody.includes('landline') && !selectDeviceBody.includes('"landline"'),
+  'selecting a device can no longer branch on "landline" at all — the card that selected it is gone'
 );
 
-const comingSoonBranch = slice(pickerSource, 'if (step.name === "landline-coming-soon") {', 'if (step.name === "landline-provider-unsupported") {');
-check(comingSoonBranch.includes('<LandlineComingSoon'), 'the landline-coming-soon step renders the shared Coming-soon content');
 check(
-  !/setHouseholdLandline|router\.push|submitWaitingList|joinWaitingList|TextInput/.test(comingSoonBranch) && comingSoonBranch.includes('setStep({ name: "device" })'),
-  'the landline-coming-soon step has no payment/setup path (no provider save, no navigation onward, no form) — its only exits lead back to the device choice'
+  pickerSource.includes('fetchActivationDevice(session?.access_token)') &&
+    pickerSource.includes('result.deviceType === "landline" ? { name: "existing-landline" } : { name: "device" }'),
+  'device picker: on arrival, checks the durable server record (not the coming-soon flag) for an EXISTING landline household, via the same endpoint the Account tab already uses'
+);
+check(
+  pickerSource.includes('if (step.name === "existing-landline")') &&
+    slice(pickerSource, 'if (step.name === "existing-landline") {', 'PrimaryButton').includes('This account is set up for a landline'),
+  'existing-landline households see a plain "already set up" continuation, not the mobile-only picker and not a new "coming soon" claim'
+);
+check(
+  slice(pickerSource, 'if (step.name === "existing-landline") {', '\n  }\n').includes('setStep({ name: "landline-provider" })'),
+  'the existing-landline carve-out continues into the same, untouched landline-provider flow — no separate/duplicated implementation'
 );
 
 check(
@@ -295,9 +302,12 @@ check(
 // ============================================================
 // 9. Help / FAQ / wording, and no stray landline mentions
 // ============================================================
+// Landline positioning (2026-09-24): matches the website's own restrained
+// wording — no "coming soon"/timeline claim any more.
 check(
-  /question: "Does Home Call Guard work on a landline\?",\s*answer: "Not yet — landline support is coming soon\./.test(supportSource),
-  'Support FAQ answers the landline question honestly: not yet, coming soon'
+  supportSource.includes('Home Call Guard currently protects compatible mobile phones. We\'re exploring landline protection for the future.') &&
+    !/coming soon/i.test(supportSource.match(/question: "Does Home Call Guard work on a landline\?"[\s\S]{0,300}/)?.[0] || ''),
+  'Support FAQ: restrained "exploring for the future" wording, no "coming soon"/timeline claim'
 );
 check(!/Sky and Virgin|Call Divert add-on/.test(verifySource), 'Verify screen no longer shows Sky/Virgin landline Call Divert troubleshooting to everyone');
 check(!/home phone/i.test(homeSource), 'Home "Not protected yet" text no longer says "home phone" (which implied a landline)');
@@ -313,10 +323,20 @@ function walk(dir) {
 const screensAndComponents = [...walk(path.join(mobileRoot, 'app')), ...walk(path.join(mobileRoot, 'components'))];
 const unexpected = screensAndComponents.filter((f) => /landline/i.test(readFileSync(f, 'utf8')) && !ALLOWED_LANDLINE_MENTIONS.has(path.basename(f)));
 check(unexpected.length === 0, `no other screen or component mentions landline outside the gated set${unexpected.length ? ' — found: ' + unexpected.map((f) => path.basename(f)).join(', ') : ''}`);
-for (const f of ['device-picker.tsx', 'subscribe.tsx', 'activate.tsx', 'set-up-call-forwarding.tsx']) {
+// device-picker.tsx deliberately excluded (2026-09-24): it no longer
+// gates on the coming-soon flag at all — landline isn't offered to new
+// customers regardless of the flag's answer, so there is nothing left
+// for it to be "wired to". The other three screens still handle an
+// EXISTING landline household (device_type already "landline") and are
+// completely unchanged by the landline-positioning work.
+for (const f of ['subscribe.tsx', 'activate.tsx', 'set-up-call-forwarding.tsx']) {
   const src = screensAndComponents.find((x) => path.basename(x) === f);
   check(src && readFileSync(src, 'utf8').includes('landlineFlag'), `${f} is wired to the shared landline flag state`);
 }
+check(
+  !readFileSync(screensAndComponents.find((x) => path.basename(x) === 'device-picker.tsx'), 'utf8').includes('landlineFlag'),
+  'device-picker.tsx: deliberately no longer wired to the coming-soon flag — landline is not offered to new customers regardless of its answer'
+);
 
 // ============================================================
 // 10. Wiring

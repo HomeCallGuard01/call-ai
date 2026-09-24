@@ -37,7 +37,10 @@ const FAQ_ITEMS = [
   },
   {
     question: "Does Home Call Guard work on a landline?",
-    answer: "Not yet — landline support is coming soon. Home Call Guard is currently available for Android phones.",
+    // Landline positioning (2026-09-24): matches the website's own
+    // restrained wording exactly — no availability-date claim, no
+    // timeline, no promise about landline support.
+    answer: "Home Call Guard currently protects compatible mobile phones. We're exploring landline protection for the future.",
   },
   {
     question: "What if I need help?",

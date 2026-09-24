@@ -31,6 +31,7 @@ const {
   decideCallDeliveryPlan,
   hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
+  hasRecentDeliveryProblem,
 } = require('../services/callRouting.js');
 
 let failures = 0;
@@ -327,6 +328,41 @@ const householdB = { id: 'household-b', phone_number: '+442222222222' };
   check(status.fullyProtected === false, 'household itself null: fullyProtected false rather than throwing');
   check(status.deliveryReady === false, 'household itself null: deliveryReady false rather than throwing');
 }
+
+// --- hasRecentDeliveryProblem (diagnostic instrumentation, 2026-09-24) ---
+// Real production case this closes: p_deane@sky.com's 16:20 UTC call on
+// 2026-09-24 reached HCG, a real <Dial><Client> was attempted, and it
+// resulted in duration_seconds: 0 with no dial_call_status persisted at
+// all at the time — this is exactly the gap migration 044 closes.
+
+check(
+  hasRecentDeliveryProblem(null, null) === false,
+  'no dial attempt on record at all: never a problem (nothing to compare — e.g. a household that has never received a call)'
+);
+check(
+  hasRecentDeliveryProblem({ dial_call_status: null, created_at: '2026-09-24T16:00:00Z' }, null) === false,
+  'a call row exists but no dial was ever attempted (dial_call_status null — e.g. screened out, or routed to self-protecting-unreachable without ever building a <Dial>): never a problem'
+);
+check(
+  hasRecentDeliveryProblem({ dial_call_status: 'completed', created_at: '2026-09-24T16:00:00Z' }, null) === false,
+  'the most recent dial attempt succeeded: never a problem, regardless of delivery_verified_at'
+);
+check(
+  hasRecentDeliveryProblem({ dial_call_status: 'no-answer', created_at: '2026-09-24T16:20:14Z' }, null) === true,
+  'a genuine failed dial attempt (no-answer) with no prior confirmed delivery at all: a real problem — real case, 2026-09-24 (p_deane@sky.com)'
+);
+check(
+  hasRecentDeliveryProblem({ dial_call_status: 'failed', created_at: '2026-09-24T16:20:14Z' }, '2026-09-19T14:54:28Z') === true,
+  'a genuine failed dial attempt more recent than the last confirmed success: a real problem, even though the household has worked before'
+);
+check(
+  hasRecentDeliveryProblem({ dial_call_status: 'no-answer', created_at: '2026-09-18T10:00:00Z' }, '2026-09-19T14:54:28Z') === false,
+  'a failed dial attempt OLDER than the last confirmed success: not a current problem — a later success supersedes an earlier failure'
+);
+check(
+  hasRecentDeliveryProblem({ dial_call_status: 'busy', created_at: 'not-a-real-date' }, '2026-09-19T14:54:28Z') === true,
+  'an unparseable timestamp fails closed (treated as a problem) rather than silently hiding a genuine failure behind a NaN comparison'
+);
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;
