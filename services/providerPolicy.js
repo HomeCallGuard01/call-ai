@@ -70,13 +70,34 @@ const PROVIDER_POLICY = {
   // and deliberately left unresolved here rather than picking one, per
   // "unknown evidence must remain unverified, not promoted to a
   // confident production rule."
+  // Reclassified 2026-09-24 (real customer failure — see session record):
+  // giffgaff's own CURRENT official Help Center article
+  // (help.giffgaff.com/en/articles/240687-how-to-manage-call-forwarding-
+  // on-your-phone, fetched 2026-09-24) no longer documents the MMI dial
+  // code (*21*/**21*) for call forwarding at all — it instructs only the
+  // native phone-Settings method (Phone app > Settings > Calls > Call
+  // forwarding), for both iOS and Android. This does not prove the
+  // network-level MMI code has been withdrawn, but giffgaff itself has
+  // stopped telling customers to use it, which matches a broader,
+  // corroborated 2026 pattern (carriers dropping legacy USSD/MMI support
+  // as VoLTE rollout continues) rather than looking like an isolated
+  // device issue. Reclassified from 'compatible'/mmi to
+  // 'provider_specific'/native_settings — an MMI code must never be
+  // shown, as an activation OR a fallback, for a carrier whose own
+  // current first-party guidance no longer supports it. Compatibility
+  // itself (forwarding genuinely works) remains established — giffgaff's
+  // own article plus the earlier real physical-device confirmation this
+  // policy already recorded — only the METHOD changed, not whether
+  // giffgaff is supported at all. Do not revert this to 'mmi' merely
+  // because an internet source states the code differently; this needs a
+  // real physical re-test on giffgaff specifically to move again.
   giffgaff: {
-    status: "compatible",
-    method: "mmi",
+    status: "provider_specific",
+    method: "native_settings",
     deactivationCode: null,
     deactivationConfidence: null,
     deactivationSource:
-      "two candidate codes reported (#21# and ##002#), neither first-party-confirmed for giffgaff specifically — genuinely unresolved, not guessed",
+      "giffgaff's current official guidance (help.giffgaff.com, fetched 2026-09-24) instructs using your phone's native call forwarding settings for both turning forwarding on and off — on Android: Phone app > Settings > Calls > Call forwarding, choose the 'Always forward'/unconditional option, and enter the number (or turn it off from the same screen).",
   },
   // EE's deactivation code was originally shipped as ##002# at "medium"
   // confidence on a cross-provider pattern-inference basis (O2/Vodafone/
@@ -343,6 +364,44 @@ function getMobileDeactivationInstructions(providerKey) {
   };
 }
 
+// Carrier-instruction correction (2026-09-24) — real gap found tracing a
+// production customer failure (giffgaff): this policy's `method` field
+// (mmi vs native_settings) was, until now, only ever consulted for
+// DEACTIVATION (getMobileDeactivationInstructions above) — ACTIVATION
+// instructions (services/activationInstructions.js's
+// buildActivationInstructions) unconditionally showed the universal
+// **21*<number># code to every mobile customer regardless of carrier or
+// method, meaning a carrier already marked 'native_settings' (Three, and
+// now giffgaff) never actually got native-Settings activation guidance —
+// only its deactivation guidance was ever correct. This is the missing
+// activation-side counterpart, mirroring getMobileDeactivationInstructions's
+// exact pattern and reasoning: never a fabricated MMI code for a carrier
+// this policy has positively determined doesn't reliably support it.
+//
+// carrier may be null/undefined — a household activated before carrier
+// capture existed, or one whose carrier genuinely isn't known. The
+// two-way compatibility gate (evaluateProviderCompatibility) already
+// ensures a customer can never reach Subscribe/activation at all on an
+// 'incompatible' or 'unverified' network, so by the time this function
+// is reached the carrier is always genuinely either 'compatible' or
+// 'provider_specific' with some method — the 'mmi' fallback below exists
+// only for that legacy no-carrier-captured case, matching the
+// long-standing universal-code behaviour those households already have.
+function getMobileActivationInstructions(providerKey) {
+  const policy = getProviderPolicy(providerKey);
+
+  if (policy.method === "native_settings") {
+    return {
+      method: "native_settings",
+      note:
+        policy.deactivationSource ||
+        "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) — an MMI code is not reliable on this network.",
+    };
+  }
+
+  return { method: "mmi", note: null };
+}
+
 // P0 Batch 1 continuation (2026-09-11): the missing "before payment" half
 // of this file — evaluateProviderCompatibility above existed already,
 // fully tested, but had zero callers anywhere in the app (see the
@@ -479,5 +538,6 @@ module.exports = {
   getCustomerFacingState,
   evaluateProviderCompatibility,
   getMobileDeactivationInstructions,
+  getMobileActivationInstructions,
   evaluateHouseholdCheckoutEligibility,
 };

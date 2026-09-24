@@ -1520,15 +1520,30 @@
 
         <div id="callForwardingInstructions" hidden>
           <p id="preliminaryCallNote" class="field-hint" hidden></p>
-          <p>On the phone you want Home Call Guard to protect, open the Phone keypad and enter the code below exactly as shown, then press Call.</p>
-          <div class="activation-code-row">
-            <span id="forwardingCode" class="forwarding-code"></span>
-            <button type="button" class="copy-code-button" id="copyCodeButton" hidden>Copy code</button>
+
+          <!-- Carrier-instruction correction (2026-09-24): a carrier
+               services/providerPolicy.js has positively determined
+               doesn't reliably support the MMI code (Three, giffgaff)
+               must never be shown one — this block and the native-
+               settings block below are mutually exclusive, toggled by
+               instructions.activationMethod in the script below. -->
+          <div id="callForwardingMmiBlock">
+            <p>On the phone you want Home Call Guard to protect, open the Phone keypad and enter the code below exactly as shown, then press Call.</p>
+            <div class="activation-code-row">
+              <span id="forwardingCode" class="forwarding-code"></span>
+              <button type="button" class="copy-code-button" id="copyCodeButton" hidden>Copy code</button>
+            </div>
+            <p id="copyCodeConfirmation" class="copy-confirmation" role="status" hidden>Copied.</p>
+            <p class="field-hint">This does not change your phone number — it only turns on call protection.</p>
+            <p class="field-hint">To turn protection off again later, dial:<br><span id="forwardingCancelCode" class="forwarding-code"></span></p>
           </div>
-          <p id="copyCodeConfirmation" class="copy-confirmation" role="status" hidden>Copied.</p>
-          <p class="field-hint">This does not change your phone number — it only turns on call protection.</p>
-          <p class="field-hint">To turn protection off again later, dial:<br><span id="forwardingCancelCode" class="forwarding-code"></span></p>
-          <p class="field-hint">Once you've entered the code and pressed Call, tap the button below.</p>
+
+          <div id="callForwardingNativeSettingsBlock" hidden>
+            <p id="nativeSettingsNote" class="field-hint"></p>
+            <p id="nativeSettingsCancelNote" class="field-hint"></p>
+          </div>
+
+          <p class="field-hint">Once you've done this, tap the button below.</p>
           <button type="button" id="verifyForwardingButton">I've done this — check now</button>
           <p id="verifyForwardingResult" class="field-hint" role="status" hidden></p>
         </div>
@@ -2438,9 +2453,32 @@
 
         const instructions = await res.json();
 
-        if (forwardingCodeEl) forwardingCodeEl.textContent = instructions.code;
-        if (forwardingCancelCodeEl) forwardingCancelCodeEl.textContent = instructions.cancelCode;
-        if (copyCodeButtonEl) copyCodeButtonEl.hidden = !navigator.clipboard;
+        // Carrier-instruction correction (2026-09-24): mirrors
+        // renderDeactivationResult's own established branching, applied
+        // here to activation for the first time — an MMI code must never
+        // be shown for a carrier whose method is native_settings.
+        const mmiBlockEl = document.getElementById("callForwardingMmiBlock");
+        const nativeSettingsBlockEl = document.getElementById("callForwardingNativeSettingsBlock");
+        const nativeSettingsNoteEl = document.getElementById("nativeSettingsNote");
+        const nativeSettingsCancelNoteEl = document.getElementById("nativeSettingsCancelNote");
+        const isNativeSettings = instructions.activationMethod === "native_settings";
+
+        if (mmiBlockEl) mmiBlockEl.hidden = isNativeSettings;
+        if (nativeSettingsBlockEl) nativeSettingsBlockEl.hidden = !isNativeSettings;
+
+        if (isNativeSettings) {
+          if (nativeSettingsNoteEl) {
+            nativeSettingsNoteEl.textContent = instructions.activationNote ||
+              "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this on — a dial code isn't reliable on this network.";
+          }
+          if (nativeSettingsCancelNoteEl) {
+            nativeSettingsCancelNoteEl.textContent = "To turn protection off again later, use the same settings screen.";
+          }
+        } else {
+          if (forwardingCodeEl) forwardingCodeEl.textContent = instructions.code;
+          if (forwardingCancelCodeEl) forwardingCancelCodeEl.textContent = instructions.cancelCode;
+        }
+        if (copyCodeButtonEl) copyCodeButtonEl.hidden = isNativeSettings || !navigator.clipboard;
         if (copyCodeConfirmationEl) copyCodeConfirmationEl.hidden = true;
 
         if (preliminaryCallNoteEl) {

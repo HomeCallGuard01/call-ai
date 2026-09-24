@@ -18,7 +18,7 @@
 // — see that route for why the general dashboard endpoints (GET
 // /api/v1/me/dashboard, the existing web /dashboard-data) continue to
 // exclude it entirely; this is the one narrow, purpose-built exception.
-const { getMobileDeactivationInstructions } = require("./providerPolicy");
+const { getMobileDeactivationInstructions, getMobileActivationInstructions } = require("./providerPolicy");
 
 const DEVICE_TYPES = new Set(["iphone", "android", "landline"]);
 const LANDLINE_PROVIDERS = new Set(["bt", "sky", "virgin", "talktalk", "plusnet", "other"]);
@@ -140,11 +140,25 @@ function buildDeactivationInstructions({ deviceType, provider, carrier }) {
 // Pure — directly unit-testable, no Supabase/Twilio/Express involved.
 // carrier is the mobile network key (services/providerPolicy.js's
 // PROVIDER_POLICY keys, e.g. 'o2', 'vodafone') — landline-only, ignored
-// for deviceType 'landline'. Optional: today no route/household field
-// actually captures it yet (P0 Batch 1 scope — carrier capture is a
-// deferred P1 mobile-screen item), so in practice every current call site
-// passes carrier as undefined and gets the honest "not confirmed"
-// fallback below, never a fabricated universal code.
+// for deviceType 'landline'. households.carrier_provider_key now
+// genuinely captures this for every mobile customer (P0 Batch 1's later
+// continuation) — callers should pass the household's own persisted
+// value as the single authoritative source, not a client-supplied one
+// (see routes/mobileApi.js and server.js's own activation-instructions
+// routes). carrier may still be undefined for a legacy household
+// activated before carrier capture existed at all — that case gets the
+// existing universal MMI code below, matching its own established
+// behaviour, never a guessed carrier-specific one.
+//
+// Native-Settings carriers (2026-09-24 correction — real production
+// failure, giffgaff): a carrier services/providerPolicy.js has
+// positively determined doesn't reliably support the MMI code (method:
+// 'native_settings' — Three, giffgaff) must never be shown that code at
+// all, for activation any more than for deactivation (see
+// getMobileActivationInstructions's own comment for why this branch was
+// missing until now). For deviceType 'landline' this never applies —
+// landline has no carrier/method concept at all, only the Virgin
+// leading-zero exception below.
 function buildActivationInstructions({ twilioNumber, deviceType, provider, carrier }) {
   if (!DEVICE_TYPES.has(deviceType)) {
     throw new Error(`buildActivationInstructions: invalid deviceType "${deviceType}"`);
@@ -152,6 +166,20 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider, carri
 
   if (deviceType === "landline" && !LANDLINE_PROVIDERS.has(provider)) {
     throw new Error(`buildActivationInstructions: invalid landline provider "${provider}"`);
+  }
+
+  const deactivation = buildDeactivationInstructions({ deviceType, provider, carrier });
+
+  if (deviceType !== "landline") {
+    const activation = getMobileActivationInstructions(carrier);
+    if (activation.method === "native_settings") {
+      return {
+        code: null,
+        activationMethod: "native_settings",
+        activationNote: activation.note,
+        ...deactivation,
+      };
+    }
   }
 
   const nationalNumber = toNationalDialingFormat(twilioNumber);
@@ -176,10 +204,10 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider, carri
   // negative.
   const code = `**21*${dialledNumber}#`;
 
-  const deactivation = buildDeactivationInstructions({ deviceType, provider, carrier });
-
   return {
     code,
+    activationMethod: "mmi",
+    activationNote: null,
     ...deactivation,
   };
 }

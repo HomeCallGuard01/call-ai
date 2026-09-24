@@ -1165,7 +1165,7 @@ app.post("/household/phone-number", requireAuth, requireEntitlement, express.jso
 // includes the bare number itself, only the fully-formed, ready-to-dial
 // code. /dashboard-data is completely unchanged by this addition.
 app.get("/activation-instructions", requireAuth, requireEntitlement, async (req, res) => {
-  const { deviceType, provider, protectedNumber, carrier } = req.query;
+  const { deviceType, provider, protectedNumber } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -1206,15 +1206,23 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, async (req,
   }
 
   try {
+    // Carrier-instruction correction (2026-09-24): resolved from the
+    // household's own persisted record (households.carrier_provider_key)
+    // — the single authoritative source — never a client-supplied query
+    // parameter. upload.html never actually sent one (confirmed), so
+    // this was silently always undefined regardless of the household's
+    // real carrier.
     const instructions = buildActivationInstructions({
       twilioNumber: req.household.twilio_number,
       deviceType,
       provider,
-      carrier: typeof carrier === "string" ? carrier : undefined,
+      carrier: req.household.carrier_provider_key || undefined,
     });
 
     res.json({
       code: instructions.code,
+      activationMethod: instructions.activationMethod,
+      activationNote: instructions.activationNote,
       cancelCode: instructions.cancelCode,
       cancelCodeMethod: instructions.cancelCodeMethod,
       cancelCodeConfidence: instructions.cancelCodeConfidence,
@@ -1246,7 +1254,7 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, async (req,
 // place) and never provisions/activates anything, so there is nothing
 // here that requires an active entitlement to see safely.
 app.get("/deactivation-instructions", requireAuth, async (req, res) => {
-  const { deviceType, provider, carrier } = req.query;
+  const { deviceType, provider } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -1263,10 +1271,16 @@ app.get("/deactivation-instructions", requireAuth, async (req, res) => {
   }
 
   try {
+    // Carrier-instruction correction (2026-09-24): resolved from the
+    // household's own persisted record, same as /activation-instructions
+    // above — requireAuth still populates req.household even without
+    // requireEntitlement, matching this route's own deliberate
+    // no-entitlement-gate design (an already-cancelled household must
+    // still see how to remove forwarding).
     const instructions = buildDeactivationInstructions({
       deviceType,
       provider,
-      carrier: typeof carrier === "string" ? carrier : undefined,
+      carrier: req.household.carrier_provider_key || undefined,
     });
 
     res.json({

@@ -167,9 +167,26 @@ export type LandlineProvider = "bt" | "sky" | "virgin" | "talktalk" | "plusnet" 
 // services/activationInstructions.js). Can also fail with 409
 // { error: "not_provisioned" } if the household's Twilio number isn't
 // assigned yet.
+// Carrier-instruction correction (2026-09-24) — real gap found: the
+// backend (routes/mobileApi.js) already returned cancelCodeMethod/
+// cancelCodeConfidence/cancelCodeNote, but this type never declared
+// them, so no screen could reference them without a type error — which
+// is exactly why turn-off-protection.tsx always rendered cancelCode
+// directly, blank/undefined for any native_settings carrier (Three, and
+// now giffgaff), rather than the method-appropriate guidance. code and
+// cancelCode are now both nullable: null specifically means
+// activationMethod/cancelCodeMethod is "native_settings" (or, for
+// cancelCode only, "unknown") — never render an empty/undefined code box
+// for either case; branch on the *Method field instead (see
+// activate.tsx and turn-off-protection.tsx).
 export interface ActivationInstructionsResponse {
-  code: string;
-  cancelCode: string;
+  code: string | null;
+  activationMethod: "mmi" | "native_settings";
+  activationNote: string | null;
+  cancelCode: string | null;
+  cancelCodeMethod: "mmi" | "native_settings" | "unknown";
+  cancelCodeConfidence: "high" | "medium" | null;
+  cancelCodeNote: string | null;
   requiresPreliminaryCall: boolean;
   preliminaryCallNumber: string | null;
   preliminaryCallNote: string | null;

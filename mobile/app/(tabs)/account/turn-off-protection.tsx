@@ -37,6 +37,14 @@ export default function TurnOffProtection() {
   const { session } = useAuth();
   const [state, setState] = useState<ScreenState>("loading");
   const [cancelCode, setCancelCode] = useState<string | null>(null);
+  // Carrier-instruction correction (2026-09-24) — real gap found: this
+  // screen always rendered cancelCode as if it were a dialable string,
+  // which is null for any native_settings carrier (Three, and now
+  // giffgaff) — customers on those networks saw a blank code box with no
+  // usable instruction at all. cancelCodeMethod/cancelCodeNote were
+  // already returned by the backend but never read here.
+  const [cancelCodeMethod, setCancelCodeMethod] = useState<"mmi" | "native_settings" | "unknown" | null>(null);
+  const [cancelCodeNote, setCancelCodeNote] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -48,6 +56,8 @@ export default function TurnOffProtection() {
           .then(result => {
             if (cancelled) return;
             setCancelCode(result.cancelCode);
+            setCancelCodeMethod(result.cancelCodeMethod);
+            setCancelCodeNote(result.cancelCodeNote);
             setState("ready");
           })
           .catch(() => {
@@ -118,16 +128,35 @@ export default function TurnOffProtection() {
     );
   }
 
+  // Carrier-instruction correction (2026-09-24): mirrors upload.html's
+  // own renderDeactivationResult, the three-way branch this screen never
+  // had — cancelCode present (mmi), native_settings (no code, a guidance
+  // note instead), or genuinely unknown (honest fallback, never a
+  // guessed code).
   return (
     <Screen>
       <Text style={styles.title}>Need to turn protection off?</Text>
-      <Text style={styles.body}>
-        Dial the code below from the phone you forwarded to Home Call Guard — this returns it to normal calling
-        straight away.
-      </Text>
-      <View style={styles.codeBox}>
-        <Text style={styles.code} selectable>{cancelCode}</Text>
-      </View>
+      {cancelCode ? (
+        <>
+          <Text style={styles.body}>
+            Dial the code below from the phone you forwarded to Home Call Guard — this returns it to normal
+            calling straight away.
+          </Text>
+          <View style={styles.codeBox}>
+            <Text style={styles.code} selectable>{cancelCode}</Text>
+          </View>
+        </>
+      ) : cancelCodeMethod === "native_settings" ? (
+        <Banner
+          variant="notice"
+          message={cancelCodeNote || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network."}
+        />
+      ) : (
+        <Banner
+          variant="notice"
+          message={cancelCodeNote || "We don't have a confirmed removal code for your network yet. Check your phone's native call forwarding settings, or contact support for help."}
+        />
+      )}
     </Screen>
   );
 }

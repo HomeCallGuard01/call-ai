@@ -232,7 +232,11 @@ export default function Activate() {
   const forwardingNumber = instructions ? extractForwardingNumberFromCode(instructions.code) : null;
 
   async function handleCopy() {
-    if (!instructions) return;
+    // instructions.code is only ever null for a native_settings carrier
+    // (2026-09-24), whose render branch never shows the "Copy code"
+    // button that calls this — the guard is defence in depth, matching
+    // this file's own established pattern (never assume, always check).
+    if (!instructions || !instructions.code) return;
     await Clipboard.setStringAsync(instructions.code);
     if (isMounted.current) setCopied(true);
   }
@@ -249,6 +253,11 @@ export default function Activate() {
       router.push("/(setup)/complete");
       return;
     }
+
+    // instructions.code is only ever null for a native_settings carrier
+    // (2026-09-24), whose render branch never shows the "Activate
+    // protection" auto-dial button that calls this — defence in depth.
+    if (!instructions.code) return;
 
     setDialerError(false);
     const url = buildDialerUrl(instructions.code);
@@ -362,6 +371,45 @@ export default function Activate() {
     );
   }
 
+  // Native-Settings carriers (2026-09-24 correction — real production
+  // failure, giffgaff): a carrier services/providerPolicy.js has
+  // positively determined doesn't reliably support the MMI code (Three,
+  // giffgaff) must never be shown one — no code box, no "Copy code", no
+  // auto-dial (there is nothing to dial). This is genuinely a different
+  // screen, not a variant of the MMI one below: the customer's own phone
+  // Settings app is where this actually happens, this screen can only
+  // explain that and let them confirm once done — same "Already done
+  // this? Continue" pattern the MMI path already uses.
+  if (instructions.activationMethod === "native_settings") {
+    return (
+      <Screen>
+        <SetupProgress currentStep={3} />
+        <BackLink />
+        <BackToDashboardLink />
+        <Text style={styles.title} accessibilityRole="header">Turn on call forwarding</Text>
+
+        {forwardingNumber && (
+          <View style={styles.numberBox}>
+            <Text style={styles.numberLabel}>Your Home Call Guard number</Text>
+            <Text style={styles.numberValue} selectable>{formatUkPhoneForDisplay(forwardingNumber)}</Text>
+          </View>
+        )}
+
+        <Text style={styles.explanation}>
+          Your network needs call forwarding set up through your phone's own settings, not a dial code.
+        </Text>
+        <Banner variant="notice" message={instructions.activationNote || "Use your phone's native call forwarding settings."} />
+
+        {instructions.requiresPreliminaryCall && instructions.preliminaryCallNote && (
+          <Banner variant="notice" message={instructions.preliminaryCallNote} />
+        )}
+
+        <PrimaryButton label="I've done this — continue" onPress={() => router.push("/(setup)/complete")} />
+        <UndoForwardingSection cancelCode={instructions.cancelCode} cancelCodeMethod={instructions.cancelCodeMethod} cancelCodeNote={instructions.cancelCodeNote} />
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       <SetupProgress currentStep={3} />
@@ -444,7 +492,7 @@ export default function Activate() {
         </Pressable>
       )}
 
-      <UndoForwardingSection cancelCode={instructions.cancelCode} />
+      <UndoForwardingSection cancelCode={instructions.cancelCode} cancelCodeMethod={instructions.cancelCodeMethod} cancelCodeNote={instructions.cancelCodeNote} />
     </Screen>
   );
 }
@@ -458,14 +506,39 @@ export default function Activate() {
 // Account-tab copy of this (app/(tabs)/account/turn-off-protection.tsx)
 // is what keeps it reachable after setup is complete, once this
 // one-time setup screen is behind them.
-function UndoForwardingSection({ cancelCode }: { cancelCode: string }) {
+// Carrier-instruction correction (2026-09-24) — real gap found: this
+// section always rendered cancelCode as if it were a dialable string,
+// which is null for any native_settings carrier (Three, and now
+// giffgaff) — a blank/empty code was shown, not the method-appropriate
+// guidance. Mirrors upload.html's own renderDeactivationResult, the
+// pattern this screen never had. See turn-off-protection.tsx (Account
+// tab) for the same fix applied there, for the same reason.
+function UndoForwardingSection({
+  cancelCode,
+  cancelCodeMethod,
+  cancelCodeNote,
+}: {
+  cancelCode: string | null;
+  cancelCodeMethod?: "mmi" | "native_settings" | "unknown";
+  cancelCodeNote?: string | null;
+}) {
   return (
     <View style={styles.undoSection}>
       <Text style={styles.undoTitle}>Need to turn protection off?</Text>
-      <Text style={styles.undoBody}>
-        Dial <Text style={styles.undoCode}>{cancelCode}</Text> from this phone at any time — this returns your
-        phone to normal calling straight away.
-      </Text>
+      {cancelCode ? (
+        <Text style={styles.undoBody}>
+          Dial <Text style={styles.undoCode}>{cancelCode}</Text> from this phone at any time — this returns your
+          phone to normal calling straight away.
+        </Text>
+      ) : cancelCodeMethod === "native_settings" ? (
+        <Text style={styles.undoBody}>
+          {cancelCodeNote || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network."}
+        </Text>
+      ) : (
+        <Text style={styles.undoBody}>
+          {cancelCodeNote || "We don't have a confirmed removal code for your network yet. Check your phone's native call forwarding settings, or contact support for help."}
+        </Text>
+      )}
     </View>
   );
 }

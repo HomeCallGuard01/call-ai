@@ -225,7 +225,12 @@ await withEnv({ LANDLINE_COMING_SOON: undefined, IOS_COMING_SOON: undefined }, a
   check(bodyOverride.statusCode === 403 && stripeTouches.length === 0, 'direct call: claiming mobile/O2 in the checkout BODY does not change the stored landline classification — still 403, Stripe untouched');
 
   // 3d. Android unchanged: passes the gate exactly as before
-  for (const [provider, why] of [['o2', 'compatible'], ['giffgaff', 'compatible'], ['ee', 'provider_specific']]) {
+  // giffgaff label updated 2026-09-24: reclassified from 'compatible' to
+  // 'provider_specific'/native_settings — this test's actual assertion
+  // (statusCode/error/entitlementReads) is unaffected either way, since
+  // the eligibility gate treats both statuses identically; only the
+  // descriptive label here needed correcting.
+  for (const [provider, why] of [['o2', 'compatible'], ['giffgaff', 'provider_specific'], ['ee', 'provider_specific']]) {
     resetSpies();
     const res = await call(mobile.checkout, { household: household('mobile', provider) });
     check(res.statusCode === 409 && res.body.error === 'already_active' && spies.entitlementReads === 1, `Android/mobile (${provider}, ${why}): still passes the eligibility gate and continues to the next step (reached the entitlement check => 409 already_active)`);

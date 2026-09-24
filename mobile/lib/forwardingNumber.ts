@@ -54,7 +54,13 @@
 // mis-parsed as a phone number.
 const FORWARDING_CODE_PATTERN = /^\*\*21\*(0\d+)#$/;
 
-export function extractForwardingNumberFromCode(code: string): string | null {
+// code is nullable (2026-09-24): a native-Settings carrier's activation
+// instructions have no code at all (services/activationInstructions.js's
+// buildActivationInstructions returns code: null for
+// activationMethod === "native_settings") — never a crash, just no
+// number to extract this way.
+export function extractForwardingNumberFromCode(code: string | null): string | null {
+  if (!code) return null;
   const match = FORWARDING_CODE_PATTERN.exec(code);
   return match ? match[1] : null;
 }

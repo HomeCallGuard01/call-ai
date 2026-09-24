@@ -216,6 +216,87 @@ check(
   'landline/bt: a stray mobile `carrier` value has no effect on the landline branch — cancelCode is still the landline #21#, never the mobile ##002#'
 );
 
+// --- Carrier-instruction correction (2026-09-24): mobile activation now
+// branches on carrier method (services/providerPolicy.js) — the missing
+// activation-side counterpart to the deactivation branching that already
+// existed. Real production case: giffgaff reclassified to
+// provider_specific/native_settings after giffgaff's own current
+// official guidance stopped documenting the MMI code. ---
+
+{
+  const giffgaffAndroid = buildActivationInstructions({
+    twilioNumber: '+441234567890',
+    deviceType: 'android',
+    carrier: 'giffgaff',
+  });
+  check(
+    giffgaffAndroid.code === null,
+    'a new giffgaff customer is NOT instructed to dial the old MMI activation code — code is null, not a fabricated/wrong string'
+  );
+  check(
+    giffgaffAndroid.activationMethod === 'native_settings',
+    'giffgaff activation resolves to native_settings, matching its reclassified provider policy'
+  );
+  check(
+    typeof giffgaffAndroid.activationNote === 'string' && giffgaffAndroid.activationNote.length > 0,
+    'a giffgaff customer receives real native-Settings guidance text, not a blank/undefined note'
+  );
+  check(
+    !/\*21\*|\*\*21\*/.test(giffgaffAndroid.activationNote),
+    'the giffgaff native-Settings guidance text itself does not contain the MMI code as a fallback — no code shown anywhere in the response'
+  );
+
+  const giffgaffIphone = buildActivationInstructions({
+    twilioNumber: '+441234567890',
+    deviceType: 'iphone',
+    carrier: 'giffgaff',
+  });
+  check(
+    giffgaffIphone.code === null && giffgaffIphone.activationMethod === 'native_settings',
+    'giffgaff native-Settings activation applies identically on iPhone, not just Android'
+  );
+
+  check(
+    giffgaffAndroid.cancelCode === null && giffgaffAndroid.cancelCodeMethod === 'native_settings',
+    'Turn Off Protection for giffgaff also gets native-Settings guidance, never a blank/unsupported deactivation instruction alongside a solved activation'
+  );
+}
+
+{
+  const threeAndroid = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'android', carrier: 'three' });
+  check(
+    threeAndroid.code === null && threeAndroid.activationMethod === 'native_settings',
+    'Three (already provider_specific/native_settings before this change) now also gets real native-Settings activation guidance — the missing counterpart this fix adds, not something new only for giffgaff'
+  );
+}
+
+// --- other carriers' activation behaviour is unchanged ---
+{
+  const vodafone = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'android', carrier: 'vodafone' });
+  check(
+    vodafone.code === '**21*01234567890#' && vodafone.activationMethod === 'mmi',
+    'an mmi-method carrier (Vodafone) is completely unaffected — still the universal MMI code, still activationMethod "mmi"'
+  );
+
+  const o2 = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'iphone', carrier: 'o2' });
+  check(
+    o2.code === '**21*01234567890#' && o2.activationMethod === 'mmi',
+    'a second mmi-method carrier (O2) is also completely unaffected'
+  );
+
+  const noCarrier = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'android' });
+  check(
+    noCarrier.code === '**21*01234567890#' && noCarrier.activationMethod === 'mmi',
+    'a legacy household with no carrier captured at all still gets the existing universal MMI code, unchanged — never blocked or blanked out by this fix'
+  );
+
+  const landline = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType: 'landline', provider: 'bt', carrier: 'giffgaff' });
+  check(
+    landline.code === '**21*01234567890#' && landline.activationMethod === 'mmi',
+    'landline is completely unaffected by mobile carrier/method at all — a stray giffgaff carrier value on a landline household has no effect, exactly like the existing stray-carrier-on-landline deactivation test above'
+  );
+}
+
 // --- validation ---
 
 {

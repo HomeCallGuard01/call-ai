@@ -7,7 +7,11 @@
 // Run with: node tests/provider-policy.test.mjs
 
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const {
   getProviderPolicy,
@@ -37,10 +41,18 @@ function check(condition, message) {
   check(result.canProceedToPayment === true, 'O2: may proceed to payment');
 }
 
+// Reclassified 2026-09-24 (real customer failure) — see
+// services/providerPolicy.js's own comment on this entry: giffgaff's
+// current official guidance no longer documents the MMI code, moved
+// from 'compatible'/mmi to 'provider_specific'/native_settings.
+// canProceedToPayment stays true (the two-way gate treats 'compatible'
+// and 'provider_specific' identically for payment eligibility — see
+// "giffgaff remains eligible only through the intended provider-specific
+// path" below) — this is a method correction, not a new block.
 {
   const result = evaluateProviderCompatibility('giffgaff');
-  check(result.status === 'compatible', 'giffgaff: status is compatible');
-  check(result.canProceedToPayment === true, 'giffgaff: may proceed to payment');
+  check(result.status === 'provider_specific', 'giffgaff: status is provider_specific (reclassified 2026-09-24 — no longer plain "compatible")');
+  check(result.canProceedToPayment === true, 'giffgaff: still may proceed to payment — reclassification changes the METHOD shown, not whether giffgaff is supported at all');
 }
 
 // --- incompatible carrier ---
@@ -217,15 +229,17 @@ function check(condition, message) {
 // confident production rule.
 
 {
-  // giffgaff: compatibility itself is well-evidenced (own shortcode
-  // article + a real physical-device confirmation), but the audit
-  // reported TWO candidate deactivation codes (#21# and ##002#) with no
-  // first-party source resolving which one is actually correct for
-  // giffgaff specifically — shipping either one as "the" code would be a
-  // guess, not a confirmed fact.
+  // giffgaff: compatibility itself remains well-evidenced (own shortcode
+  // article + a real physical-device confirmation), but as of 2026-09-24
+  // this is reclassified from mmi (two unresolved candidate deactivation
+  // codes) to native_settings entirely — giffgaff's own current official
+  // guidance no longer documents any MMI code at all, activation or
+  // deactivation. See services/providerPolicy.js's own comment on this
+  // entry for the full evidence.
   const result = getMobileDeactivationInstructions('giffgaff');
-  check(result.code === null, 'giffgaff: no deactivation code is shipped — two unresolved candidate codes (#21#/##002#) is not the same as a confirmed one');
-  check(evaluateProviderCompatibility('giffgaff').status === 'compatible', 'giffgaff: compatibility itself is unaffected — only the unconfirmed deactivation code was corrected');
+  check(result.code === null, 'giffgaff: still no deactivation code shipped — now because the method itself is native_settings, not just an unresolved MMI candidate');
+  check(result.method === 'native_settings', 'giffgaff: deactivation method is native_settings (reclassified 2026-09-24)');
+  check(evaluateProviderCompatibility('giffgaff').status === 'provider_specific', 'giffgaff: compatibility remains established — status is provider_specific, never incompatible/unverified, only the method corrected');
 }
 
 {
@@ -483,6 +497,17 @@ else process.env.LANDLINE_COMING_SOON = previousLandlineComingSoon;
   // the existing, already-tested carrier gate.
   const supported = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'giffgaff' });
   check(supported.canProceedToPayment === true, 'mobile + supported carrier (giffgaff): checkout is allowed');
+  // Carrier-instruction correction (2026-09-24): "giffgaff remains
+  // eligible only through the intended provider-specific path" — the
+  // eligibility check passes for the SAME reason a mmi carrier's does
+  // (both 'compatible' and 'provider_specific' proceed to payment), but
+  // giffgaff itself must now genuinely BE provider_specific, not
+  // compatible — a household that reaches Subscribe for giffgaff must
+  // never be silently treated as an mmi carrier downstream.
+  check(
+    supported.policy.status === 'provider_specific' && supported.policy.method === 'native_settings',
+    'giffgaff checkout eligibility is granted via the provider_specific/native_settings path specifically, not a plain "compatible" one'
+  );
 
   const unsupportedTesco = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'tesco' });
   check(unsupportedTesco.canProceedToPayment === false, 'mobile + Tesco: checkout is blocked');
@@ -523,6 +548,34 @@ else process.env.LANDLINE_COMING_SOON = previousLandlineComingSoon;
   const nearMiss = evaluateHouseholdCheckoutEligibility({ device_type: 'Landline', carrier_provider_key: null });
   check(nearMiss.status !== 'not_applicable', 'device_type "Landline" (wrong case): not treated as landline — exact match only');
   check(nearMiss.canProceedToPayment === false, 'device_type "Landline" (wrong case): checkout remains blocked, same as any other unclassified household');
+}
+
+// --- "existing customers are not silently reclassified or have account
+// data overwritten" (2026-09-24, giffgaff reclassification) ---
+//
+// This whole module is a pure, static policy config plus pure functions
+// (this file's own header: "versioned code config, not a database
+// table") — no household row is ever read or written by anything in it.
+// Reclassifying giffgaff here changes what NEW instructions a customer
+// SEES the next time they fetch them (services/activationInstructions.js,
+// called fresh on every GET request) — it cannot and does not touch any
+// already-persisted households.carrier_provider_key/device_type value,
+// and there is no migration/backfill in this change at all. Proven
+// structurally: this file has no database client, no write capability,
+// full stop.
+{
+  const source = readFileSync(path.join(__dirname, '..', 'services', 'providerPolicy.js'), 'utf8');
+  check(
+    !/supabaseAdmin|\.from\(|\.update\(|\.insert\(|require\(["']\.\.?\/.*supabase/i.test(source),
+    'services/providerPolicy.js has no database client and no write capability at all — the giffgaff reclassification cannot silently touch any existing household\'s persisted data'
+  );
+}
+{
+  const source = readFileSync(path.join(__dirname, '..', 'services', 'activationInstructions.js'), 'utf8');
+  check(
+    !/supabaseAdmin|\.from\(|\.update\(|\.insert\(/i.test(source),
+    'services/activationInstructions.js is also pure — computes fresh instructions per request from whatever carrier is passed in, never persists or reclassifies anything itself'
+  );
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

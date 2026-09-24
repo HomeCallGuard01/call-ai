@@ -723,7 +723,7 @@ router.get("/api/v1/me/activation-device", requireAuthApi, requireEntitlement, a
 // preliminary 150 call — live in exactly one place, never duplicated in
 // client code).
 router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement, async (req, res) => {
-  const { deviceType, provider, protectedNumber, carrier } = req.query;
+  const { deviceType, provider, protectedNumber } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -768,15 +768,27 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
   }
 
   try {
+    // Carrier-instruction correction (2026-09-24): resolved from the
+    // household's own persisted record (households.carrier_provider_key,
+    // set at device-picker.tsx's carrier-compatibility check) — the
+    // single authoritative source — never a client-supplied query
+    // parameter. The mobile app never actually sent one (confirmed:
+    // lib/api.ts's fetchActivationInstructions has no carrier argument at
+    // all), so this was silently always undefined regardless of what a
+    // household's real carrier was; this also matches "the authoritative
+    // provider policy/instruction source should drive the customer
+    // experience, not a duplicated client-side value."
     const instructions = buildActivationInstructions({
       twilioNumber: req.household.twilio_number,
       deviceType,
       provider,
-      carrier: typeof carrier === "string" ? carrier : undefined,
+      carrier: req.household.carrier_provider_key || undefined,
     });
 
     res.json({
       code: instructions.code,
+      activationMethod: instructions.activationMethod,
+      activationNote: instructions.activationNote,
       cancelCode: instructions.cancelCode,
       cancelCodeMethod: instructions.cancelCodeMethod,
       cancelCodeConfidence: instructions.cancelCodeConfidence,
@@ -802,7 +814,7 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
 // Never touches the Twilio number; never provisions or activates
 // anything.
 router.get("/api/v1/deactivation/instructions", requireAuthApi, async (req, res) => {
-  const { deviceType, provider, carrier } = req.query;
+  const { deviceType, provider } = req.query;
 
   if (typeof deviceType !== "string" || !DEVICE_TYPES.has(deviceType)) {
     return res.status(400).json({
@@ -819,10 +831,16 @@ router.get("/api/v1/deactivation/instructions", requireAuthApi, async (req, res)
   }
 
   try {
+    // Carrier-instruction correction (2026-09-24): resolved from the
+    // household's own persisted record, same as /api/v1/activation/
+    // instructions above — requireAuthApi (not requireEntitlement) still
+    // populates req.household, so this is available even for an
+    // already-cancelled household, matching this route's own deliberate
+    // no-entitlement-gate design.
     const instructions = buildDeactivationInstructions({
       deviceType,
       provider,
-      carrier: typeof carrier === "string" ? carrier : undefined,
+      carrier: req.household.carrier_provider_key || undefined,
     });
 
     res.json({
