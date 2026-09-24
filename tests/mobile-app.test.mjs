@@ -722,6 +722,54 @@ function check(condition, message) {
     'resumeSetupAt: hasDeviceOnRecord never overrides the "zero contacts" check either — contacts still comes first'
   );
 
+  // --- NO CALL-VERIFICATION BARRIER (2026-09-24 regression requirement,
+  // re-verified ahead of the staged production RC deployment): a brand
+  // new, genuinely compatible customer must be able to complete normal
+  // onboarding and reach the protected/ready state WITHOUT any other
+  // person having called them yet. This is the exact pre-2026-09-23
+  // defect (mandatory verify.tsx gate) this whole change series exists
+  // to remove — re-asserted explicitly, end to end, as its own named
+  // case rather than relying on the hasCompletedActivationStep checks
+  // above to imply it. Models a customer who has JUST finished the
+  // in-app activation step (dialled/confirmed the code, or completed the
+  // native_settings "I've done this" step) with genuinely zero backend
+  // call evidence of any kind: activationVerifiedAt is null (no
+  // POST /api/v1/activation/verify poll has ever succeeded) AND
+  // endToEndDeliveryVerified is false (no real forwarded call has ever
+  // reached Home Call Guard) — i.e. literally no incoming call has
+  // happened yet. ---
+  {
+    const brandNewCompatibleCustomer = {
+      isEntitled: true,
+      contactCount: 2,
+      isActivationProven: false,
+      hasCompletedActivationStep: true, // set by complete.tsx's markSetupCompleted() — never by a call
+    };
+    check(
+      resumeSetupAt(brandNewCompatibleCustomer).screen === 'complete',
+      'NO CALL-VERIFICATION BARRIER: a customer who just finished the activation step, with zero backend call evidence, resumes at "complete" — never bounced back into setup waiting for an incoming call'
+    );
+    // The Home tab's own status for this exact same customer must be a
+    // reassuring, non-blocking state — never "setting_up" (which would
+    // present concrete steps still left to do) and never any state that
+    // implies the customer must wait before using the app.
+    const homeState = computeHomeProtectionState(
+      {
+        protection: {
+          activationVerifiedAt: null,
+          endToEndDeliveryVerified: false,
+          deliveryReady: false,
+          fullyProtected: false,
+        },
+      },
+      /* hasCompletedActivationStep */ true
+    );
+    check(
+      homeState === 'awaiting_confirmation',
+      `NO CALL-VERIFICATION BARRIER: the Home tab shows "awaiting_confirmation" (reassuring, no action required) for this same customer, not "${homeState}" — nothing about reaching this state depends on an incoming call ever happening`
+    );
+  }
+
   check(
     stepIndexForScreen('subscribe') === 1 && stepIndexForScreen('contacts') === 2,
     'stepIndexForScreen: subscribe and contacts map to their own distinct macro-steps'
