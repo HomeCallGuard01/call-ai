@@ -281,7 +281,7 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
       // proving a genuinely more recent but undialled row never masks the
       // real most recent dial attempt below.
       { household_id: '11111111-1111-4111-8111-111111111111', created_at: ago(30 * 60 * 1000), dial_call_status: null, client_invite_received_at: null, client_outcome: null },
-      { household_id: '11111111-1111-4111-8111-111111111111', created_at: ago(HOUR), dial_call_status: 'completed', client_invite_received_at: ago(HOUR - 5000), client_outcome: 'accepted' },
+      { household_id: '11111111-1111-4111-8111-111111111111', created_at: ago(HOUR), dial_call_status: 'completed', client_invite_received_at: ago(HOUR - 5000), client_outcome: 'accepted', number: '+447700123456', status: 'Unknown', result: 'SAFE' },
     ],
     account_classifications: [
       { household_id: '22222222-2222-4222-8222-222222222222', classification: 'genuine_customer' },
@@ -333,7 +333,9 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
   check(byEmail['stuck@example.com'].lastCallAt === ago(5 * HOUR), 'last call is the most recent call for that household');
   check(byEmail['qa@example.com'].state === 'inactive' && byEmail['qa@example.com'].membershipStatus === 'none', 'household with no entitlement → Inactive / No membership');
 
-  const allowedRowKeys = ['householdId', 'email', 'signedUpAt', 'classification', 'membershipStatus', 'provisioningStatus', 'state', 'reason', 'forwardingProven', 'appRegistered', 'deliveryVerified', 'fullyProtected', 'setupClock', 'lastCallAt'];
+  const allowedRowKeys = ['householdId', 'email', 'signedUpAt', 'classification', 'membershipStatus', 'provisioningStatus', 'state', 'reason', 'forwardingProven', 'appRegistered', 'deliveryVerified', 'fullyProtected', 'setupClock', 'lastCallAt',
+    // admin control centre (2026-09-25)
+    'health', 'healthReason', 'account', 'subscriptionIssue', 'setupLabel', 'network', 'device', 'app', 'lastConfirmed', 'latestCall', 'lastDelivery', 'deletedAccount'];
   check(monitor.rows.every((r) => Object.keys(r).every((k) => allowedRowKeys.includes(k))), 'list rows contain only the allow-listed fields');
   const serialized = JSON.stringify(monitor);
   check(!/cus_SECRET|PN_SECRET|auth-uuid|\+447700900999/.test(serialized), 'list response never contains Stripe/Twilio SIDs, auth IDs or the customer’s own phone number');
@@ -364,6 +366,20 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
     noDialHistory.technical.appVersion === null && noDialHistory.technical.mostRecentDialOutcome === null,
     'a household with no app-version report and no dialled calls shows both as null, never a fabricated value'
   );
+
+  // Admin control centre (2026-09-25): list health fields + detail recent calls.
+  const newRow = byEmail['new@example.com'];
+  check(newRow.health === 'setup_incomplete' && newRow.network === 'EE' && newRow.device === 'Android', 'list row carries health, network display name and device');
+  check(newRow.app && newRow.app.version === '1.0.1' && newRow.app.build === '12', 'list row carries app version and build');
+  check(newRow.lastDelivery && newRow.lastDelivery.twilioLabel === 'Connected' && newRow.lastDelivery.phoneLabel === 'Answered' && newRow.lastDelivery.failure === null, 'list row carries last Twilio dial outcome and phone outcome');
+  check(newRow.latestCall && newRow.latestCall.at === ago(30 * 60 * 1000), 'latest call is the most recent call of any kind (including never-dialled ones)');
+  check(byEmail['stuck@example.com'].health === 'needs_attention', 'overdue setup → health Needs attention');
+  check(byEmail['qa@example.com'].health === 'inactive', 'no membership → health Inactive');
+  check(monitor.summary && monitor.summary.customers === 2 && monitor.summary.needs_attention === 1 && monitor.summary.setup_incomplete === 1, 'summary counts active customers by health');
+  check(Array.isArray(detail.recentCalls) && detail.recentCalls.length === 2, 'detail lists recent calls');
+  const dialled = detail.recentCalls.find((c) => c.dialCallStatus === 'completed');
+  check(dialled && dialled.caller === '…3456' && dialled.clientOutcome === 'accepted', 'recent calls show the caller only as last four digits, plus Twilio and phone outcomes');
+  check(!JSON.stringify(detail).includes('+447700123456'), 'full caller number never leaves the server');
 
   const missing = await getHouseholdStatusDetail('99999999-9999-4999-8999-999999999999', NOW);
   check(missing.available && missing.found === false, 'unknown household → found:false (route turns this into 404)');
@@ -403,34 +419,42 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
   const timeline = extract('describeTimelineStage');
   check(helpers && timeline, 'Customers tab helpers are extractable');
 
-  const api = new Function(`${helpers}\n${timeline}\nreturn { scopeCustomerRows, filterCustomerRows, countCustomerStates, sortCustomerRows, formatElapsed, formatRelativeTime, describeSetupCell, describeProtectionCell, escapeHtml, describeTimelineStage, CUSTOMER_FILTERS };`)();
+  const api = new Function(`${helpers}\n${timeline}\nreturn { customerRowsForView, countCustomerHealth, sortCustomerRows, formatElapsed, formatRelativeTime, describeAccountCell, describeNetworkCell, describeAppCell, describeLastConfirmedCell, describeLatestCallCell, describeCallResult, escapeHtml, describeTimelineStage, CUSTOMER_FILTERS };`)();
 
   const rows = [
-    { householdId: 'a', classification: 'genuine_customer', state: 'protected', signedUpAt: ago(10 * HOUR) },
-    { householdId: 'b', classification: 'unclassified', state: 'needs_attention', signedUpAt: ago(40 * HOUR) },
-    { householdId: 'c', classification: 'internal_test', state: 'needs_attention', signedUpAt: ago(5 * HOUR) },
-    { householdId: 'd', classification: 'unclassified', state: 'setting_up', signedUpAt: ago(1 * HOUR) },
-    { householdId: 'e', classification: 'genuine_customer', state: 'needs_attention', signedUpAt: ago(2 * HOUR) },
+    { householdId: 'a', email: 'a@x.com', health: 'healthy', signedUpAt: ago(10 * HOUR), network: 'giffgaff', device: 'Android' },
+    { householdId: 'b', email: 'b@x.com', health: 'needs_attention', signedUpAt: ago(40 * HOUR) },
+    { householdId: 'c', email: 'c@x.com', health: 'needs_attention', signedUpAt: ago(5 * HOUR), account: { testLabel: 'Reviewer' } },
+    { householdId: 'd', email: 'd@x.com', health: 'setup_incomplete', signedUpAt: ago(1 * HOUR) },
+    { householdId: 'e', email: 'e@x.com', health: 'inactive', signedUpAt: ago(2 * HOUR) },
+    { householdId: 'f', email: 'anonymized-f@deleted.homecallguard.internal', health: 'inactive', signedUpAt: ago(2 * HOUR), deletedAccount: true },
   ];
-  const scoped = api.scopeCustomerRows(rows, false);
-  check(scoped.map((r) => r.householdId).join() === 'a,b,d,e', 'default scope = genuine + unclassified (new signups visible), internal/test excluded');
-  check(api.scopeCustomerRows(rows, true).length === 5, 'including internal accounts shows everything');
-  check(api.countCustomerStates(scoped).needs_attention === 2, 'attention count excludes internal/test accounts by default');
-  check(api.filterCustomerRows(scoped, 'needs_attention').map((r) => r.householdId).join() === 'b,e', 'Needs attention filter shows only customers requiring intervention');
-  check(api.filterCustomerRows(scoped, 'all').length === 4, 'All filter shows everyone in scope');
-  check(api.sortCustomerRows(scoped).map((r) => r.householdId).join() === 'e,b,d,a', 'sorted most-urgent state first, newest signup first within a state');
-  check(api.CUSTOMER_FILTERS.join() === 'all,needs_attention,provisioning_problem,setting_up,protected,inactive', 'filter bar offers the six required filters');
+  check(api.customerRowsForView(rows, 'active', '').map((r) => r.householdId).join() === 'a,b,c,d', 'default view = every customer with a membership, test/reviewer accounts included');
+  check(api.customerRowsForView(rows, 'needs_attention', '').map((r) => r.householdId).join() === 'b,c', 'Needs attention filter');
+  check(api.customerRowsForView(rows, 'inactive', '').map((r) => r.householdId).join() === 'e', 'Inactive filter never shows deleted/anonymised accounts');
+  check(api.customerRowsForView(rows, 'active', 'GIFF').map((r) => r.householdId).join() === 'a', 'search matches network (case-insensitive)');
+  const counts = api.countCustomerHealth(rows);
+  check(counts.active === 4 && counts.healthy === 1 && counts.needs_attention === 2 && counts.setup_incomplete === 1 && counts.inactive === 1, 'counts exclude deleted accounts; active = everything with a membership');
+  check(api.sortCustomerRows(api.customerRowsForView(rows, 'active', '')).map((r) => r.householdId).join() === 'c,b,d,a', 'sorted Needs attention first, newest first within a group');
+  check(api.CUSTOMER_FILTERS.join() === 'active,needs_attention,setup_incomplete,healthy,inactive', 'filters: All customers / Needs attention / Setup incomplete / Healthy / Inactive');
 
   check(api.formatElapsed(30 * 60 * 1000) === '30m' && api.formatElapsed(5 * HOUR) === '5h' && api.formatElapsed(47 * HOUR) === '47h' && api.formatElapsed(50 * HOUR) === '2d 2h', 'formatElapsed renders minutes/hours/days');
   check(api.formatElapsed(null) === '—' && api.formatElapsed(-5) === '—', 'formatElapsed handles missing/negative');
-  check(api.formatRelativeTime(null, NOW.getTime()) === 'Never', 'no last call → "Never"');
+  check(api.formatRelativeTime(null, NOW.getTime()) === 'Never', 'no timestamp → "Never"');
   check(api.formatRelativeTime(ago(3 * HOUR), NOW.getTime()) === '3h ago', 'relative time');
 
-  check(api.describeSetupCell({ state: 'needs_attention', forwardingProven: false, provisioningStatus: 'active', setupClock: { elapsedMs: 31 * HOUR } }) === 'No forwarded call yet · 31h', 'setup cell shows how long they have waited');
-  check(api.describeSetupCell({ state: 'setting_up', forwardingProven: true, provisioningStatus: 'active' }) === 'Forwarding confirmed', 'setup cell for confirmed forwarding');
-  check(api.describeSetupCell({ state: 'setting_up', forwardingProven: false, provisioningStatus: 'pending' }) === 'Waiting for HCG number', 'setup cell while number pending');
-  check(api.describeSetupCell({ state: 'inactive' }) === '—', 'setup cell blank for inactive');
-  check(api.describeProtectionCell({ state: 'protected', fullyProtected: true }).label === 'Protected', 'protection cell');
+  check(api.describeAccountCell({ account: { label: 'Complimentary', kind: 'complimentary', until: '2026-12-12T00:00:00Z', testLabel: 'Reviewer' } }).sub === 'until 12 Dec 2026', 'account cell: complimentary with end date and test label');
+  check(api.describeAccountCell({ account: { label: 'Paying', kind: 'paying' }, subscriptionIssue: 'payment_issue' }).sub === 'Payment issue', 'account cell: payment issue shown');
+  check(api.describeNetworkCell({ network: 'giffgaff', device: 'Android' }) === 'giffgaff · Android', 'network cell');
+  check(api.describeNetworkCell({}) === 'Not recorded', 'network cell when nothing recorded');
+  check(api.describeAppCell({ app: { version: '1.0.1', build: '12', platform: 'android' } }) === '1.0.1 (12) · android' && api.describeAppCell({ app: null }) === 'Not reported', 'app cell');
+  check(api.describeLastConfirmedCell({ lastConfirmed: { kind: 'delivered', at: ago(3 * HOUR) } }, NOW.getTime()) === 'Call delivered 3h ago', 'last confirmed: delivered call');
+  check(api.describeLastConfirmedCell({ lastConfirmed: { kind: 'forwarding_only', at: ago(50 * HOUR) } }, NOW.getTime()) === 'Forwarding only · 2d 2h ago', 'last confirmed: forwarding only');
+  check(api.describeLastConfirmedCell({ lastConfirmed: { kind: 'none' } }, NOW.getTime()) === 'Not yet', 'last confirmed: none');
+  const callCell = api.describeLatestCallCell({ latestCall: { at: ago(2 * HOUR), status: 'Known', result: 'SAFE' }, lastDelivery: { twilioLabel: 'No answer', phoneLabel: 'Not reported (older app)', failure: null } }, NOW.getTime());
+  check(callCell.main === '2h ago · Known contact' && callCell.delivery === 'Twilio: No answer · Phone: Not reported (older app)' && callCell.failure === false, 'latest call cell: call, Twilio and phone outcome; unanswered is not a failure');
+  check(api.describeLatestCallCell({ latestCall: null, lastDelivery: null }, NOW.getTime()).main === 'No calls yet', 'latest call cell with no calls');
+  check(api.describeCallResult({ status: 'Unknown', result: 'SCAM' }) === 'Unknown caller · blocked' && api.describeCallResult({ terminatedBySystem: true }) === 'Ended by HCG', 'call result wording');
 
   check(api.escapeHtml('<img src=x onerror=alert(1)>"\'&') === '&lt;img src=x onerror=alert(1)&gt;&quot;&#39;&amp;', 'escapeHtml neutralises customer-supplied markup (emails are rendered through it)');
   check(api.describeTimelineStage({ done: false, firstIncomplete: true }).className === 'timeline-blocker', 'first incomplete stage renders as the highlighted blocker');
@@ -438,6 +462,7 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
 
   check(/fetch\('\/admin\/api\/customers\/onboarding'/.test(html), 'Customers tab loads from the onboarding endpoint');
   check(!/d\.customers\.recentList/.test(html), 'Customers tab no longer reads the old 20-row recentList');
+  check(!/includeInternalCustomers|isInDefaultCustomerScope/.test(html), 'classification never hides a customer row');
   check(!/Recent signups<\/h3>/.test(html), 'duplicate "Recent signups" card (same data as Recent registrations) removed');
   check(!/(sendEmail|sendSms|messages\.create|\/notify|\/remind)/i.test(html.slice(html.indexOf('// CUSTOMERS TAB'), html.indexOf('// SYSTEM HEALTH TAB'))), 'Customers tab has no customer-messaging action');
 }

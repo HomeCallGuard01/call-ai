@@ -188,11 +188,35 @@
   .tech-details td { padding: 5px 8px; overflow-wrap: anywhere; white-space: normal; }
   .tech-details td:first-child { color: #93a3b8; white-space: nowrap; }
 
+  /* --- Customers tab: admin control centre (2026-09-25) --- */
+  .summary-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+  .summary-card { background: #111a2e; border: 1px solid #1e293b; border-radius: 10px; padding: 16px 18px; cursor: pointer; }
+  .summary-card:hover { border-color: #334155; }
+  .summary-card.selected { outline: 2px solid #22d3ee; outline-offset: -1px; }
+  .summary-value { font-size: 30px; font-weight: 800; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+  .summary-label { font-size: 13px; font-weight: 700; color: #cbd5e1; margin-top: 2px; }
+  .summary-sub { font-size: 12px; color: #93a3b8; margin-top: 4px; }
+  .summary-card.good .summary-value { color: #34d399; }
+  .summary-card.bad { border-color: #ef4444; background: #2a0d0d; }
+  .summary-card.bad .summary-value { color: #f87171; }
+  .summary-card.warn .summary-value { color: #fbbf24; }
+  .customer-search { margin-left: auto; min-width: 220px; background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 7px 10px; font-size: 13px; }
+  .monitor-table .cell-health, .monitor-table .cell-wrap { white-space: normal; min-width: 130px; max-width: 220px; }
+  .customer-row.health-needs_attention td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+  .customer-row.health-setup_incomplete td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+  .text-muted { color: #64748b; }
+  .text-bad { color: #f87171 !important; }
+  .text-warn { color: #fbbf24 !important; }
+  .recent-calls, .fact-table { width: 100%; font-size: 12.5px; }
+  .recent-calls th, .recent-calls td, .fact-table td { padding: 5px 8px; white-space: normal; }
+  .fact-table td:first-child { color: #93a3b8; white-space: nowrap; width: 110px; }
+
   @media (max-width: 1300px) {
     .stat-grid { grid-template-columns: repeat(3, 1fr); }
   }
   @media (max-width: 1024px) {
     .columns-3-1 { grid-template-columns: 1fr; }
+    .summary-strip { grid-template-columns: 1fr 1fr; }
     .detail-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 640px) {
@@ -394,13 +418,10 @@ function initialTab() {
 // ============================================================
 let lastBusinessData = null;
 let lastOperationsData = null;
-// Reconciliation (2026-09-24): this release branch's own showAllCustomers
-// toggle (a simpler default-visibility fix for the old recentList-based
-// Customers tab) is superseded by production's dedicated onboarding
-// monitor below (customerMonitorData/includeInternalCustomers), which
-// solves the same underlying problem — real accounts hidden purely by
-// classification — with a more complete scoping/filter model. See that
-// code's own comments.
+// Customer visibility lives entirely in the Customers tab below
+// (customerMonitorData): every account with a membership is listed —
+// complimentary/test/reviewer included, badged — and classification
+// never hides a row.
 
 async function loadAll() {
   await Promise.all([loadBusinessOverview(), loadOperationsOverview(), loadCustomerMonitor()]);
@@ -674,100 +695,69 @@ function acquisitionSection(acquisition) {
 }
 
 // ============================================================
-// CUSTOMERS TAB — onboarding monitoring (2026-09). Answers four
-// questions at a glance: who is OK, who is still setting up, who has
-// gone 24h+ without a verified forwarded call, and who has a
-// provisioning problem. Data: GET /admin/api/customers/onboarding
-// (read-only). Every state is derived server-side by
-// services/adminOnboardingStatus.js — this page only filters and
-// renders. "Protected" is exactly the customer-facing definition
-// (services/callRouting.js computeProtectionStatus), never loosened here.
+// CUSTOMERS TAB — admin control centre (2026-09-25). One question:
+// "are my customers protected, and which accounts need me to
+// investigate?" Data: GET /admin/api/customers/onboarding (read-only).
+// Every health value and reason is derived server-side by
+// services/adminCustomerHealth.js — this page only filters and renders.
 //
-// Scope: by default every household EXCEPT explicitly internal/test/
-// admin/reviewer/QA accounts — i.e. genuine AND unclassified. A brand-new
-// real signup is unclassified until someone tags it in
-// account_classifications, so a genuine-only default would hide exactly
-// the new customers this view exists to watch. The business KPIs on the
-// Business tab are unaffected and still count genuine customers only.
+// Health: Healthy / Setup incomplete / Needs attention / Inactive.
+// Silence is never a fault: a customer who simply hasn't had calls
+// recently stays Healthy. Only real evidence (a delivery failure since
+// the last success, setup overdue, provisioning trouble, missing setup
+// information) raises Needs attention.
+//
+// Every account with a membership is shown, including complimentary,
+// test and reviewer accounts (badged, never hidden) — revenue figures on
+// the Business tab stay genuine-paid-only. Deleted (anonymised) accounts
+// are not customers and are left out, with a count.
 // ============================================================
-// Dashboard simplification (2026-09-24) — found missing while diagnosing
-// a real production household: revenue classification and operational/
-// support visibility are separate concepts, and the default view must be
-// the operational one (every household, easy to find and diagnose), not
-// the revenue-filtered one. An admin_manual/complimentary household is
-// correctly excluded from the Business tab's genuine-customer revenue
-// KPIs (unchanged, untouched by this) but must never be hard-to-find
-// here just because of that classification — classification is now a
-// small badge on every row, not a row-hiding filter. The toggle is kept,
-// inverted: the secondary "revenue view" filters TO genuine customers
-// only, for when that specific subset is wanted.
-const CUSTOMER_MEMBERSHIP_LABELS = {
-  active: { label: "Active", className: "good" },
-  trial: { label: "Trial", className: "good" },
-  payment_issue: { label: "Payment issue", className: "warn" },
-  cancelled: { label: "Cancelling", className: "warn" },
-  inactive: { label: "Inactive", className: "bad" },
-  none: { label: "No membership", className: "" },
-};
-
-// Reconciliation (2026-09-24): this release branch's own protectionLabel/
-// customerRow/customerTable/renderCustomersTab(d) — the old recentList-
-// based Customers tab this branch extended with protection/device/app-
-// version/call-outcome columns — is superseded here by production's
-// dedicated onboarding monitor (admin-onboarding-monitoring, 7942e6e),
-// a more complete replacement (attention queue, filters, per-household
-// timeline/detail) that was built independently and deployed to
-// production first. Nothing from that work is lost: the new diagnostic
-// fields (app version, dial outcome, client-invite/outcome) are instead
-// folded into this monitor's own per-household detail panel — see
-// renderCustomerDetailHtml's technical-details table below, and
-// database/adminMetrics.js's getHouseholdStatusDetail.
 let customerMonitorData = null;
-let customerFilter = 'all';
-let includeInternalCustomers = false;
+let customerFilter = 'active';
+let customerSearch = '';
 let openCustomerDetailId = null;
 
 // TEST-EXTRACT-START: customerMonitorHelpers
-const ADMIN_STATE_LABELS = {
+const HEALTH_LABELS = {
   needs_attention: { label: "Needs attention", className: "bad" },
-  provisioning_problem: { label: "Provisioning problem", className: "bad" },
-  setting_up: { label: "Setting up", className: "warn" },
-  protected: { label: "Protected", className: "good" },
+  setup_incomplete: { label: "Setup incomplete", className: "warn" },
+  healthy: { label: "Healthy", className: "good" },
   inactive: { label: "Inactive", className: "" },
 };
 
-const CUSTOMER_FILTERS = ["all", "needs_attention", "provisioning_problem", "setting_up", "protected", "inactive"];
+const CUSTOMER_FILTERS = ["active", "needs_attention", "setup_incomplete", "healthy", "inactive"];
+const CUSTOMER_FILTER_LABELS = { active: "All customers", needs_attention: "Needs attention", setup_incomplete: "Setup incomplete", healthy: "Healthy", inactive: "Inactive" };
 
-// Genuine + unclassified by default; internal/test/admin/reviewer/QA
-// only when explicitly included.
-function isInDefaultCustomerScope(row) {
-  return row.classification === "genuine_customer" || row.classification === "unclassified";
+const HEALTH_ORDER = ["needs_attention", "setup_incomplete", "healthy", "inactive"];
+
+function customerRowsForView(rows, filter, search) {
+  const q = (search || "").trim().toLowerCase();
+  return (rows || []).filter((r) => {
+    if (r.deletedAccount) return false;
+    if (filter === "active" || !filter) {
+      if (r.health === "inactive") return false;
+    } else if (r.health !== filter) {
+      return false;
+    }
+    if (!q) return true;
+    return [r.email, r.network, r.device, r.householdId].some((v) => typeof v === "string" && v.toLowerCase().includes(q));
+  });
 }
 
-function scopeCustomerRows(rows, includeInternal) {
-  return (rows || []).filter((r) => includeInternal || isInDefaultCustomerScope(r));
-}
-
-function filterCustomerRows(rows, filter) {
-  if (!filter || filter === "all") return rows;
-  return rows.filter((r) => r.state === filter);
-}
-
-function countCustomerStates(rows) {
-  const counts = { all: 0, needs_attention: 0, provisioning_problem: 0, setting_up: 0, protected: 0, inactive: 0 };
-  for (const r of rows) {
-    counts.all += 1;
-    if (counts[r.state] !== undefined) counts[r.state] += 1;
+function countCustomerHealth(rows) {
+  const counts = { active: 0, needs_attention: 0, setup_incomplete: 0, healthy: 0, inactive: 0 };
+  for (const r of rows || []) {
+    if (r.deletedAccount) continue;
+    if (counts[r.health] !== undefined) counts[r.health] += 1;
+    if (r.health !== "inactive") counts.active += 1;
   }
   return counts;
 }
 
-// Most urgent first, then newest signup first within a state.
-const ADMIN_STATE_ORDER = ["needs_attention", "provisioning_problem", "setting_up", "protected", "inactive"];
 function sortCustomerRows(rows) {
   return rows.slice().sort((a, b) => {
-    const byState = ADMIN_STATE_ORDER.indexOf(a.state) - ADMIN_STATE_ORDER.indexOf(b.state);
-    if (byState !== 0) return byState;
+    const byHealth = HEALTH_ORDER.indexOf(a.health) - HEALTH_ORDER.indexOf(b.health);
+    if (byHealth !== 0) return byHealth;
     return new Date(b.signedUpAt) - new Date(a.signedUpAt);
   });
 }
@@ -789,20 +779,46 @@ function formatRelativeTime(iso, nowMs) {
   return formatElapsed(nowMs - t) + " ago";
 }
 
-// The "Setup" column — where this customer is in onboarding, in plain
-// words. Uses the server's elapsedMs (computed at generatedAt) so the
-// label always matches the server-derived state.
-function describeSetupCell(row) {
-  if (row.state === "inactive") return "—";
-  if (row.forwardingProven) return "Forwarding confirmed";
-  if (row.provisioningStatus !== "active") return "Waiting for HCG number";
-  const waited = formatElapsed(row.setupClock ? row.setupClock.elapsedMs : null);
-  return "No forwarded call yet · " + waited;
+function describeAccountCell(row) {
+  const a = row.account || { label: "—", kind: "none" };
+  let sub = null;
+  if (row.subscriptionIssue === "payment_issue") sub = "Payment issue";
+  else if (row.subscriptionIssue === "cancelled") sub = "Cancelling";
+  else if (a.kind === "complimentary" && a.until) sub = "until " + new Date(a.until).toLocaleDateString("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short", year: "numeric" });
+  return { label: a.label, testLabel: a.testLabel || null, sub };
 }
 
-function describeProtectionCell(row) {
-  if (row.state === "inactive") return { label: "—", className: "" };
-  return row.fullyProtected ? { label: "Protected", className: "good" } : { label: "Not yet", className: "" };
+function describeNetworkCell(row) {
+  if (!row.network && !row.device) return "Not recorded";
+  return (row.network || "Network not recorded") + " · " + (row.device || "device not recorded");
+}
+
+function describeAppCell(row) {
+  if (!row.app) return "Not reported";
+  return row.app.version + (row.app.build ? " (" + row.app.build + ")" : "") + (row.app.platform ? " · " + row.app.platform : "");
+}
+
+function describeLastConfirmedCell(row, nowMs) {
+  const lc = row.lastConfirmed;
+  if (!lc || lc.kind === "none") return "Not yet";
+  const when = formatRelativeTime(lc.at, nowMs);
+  return lc.kind === "delivered" ? "Call delivered " + when : "Forwarding only · " + when;
+}
+
+function describeCallResult(call) {
+  if (!call) return "";
+  if (call.terminatedBySystem) return "Ended by HCG";
+  if (call.status === "Known") return "Known contact";
+  if (call.result === "SCAM") return "Unknown caller · blocked";
+  if (call.result === "SAFE") return "Unknown caller · allowed";
+  return "Unknown caller" + (call.result ? " · " + String(call.result).toLowerCase() : "");
+}
+
+function describeLatestCallCell(row, nowMs) {
+  const main = row.latestCall ? formatRelativeTime(row.latestCall.at, nowMs) + " · " + describeCallResult(row.latestCall) : "No calls yet";
+  const d = row.lastDelivery;
+  const delivery = d ? "Twilio: " + d.twilioLabel + " · Phone: " + d.phoneLabel : null;
+  return { main, delivery, failure: !!(d && d.failure) };
 }
 
 function escapeHtml(value) {
@@ -846,39 +862,50 @@ async function loadCustomerMonitor() {
 }
 
 function setCustomerFilter(filter) {
-  customerFilter = CUSTOMER_FILTERS.includes(filter) ? filter : 'all';
+  customerFilter = CUSTOMER_FILTERS.includes(filter) ? filter : 'active';
   renderCustomersTab();
 }
 
-function toggleCustomerDiagnostics() {
-  includeInternalCustomers = !includeInternalCustomers;
+function setCustomerSearch(value) {
+  customerSearch = value;
   renderCustomersTab();
+  const input = document.getElementById('customerSearchInput');
+  if (input) { input.focus(); input.setSelectionRange(value.length, value.length); }
 }
 
 function updateCustomersTabFlag(counts) {
   const btn = document.getElementById('tabBtn-customers');
-  const urgent = counts.needs_attention + counts.provisioning_problem;
-  btn.innerHTML = 'Customers' + (urgent > 0 ? '<span class="tab-flag">' + urgent + '</span>' : '');
+  btn.innerHTML = 'Customers' + (counts.needs_attention > 0 ? '<span class="tab-flag">' + counts.needs_attention + '</span>' : '');
+}
+
+function summaryCard(label, value, sub, className, filter) {
+  const clickable = filter ? ' role="button" tabindex="0" onclick="setCustomerFilter(\'' + filter + '\')"' : '';
+  return '<div class="summary-card ' + (className || '') + (filter && customerFilter === filter ? ' selected' : '') + '"' + clickable + '>' +
+    '<div class="summary-value">' + value + '</div><div class="summary-label">' + label + '</div>' +
+    (sub ? '<div class="summary-sub">' + sub + '</div>' : '') + '</div>';
 }
 
 function customerMonitorRow(row, nowMs) {
-  const membership = CUSTOMER_MEMBERSHIP_LABELS[row.membershipStatus] || { label: row.membershipStatus, className: '' };
-  const state = ADMIN_STATE_LABELS[row.state] || { label: row.state, className: '' };
-  const protection = describeProtectionCell(row);
-  const classBadge = row.classification !== 'genuine_customer'
-    ? ' <span class="status-pill classification">' + escapeHtml(row.classification) + '</span>' : '';
+  const health = HEALTH_LABELS[row.health] || { label: row.health, className: '' };
+  const account = describeAccountCell(row);
+  const call = describeLatestCallCell(row, nowMs);
   const isOpen = openCustomerDetailId === row.householdId;
-  let html = '<tr class="customer-row state-' + escapeHtml(row.state) + '">' +
-    '<td class="cell-customer"><div class="customer-email">' + escapeHtml(row.email) + classBadge + '</div><div class="customer-sub">Signed up ' + escapeHtml(fmtDateTime(row.signedUpAt)) + '</div></td>' +
-    '<td><span class="status-pill ' + membership.className + '">' + escapeHtml(membership.label) + '</span></td>' +
-    '<td>' + escapeHtml(describeSetupCell(row)) + '</td>' +
-    '<td><span class="status-pill ' + protection.className + '">' + protection.label + '</span></td>' +
-    '<td>' + escapeHtml(formatRelativeTime(row.lastCallAt, nowMs)) + '</td>' +
-    '<td class="cell-attention"><span class="status-pill ' + state.className + '">' + escapeHtml(state.label) + '</span><div class="customer-sub">' + escapeHtml(row.reason) + '</div></td>' +
+  let html = '<tr class="customer-row health-' + escapeHtml(row.health) + '">' +
+    '<td class="cell-customer"><div class="customer-email">' + escapeHtml(row.email) + '</div><div class="customer-sub">Joined ' + escapeHtml(fmtDateTime(row.signedUpAt)) + '</div></td>' +
+    '<td><div>' + escapeHtml(account.label) + (account.testLabel ? ' <span class="status-pill classification">' + escapeHtml(account.testLabel) + '</span>' : '') + '</div>' +
+      (account.sub ? '<div class="customer-sub' + (row.subscriptionIssue ? ' text-warn' : '') + '">' + escapeHtml(account.sub) + '</div>' : '') + '</td>' +
+    '<td class="cell-health"><span class="status-pill ' + health.className + '">' + escapeHtml(health.label) + '</span>' +
+      (row.health !== 'healthy' ? '<div class="customer-sub">' + escapeHtml(row.healthReason) + '</div>' : '') + '</td>' +
+    '<td class="cell-wrap">' + escapeHtml(row.health === 'inactive' ? '—' : row.setupLabel) + '</td>' +
+    '<td class="cell-wrap' + (!row.network || !row.device ? ' text-muted' : '') + '">' + escapeHtml(describeNetworkCell(row)) + '</td>' +
+    '<td class="' + (row.app ? '' : 'text-muted') + '">' + escapeHtml(describeAppCell(row)) + '</td>' +
+    '<td class="cell-wrap">' + escapeHtml(describeLastConfirmedCell(row, nowMs)) + '</td>' +
+    '<td class="cell-wrap"><div>' + escapeHtml(call.main) + '</div>' +
+      (call.delivery ? '<div class="customer-sub' + (call.failure ? ' text-bad' : '') + '">' + escapeHtml(call.delivery) + '</div>' : '') + '</td>' +
     '<td><button type="button" class="row-button" data-household-id="' + escapeHtml(row.householdId) + '" onclick="toggleCustomerDetail(this.dataset.householdId)">' + (isOpen ? 'Close' : 'View') + '</button></td>' +
     '</tr>';
   if (isOpen) {
-    html += '<tr class="detail-row"><td colspan="7"><div id="customerDetail" class="customer-detail"><div class="empty-state">Loading…</div></div></td></tr>';
+    html += '<tr class="detail-row"><td colspan="9"><div id="customerDetail" class="customer-detail"><div class="empty-state">Loading…</div></div></td></tr>';
   }
   return html;
 }
@@ -887,45 +914,43 @@ function renderCustomersTab() {
   const d = customerMonitorData;
   if (!d) return;
   const nowMs = new Date(d.generatedAt).getTime();
-  const scoped = scopeCustomerRows(d.rows, includeInternalCustomers);
-  const counts = countCustomerStates(scoped);
-  const visible = sortCustomerRows(filterCustomerRows(scoped, customerFilter));
+  const counts = countCustomerHealth(d.rows);
+  const s = d.summary || {};
+  const visible = sortCustomerRows(customerRowsForView(d.rows, customerFilter, customerSearch));
   updateCustomersTabFlag(counts);
 
   let html = '<div class="section"><div class="section-header"><h2>Customers</h2>' +
-    '<span class="last-updated">Updated ' + escapeHtml(fmtDateTime(d.generatedAt)) + '</span></div>';
+    '<span class="last-updated">Updated ' + escapeHtml(fmtDateTime(d.generatedAt)) + ' · <a href="#" onclick="loadCustomerMonitor();return false;">refresh</a></span></div>';
 
-  if (counts.needs_attention > 0 || counts.provisioning_problem > 0) {
-    html += '<button type="button" class="attention-banner" onclick="setCustomerFilter(\'' + (counts.needs_attention > 0 ? 'needs_attention' : 'provisioning_problem') + '\')">' +
-      (counts.needs_attention > 0 ? '<strong>' + counts.needs_attention + '</strong> need' + (counts.needs_attention === 1 ? 's' : '') + ' attention' : '') +
-      (counts.needs_attention > 0 && counts.provisioning_problem > 0 ? ' · ' : '') +
-      (counts.provisioning_problem > 0 ? '<strong>' + counts.provisioning_problem + '</strong> provisioning problem' + (counts.provisioning_problem === 1 ? '' : 's') : '') +
-      ' — show them</button>';
-  } else {
-    html += '<div class="attention-ok">Nobody needs attention right now.</div>';
-  }
+  const mix = [s.paying ? s.paying + ' paying' : null, s.complimentary ? s.complimentary + ' complimentary' : null, s.trial ? s.trial + ' trial' : null].filter(Boolean).join(' · ') || 'none';
+  html += '<div class="summary-strip">' +
+    summaryCard('Customers', counts.active, mix + (s.test ? ' · incl. ' + s.test + ' test/reviewer' : ''), '', 'active') +
+    summaryCard('Healthy', counts.healthy, 'protected, no problems seen', 'good', 'healthy') +
+    summaryCard('Needs attention', counts.needs_attention, counts.needs_attention ? 'click to see who and why' : 'nothing to investigate', counts.needs_attention ? 'bad' : '', 'needs_attention') +
+    summaryCard('Setup incomplete', counts.setup_incomplete, 'not yet protected, nothing wrong seen', counts.setup_incomplete ? 'warn' : '', 'setup_incomplete') +
+    '</div>';
 
   html += '<div class="filter-bar" role="toolbar" aria-label="Filter customers">';
   for (const f of CUSTOMER_FILTERS) {
-    const label = f === 'all' ? 'All' : ADMIN_STATE_LABELS[f].label;
-    const urgent = (f === 'needs_attention' || f === 'provisioning_problem') && counts[f] > 0;
-    html += '<button type="button" class="filter-chip' + (urgent ? ' urgent' : '') + '"' + (customerFilter === f ? ' aria-pressed="true"' : ' aria-pressed="false"') +
-      ' onclick="setCustomerFilter(\'' + f + '\')">' + label + ' <span class="chip-count">' + counts[f] + '</span></button>';
+    const urgent = f === 'needs_attention' && counts[f] > 0;
+    html += '<button type="button" class="filter-chip' + (urgent ? ' urgent' : '') + '" aria-pressed="' + (customerFilter === f ? 'true' : 'false') + '"' +
+      ' onclick="setCustomerFilter(\'' + f + '\')">' + CUSTOMER_FILTER_LABELS[f] + ' <span class="chip-count">' + counts[f] + '</span></button>';
   }
-  html += '<label class="scope-toggle"><input type="checkbox"' + (includeInternalCustomers ? ' checked' : '') + ' onchange="toggleCustomerDiagnostics()"> Include internal/test accounts</label>';
+  html += '<input type="search" id="customerSearchInput" class="customer-search" placeholder="Search email, network, device" value="' + escapeHtml(customerSearch) + '" oninput="setCustomerSearch(this.value)">';
   html += '</div>';
 
   if (visible.length === 0) {
-    html += '<div class="empty-state">No customers in this view.</div>';
+    html += '<div class="empty-state">' + (customerFilter === 'needs_attention' && !customerSearch ? 'Nobody needs attention right now.' : 'No customers in this view.') + '</div>';
   } else {
     html += '<div class="customer-table-wrap"><table class="customer-table monitor-table"><thead><tr>' +
-      '<th>Customer</th><th>Membership</th><th>Setup</th><th>Protection</th><th>Last call</th><th>Attention</th><th></th>' +
+      '<th>Customer</th><th>Account</th><th>Health</th><th>Setup</th><th>Network · device</th><th>App</th><th>Last confirmed</th><th>Latest call</th><th></th>' +
       '</tr></thead><tbody>' + visible.map((r) => customerMonitorRow(r, nowMs)).join('') + '</tbody></table></div>';
   }
 
   html += '<p class="sub" style="margin-top:14px;">' +
-    '"Needs attention": no forwarded call ' + d.thresholdHours + 'h+ after setup became possible (membership active and HCG number assigned — whichever was later), or calls are reaching HCG but the app has never registered to receive them. ' +
-    'Default view: genuine and not-yet-classified accounts' + (d.classificationAvailable ? '' : ' (classification data unavailable — every account shows as unclassified)') + '.' +
+    'A customer who simply hasn\'t had calls recently is never flagged. Needs attention means real evidence: a call HCG could not deliver since the last successful one, forwarding not confirmed ' + d.thresholdHours + 'h+ after setup became possible, calls reaching HCG with no registered app, HCG number problems, or setup incomplete with network/device unknown. ' +
+    '"Phone" outcomes are only reported by app versions that report their version; older installs show "Not reported". ' +
+    (d.deletedAccountsHidden ? d.deletedAccountsHidden + ' deleted (anonymised) account' + (d.deletedAccountsHidden === 1 ? '' : 's') + ' not shown.' : '') +
     (d.truncated ? ' Showing the newest households only — list truncated.' : '') + '</p>';
   html += '</div>';
 
@@ -955,13 +980,22 @@ async function loadCustomerDetail(householdId) {
 }
 
 // TEST-EXTRACT-START: renderCustomerDetailHtml
+function describeDetailDelivery(call) {
+  if (!call.dialCallStatus) return { twilio: '—', phone: '—' };
+  const twilio = { completed: 'Connected', 'no-answer': 'No answer', busy: 'Busy / declined', failed: 'Failed', canceled: 'Caller hung up' }[call.dialCallStatus] || call.dialCallStatus;
+  let phone = 'Not reported';
+  if (call.clientOutcome) phone = { accepted: 'Answered', rejected: 'Declined', cancelled: 'Caller hung up' }[call.clientOutcome] || call.clientOutcome;
+  else if (call.clientInviteReceivedAt) phone = 'Rang, no outcome';
+  return { twilio, phone };
+}
+
 function renderCustomerDetailHtml(detail) {
   const c = detail.customer;
   const t = detail.technical;
-  const state = ADMIN_STATE_LABELS[c.state] || { label: c.state, className: '' };
+  const health = HEALTH_LABELS[c.health] || null;
   let html = '<div class="detail-grid"><div>';
   html += '<h3>Setup &amp; protection</h3>';
-  html += '<div class="detail-state"><span class="status-pill ' + state.className + '">' + escapeHtml(state.label) + '</span> ' + escapeHtml(c.reason) + '</div>';
+  html += '<div class="detail-state">' + (health ? '<span class="status-pill ' + health.className + '">' + escapeHtml(health.label) + '</span> ' : '') + escapeHtml(c.healthReason || c.reason) + '</div>';
   html += '<ol class="timeline">';
   for (const stage of detail.timeline) {
     const d = describeTimelineStage(stage);
@@ -972,8 +1006,34 @@ function renderCustomerDetailHtml(detail) {
   if (c.setupClock && c.setupClock.startedAt) {
     html += '<div class="customer-sub">24h clock measured from ' + (c.setupClock.source === 'number_provisioned' ? 'HCG number assigned' : 'membership start') + ': ' + escapeHtml(fmtDateTime(c.setupClock.startedAt)) + '</div>';
   }
+
+  const calls = detail.recentCalls || [];
+  html += '<h3 style="margin-top:18px;">Recent calls</h3>';
+  if (calls.length === 0) {
+    html += '<div class="empty-state">No calls yet.</div>';
+  } else {
+    html += '<table class="recent-calls"><tr><th>When</th><th>Caller</th><th>Call</th><th>Twilio</th><th>Phone</th></tr>';
+    for (const call of calls) {
+      const del = describeDetailDelivery(call);
+      const kind = call.terminatedBySystem ? 'Ended by HCG' : (call.status === 'Known' ? 'Known contact' : 'Unknown · ' + (call.result || '—'));
+      html += '<tr><td>' + escapeHtml(fmtDateTime(call.at)) + '</td><td>' + escapeHtml(call.caller || '—') + '</td><td>' + escapeHtml(kind) + '</td>' +
+        '<td' + (call.dialCallStatus === 'failed' ? ' class="text-bad"' : '') + '>' + escapeHtml(del.twilio) + '</td><td>' + escapeHtml(del.phone) + '</td></tr>';
+    }
+    html += '</table>';
+  }
+
   html += '</div><div>';
-  html += '<h3>Actions</h3>';
+  html += '<h3>Account &amp; device</h3><table class="fact-table">';
+  const facts = [
+    ['Account', c.account ? c.account.label + (c.account.testLabel ? ' · ' + c.account.testLabel : '') : '—'],
+    ['Network', c.network ? c.network + (t.carrierTariffType ? ' · ' + t.carrierTariffType.replace('_', ' ') : '') : 'Not recorded'],
+    ['Device', c.device || 'Not recorded'],
+    ['App', c.app ? c.app.version + (c.app.build ? ' (' + c.app.build + ')' : '') + (c.app.platform ? ' · ' + c.app.platform : '') : 'Not reported'],
+    ['HCG number', t.hcgNumber || '—'],
+  ];
+  html += facts.map((r) => '<tr><td>' + escapeHtml(r[0]) + '</td><td>' + escapeHtml(r[1]) + '</td></tr>').join('');
+  html += '</table>';
+  html += '<h3 style="margin-top:18px;">Actions</h3>';
   html += '<div class="detail-actions">';
   if (c.state === 'provisioning_problem') {
     html += '<button type="button" class="action-button" id="detailRetryProvisioningBtn">Retry provisioning</button>';
@@ -994,10 +1054,8 @@ function renderCustomerDetailHtml(detail) {
     ['activation_verified_at', fmtDateTime(t.activationVerifiedAt)],
     ['voice_client_registered_at', fmtDateTime(t.voiceClientRegisteredAt)],
     ['delivery_verified_at', fmtDateTime(t.deliveryVerifiedAt)],
-    // Diagnostic instrumentation (2026-09-24, folded in during
-    // reconciliation with the onboarding monitor). App version is
-    // customer-app-reported and never server-validated — like every row
-    // here, escaped at render time below, never trusted as markup.
+    // App version is reported by the customer's own app and never
+    // validated server-side — escaped like every row here.
     ['App version', t.appVersion ? t.appVersion + (t.appBuildVersion ? ' (' + t.appBuildVersion + ')' : '') + (t.appPlatform ? ' · ' + t.appPlatform : '') : '—'],
     ['Most recent dial attempt', t.mostRecentDialOutcome
       ? t.mostRecentDialOutcome.dialCallStatus + ' at ' + fmtDateTime(t.mostRecentDialOutcome.at) +
