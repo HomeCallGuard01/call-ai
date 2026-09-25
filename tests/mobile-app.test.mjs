@@ -770,6 +770,81 @@ function check(condition, message) {
     );
   }
 
+  // --- MANUAL-TEST-CALL UX REMOVED (2026-09-25, physical Build 18
+  // finding): even as an optional link, "Test my protection now" /
+  // "Check now" — which routed to verify.tsx's "Not detected yet — use
+  // another phone to call your normal mobile number" flow — read as
+  // something a normal customer was meant to do, contradicting the
+  // already-built passive model (activation_verified_at/
+  // delivery_verified_at are both stamped automatically, server-side,
+  // from the first genuine forwarded call — see
+  // services/activationVerification.js). These structural checks prove
+  // the normal customer journey (complete.tsx, the Home tab) no longer
+  // links to verify.tsx or shows any of the removed phrases, while
+  // verify.tsx itself remains in the codebase untouched (point 8 of the
+  // approved fix: preserved for diagnostics, just not part of the normal
+  // journey). ---
+  {
+    const completeSource = readFileSync(
+      path.join(__dirname, '..', 'mobile', 'app', '(setup)', 'complete.tsx'),
+      'utf8'
+    );
+    const homeSource = readFileSync(
+      path.join(__dirname, '..', 'mobile', 'app', '(tabs)', 'index.tsx'),
+      'utf8'
+    );
+    const verifySource = readFileSync(
+      path.join(__dirname, '..', 'mobile', 'app', '(setup)', 'verify.tsx'),
+      'utf8'
+    );
+
+    check(
+      !completeSource.includes('setup)/verify') && !homeSource.includes('setup)/verify'),
+      'MANUAL-TEST-CALL UX REMOVED: neither complete.tsx nor the Home tab (index.tsx) navigates to /(setup)/verify anywhere — the normal customer journey never reaches it'
+    );
+
+    const bannedPhrases = [
+      'Test my protection now',
+      'Check now',
+      'Test my protection',
+      'Not detected yet',
+      'Use another phone',
+      'Check again',
+      'code was mistyped',
+    ];
+    for (const phrase of bannedPhrases) {
+      check(
+        !completeSource.includes(phrase) && !homeSource.includes(phrase),
+        `MANUAL-TEST-CALL UX REMOVED: "${phrase}" does not appear in complete.tsx or index.tsx (the normal customer journey)`
+      );
+    }
+
+    check(
+      verifySource.includes('Not detected yet') &&
+        verifySource.includes('Use another phone') &&
+        verifySource.includes('verifyActivation'),
+      'MANUAL-TEST-CALL UX REMOVED: verify.tsx itself is preserved unmodified — still a real, working screen for diagnostics/direct navigation, just no longer linked from the normal journey'
+    );
+
+    // Explicit safety check requested alongside this fix: complete.tsx
+    // and index.tsx are carrier-agnostic (they render the same copy for
+    // every household regardless of provider) and were never part of the
+    // activation-instructions/dial-code path (that's activate.tsx,
+    // services/activationInstructions.js, services/providerPolicy.js —
+    // none of which this fix touched), so removing these verify.tsx
+    // links cannot have exposed or altered any carrier-specific
+    // instruction, including giffgaff's.
+    check(
+      !completeSource.toLowerCase().includes('giffgaff') && !homeSource.toLowerCase().includes('giffgaff'),
+      'GIFFGAFF SAFETY: neither complete.tsx nor index.tsx reference giffgaff (or any carrier) at all — this fix cannot have touched carrier-specific instructions'
+    );
+    const providerPolicySource = readFileSync(path.join(__dirname, '..', 'services', 'providerPolicy.js'), 'utf8');
+    check(
+      /giffgaff:\s*{[^}]*method:\s*"native_settings"/s.test(providerPolicySource),
+      'GIFFGAFF SAFETY: giffgaff remains classified method: "native_settings" in services/providerPolicy.js, completely unmodified by this fix (this file was not touched)'
+    );
+  }
+
   check(
     stepIndexForScreen('subscribe') === 1 && stepIndexForScreen('contacts') === 2,
     'stepIndexForScreen: subscribe and contacts map to their own distinct macro-steps'

@@ -41,18 +41,6 @@ import { loadSetupCompletedAt, clearSetupCompletedAt } from "../../lib/setupComp
 import type { DashboardActivityItem, DashboardResponse } from "../../lib/types";
 import { colors, spacing, typography } from "../../lib/theme";
 
-// Onboarding-verification UX change (2026-09-23): how long a household
-// can sit in "awaiting_confirmation" (setup done, no forwarded call seen
-// yet) before the Home tab actively prompts them to check, rather than
-// silently waiting forever. Not a scheduled job or a push notification —
-// purely a local read of markSetupCompleted's timestamp, evaluated the
-// next time this screen loads (app open, pull-to-refresh, tab focus).
-// 24 hours: long enough that a customer who hasn't happened to make or
-// receive any call yet isn't nagged the same day they finished setup,
-// short enough that "protection silently never worked" is caught within
-// a day, not left for a customer to discover only when they need it.
-const UNVERIFIED_SETUP_REMINDER_MS = 24 * 60 * 60 * 1000;
-
 // "ready" is the only state in which `data` is guaranteed non-null and
 // backend-confirmed for the *current* user — every other state must never
 // render "Protected" or "Setting up", both of which claim knowledge about
@@ -358,14 +346,6 @@ export default function Home() {
   const homeProtectionState = computeHomeProtectionState(data!, hasCompletedActivationStep);
   const hasNoContacts = data!.contacts.length === 0;
 
-  // Onboarding-verification UX change (2026-09-23): only meaningful while
-  // homeProtectionState === "awaiting_confirmation" — how long it's been
-  // since setup completed, compared against UNVERIFIED_SETUP_REMINDER_MS.
-  const showUnverifiedSetupReminder =
-    homeProtectionState === "awaiting_confirmation" &&
-    !!setupCompletedAt &&
-    Date.now() - new Date(setupCompletedAt).getTime() >= UNVERIFIED_SETUP_REMINDER_MS;
-
   // Same decision point B1 uses to skip already-done steps — reused here
   // so "Finish setup" always sends the customer to the actual next
   // unfinished step (which, since contacts now come before activation,
@@ -431,34 +411,23 @@ export default function Home() {
           </>
         ) : homeProtectionState === "awaiting_confirmation" ? (
           <>
-            {/* Onboarding-verification UX change (2026-09-23): every
-                concrete setup step — including turning on call forwarding
-                — is done. No customer action is required; this resolves
-                automatically the moment the first genuine forwarded call
-                reaches Home Call Guard, same as every other automatic
-                transition in this state machine. "Test my protection
-                now" below is optional, never required to use the app. */}
+            {/* Manual-test-call UX removed (2026-09-25): every concrete
+                setup step — including turning on call forwarding — is
+                done. No customer action is required or offered here:
+                activation_verified_at/delivery_verified_at are both
+                stamped automatically, server-side, from the first
+                genuine forwarded call reaching Home Call Guard (see
+                services/activationVerification.js's
+                stampActivationVerifiedOnRealCall) — never from a
+                customer-initiated test call. Silence alone (no call yet)
+                is never treated as a fault, so no reminder/warning is
+                shown while waiting — a customer may simply not have
+                received a call yet. */}
             <Hero muted />
-            <Text style={styles.giantTitleMuted} accessibilityRole="header">Setting up / awaiting confirmation</Text>
+            <Text style={styles.giantTitleMuted} accessibilityRole="header">Protection set up</Text>
             <Text style={styles.statusBody}>
-              Home Call Guard is set up. We'll confirm your protection automatically when your first forwarded
-              call reaches Home Call Guard.
+              We'll confirm automatically when your next call comes through.
             </Text>
-            <PrimaryButton
-              label="Test my protection now"
-              variant="secondary"
-              onPress={() => router.push("/(setup)/verify")}
-            />
-            {showUnverifiedSetupReminder && (
-              <View style={styles.reminderCard}>
-                <Text style={styles.reminderTitle}>Let's check your protection</Text>
-                <Text style={styles.reminderBody}>
-                  We haven't yet seen a call come through Home Call Guard. Let's make sure everything is
-                  connected correctly.
-                </Text>
-                <PrimaryButton label="Check now" onPress={() => router.push("/(setup)/verify")} />
-              </View>
-            )}
           </>
         ) : homeProtectionState === "confirming_delivery" ? (
           <>
@@ -502,16 +471,18 @@ export default function Home() {
                 inferred from silence or staleness (see
                 hasRecentDeliveryProblem's own comment). This is the one
                 state in this whole model that names an actual, known
-                event rather than reassuring — deliberately not alarmist
-                wording, and deliberately offers a concrete next action
-                (a real test call) rather than nothing. */}
+                event rather than reassuring.
+                Manual-test-call UX removed (2026-09-25): no longer offers
+                a "test it now" action — the customer is never required or
+                encouraged to place a test call; Home Call Guard keeps
+                monitoring and will resolve this automatically the next
+                time a real call is delivered successfully. */}
             <Hero muted />
-            <Text style={styles.giantTitleMuted} accessibilityRole="header">Let's check your protection</Text>
+            <Text style={styles.giantTitleMuted} accessibilityRole="header">Checking your protection</Text>
             <Text style={styles.statusBody}>
               A recent call to your protected number didn't come through as expected. Your protection has worked
-              before — this may be a one-off, but we'd recommend testing it now.
+              before — this may be a one-off, and we'll keep monitoring automatically.
             </Text>
-            <PrimaryButton label="Test my protection now" onPress={() => router.push("/(setup)/verify")} />
           </>
         ) : (
           <>
@@ -532,14 +503,14 @@ export default function Home() {
                 never a claim that carrier forwarding is currently,
                 actively known to be on (HCG cannot observe that; see
                 DashboardResponse.lastConfirmedProtectedAt's own comment).
-                Deliberately small/muted, not a warning. */}
+                Deliberately small/muted, not a warning.
+                Manual-test-call link removed (2026-09-25): no longer
+                offers a way to trigger verify.tsx from here — nothing to
+                encourage the customer to check, this is purely a passive
+                fact. */}
             {data!.protection.lastConfirmedProtectedAt && (
               <Text style={styles.lastConfirmedText}>
                 Last confirmed {formatActivityTime(data!.protection.lastConfirmedProtectedAt)}
-                {"  ·  "}
-                <Text style={styles.lastConfirmedLink} onPress={() => router.push("/(setup)/verify")}>
-                  Test my protection
-                </Text>
               </Text>
             )}
 
@@ -734,10 +705,6 @@ const styles = StyleSheet.create({
     marginTop: -spacing.sm,
     marginBottom: spacing.lg,
   },
-  lastConfirmedLink: {
-    color: colors.accent,
-    fontWeight: "600",
-  },
   statusBody: {
     ...typography.body,
     color: colors.textMuted,
@@ -823,25 +790,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   nudgeText: {
-    ...typography.body,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-  },
-  reminderCard: {
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: 16,
-    backgroundColor: colors.card,
-    padding: spacing.md,
-    marginTop: spacing.lg,
-  },
-  reminderTitle: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: "700",
-    marginBottom: spacing.xs,
-  },
-  reminderBody: {
     ...typography.body,
     color: colors.textMuted,
     marginBottom: spacing.sm,

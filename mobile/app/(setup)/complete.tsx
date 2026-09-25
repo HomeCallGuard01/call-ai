@@ -18,19 +18,33 @@
 // terminal screen of setup on every path (activate.tsx no longer routes
 // through a mandatory verify gate first — see its own comments). Records
 // the local "setup completed" timestamp (lib/setupCompletionStorage.ts)
-// that resumeSetupAt and the Home tab's reminder both read, and offers
-// the real activation check as a clearly secondary, optional action
-// rather than a blocking step. Reusing verify.tsx for that action, not a
-// new screen — same endpoint, same mechanism, just no longer mandatory.
-import { useEffect, useRef, useState } from "react";
-import { Text, Pressable, StyleSheet } from "react-native";
+// that resumeSetupAt and the Home tab's reminder both read.
+//
+// Manual-test-call UX removed (2026-09-25): this screen used to also
+// offer a clearly-secondary optional link to verify.tsx, inviting the
+// customer to place a real test call and then re-check manually. A
+// physical Build 18 walkthrough found that even as an optional link,
+// its presence and wording ("calling your normal mobile number from
+// another phone") reads as something the customer is meant to do —
+// contradicting the product's actual, already-built passive model:
+// activation_verified_at/delivery_verified_at are both stamped
+// automatically, with zero customer action, by the first genuine
+// forwarded call reaching /voice (services/activationVerification.js's
+// stampActivationVerifiedOnRealCall, and the equivalent delivery-verified
+// stamping) — nothing here needs a customer-initiated test call at all.
+// verify.tsx itself is preserved (POST /api/v1/activation/verify is
+// unchanged and still real), just no longer linked from the normal
+// customer journey. See mobile/app/(tabs)/index.tsx for the same removal
+// on the Home tab's own optional links.
+import { useEffect, useState } from "react";
+import { Text, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { fetchDashboard } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { markSetupCompleted } from "../../lib/setupCompletionStorage";
-import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
+import { colors, spacing, typography } from "../../lib/theme";
 
 export default function SetupComplete() {
   const { session } = useAuth();
@@ -88,19 +102,6 @@ export default function SetupComplete() {
       <Text style={styles.body}>{contactsLine}</Text>
       <Text style={styles.priceNote}>£4.99 per month including VAT, cancel anytime.</Text>
       <PrimaryButton label="Go to my dashboard" onPress={() => router.replace("/(tabs)")} />
-
-      {/* Clearly secondary, optional — never a requirement to proceed.
-          Reuses the existing activation-verification screen/endpoint. */}
-      <Pressable
-        onPress={() => router.push("/(setup)/verify")}
-        accessibilityRole="button"
-        style={styles.secondaryLink}
-      >
-        <Text style={styles.secondaryLinkText}>Test my protection now (optional)</Text>
-      </Pressable>
-      <Text style={styles.secondaryDetail}>
-        This involves calling your normal mobile number from another phone — not your Home Call Guard number.
-      </Text>
     </Screen>
   );
 }
@@ -120,23 +121,5 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textMuted,
     marginBottom: spacing.lg,
-  },
-  secondaryLink: {
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "center",
-    alignSelf: "center",
-    marginTop: spacing.lg,
-  },
-  secondaryLinkText: {
-    color: colors.accent,
-    fontWeight: "600",
-    fontSize: 15,
-    textDecorationLine: "underline",
-  },
-  secondaryDetail: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: "center",
-    marginTop: spacing.xs,
   },
 });
