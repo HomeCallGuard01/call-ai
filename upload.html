@@ -684,6 +684,23 @@
     color: white;
   }
 
+  /* Membership card price visibility (2026-09-25): previously an
+     unstyled plain paragraph, easy to miss against the plan name above
+     it. Purely visual — the text itself (server-supplied priceLabel)
+     and all billing/subscription behaviour are unchanged. */
+  .membership-plan {
+    font-size: 15px;
+    color: #94a3b8;
+    margin: 0;
+  }
+
+  .membership-price {
+    margin: 2px 0 14px;
+    font-size: 26px;
+    font-weight: 700;
+    color: #22c55e;
+  }
+
   .stat-label {
     margin-top: 6px;
     font-size: 14px;
@@ -1435,8 +1452,8 @@
     <section class="card onboarding-card" id="onboardingCard">
 
       <div id="stepIdentify">
-        <h2>Who are we protecting?</h2>
-        <p class="field-hint">Tell us where safe, trusted calls should ring.</p>
+        <h2>Enter your phone number</h2>
+        <p class="field-hint">Enter the number you want Home Call Guard to protect.</p>
 
         <form id="phoneNumberForm">
           <label for="householdPhoneNumberInput">Phone number</label>
