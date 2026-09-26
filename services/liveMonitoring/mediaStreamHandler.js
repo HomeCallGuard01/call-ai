@@ -18,7 +18,13 @@
 
 'use strict';
 
-const { createWindowBuffer } = require('./audioWindow');
+// 2026-09-26: pause-aligned, non-overlapping segments replace
+// audioWindow.js's 4s-window/2s-overlap buffer, so each second of audio
+// is transcribed once instead of twice — see speechSegmenter.js for why
+// that's safe. audioWindow.js is deliberately left intact (and still
+// tested) as the one-line rollback: swap createSpeechSegmenter() back to
+// createWindowBuffer() below.
+const { createSpeechSegmenter } = require('./speechSegmenter');
 const { transcribeChunk } = require('./transcribeChunk');
 const { createCallMonitor } = require('./riskMonitor');
 const { logEvent } = require('./structuredLog');
@@ -132,7 +138,7 @@ function createMediaStreamHandler({
     if (message.event === 'start') {
       const { streamSid, callSid, customParameters = {} } = message.start;
       const householdId = customParameters.householdId || null;
-      const windowBuffer = createWindowBuffer();
+      const windowBuffer = createSpeechSegmenter();
       const monitor = createCallMonitor({
         callSid,
         householdId,
@@ -160,6 +166,11 @@ function createMediaStreamHandler({
         callSid,
         householdId,
         lastTranscript: null,
+        // Audio-order position of the next segment sent for
+        // transcription — passed to the monitor with the result so a
+        // response that resolves out of order is still placed where its
+        // audio belongs (riskMonitor.js's handleTranscribedChunk).
+        nextSequence: 0,
         startedAt: now(),
         // Guards against ever running the limit-reached branch twice for
         // the same stream — the narrow window between us deciding to
@@ -246,10 +257,13 @@ function createMediaStreamHandler({
       const window = entry.windowBuffer.addFrame(frame);
       if (!window) return Promise.resolve();
 
+      const sequence = entry.nextSequence;
+      entry.nextSequence += 1;
+
       return transcribeChunk(window, { client: transcribeClient, callSid: entry.callSid, promptContext: entry.lastTranscript })
         .then(text => {
           if (text) entry.lastTranscript = text;
-          return entry.monitor.handleTranscribedChunk(text);
+          return entry.monitor.handleTranscribedChunk(text, { sequence });
         })
         .catch(err => {
           // Belt-and-braces: transcribeChunk already never throws, but a

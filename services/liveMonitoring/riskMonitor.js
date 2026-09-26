@@ -64,7 +64,25 @@ function createCallMonitor({
   twilioRestClient = null,
   redLineRedirectUrl = null,
 }) {
+  // Transcribed chunks, kept in audio order. 2026-09-26: segments no
+  // longer overlap (speechSegmenter.js), so a phrase spanning a cut now
+  // only exists across two adjacent chunks — their order matters, and
+  // Whisper responses can resolve out of order. A chunk handed in with a
+  // `sequence` (mediaStreamHandler.js always does) is placed at that
+  // position; one without is appended, preserving the original behaviour
+  // for every existing caller.
+  const orderedChunks = [];
+  let nextAppendSequence = 0;
   let accumulatedTranscript = '';
+  // Same chunks joined with the punctuation Whisper tends to add at the
+  // very end of a chunk stripped first ("don't speak to your." + "Bank
+  // or your family." -> "don't speak to your Bank or your family."). A
+  // pause-aligned cut can fall mid-sentence; the old overlapping window
+  // would have heard that phrase as continuous audio, with no full stop
+  // at the cut. Both views are checked below — never only this one — so
+  // this can only add a detection the raw transcript missed at a chunk
+  // boundary, never remove one.
+  let boundaryJoinedTranscript = '';
   let warningSent = false;
   let chunkCount = 0;
   let peakRiskScore = 0;
@@ -92,22 +110,38 @@ function createCallMonitor({
     }
   }
 
+  function rebuildTranscripts() {
+    const texts = orderedChunks.filter(t => typeof t === 'string' && t.length > 0);
+    accumulatedTranscript = texts.join(' ');
+    boundaryJoinedTranscript = texts.reduce(
+      (joined, text) => (joined ? `${joined.replace(/[\s.,!?;:…]+$/u, '')} ${text}` : text),
+      ''
+    );
+  }
+
   /**
    * @param {string|null} chunkText - null if this window failed to transcribe
+   * @param {object} [opts]
+   * @param {number} [opts.sequence] - the chunk's 0-based position in the
+   *   call's audio; omitted -> appended after every chunk seen so far.
    * @returns {Promise<{riskScore: number, confidence: number, warningSentThisCall: boolean, criticalTriggeredThisCall: boolean, criticalSignalIds: string[]}>}
    */
-  async function handleTranscribedChunk(chunkText) {
+  async function handleTranscribedChunk(chunkText, { sequence } = {}) {
     chunkCount += 1;
 
+    const position = Number.isInteger(sequence) && sequence >= 0 ? sequence : nextAppendSequence;
+    nextAppendSequence = Math.max(nextAppendSequence, position + 1);
     if (chunkText) {
-      accumulatedTranscript = accumulatedTranscript
-        ? `${accumulatedTranscript} ${chunkText}`
-        : chunkText;
+      orderedChunks[position] = chunkText;
+      rebuildTranscripts();
     }
 
     // --- Layer 1: critical/red-line detection, checked first ---
     if (!criticalTriggered) {
-      const critical = extractCriticalSignals(accumulatedTranscript);
+      let critical = extractCriticalSignals(accumulatedTranscript);
+      if (!critical.hasCriticalSignal && boundaryJoinedTranscript !== accumulatedTranscript) {
+        critical = extractCriticalSignals(boundaryJoinedTranscript);
+      }
       if (critical.hasCriticalSignal) {
         criticalTriggered = true; // set before awaiting: guarantees at
         // most one termination sequence and one red-line SMS is ever
@@ -141,7 +175,11 @@ function createCallMonitor({
     }
 
     // --- Layer 2: progressive 0-100 scoring, unchanged ---
-    const scored = scoreTranscript(accumulatedTranscript, null);
+    let scored = scoreTranscript(accumulatedTranscript, null);
+    if (boundaryJoinedTranscript !== accumulatedTranscript) {
+      const joinedScored = scoreTranscript(boundaryJoinedTranscript, null);
+      if (joinedScored.riskScore > scored.riskScore) scored = joinedScored;
+    }
 
     if (scored.riskScore > peakRiskScore) {
       peakRiskScore = scored.riskScore;
