@@ -957,8 +957,12 @@ router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req
 // the response.
 router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, express.json(), async (req, res) => {
   try {
-    const registeredAt = await markVoiceClientRegistered(req.household.id);
     const { appVersion, appBuildVersion, appPlatform } = req.body || {};
+    // Registration-history observability (2026-09-27, migration 046) —
+    // the same optional diagnostic fields already sent here are now also
+    // passed through to the history-recording RPC, not just the separate
+    // "household's current known app version" write below.
+    const registeredAt = await markVoiceClientRegistered(req.household.id, { appPlatform, appVersion, appBuildVersion });
     if (appVersion || appBuildVersion || appPlatform) {
       markHouseholdAppVersion(req.household.id, appVersion, appBuildVersion, appPlatform).catch(() => {});
     }
@@ -1008,17 +1012,36 @@ router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(),
 // entitlement — a customer should be able to verify activation as part
 // of setup even in the narrow window before/around their subscription
 // taking effect, and the check itself reveals nothing entitlement-gated.
+//
+// Delivery-confirmation signal (2026-09-27, P0-3 launch hardening) — a
+// confirmed real gap, found tracing a production household whose Voice
+// SDK client never once registered: this route previously reported
+// "verified: true" (and the mobile app's own verify.tsx screen showed
+// "Verified! Your calls are now forwarding correctly") based ENTIRELY on
+// activation_verified_at — proof only that a call reached Home Call
+// Guard's Twilio number, never proof the approved call actually reached
+// or could be answered on the customer's phone. `deliveryConfirmed`
+// below is the same, already-computed, already-tested signal
+// computeProtectionStatus's endToEndDeliveryVerified already uses
+// elsewhere in this codebase (households.delivery_verified_at — real
+// Twilio evidence, DialCallStatus === "completed") — reused here, not
+// reimplemented. Purely additive: existing `verified`/`verifiedAt` fields
+// are completely unchanged, so the current app build (which only reads
+// `verified`) behaves identically to before this change. A future app
+// build can read `deliveryConfirmed` to show the honest, stronger claim
+// instead of conflating "we heard from you" with "your phone would ring."
 router.post("/api/v1/activation/verify", requireAuthApi, async (req, res) => {
   try {
     const recentCalls = await getRecentCalls(req.household.id, 1);
     const verified = isCallWithinVerificationWindow(recentCalls[0]);
 
     if (!verified) {
-      return res.json({ verified: false });
+      return res.json({ verified: false, deliveryConfirmed: false });
     }
 
     const verifiedAt = await markActivationVerified(req.household.id);
-    res.json({ verified: true, verifiedAt });
+    const protectionStatus = computeProtectionStatus(req.household, new Date());
+    res.json({ verified: true, verifiedAt, deliveryConfirmed: protectionStatus.endToEndDeliveryVerified });
   } catch (err) {
     console.error("MOBILE ACTIVATION VERIFY ERROR:", err.message);
     res.status(500).json({ error: "failed" });
