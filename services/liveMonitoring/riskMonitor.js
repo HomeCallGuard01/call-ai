@@ -34,7 +34,7 @@
 const { scoreTranscript } = require('./scoring/scorer');
 const { THRESHOLDS } = require('./scoring/thresholds');
 const { extractCriticalSignals } = require('./scoring/criticalSignals');
-const { sendWarningSms, RED_LINE_WARNING_BODY } = require('./smsWarning');
+const { sendWarningSms, RED_LINE_WARNING_BODY, POST_CALL_RED_LINE_WARNING_BODY } = require('./smsWarning');
 const { terminateCall } = require('./callTermination');
 const { logEvent } = require('./structuredLog');
 
@@ -91,6 +91,17 @@ function createCallMonitor({
   let criticalSignalIds = [];
   let terminatedBySystem = false;
   let terminationMethod = null;
+  // Set by markCallEnded() when Twilio reports the call is over
+  // (2026-09-26 hang-up flush). From then on, any chunk still being
+  // processed — the flushed hang-up tail, or a chunk whose transcription
+  // was already in flight — can still warn the customer, but a red line
+  // uses POST_CALL_RED_LINE_WARNING_BODY and NEVER attempts termination:
+  // there is no call left to end, and RED_LINE_WARNING_BODY's "was ended
+  // automatically" would be untrue (the caller hung up first). Before
+  // this, a red line in an in-flight chunk made three doomed Twilio
+  // update attempts against the finished call.
+  let callEnded = false;
+  let detectedAfterCallEnded = false;
 
   async function sendCustomerWarning(body) {
     if (typeof toNumber !== 'string' || toNumber.trim().length === 0) {
@@ -152,25 +163,31 @@ function createCallMonitor({
         // to, the softer progressive SMS — a call never gets two
         // different warning messages.
 
-        logEvent('critical_signal_detected', { callSid, householdId, criticalSignalIds, chunkIndex: chunkCount });
+        logEvent('critical_signal_detected', { callSid, householdId, criticalSignalIds, chunkIndex: chunkCount, afterCallEnded: callEnded });
 
-        const smsPromise = sendCustomerWarning(RED_LINE_WARNING_BODY);
-
-        let terminationPromise = Promise.resolve({ terminated: false, method: null });
-        if (twilioRestClient && redLineRedirectUrl) {
-          terminationPromise = terminateCall({
-            client: twilioRestClient,
-            callSid,
-            redirectUrl: redLineRedirectUrl,
-            reason: criticalSignalIds.join(', '),
-          });
+        if (callEnded) {
+          detectedAfterCallEnded = true;
+          logEvent('red_line_termination_skipped', { callSid, householdId, error: 'call already ended' });
+          await sendCustomerWarning(POST_CALL_RED_LINE_WARNING_BODY);
         } else {
-          logEvent('red_line_termination_skipped', { callSid, householdId, error: 'no twilioRestClient/redLineRedirectUrl configured' });
-        }
+          const smsPromise = sendCustomerWarning(RED_LINE_WARNING_BODY);
 
-        const [, terminationResult] = await Promise.all([smsPromise, terminationPromise]);
-        terminatedBySystem = terminationResult.terminated;
-        terminationMethod = terminationResult.method;
+          let terminationPromise = Promise.resolve({ terminated: false, method: null });
+          if (twilioRestClient && redLineRedirectUrl) {
+            terminationPromise = terminateCall({
+              client: twilioRestClient,
+              callSid,
+              redirectUrl: redLineRedirectUrl,
+              reason: criticalSignalIds.join(', '),
+            });
+          } else {
+            logEvent('red_line_termination_skipped', { callSid, householdId, error: 'no twilioRestClient/redLineRedirectUrl configured' });
+          }
+
+          const [, terminationResult] = await Promise.all([smsPromise, terminationPromise]);
+          terminatedBySystem = terminationResult.terminated;
+          terminationMethod = terminationResult.method;
+        }
       }
     }
 
@@ -199,7 +216,12 @@ function createCallMonitor({
       warningSent = true; // set before awaiting: guarantees at most one SMS
       // is ever triggered for this call even if two chunks resolve nearly
       // simultaneously.
-      logEvent('risk_threshold_crossed', { callSid, householdId, riskScore: scored.riskScore });
+      if (callEnded) detectedAfterCallEnded = true;
+      // Progressive (possible-scam) warning keeps its existing wording
+      // even after the call ended — it says "possible scam", not "clear
+      // signs of fraud", so it never overclaims; only the red line gets
+      // the post-call wording above.
+      logEvent('risk_threshold_crossed', { callSid, householdId, riskScore: scored.riskScore, afterCallEnded: callEnded });
       await sendCustomerWarning();
     }
 
@@ -223,7 +245,15 @@ function createCallMonitor({
       criticalSignalIds,
       terminatedBySystem,
       terminationMethod,
+      detectedAfterCallEnded,
     };
+  }
+
+  // Called by mediaStreamHandler.js the moment Twilio reports the call
+  // is over ("stop"), BEFORE the hang-up tail is flushed and before any
+  // in-flight chunk resolves — see callEnded above. Idempotent.
+  function markCallEnded() {
+    callEnded = true;
   }
 
   // Exposed (cost-protection safeguard) so mediaStreamHandler.js can send
@@ -233,7 +263,7 @@ function createCallMonitor({
   // destination" skip, same catch-and-log-never-throw behaviour. Never
   // sets/reads the warningSent flag itself: that flag is specifically
   // about the progressive risk-warning SMS, not this one.
-  return { handleTranscribedChunk, hasSentWarning: () => warningSent, getSummary, sendCustomerWarning };
+  return { handleTranscribedChunk, hasSentWarning: () => warningSent, getSummary, sendCustomerWarning, markCallEnded };
 }
 
 module.exports = { createCallMonitor };

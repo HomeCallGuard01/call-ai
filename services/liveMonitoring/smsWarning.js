@@ -13,6 +13,14 @@ const WARNING_BODY = 'Home Call Guard: this call is showing signs of a possible 
 // call has already been ended), not a caution about ongoing risk.
 const RED_LINE_WARNING_BODY = 'Home Call Guard: this call showed clear signs of fraud and was ended automatically. If you shared any details, contact your bank directly using the number on your card.';
 
+// Red line detected only AFTER the call had already ended (2026-09-26
+// hang-up flush — mediaStreamHandler.js transcribes the audio still
+// buffered at hang-up, and any chunk still in flight when the call
+// ended). Deliberately NOT RED_LINE_WARNING_BODY: nothing was "ended
+// automatically" — the caller hung up first — so the customer is told
+// the truth and what to do now. Wording approved by Andrew 2026-09-26.
+const POST_CALL_RED_LINE_WARNING_BODY = "Home Call Guard: the call that just ended showed clear signs of fraud. Don't act on anything the caller asked. If you shared details, contact your bank using the number on your card.";
+
 // Sent once when the per-call monitoring safety limit is reached
 // (services/liveMonitoring/monitoringLimit.js) — the customer must never
 // be left believing live scam-monitoring is still active on this call
@@ -35,7 +43,7 @@ const MONITORING_LIMIT_ENDED_BODY =
 async function sendWarningSms({ client, to, from, callSid, body = WARNING_BODY }) {
   try {
     await client.messages.create({ to, from, body });
-    logEvent('sms_warning_sent', { callSid, to, redLine: body === RED_LINE_WARNING_BODY });
+    logEvent('sms_warning_sent', { callSid, to, redLine: body === RED_LINE_WARNING_BODY || body === POST_CALL_RED_LINE_WARNING_BODY, postCall: body === POST_CALL_RED_LINE_WARNING_BODY });
     return { sent: true };
   } catch (err) {
     logEvent('sms_warning_failed', { callSid, to, error: err.message });
@@ -43,4 +51,4 @@ async function sendWarningSms({ client, to, from, callSid, body = WARNING_BODY }
   }
 }
 
-module.exports = { sendWarningSms, WARNING_BODY, RED_LINE_WARNING_BODY, MONITORING_LIMIT_ENDED_BODY };
+module.exports = { sendWarningSms, WARNING_BODY, RED_LINE_WARNING_BODY, POST_CALL_RED_LINE_WARNING_BODY, MONITORING_LIMIT_ENDED_BODY };

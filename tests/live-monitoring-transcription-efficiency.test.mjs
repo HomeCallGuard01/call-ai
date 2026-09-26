@@ -413,6 +413,78 @@ async function run() {
     check(sms.calls.length === 1, 'monitoring carries on after a failed segment: the next segment\'s scam text still triggers the warning');
   }
 
+  // ==========================================================================
+  // 9. Review follow-ups: the real 2026-08-16 call, wrong-order false
+  //    positives, and end-to-end single submission through the handler.
+  // ==========================================================================
+  {
+    // (a) The real call's verbatim Whisper chunks, now through the
+    //     sequenced + boundary-joined path, must produce exactly the
+    //     outcome live-monitoring-transcription-robustness.test.mjs pins
+    //     for the old path: no red line on the real (inverted) wording,
+    //     progressive warning at chunk 11 with score 65, one SMS.
+    const realChunks = [
+      'you',
+      'Thank you.',
+      "Hello, I'm calling from your bank, I just want to speak to you about...",
+      'want to speak to you about your account.',
+      'Bye-bye.',
+      'There is something unusual in your account and we need to solve it.',
+      'account and we need to sort this out today, urgently.',
+      'Thank you.',
+      "Don't hang up, don't speak to your...",
+      "I can't speak to your bank or your family about this, but I need you to.",
+      'I need you to start looking at transferring money.',
+      "That's just not going to work out.",
+      'Okay, thanks. Bye.',
+      'Thank you.',
+    ];
+    const sms = makeFakeSmsClient();
+    const monitor = createCallMonitor({ callSid: 'CA-aug16', householdId: 'h', smsClient: sms, toNumber: '+447700900010', fromNumber: '+441615700779' });
+    const results = [];
+    for (let s = 0; s < realChunks.length; s++) results.push(await monitor.handleTranscribedChunk(realChunks[s], { sequence: s }));
+    check(results.every(r => r.criticalTriggeredThisCall === false), '2026-08-16 real chunks: boundary joining does not turn the actual mistranscribed wording into a red line');
+    check(results[10].riskScore === 65, `2026-08-16 real chunks: chunk 11 still scores exactly 65 (got ${results[10].riskScore}) — identical to the pinned pre-change outcome`);
+    check(sms.calls.length === 1 && sms.calls[0].body !== RED_LINE_WARNING_BODY, '2026-08-16 real chunks: exactly one progressive (not red-line) SMS, as before');
+
+    // (b) The same real call, had Whisper transcribed the continuation
+    //     correctly after a pause-aligned cut (trailing "..." included):
+    //     the red line must fire.
+    const sms2 = makeFakeSmsClient();
+    const monitor2 = createCallMonitor({ callSid: 'CA-aug16-ok', householdId: 'h', smsClient: sms2, toNumber: '+447700900011', fromNumber: '+441615700779' });
+    await monitor2.handleTranscribedChunk("Don't hang up, don't speak to your...", { sequence: 0 });
+    const ok = await monitor2.handleTranscribedChunk('bank or your family about this.', { sequence: 1 });
+    check(ok.criticalTriggeredThisCall === true && sms2.calls.length === 1 && sms2.calls[0].body === RED_LINE_WARNING_BODY, '2026-08-16 phrase split at a cut, correctly transcribed (with Whisper\'s "..."), fires the red line exactly once');
+
+    // (c) Wrong-order false positive: audio order is "bank or your family
+    //     ..." THEN "don't speak to your" (no red line when read in
+    //     order). If responses arrive reversed, naive arrival-order
+    //     appending would manufacture "don't speak to your bank or your
+    //     family" — a false red line. Sequencing must prevent that.
+    const sms3 = makeFakeSmsClient();
+    const monitor3 = createCallMonitor({ callSid: 'CA-wrong-order', householdId: 'h', smsClient: sms3, toNumber: '+447700900012', fromNumber: '+441615700779' });
+    await monitor3.handleTranscribedChunk("Don't speak to your", { sequence: 1 });
+    const wrong = await monitor3.handleTranscribedChunk('bank or your family', { sequence: 0 });
+    check(wrong.criticalTriggeredThisCall === false && sms3.calls.length === 0, 'reversed arrival cannot manufacture a phrase that was never said in that order (no false red line, no SMS)');
+
+    // (d) End to end through the handler: total paid audio == audio fed
+    //     minus what is still buffered — each frame submitted once.
+    const { wrapMulawAsWav } = require('../services/liveMonitoring/mulawWav.js');
+    const headerBytes = wrapMulawAsWav(Buffer.alloc(0)).length;
+    let submittedAudioBytes = 0;
+    let requests = 0;
+    const transcribeClient = { transcribe: async (wav) => { requests++; submittedAudioBytes += wav.length - headerBytes; return 'hello'; } };
+    const handler = createMediaStreamHandler({ transcribeClient, smsClient: makeFakeSmsClient(), fromNumber: '+441615700779', sendAlert: async () => true });
+    await handler.handleMessage(startMessage('MZ-e2e', 'CA-e2e'));
+    const fed = speech({ words: 100, wordFrames: 20, gapFrames: 12 }); // 64s of speech with real pauses
+    for (const f of fed) await handler.handleMessage(mediaMessage('MZ-e2e', f.frame));
+    const bufferedFrames = handler._streamsForTesting.get('MZ-e2e').windowBuffer.bufferedFrameCount();
+    check(
+      submittedAudioBytes === (fed.length - bufferedFrames) * FRAME_BYTES,
+      `end to end: paid audio (${submittedAudioBytes} bytes over ${requests} requests) equals fed audio minus the ${bufferedFrames}-frame buffered tail — every frame submitted exactly once`
+    );
+  }
+
   if (failures > 0) {
     console.error(`\n${failures} check(s) failed.`);
     process.exit(1);

@@ -50,6 +50,12 @@ const DEFAULT_SMOOTHING_MS = 100;
 // affects WHEN a segment is cut (rule 2); a line too noisy to ever
 // register as quiet still segments correctly via rule 3.
 const DEFAULT_QUIET_MEAN_ABS = 350;
+// flush() thresholds (hang-up tail): a remainder shorter than this, or
+// with less speech than DEFAULT_FLUSH_MIN_SPEECH_MS in it, is discarded
+// rather than transcribed — too short to carry a phrase, and silence or
+// a click is exactly the input Whisper is known to hallucinate text on.
+const DEFAULT_FLUSH_MIN_MS = 500;
+const DEFAULT_FLUSH_MIN_SPEECH_MS = 100;
 
 // G.711 mulaw -> |linear sample|, precomputed for all 256 byte values.
 const MULAW_ABS = (() => {
@@ -78,7 +84,7 @@ function frameEnergy(frame) {
  * @param {number} [opts.smoothingMs]
  * @param {number} [opts.quietMeanAbs]
  * @param {number} [opts.frameMs]
- * @returns {{ addFrame: (frame: Buffer) => Buffer|null, bufferedFrameCount: () => number }}
+ * @returns {{ addFrame: (frame: Buffer) => Buffer|null, flush: (opts?: object) => Buffer|null, bufferedFrameCount: () => number }}
  */
 function createSpeechSegmenter({
   minSegmentMs = DEFAULT_MIN_SEGMENT_MS,
@@ -152,7 +158,25 @@ function createSpeechSegmenter({
     return null;
   }
 
-  return { addFrame, bufferedFrameCount: () => frames.length };
+  // Hang-up flush (2026-09-26): returns whatever is still buffered as one
+  // final segment, or null if it's too short / has too little speech to
+  // be worth transcribing (see DEFAULT_FLUSH_MIN_MS). Either way the
+  // buffer is emptied first, so flushed audio can never be emitted again
+  // by a later addFrame() or a second flush() — this is what makes the
+  // flush duplicate-free by construction.
+  function flush({ minMs = DEFAULT_FLUSH_MIN_MS, minSpeechMs = DEFAULT_FLUSH_MIN_SPEECH_MS } = {}) {
+    const remaining = frames;
+    const remainingEnergies = energies;
+    frames = [];
+    energies = [];
+
+    if (remaining.length < Math.round(minMs / frameMs)) return null;
+    const speechFrames = remainingEnergies.filter(e => e >= quietMeanAbs).length;
+    if (speechFrames < Math.round(minSpeechMs / frameMs)) return null;
+    return Buffer.concat(remaining);
+  }
+
+  return { addFrame, flush, bufferedFrameCount: () => frames.length };
 }
 
 module.exports = {
@@ -162,5 +186,7 @@ module.exports = {
   DEFAULT_MAX_SEGMENT_MS,
   DEFAULT_PAUSE_MS,
   DEFAULT_QUIET_MEAN_ABS,
+  DEFAULT_FLUSH_MIN_MS,
+  DEFAULT_FLUSH_MIN_SPEECH_MS,
   DEFAULT_FRAME_MS,
 };
