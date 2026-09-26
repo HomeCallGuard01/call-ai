@@ -157,6 +157,43 @@ function computeProtectionStatus(household, now) {
   return { forwardingVerified, deliveryReady, endToEndDeliveryVerified, fullyProtected };
 }
 
+// Cost-protection safeguard (2026-09-26) — closes a real, confirmed gap: a
+// household with no currently-active entitlement (cancelled and past its
+// billing period, an expired trial, or one that never subscribed at all)
+// continued to receive full paid AI monitoring — Media Streams + Whisper
+// transcription — for as long as their carrier-side forwarding and Twilio
+// number both remained live. That window is not small: cancellation gives
+// a deliberate 30-day grace period before a number is released (see
+// docs/launch/TWILIO_NUMBER_LIFECYCLE.md), and nothing in /voice ever
+// checked entitlement status at all — middleware/requireEntitlement.js
+// only ever gated the authenticated web/mobile API routes, never the
+// Twilio webhook. Found via a read-only production audit (2026-09-26),
+// not a hypothetical.
+//
+// Deliberately narrow: this decides ONLY whether to start paid, per-call
+// AI monitoring for an unknown caller — the actual cost driver. It never
+// affects whether the call itself connects: server.js's
+// dialHouseholdOrFailClosed still runs unconditionally either way, so a
+// household with a lapsed subscription still has calls answered/forwarded
+// exactly as before; they simply stop receiving paid AI screening once
+// there is no active entitlement to pay for it. Known-contact calls were
+// never monitored in the first place (server.js's /voice never calls
+// attachLiveMonitoring for a known contact), so this function is only
+// ever consulted on the one branch where the cost is actually incurred.
+//
+// activeEntitlement is passed in, never looked up here, so this stays
+// pure and directly testable — the caller resolves it via
+// database/billing.js's getActiveEntitlement, the exact same function
+// every other entitlement check in this codebase already uses
+// (requireEntitlement, the web/mobile dashboards, account deletion).
+// Fails closed: a null/undefined household or a null/undefined
+// activeEntitlement (no active row, or the lookup itself failed) both
+// result in false — monitoring is the exception that must be affirmatively
+// earned, never the default.
+function shouldStartPaidMonitoring(household, activeEntitlement) {
+  return !!(household && activeEntitlement);
+}
+
 // Diagnostic instrumentation (2026-09-24) — a genuine, OBSERVED delivery
 // failure is real evidence of a problem, distinct from fullyProtected's
 // historical-evidence-based "protected" (which this function does not
@@ -189,4 +226,5 @@ module.exports = {
   hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
   hasRecentDeliveryProblem,
+  shouldStartPaidMonitoring,
 };
