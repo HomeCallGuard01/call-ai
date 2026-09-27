@@ -44,6 +44,7 @@ const STATES = {
   staging_or_dev: { label: 'Development/staging number on the production account', severity: 'amber' },
   orphan: { label: 'Not linked to any household or quarantine', severity: 'red' },
   missing_at_provider: { label: 'Household number not found at the provider', severity: 'red' },
+  quarantined_from_entitled: { label: 'Quarantined number belongs to a household that is currently entitled', severity: 'red' },
 };
 
 const RECOMMENDATIONS = {
@@ -57,6 +58,7 @@ const RECOMMENDATIONS = {
   missing_at_provider: 'The customer may be forwarding to a number HCG no longer holds — contact the customer and reprovision through the normal flow.',
   voice_url_mismatch: 'Calls to this customer\'s number are not sent to production — check the number\'s voice URL in Twilio.',
   release_failed_recorded: 'A release attempt failed with a recorded error — review the error and retry through the lifecycle.',
+  quarantined_from_entitled: 'Do NOT confirm deactivation — this customer is entitled again and may still forward to this number. Resolve through the lifecycle (P0) before any release.',
 };
 
 function normaliseNumber(n) {
@@ -156,6 +158,14 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
       }
     } else if (open) {
       const confirmedMs = parseTimestampMs(open.deactivation_confirmed_at);
+      const fromHousehold = open.household_id ? (households || []).find((h) => h.id === open.household_id) : null;
+      if (fromHousehold) {
+        const fromBiz = classifyHouseholdForBusiness({ household: fromHousehold, entitlements: entitlementsByHousehold.get(fromHousehold.id) || [], subscriptions: (subscriptionsByHousehold && subscriptionsByHousehold.get(fromHousehold.id)) || [], classification: classificationMap.get(fromHousehold.id) }, now);
+        owner = { householdId: fromHousehold.id, email: fromHousehold.email || null, accountClass: fromBiz.accountClass, membership: fromBiz.membership, access: fromBiz.access, protection: fromBiz.protection };
+        if (fromBiz.membership === 'current' || fromBiz.membership === 'upcoming') {
+          extraFlags.push({ code: 'quarantined_from_entitled', severity: 'red', label: STATES.quarantined_from_entitled.label });
+        }
+      }
       if (!open.deactivation_confirmed) {
         state = 'quarantined_awaiting_confirmation';
         reason = `Quarantined ${String(open.quarantined_at || '').slice(0, 10)} (${open.release_reason || 'reason not recorded'})`;

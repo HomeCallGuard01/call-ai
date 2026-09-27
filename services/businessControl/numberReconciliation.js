@@ -40,6 +40,7 @@ const ANOMALIES = {
   RELEASE_OVERDUE: { severity: SEVERITY.ACTION, label: 'Number still held after its scheduled release' },
   QUARANTINE_AWAITING_CONFIRMATION: { severity: SEVERITY.ACTION, label: 'Quarantined number awaiting deactivation confirmation' },
   QUARANTINE_RELEASE_OVERDUE: { severity: SEVERITY.ACTION, label: 'Confirmed quarantine not released (possible provider release failure — inferred)' },
+  QUARANTINED_NUMBER_OF_ENTITLED_HOUSEHOLD: { severity: SEVERITY.ACTION, label: 'Number quarantined while the household is entitled — do not confirm deactivation' },
   PROVIDER_NUMBER_UNACCOUNTED: { severity: SEVERITY.ACTION, label: 'Number on the provider account not held by any household or open quarantine' },
   NUMBER_MISSING_AT_PROVIDER: { severity: SEVERITY.ACTION, label: 'Household number not found on the provider account' },
   PROVISIONING_IN_PROGRESS: { severity: SEVERITY.WATCH, label: 'Number provisioning in progress' },
@@ -129,6 +130,9 @@ function detectHouseholdAnomalies({ household, entitlements, quarantineRows }, n
 
   for (const q of quarantineRows || []) {
     if (q.released_at) continue;
+    if (current || upcoming) {
+      found.push(anomaly('QUARANTINED_NUMBER_OF_ENTITLED_HOUSEHOLD', `Quarantined ${q.quarantined_at || 'at unknown time'}; the household is ${current ? 'currently' : 'about to be'} entitled`));
+    }
     if (!q.deactivation_confirmed) {
       found.push(anomaly('QUARANTINE_AWAITING_CONFIRMATION', `Quarantined ${q.quarantined_at || 'at unknown time'} (${q.release_reason || 'reason not recorded'})`));
     } else {
