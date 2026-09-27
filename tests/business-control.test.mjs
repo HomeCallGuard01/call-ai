@@ -248,6 +248,12 @@ const LEDGER_048_CATEGORIES = [
   check(duePeriods({ ...monthly, end_date: '2026-08-20' }, NOW).map((x) => x.key).join() === '2026-07,2026-08', 'ended schedule stops producing periods');
   check(duePeriods({ ...monthly, cadence: 'annual', start_date: '2025-03-01' }, NOW).map((x) => x.key).join() === '2025,2026', 'annual schedule: one period per anniversary');
   check(duePeriods({ ...monthly, cadence: 'one_off', start_date: '2026-10-01' }, NOW).length === 0, 'future one-off is not due yet');
+  const { computePendingEntries } = require('../services/businessControl/manualCosts.js');
+  const usd = { ...monthly, id: 's2', native_currency: 'USD', native_amount: 10, cadence: 'one_off', start_date: '2026-09-02' };
+  const pend = computePendingEntries([monthly, usd], ['schedule:s1:2026-07'], NOW);
+  check(pend.pending.map((e) => e.entryKey).join() === 'schedule:s1:2026-08,schedule:s1:2026-09,schedule:s2:once', 'preview lists exactly the due periods not yet in the ledger');
+  check(pend.totals.GBP === 10 && pend.totals.USD === 10, 'preview totals are per currency, never mixed');
+  check(computePendingEntries([monthly], ['schedule:s1:2026-07', 'schedule:s1:2026-08', 'schedule:s1:2026-09'], NOW).pending.length === 0, 'nothing pending once every due period is posted');
 
   const entry = toFinancialEntry(monthly, p[1], { createdBy: 'admin-uuid' });
   check(entry.entry_key === 'schedule:s1:2026-08' && entry.source_system === 'manual' && entry.provenance === 'manual', 'ledger row: deterministic entry_key schedule:<id>:<period>, source manual, provenance manual');
@@ -269,6 +275,33 @@ const LEDGER_048_CATEGORIES = [
   check(/STATUS: DRAFT — NOT APPLIED/.test(mig), 'migration 050 is marked DRAFT — NOT APPLIED');
   check(/enable row level security/.test(mig) && /revoke all on table public\.manual_cost_schedules from anon, authenticated/.test(mig), 'migration 050: RLS on, no anon/authenticated access');
   check(!/financial_entries\s*\(/i.test(mig.replace(/--.*$/gm, '')), 'migration 050 DDL does not depend on 048 tables (safe to apply in either order)');
+}
+
+// ============================================================
+// 4b. Fixed-cost settings interface (Railway / Supabase / Resend)
+// ============================================================
+{
+  const { resolveFixedCostSettings, FIXED_COST_SETTINGS } = require('../services/businessControl/fixedCostSettings.js');
+  const { buildLiveFigures } = require('../services/businessControl/financialReadModel.js');
+  check(FIXED_COST_SETTINGS.map((f) => f.amountVar).join() === 'BUSINESS_FIXED_COST_RAILWAY_GBP,BUSINESS_FIXED_COST_SUPABASE_GBP,BUSINESS_FIXED_COST_RESEND_GBP', 'amounts use the existing BUSINESS_FIXED_COST_*_GBP settings (no parallel setting)');
+  const env = {
+    BUSINESS_FIXED_COST_RAILWAY_GBP: '5.5', BUSINESS_FIXED_COST_RAILWAY_AS_OF: '2026-09-20',
+    BUSINESS_FIXED_COST_SUPABASE_GBP: '20', BUSINESS_FIXED_COST_SUPABASE_AS_OF: '2026-07-01',
+    BUSINESS_FIXED_COST_RESEND_GBP: '0',
+  };
+  const [railway, supabase, resend] = resolveFixedCostSettings(env, NOW);
+  check(railway.configured && railway.valueGbp === 5.5 && railway.stale === false && railway.provenance === 'MANUAL', 'Railway £5.50 checked 7 days ago → MANUAL, not stale');
+  check(supabase.stale === true && /re-check/.test(supabase.note), 'Supabase figure checked 88 days ago → flagged for re-check');
+  check(resend.configured && resend.valueGbp === 0 && resend.stale === true, 'an explicit "0" is a real entered £0 (free tier), and undated → re-check');
+  const none = resolveFixedCostSettings({ BUSINESS_FIXED_COST_RAILWAY_GBP: 'abc' }, NOW);
+  check(none.every((f) => !f.configured && f.valueGbp === null && f.provenance === 'NOT_CONNECTED'), 'unset or invalid → NOT CONNECTED with no amount');
+  check(/invalid value/.test(none[0].note), 'an invalid value is reported as invalid, not silently ignored');
+
+  const figs = buildLiveFigures({ stripe: { available: false }, twilio: { available: false }, openaiEstimate: null, appleEstimate: null, vatRate: 0.2, fixedCostSettings: resolveFixedCostSettings(env, NOW), manualCostsConnected: false });
+  check(figs.hosting.provenance === 'MANUAL' && figs.hosting.amountGbp === 5.5 && figs.hosting.stale === false && /checked 2026-09-20/.test(figs.hosting.basis), 'Finance hosting line shows the Railway figure and when it was checked');
+  check(figs.database.stale === true && figs.email.amountGbp === 0 && figs.email.provenance === 'MANUAL', 'stale Supabase figure flagged; Resend explicit £0 shown as MANUAL');
+  const unset = buildLiveFigures({ stripe: { available: false }, twilio: { available: false }, openaiEstimate: null, appleEstimate: null, vatRate: 0.2, fixedCostSettings: resolveFixedCostSettings({}, NOW), manualCostsConnected: false });
+  check(unset.hosting.amountGbp === null && /BUSINESS_FIXED_COST_RAILWAY_GBP/.test(unset.hosting.basis), 'unset hosting line stays NOT CONNECTED and names the setting to fill in');
 }
 
 // ============================================================
@@ -313,7 +346,7 @@ const LEDGER_048_CATEGORIES = [
   const decls = [...routeSrc.matchAll(/router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]\s*,([^\n]+)/g)];
   const anyRouterCall = [...routeSrc.matchAll(/router\.([a-zA-Z]+)\s*\(/g)].map((m) => m[1]);
   check(anyRouterCall.length === decls.length, 'every router registration is a plain route declaration (no router.use/all)');
-  check(decls.length === 8, 'eight routes: four observational GETs + manual-cost list/create/end/post-due');
+  check(decls.length === 9, 'nine routes: four observational GETs + manual-cost list/preview (GET) and create/end/post-due (POST)');
   check(decls.every((d) => d[3].includes('requireAuth') && d[3].includes('requireAdmin')), 'every route requires an authenticated admin');
   check(decls.filter((d) => d[1] !== 'get').every((d) => d[1] === 'post' && d[2].startsWith('/admin/api/business-control/manual-costs')), 'the only write routes are the manual-cost routes');
   for (const d of decls.filter((x) => x[1] === 'get')) {
@@ -364,7 +397,7 @@ const LEDGER_048_CATEGORIES = [
   const evil = '"><img src=x onerror=alert(1)>';
   const elements = {};
   const stubEl = (id) => (elements[id] = elements[id] || { id, innerHTML: '', textContent: '', value: '', addEventListener() {}, hidden: false });
-  const documentStub = { getElementById: (id) => stubEl(id) };
+  const documentStub = { getElementById: (id) => stubEl(id), querySelectorAll: () => [], querySelector: () => null };
   const responses = {};
   const fetchStub = async (url) => ({ ok: true, redirected: false, status: 200, json: async () => responses[url.split('/business-control/')[1]] });
   const factory = new Function('document', 'fetch', 'window', 'fmtNum', `${monitorHelpers}\n${dateTime}\n${tabs}\nreturn { renderSubscriptionsTab, renderReconciliationTab, renderFinanceTab, renderMarketingTab, provenanceBadge, formatGbpOrMissing, describeTotal, reconciliationBanner, chainStageClass, buildTrackedGoLinkClient };`);
@@ -381,7 +414,8 @@ const LEDGER_048_CATEGORIES = [
   responses.subscriptions = { generatedAt: NOW.toISOString(), counts: { households: 1, deletedAccounts: 0, genuinePayingCustomers: 0, activePaidSubscriptions: { total: 0, genuine: 0, bySource: { [evil]: 1 } }, cancellingAtPeriodEnd: { total: 0, genuine: 0 }, paymentIssue: { total: 0, genuine: 0 }, cancelledSubscriptions: { total: 0, genuine: 0 }, complimentary: 1, trial: 0, nonGenuineAccounts: { internal_test: 0, admin: 0, reviewer: 0, qa_automation: 0 }, nonGenuineWithActiveAccess: 0, unclassifiedWithActiveAccess: 1, newGenuinePayingLast7d: 0, newGenuinePayingLast30d: 0 }, churn: { available: false, reason: evil }, needsClassification: [{ householdId: 'h', email: evil, entitlementType: evil }] };
   responses.reconciliation = { generatedAt: NOW.toISOString(), overall: 'ACTION_REQUIRED', actionCount: 1, watchCount: 0, okCount: 0, anomalyCounts: { NUMBER_RETAINED_NO_ENTITLEMENT: 1 }, anomalyDefinitions: { NUMBER_RETAINED_NO_ENTITLEMENT: { severity: 'action', label: 'x' } }, rows: [{ householdId: 'h', email: evil, hcgNumber: evil, status: 'action_required', anomalies: [{ severity: 'action', label: evil, detail: evil }], chain: [{ key: 'number', label: evil, state: evil, at: null }] }], notes: [evil] };
   responses.finance = { generatedAt: NOW.toISOString(), period: { label: evil }, totals: { grossRevenue: { amountGbp: null, complete: false }, netRevenueExVat: null, variableCost: null, grossContribution: null, fixedCost: null, marketingSpend: null, operatingProfit: null }, lines: [{ id: 'x', section: 'revenue', label: evil, amountGbp: null, provenance: evil, basis: evil }], unitEconomics: { activeCustomers: 1, genuinePayingCustomers: 0, costPerActiveCustomer: null, telephonyCostPerActiveCustomer: null, netRevenuePerPayingCustomer: null, monitoredMinutes: null, monitoredMinutesPerActiveCustomer: null, customerAcquisitionCost: { basis: evil } }, connections: { [evil]: evil } };
-  responses['manual-costs'] = { connected: true, schedules: [{ supplier: evil, description: evil, category: evil, native_amount: 1, native_currency: evil, cadence: evil, start_date: evil, end_date: evil, campaign_ref: evil }] };
+  responses['manual-costs'] = { connected: true, schedules: [{ supplier: evil, description: evil, category: evil, native_amount: 1, native_currency: evil, cadence: evil, start_date: evil, end_date: evil, campaign_ref: evil }, { id: evil, supplier: 'railway', description: 'x', category: 'hosting', native_amount: 1, native_currency: 'GBP', cadence: 'monthly', start_date: '2026-09-01', end_date: null, campaign_ref: null }] };
+  responses['manual-costs/preview'] = { connected: true, pending: [{}], totals: { [evil]: 1 } };
   responses.marketing = { generatedAt: NOW.toISOString(), windowDays: 90, chain: [{ stage: evil, status: 'NOT_CONNECTED', note: evil }], rows: [{ label: evil, channel: evil, landingVisits: 1, registrationsCompleted: 0, spend: { amountGbp: null }, payingCustomers: null, cac: null }], unattributed: { checkoutsStarted: 0, paidConversions: 0, note: evil } };
 
   await ui.renderSubscriptionsTab();
@@ -398,6 +432,9 @@ const LEDGER_048_CATEGORIES = [
   responses['manual-costs'] = { connected: false, reason: 'manual_cost_schedules not present (draft migration 050 not applied)', schedules: [] };
   await ui.renderFinanceTab();
   check(elements.finance.innerHTML.includes('Not connected yet') && elements.finance.innerHTML.includes('disabled>Add cost'), 'manual-cost form disabled with an explanation until migrations 048 + 050 are applied');
+  const previewFn = new Function(`${extract('describeManualCostPreview')}\nreturn describeManualCostPreview;`)();
+  check(previewFn({ connected: true, pending: [{}, {}], totals: { GBP: 12.5, USD: 3 } }) === '2 periods due to post (GBP 12.50 + USD 3.00). Posting writes exactly these; already-posted periods are skipped.', 'preview text states what posting will write');
+  check(previewFn({ connected: false }) === null && /Nothing due/.test(previewFn({ connected: true, pending: [], totals: {} })), 'preview text hidden when not connected; says when nothing is due');
   const postTargets = [...tabs.matchAll(/fetch\('([^']+)'[^)]*method: 'POST'/g)].map((m) => m[1]);
   check(postTargets.every((u) => u.startsWith('/admin/api/business-control/manual-costs')), 'the tabs only POST to the manual-cost endpoints');
 }

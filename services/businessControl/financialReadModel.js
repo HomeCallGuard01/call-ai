@@ -131,7 +131,7 @@ function aggregateLedgerLine(entries, def, period) {
 
 // Pure — the live (pre-ledger) value for each line, from snapshots that
 // already exist on origin/main. Returns a map line id → figure.
-function buildLiveFigures({ stripe, twilio, openaiEstimate, appleEstimate, vatRate, fixedCostsStatus, manualCostsConnected }) {
+function buildLiveFigures({ stripe, twilio, openaiEstimate, appleEstimate, vatRate, fixedCostsStatus, fixedCostSettings = null, manualCostsConnected }) {
   const figures = {};
   const notConnected = (basis) => ({ amountGbp: null, provenance: PROVENANCE.NOT_CONNECTED, source: 'none', basis });
 
@@ -179,9 +179,20 @@ function buildLiveFigures({ stripe, twilio, openaiEstimate, appleEstimate, vatRa
     status && status.configured
       ? { amountGbp: round2(status.valueGbp), provenance: PROVENANCE.MANUAL, source: 'settings', basis: `${label}: monthly figure from admin settings (full month, not pro-rated)` }
       : notConnected(`${label}: no billing integration and no monthly figure set`);
-  figures.hosting = fixed(fixedCostsStatus && fixedCostsStatus.railway, 'Railway');
-  figures.database = fixed(fixedCostsStatus && fixedCostsStatus.supabase, 'Supabase');
-  figures.email = fixed(fixedCostsStatus && fixedCostsStatus.resend, 'Resend');
+  if (Array.isArray(fixedCostSettings)) {
+    // fixedCostSettings.js interface: amount + "checked on" date + staleness.
+    const byCategory = Object.fromEntries(fixedCostSettings.map((f) => [f.category, f]));
+    for (const [line, category] of [['hosting', 'hosting'], ['database', 'database'], ['email', 'email']]) {
+      const f = byCategory[category];
+      figures[line] = f && f.configured
+        ? { amountGbp: round2(f.valueGbp), provenance: PROVENANCE.MANUAL, source: 'settings', stale: !!f.stale, basis: `${f.label}: ${f.note} (full month, not pro-rated)` }
+        : notConnected(f ? `${f.label}: not set — ${f.howToFind} Then set ${f.amountVar} (and ${f.asOfVar}).` : 'No setting defined');
+    }
+  } else {
+    figures.hosting = fixed(fixedCostsStatus && fixedCostsStatus.railway, 'Railway');
+    figures.database = fixed(fixedCostsStatus && fixedCostsStatus.supabase, 'Supabase');
+    figures.email = fixed(fixedCostsStatus && fixedCostsStatus.resend, 'Resend');
+  }
 
   const manualReason = manualCostsConnected
     ? 'No manual costs entered for this period'

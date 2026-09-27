@@ -1651,7 +1651,11 @@ async function renderReconciliationTab() {
 const FINANCE_SECTION_TITLES = { revenue: 'Revenue', deductions: 'Refunds &amp; VAT', variable: 'Variable costs', fixed: 'Fixed infrastructure', marketing: 'Marketing' };
 
 async function renderFinanceTab() {
-  const [d, manual] = await Promise.all([fetchBusinessControl('finance'), fetchBusinessControl('manual-costs').catch(() => ({ connected: false, reason: 'unavailable', schedules: [] }))]);
+  const [d, manual, preview] = await Promise.all([
+    fetchBusinessControl('finance'),
+    fetchBusinessControl('manual-costs').catch(() => ({ connected: false, reason: 'unavailable', schedules: [] })),
+    fetchBusinessControl('manual-costs/preview').catch(() => ({ connected: false, pending: [], totals: {} })),
+  ]);
   const t = d.totals;
   const u = d.unitEconomics;
   let html = '<div class="section">' + sectionHeader('Finance — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
@@ -1669,7 +1673,7 @@ async function renderFinanceTab() {
   for (const section of Object.keys(FINANCE_SECTION_TITLES)) {
     html += '<tr class="pnl-section"><td colspan="4">' + FINANCE_SECTION_TITLES[section] + '</td></tr>';
     for (const l of d.lines.filter((x) => x.section === section)) {
-      html += '<tr><td>' + escapeHtml(l.label) + '</td><td class="num">' + escapeHtml(formatGbpOrMissing(l.amountGbp)) + '</td><td>' + provenanceBadge(l.provenance) + '</td><td class="customer-sub cell-wrap">' + escapeHtml(l.basis || '') + '</td></tr>';
+      html += '<tr><td>' + escapeHtml(l.label) + '</td><td class="num">' + escapeHtml(formatGbpOrMissing(l.amountGbp)) + '</td><td>' + provenanceBadge(l.provenance) + (l.stale ? ' <span class="text-warn">re-check</span>' : '') + '</td><td class="customer-sub cell-wrap">' + escapeHtml(l.basis || '') + '</td></tr>';
     }
   }
   html += '</table>';
@@ -1688,7 +1692,7 @@ async function renderFinanceTab() {
   html += '<h3 style="margin-top:22px;">Data sources</h3><table class="fact-table">' +
     Object.entries(d.connections).map(([k, v]) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v) + '</td></tr>').join('') + '</table>';
 
-  html += renderManualCostsHtml(manual);
+  html += renderManualCostsHtml(manual, preview);
   html += '</div>';
   document.getElementById('finance').innerHTML = html;
   wireManualCostForm();
@@ -1696,15 +1700,26 @@ async function renderFinanceTab() {
 
 const MANUAL_COST_CATEGORIES = ['hosting', 'database', 'email', 'developer_program', 'domain', 'saas', 'insurance', 'accountancy', 'other_overhead', 'advertising', 'acquisition_other', 'sms', 'transcription', 'ai_inference', 'number_rental', 'other'];
 
-function renderManualCostsHtml(manual) {
+// TEST-EXTRACT-START: describeManualCostPreview
+function describeManualCostPreview(preview) {
+  if (!preview || !preview.connected) return null;
+  const n = (preview.pending || []).length;
+  if (n === 0) return 'Nothing due to post — every due period is already in the ledger.';
+  const totals = Object.entries(preview.totals || {}).map(([cur, amt]) => cur + ' ' + Number(amt).toFixed(2)).join(' + ');
+  return n + ' period' + (n === 1 ? '' : 's') + ' due to post (' + totals + '). Posting writes exactly these; already-posted periods are skipped.';
+}
+// TEST-EXTRACT-END: describeManualCostPreview
+
+function renderManualCostsHtml(manual, preview) {
   let html = '<h3 style="margin-top:26px;">Manual costs</h3>';
   html += '<p class="sub">For costs with no automatic source — an advertising invoice, Apple Developer Program, insurance, accountancy, Railway/Supabase bills. Each due period becomes one ledger entry (provenance Manual); posting twice never double-counts.</p>';
   if (!manual.connected) {
     html += '<div class="gaps">Not connected yet: ' + escapeHtml(manual.reason || 'unavailable') + '. The form is disabled until the ledger (048) and manual-cost (050) migrations are applied.</div>';
   }
   if (manual.schedules && manual.schedules.length) {
-    html += '<table><tr><th>Supplier</th><th>Description</th><th>Category</th><th>Amount</th><th>Cadence</th><th>From</th><th>To</th><th>Campaign</th></tr>' +
-      manual.schedules.map((s) => '<tr><td>' + escapeHtml(s.supplier) + '</td><td>' + escapeHtml(s.description) + '</td><td>' + escapeHtml(s.category) + '</td><td>' + escapeHtml(s.native_currency + ' ' + Number(s.native_amount).toFixed(2)) + '</td><td>' + escapeHtml(s.cadence) + '</td><td>' + escapeHtml(s.start_date) + '</td><td>' + escapeHtml(s.end_date || '—') + '</td><td>' + escapeHtml(s.campaign_ref || '—') + '</td></tr>').join('') + '</table>';
+    html += '<table><tr><th>Supplier</th><th>Description</th><th>Category</th><th>Amount</th><th>Cadence</th><th>From</th><th>To</th><th>Campaign</th><th></th></tr>' +
+      manual.schedules.map((s) => '<tr><td>' + escapeHtml(s.supplier) + '</td><td>' + escapeHtml(s.description) + '</td><td>' + escapeHtml(s.category) + '</td><td>' + escapeHtml(s.native_currency + ' ' + Number(s.native_amount).toFixed(2)) + '</td><td>' + escapeHtml(s.cadence) + '</td><td>' + escapeHtml(s.start_date) + '</td><td>' + escapeHtml(s.end_date || '—') + '</td><td>' + escapeHtml(s.campaign_ref || '—') + '</td>' +
+        '<td>' + (s.cadence !== 'one_off' && !s.end_date ? '<input type="date" class="end-date-input" data-schedule-id="' + escapeHtml(s.id) + '"> <button type="button" class="row-button end-schedule-btn" data-schedule-id="' + escapeHtml(s.id) + '">End</button>' : '') + '</td></tr>').join('') + '</table>';
   }
   const dis = manual.connected ? '' : ' disabled';
   html += '<form id="manualCostForm" class="manual-cost-form">' +
@@ -1721,6 +1736,8 @@ function renderManualCostsHtml(manual) {
     '<button type="submit" class="action-button"' + dis + '>Add cost</button>' +
     '<button type="button" id="postDueCostsBtn" class="row-button"' + dis + '>Post due entries to ledger</button>' +
     '</form><div class="quick-action-result" id="manualCostResult"></div>';
+  const previewText = describeManualCostPreview(preview);
+  if (previewText) html += '<div class="sub" id="manualCostPreview" style="margin-top:6px;">' + escapeHtml(previewText) + '</div>';
   return html;
 }
 
@@ -1740,6 +1757,20 @@ function wireManualCostForm() {
       loadBusinessControlTab('finance', true);
     } catch (err) { result.textContent = 'Request failed.'; }
   });
+  for (const btn of document.querySelectorAll('.end-schedule-btn')) {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.scheduleId;
+      const input = document.querySelector('.end-date-input[data-schedule-id="' + CSS.escape(id) + '"]');
+      if (!input || !input.value) { result.textContent = 'Choose an end date first.'; return; }
+      result.textContent = 'Ending…';
+      try {
+        const res = await fetch('/admin/api/business-control/manual-costs/' + encodeURIComponent(id) + '/end', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endDate: input.value }) });
+        const data = await res.json();
+        result.textContent = res.ok ? 'Schedule ended — no periods after ' + input.value + ' will be posted; posted entries are kept.' : (data.errors || ['Failed']).join('; ');
+        if (res.ok) loadBusinessControlTab('finance', true);
+      } catch (err) { result.textContent = 'Request failed.'; }
+    });
+  }
   const postBtn = document.getElementById('postDueCostsBtn');
   if (postBtn) postBtn.addEventListener('click', async () => {
     result.textContent = 'Posting…';

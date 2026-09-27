@@ -19,6 +19,7 @@ const {
   createManualCostSchedule,
   endManualCostSchedule,
   postDueManualCostEntries,
+  previewDueManualCostEntries,
 } = require("../services/businessControl/manualCosts");
 const { recordAdminAction } = require("../services/adminActionLog");
 
@@ -52,6 +53,11 @@ router.get("/admin/api/business-control/marketing", requireAuth, requireAdmin, a
 
 router.get("/admin/api/business-control/manual-costs", requireAuth, requireAdmin, async (req, res) => {
   res.json(await listManualCostSchedules());
+});
+
+// Read-only: what "Post due entries" would write, before writing it.
+router.get("/admin/api/business-control/manual-costs/preview", requireAuth, requireAdmin, async (req, res) => {
+  res.json(await previewDueManualCostEntries(new Date()));
 });
 
 router.post("/admin/api/business-control/manual-costs", requireAuth, requireAdmin, express.json(), async (req, res) => {

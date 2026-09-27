@@ -7,6 +7,7 @@
 'use strict';
 
 const { buildLiveFigures, buildProfitAndLoss, monthToDatePeriod } = require('./financialReadModel');
+const { resolveFixedCostSettings } = require('./fixedCostSettings');
 const { getManualCostConnection } = require('./manualCosts');
 
 function resolveSupabaseAdmin() {
@@ -96,6 +97,7 @@ async function getFinancialOverview(now = new Date()) {
     appleEstimate: priceGbp !== null ? estimateAppleRevenueGbp(appleCount, priceGbp) : null,
     vatRate: resolveVatRate(),
     fixedCostsStatus: resolveFixedMonthlyCostsStatus(),
+    fixedCostSettings: resolveFixedCostSettings(process.env, now),
     manualCostsConnected: manual.connected,
   });
 

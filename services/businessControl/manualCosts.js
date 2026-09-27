@@ -233,6 +233,39 @@ async function endManualCostSchedule(id, endDate, { supabaseAdmin = resolveSupab
   return { ok: true, schedule: data };
 }
 
+// Pure — the entries "Post due entries" WOULD write: every due period of
+// every schedule whose entry_key is not already in the ledger. Lets the
+// admin see exactly what will be posted (count and totals per currency)
+// before posting, and makes posting a no-surprise action.
+function computePendingEntries(schedules, postedKeys, now) {
+  const posted = new Set(postedKeys || []);
+  const pending = [];
+  for (const s of schedules || []) {
+    for (const p of duePeriods(s, now)) {
+      const entry = toFinancialEntry(s, p);
+      if (!posted.has(entry.entry_key)) pending.push({ scheduleId: s.id, description: s.description, period: p.key, amount: entry.amount, currency: entry.native_currency, entryKey: entry.entry_key });
+    }
+  }
+  const totals = {};
+  for (const e of pending) totals[e.currency] = Math.round(((totals[e.currency] || 0) + e.amount) * 100) / 100;
+  return { pending, totals };
+}
+
+// Read-only preview (no writes): schedules + the manual entry keys
+// already in the ledger.
+async function previewDueManualCostEntries(now = new Date(), { supabaseAdmin = resolveSupabaseAdmin() } = {}) {
+  const listed = await listManualCostSchedules(supabaseAdmin);
+  if (!listed.connected) return { connected: false, reason: listed.reason, pending: [], totals: {} };
+  const { data, error } = await supabaseAdmin
+    .from('financial_entries')
+    .select('entry_key')
+    .eq('source_system', 'manual')
+    .like('entry_key', 'schedule:%')
+    .limit(100000);
+  if (error) return { connected: true, error: error.message, pending: [], totals: {} };
+  return { connected: true, ...computePendingEntries(listed.schedules, (data || []).map((r) => r.entry_key), now) };
+}
+
 // Posts every due, not-yet-posted period for every schedule into the
 // ledger. Idempotent through 048's unique (source_system, entry_key):
 // ignoreDuplicates makes a re-run a no-op for periods already posted.
@@ -257,6 +290,8 @@ module.exports = {
   validateManualCostSchedule,
   duePeriods,
   toFinancialEntry,
+  computePendingEntries,
+  previewDueManualCostEntries,
   getManualCostConnection,
   listManualCostSchedules,
   createManualCostSchedule,
