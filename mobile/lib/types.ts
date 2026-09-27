@@ -125,6 +125,17 @@ export interface PortalSessionResponse {
 export interface ActivationVerifyResponse {
   verified: boolean;
   verifiedAt?: string;
+  // Added 2026-09-27 (P0 launch hardening) — a distinct, stricter signal
+  // from `verified`. `verified` only proves a call reached Home Call
+  // Guard's own number; it has never proved the call could actually be
+  // delivered to this customer's phone. `deliveryConfirmed` mirrors
+  // services/callRouting.js's computeProtectionStatus().
+  // endToEndDeliveryVerified — the same signal the backend already uses
+  // for its own "You're protected" decision — so the app can never show
+  // a stronger claim than the backend itself is willing to make.
+  // Always present on the response (see routes/mobileApi.js); optional
+  // here only so an older cached response shape can't crash a type check.
+  deliveryConfirmed?: boolean;
 }
 
 // POST /api/v1/voice/registered (migration 035, 2026-09-07) — called from
