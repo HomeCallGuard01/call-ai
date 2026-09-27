@@ -3,14 +3,16 @@
 -- STATUS: DRAFT — NOT APPLIED to any database (staging or production).
 -- Apply to staging first; production only with explicit approval.
 --
--- NUMBERING: 048, not 047. On 2026-09-27 no 047+ migration existed on any
--- branch or worktree. 047 is left free on purpose: it is the documented
--- renumber target for the monitored-minute allowance migration, owned by
--- another workstream, which currently collides with main's
--- 046_voice_client_registration_history.sql (branch
--- wip/monitoring-allowance-financial-safety-2026-09-26). Taking 047 here
--- would recreate that collision when that branch rebases.
--- tests/migration-number-uniqueness.test.mjs fails on any duplicate.
+-- NUMBERING: 051. Rule (adopted 2026-09-27): migration numbers follow
+-- merge/application order; unmerged branches renumber before integration.
+-- This file was 048 until staging applied 047 (number-release entitlement
+-- guard) and 050 (number_lifecycle_sweep_evidence); applying 048 after 050
+-- would be out of order (`supabase db push --include-all`), so it moved to
+-- the next number above the highest applied. Pending elsewhere: the
+-- dashboard branch's manual_cost_schedules (currently a duplicate 050) and
+-- the planned attribution migration take numbers above this one when they
+-- are applied. tests/migration-number-uniqueness.test.mjs fails on any
+-- duplicate.
 --
 -- Why: HCG cannot yet say what a customer, or the business, costs.
 -- calls.duration_seconds is the answered app-leg duration (Twilio

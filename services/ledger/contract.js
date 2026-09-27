@@ -1,5 +1,5 @@
 // contract.js — the provider-neutral shape of financial ledger records
-// (migration 048: public.financial_entries and public.telephony_call_legs).
+// (migration 051: public.financial_entries and public.telephony_call_legs).
 //
 // Every supplier adapter (services/telephony/<provider>/billingRecords.js
 // today; Stripe, App Store, manual costs later) produces plain objects in

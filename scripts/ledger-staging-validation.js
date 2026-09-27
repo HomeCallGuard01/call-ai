@@ -1,4 +1,4 @@
-// STAGING-ONLY end-to-end validation of the financial ledger (migration 048)
+// STAGING-ONLY end-to-end validation of the financial ledger (migration 051)
 // through the real application path: supabase-js with the service role, the
 // ledger writer, the Twilio adapter and the reporting views. Uses synthetic
 // data only (SIDs prefixed LEDGERVAL, household emails @example.invalid) and

@@ -1,7 +1,7 @@
 <!--
 STATUS (2026-09-27, branch feature/provider-neutral-billing-ledger — NOT merged, NOT deployed):
   Implemented on this branch:
-    - migration 048 (financial_entries + telephony_call_legs), DRAFT, not applied anywhere
+    - migration 051 (financial_entries + telephony_call_legs), DRAFT, not applied anywhere
     - provider-neutral contract / allocation / reconciliation (services/ledger/)
     - Twilio billing adapter (services/telephony/twilio/billingRecords.js)
     - repository, writer, reconciliation worker (not scheduled, not wired into server.js)
@@ -47,7 +47,7 @@ No dashboard, pricing, allowance or production changes are part of this. No bill
 - **Supplier-native evidence is preserved.** Native signed amount, native currency, native quantity/unit and the original reference/transaction ID are never overwritten. Currency conversion happens only in reporting (`fx_rates`).
 - **Forecasts live in separate tables** and are never mixed with actual accounting data.
 
-## 3. `financial_entries`: the ledger (created now in migration 048)
+## 3. `financial_entries`: the ledger (created now in migration 051)
 
 | Column | Purpose |
 |---|---|
@@ -145,13 +145,13 @@ No dashboard, pricing, allowance or production changes are part of this. No bill
 
 ## 7. Compatibility decision for the telephony ledger being built now
 
-The previously specified `telephony_charges` table would have been a **second money table**, incompatible with section 2. Migration 048 therefore:
+The previously specified `telephony_charges` table would have been a **second money table**, incompatible with section 2. Migration 051 therefore:
 
 - **Keeps `telephony_call_legs`** as specified: the usage and evidence table.
 - **Creates `financial_entries`** as the generic money ledger instead of `telephony_charges`. The Twilio adapter writes telephony costs into it (`source_system = 'twilio'`, telephony categories, `cost_class = 'variable_direct'`, or `semi_variable` for number rental / channel capacity).
 - **Keeps every telephony requirement,** enforced by constraints: the 4-way charge observation, provenance separating actual/allocated/estimated, the 7 billing models, and native evidence.
 
-Revenue, ads, manual costs and forecasts need **only new tables and new source_system values later**, with no redesign of 048.
+Revenue, ads, manual costs and forecasts need **only new tables and new source_system values later**, with no redesign of 051.
 
 ## 8. Customer acquisition attribution (provider-neutral)
 
@@ -319,7 +319,7 @@ That supports customers, paying customers, spend, CAC, retention/churn, revenue,
 5. **Mobile build needed?** The initial implementation (items 2a–2f) is **website/backend only** and doesn't touch or delay the Apple/Google release. Only reading the install referrer and the in-app self-report question need a future app build, and they can join the next normal release.
 
 ### 9.6 Effect on the database design
-- Migration 048 (`financial_entries`, `telephony_call_legs`) needs **no change**: `household_id` and `campaign_ref` are the join points.
+- Migration 051 (`financial_entries`, `telephony_call_legs`) needs **no change**: `household_id` and `campaign_ref` are the join points.
 - Attribution uses **`acquisition_events` extended** (token, utm_content, utm_term, click_ids, landing_path, event types `store_click` / `install_referrer_received`) plus **`customer_acquisition`**, in a later migration. Both are additive.
 
 ## 10. Verified backfill dry run (2026-09-27, read-only, production data)

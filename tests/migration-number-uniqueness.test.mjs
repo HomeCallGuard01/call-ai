@@ -49,7 +49,7 @@ const simulated = findMigrationNumberProblems([
   '045_diagnostic_instrumentation.sql',
   '046_voice_client_registration_history.sql',
   '046_monitoring_usage_and_financial_safety.sql',
-  '048_financial_ledger_and_telephony_usage.sql',
+  '051_financial_ledger_and_telephony_usage.sql',
   'README.md',
 ]);
 check(

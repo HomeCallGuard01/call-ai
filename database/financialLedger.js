@@ -1,4 +1,4 @@
-// Thin wrapper around the financial ledger tables (migration 048:
+// Thin wrapper around the financial ledger tables (migration 051:
 // public.financial_entries and public.telephony_call_legs), following the
 // database/*.js convention. Service-role only. The admin client is
 // injectable (deps.admin) so tests never need a real Supabase, and is
