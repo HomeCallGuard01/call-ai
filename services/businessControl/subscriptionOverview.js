@@ -15,6 +15,7 @@
 
 const { isEntitlementCurrentlyActive, parseTimestampMs } = require('../adminOnboardingStatus');
 const { classifyHousehold, UNCLASSIFIED } = require('../businessMetrics/accountClassification');
+const { classifyHouseholdForBusiness } = require('./definitions');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANONYMISED_EMAIL_SUFFIX = '@deleted.homecallguard.internal';
@@ -76,6 +77,9 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
     unclassifiedWithActiveAccess: 0,
     newGenuinePayingLast7d: 0,
     newGenuinePayingLast30d: 0,
+    // Business definitions (definitions.js), counted per account:
+    membership: { current: 0, upcoming: 0, cancelled: 0, expired: 0, never: 0 },
+    protection: { protected: 0, entitled_not_protected: 0 },
   };
   const needsClassification = [];
 
@@ -94,6 +98,13 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
 
     if (deleted) counts.deletedAccounts += 1;
     else counts.households += 1;
+
+    // Same vocabulary as every other card (definitions.js).
+    const biz = classifyHouseholdForBusiness({ household: h, entitlements: ents, subscriptions: subscriptionsByHousehold.get(h.id) || [], classification: classificationMap && classificationMap.get(h.id) }, now);
+    if (!deleted) {
+      counts.membership[biz.membership] += 1;
+      if (biz.protection !== 'not_entitled') counts.protection[biz.protection] += 1;
+    }
 
     if (!deleted && NON_GENUINE_CLASSIFICATIONS.includes(classification)) counts.nonGenuineAccounts[classification] += 1;
 
@@ -187,7 +198,7 @@ async function getSubscriptionOverview(now = new Date()) {
   const { getClassificationMap } = require('../businessMetrics/accountClassification');
 
   const [hRes, eRes, sRes, classification] = await Promise.all([
-    supabaseAdmin.from('households').select('id, email, created_at'),
+    supabaseAdmin.from('households').select('id, email, created_at, twilio_number, activation_verified_at, voice_client_registered_at, delivery_verified_at'),
     supabaseAdmin.from('entitlements').select('household_id, entitlement_type, status, source, starts_at, ends_at, updated_at'),
     supabaseAdmin.from('subscriptions').select('household_id, status, cancel_at_period_end, updated_at'),
     getClassificationMap(),

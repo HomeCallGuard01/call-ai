@@ -151,7 +151,14 @@ function normaliseNumber(n) {
 // `providerNumbers` (optional): the numbers actually on the provider
 // account (read-only list). null = inventory not available, in which case
 // the provider-side checks are skipped and reported as such.
-function computeNumberReconciliation({ households, entitlements, subscriptions, quarantineRows, providerNumbers = null }, now) {
+function computeNumberReconciliation({ households, entitlements, subscriptions, quarantineRows, providerNumbers = null, classificationMap = null }, now) {
+  const { buildLifecycleTimeline } = require('./lifecycleTimeline');
+  const providerSet = Array.isArray(providerNumbers) ? new Set(providerNumbers.map(normaliseNumber).filter(Boolean)) : null;
+  const allSubsByHousehold = new Map();
+  for (const sRow of subscriptions || []) {
+    if (!allSubsByHousehold.has(sRow.household_id)) allSubsByHousehold.set(sRow.household_id, []);
+    allSubsByHousehold.get(sRow.household_id).push(sRow);
+  }
   const entByHousehold = new Map();
   for (const e of entitlements || []) {
     if (!entByHousehold.has(e.household_id)) entByHousehold.set(e.household_id, []);
@@ -194,6 +201,14 @@ function computeNumberReconciliation({ households, entitlements, subscriptions, 
       status: anomalies.some((a) => a.severity === SEVERITY.ACTION) ? 'action_required' : anomalies.length ? 'watch' : 'ok',
       anomalies,
       chain: buildLifecycleChain({ household: h, currentEntitlement, latestEntitlement, latestSubscription: subByHousehold.get(h.id) || null, quarantineRows: qRows }),
+      timeline: buildLifecycleTimeline({
+        household: h,
+        entitlements: ents,
+        subscriptions: allSubsByHousehold.get(h.id) || [],
+        classification: classificationMap ? classificationMap.get(h.id) : undefined,
+        quarantineRows: qRows,
+        onProvider: providerSet ? (h.twilio_number ? providerSet.has(normaliseNumber(h.twilio_number)) : (qRows[0] && qRows[0].twilio_number ? providerSet.has(normaliseNumber(qRows[0].twilio_number)) : false)) : null,
+      }, now),
     });
   }
 
@@ -294,21 +309,23 @@ async function getNumberReconciliation(now = new Date(), { providerNumbersLoader
   const [hRes, eRes, sRes, qRes, providerNumbers] = await Promise.all([
     supabaseAdmin
       .from('households')
-      .select('id, email, twilio_number, twilio_provisioning_status, twilio_provisioning_updated_at, twilio_number_pending_release_at, voice_client_registered_at, delivery_verified_at'),
-    supabaseAdmin.from('entitlements').select('household_id, entitlement_type, status, starts_at, ends_at, updated_at'),
+      .select('id, email, twilio_number, twilio_provisioning_status, twilio_provisioning_updated_at, twilio_number_pending_release_at, activation_verified_at, voice_client_registered_at, delivery_verified_at'),
+    supabaseAdmin.from('entitlements').select('household_id, entitlement_type, status, source, starts_at, ends_at, updated_at'),
     supabaseAdmin.from('subscriptions').select('household_id, status, cancel_at_period_end, updated_at'),
     supabaseAdmin
       .from('twilio_number_quarantine')
-      .select('id, household_id, twilio_number, release_reason, deactivation_confirmed, deactivation_confirmed_at, quarantined_at, released_at'),
+      .select('id, household_id, twilio_number, release_reason, deactivation_confirmed, deactivation_confirmed_at, deactivation_confirmed_method, quarantined_at, released_at'),
     providerNumbersLoader(),
   ]);
+  const { getClassificationMap } = require('../businessMetrics/accountClassification');
+  const classification = await getClassificationMap();
   for (const r of [hRes, eRes, sRes, qRes]) if (r.error) return { available: false, reason: r.error.message };
 
   return {
     available: true,
     generatedAt: now.toISOString(),
     ...computeNumberReconciliation(
-      { households: hRes.data || [], entitlements: eRes.data || [], subscriptions: sRes.data || [], quarantineRows: qRes.data || [], providerNumbers },
+      { households: hRes.data || [], entitlements: eRes.data || [], subscriptions: sRes.data || [], quarantineRows: qRes.data || [], providerNumbers, classificationMap: classification.available ? classification.map : null },
       now
     ),
   };

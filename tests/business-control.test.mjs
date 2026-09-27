@@ -143,87 +143,67 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
 }
 
 // ============================================================
-// 3. Financial read model
+// 3. Financial read model (control centre v2)
 // ============================================================
-const LEDGER_048_CATEGORIES = [
-  'subscription', 'vat_output', 'store_commission', 'payment_processing_fee', 'refund',
-  'number_rental', 'inbound_voice', 'app_leg', 'outbound_voice', 'media_stream', 'tts',
-  'channel_capacity', 'platform_fee', 'sms', 'transcription', 'ai_inference', 'email',
-  'hosting', 'database', 'domain', 'developer_program', 'saas', 'insurance', 'accountancy',
-  'other_overhead', 'advertising', 'acquisition_other', 'other',
-];
 {
-  const { PROVENANCE, LEDGER_PROVENANCE_MAP, LINE_DEFINITIONS, buildLiveFigures, buildProfitAndLoss, aggregateLedgerLine, monthToDatePeriod } = require('../services/businessControl/financialReadModel.js');
+  const { PROVENANCE, LINE_ORDER, buildLiveLines, linesFromFinanceViews, buildProfitAndLoss, monthToDatePeriod } = require('../services/businessControl/financialReadModel.js');
+  const { resolveFixedCostSettings } = require('../services/businessControl/fixedCostSettings.js');
   const period = monthToDatePeriod(NOW);
   check(new Date(period.startMs).toISOString() === '2026-09-01T00:00:00.000Z', 'period is calendar month to date (UTC)');
+  check(LINE_ORDER.map((l) => l[0]).join() === 'revenue_ex_vat,payment_fees,telephony,ai_transcription,railway,supabase,resend,other,advertising', 'Finance lines in the requested order');
 
-  check(LINE_DEFINITIONS.every((d) => d.ledger.categories.every((c) => LEDGER_048_CATEGORIES.includes(c))), 'every P&L line maps only to migration 048 ledger categories');
-  const covered = new Set(LINE_DEFINITIONS.flatMap((d) => d.ledger.categories));
-  check(LEDGER_048_CATEGORIES.every((c) => covered.has(c)), 'every ledger category lands on some P&L line (nothing in the ledger is silently dropped)');
-  check(Object.keys(LEDGER_PROVENANCE_MAP).join() === 'provider_actual,provider_allocated,estimated,manual', 'ledger provenance values mapped: provider_actual/provider_allocated/estimated/manual');
-  const ledgerContractPath = path.join(__dirname, '..', 'services', 'ledger', 'contract.js');
-  if (existsSync(ledgerContractPath)) {
-    const contract = require(ledgerContractPath);
-    check(JSON.stringify(Object.keys(LEDGER_PROVENANCE_MAP)) === JSON.stringify(contract.PROVENANCE), 'provenance map matches the merged ledger contract');
-    check(JSON.stringify([...LEDGER_048_CATEGORIES]) === JSON.stringify(contract.CATEGORIES), 'category list matches the merged ledger contract');
-  } else {
-    console.log('  (ledger contract not merged yet — contract-drift checks will run automatically once services/ledger/contract.js exists)');
-  }
+  const twilio = { available: true, spendMtdGbp: 16.5, spendMtdSplit: { numberRentalGbp: 15.65, callUsageGbp: 0.85 } };
+  const openaiEstimate = { estimatedCostGbp: 0.46, unknownCallCount: 48, assumedAvgMinutesPerCall: 2, fxRateUsdToGbp: 0.79 };
+  const settings = resolveFixedCostSettings({ BUSINESS_FIXED_COST_RAILWAY_GBP: '5', BUSINESS_FIXED_COST_RAILWAY_AS_OF: '2026-09-20' }, NOW);
 
-  // Nothing connected.
-  const empty = buildLiveFigures({ stripe: { available: false, reason: 'no key' }, twilio: { available: false, reason: 'no creds' }, openaiEstimate: null, appleEstimate: null, vatRate: 0.2, fixedCostsStatus: null, manualCostsConnected: false });
-  const pnlEmpty = buildProfitAndLoss({ period, ledgerEntries: null, liveFigures: empty, units: {} });
-  check(pnlEmpty.lines.filter((l) => l.id !== 'revenue_app_stores' && l.id !== 'store_commission').every((l) => l.provenance === PROVENANCE.NOT_CONNECTED && l.amountGbp === null), 'with no sources, every line is NOT CONNECTED with no amount — never £0');
-  check(pnlEmpty.totals.operatingProfit.complete === false && pnlEmpty.totals.grossRevenue.complete === false, 'totals that include a missing line are marked incomplete');
+  // Stripe TEST mode → revenue and fees NOT CONNECTED, never test money as revenue.
+  const testMode = buildLiveLines({ stripeRevenue: { available: true, mode: 'test', vatRate: 0.2, collectedThisMonth: { genuine: { GBP: 39.92 }, genuineExVat: { GBP: 33.27 }, genuineCharges: 8, genuineFees: { GBP: 2 }, feesMissing: 0 } }, twilio, openaiEstimate, fixedCostSettings: settings });
+  check(testMode.revenue_ex_vat.amountGbp === null && testMode.revenue_ex_vat.provenance === 'NOT_CONNECTED' && /TEST mode/.test(testMode.revenue_ex_vat.basis), 'Stripe test mode: revenue NOT CONNECTED (test payments never shown as revenue)');
+  check(testMode.payment_fees.amountGbp === null, 'Stripe test mode: fees NOT CONNECTED');
 
-  // Live sources present.
-  const live = buildLiveFigures({
-    stripe: { available: true, grossRevenueMtdGbp: 120, refundsMtdGbp: 0, stripeFeesMtdGbp: 2.5, chargeCountMtd: 24 },
-    twilio: { available: true, numberCount: 7, spendMtdSplit: { callUsageGbp: 3.2, numberRentalGbp: 7 } },
-    openaiEstimate: { estimatedCostGbp: 0.4, unknownCallCount: 20, assumedAvgMinutesPerCall: 2 },
-    appleEstimate: { activeAppleEntitlements: 0 },
-    vatRate: 0.2,
-    fixedCostsStatus: { railway: { configured: true, valueGbp: 5 }, supabase: { configured: true, valueGbp: 20 }, resend: { configured: false } },
-    manualCostsConnected: false,
+  // Live mode, genuine customers only.
+  const live = buildLiveLines({ stripeRevenue: { available: true, mode: 'live', vatRate: 0.2, collectedThisMonth: { genuine: { GBP: 59.88 }, genuineExVat: { GBP: 49.9 }, genuineCharges: 12, genuineFees: { GBP: 3.5 }, feesMissing: 0, otherNonGenuine: { GBP: 4.99 } } }, twilio, openaiEstimate, fixedCostSettings: settings });
+  check(live.revenue_ex_vat.amountGbp === 49.9 && /excludes receipts from non-genuine accounts/.test(live.revenue_ex_vat.basis), 'live: revenue ex VAT from genuine customers only; non-genuine receipts named and excluded');
+  check(live.payment_fees.amountGbp === 3.5 && live.payment_fees.provenance === 'ACTUAL', 'live: payment fees are Stripe\'s own fee per genuine payment (ACTUAL)');
+  const feesMissing = buildLiveLines({ stripeRevenue: { available: true, mode: 'live', vatRate: 0.2, collectedThisMonth: { genuine: { GBP: 10 }, genuineExVat: { GBP: 8.33 }, genuineCharges: 2, genuineFees: {}, feesMissing: 1 } }, twilio, openaiEstimate, fixedCostSettings: settings });
+  check(feesMissing.payment_fees.amountGbp === null, 'a genuine payment without a fee record → fees NOT CONNECTED, never understated');
+  check(live.telephony.amountGbp === 16.5 && live.telephony.provenance === 'ACTUAL', 'telephony is Twilio\'s own total (ACTUAL)');
+  check(live.ai_transcription.provenance === 'ESTIMATED' && /0\.79 USD→GBP/.test(live.ai_transcription.basis), 'AI is ESTIMATED and states its USD→GBP conversion');
+  check(live.railway.provenance === 'MANUAL' && live.railway.checkedAt === '2026-09-20' && live.railway.stale === false, 'Railway: manual figure with its checked date');
+  check(live.supabase.amountGbp === null && /BUSINESS_FIXED_COST_SUPABASE_GBP/.test(live.supabase.basis), 'Supabase unset → NOT CONNECTED, naming the setting to fill in');
+  check(live.other.amountGbp === null && live.advertising.amountGbp === null, 'Other and advertising NOT CONNECTED (no ledger / manual costs yet)');
+
+  // Totals never manufacture precision.
+  const pnlTest = buildProfitAndLoss({ period, lines: testMode, source: 'interim_live_sources', units: { accountsWithAccess: 7, genuinePayingCustomers: 0 } });
+  check(pnlTest.totals.revenueExVat.amountGbp === null && pnlTest.totals.revenueExVat.complete === false, 'unknown revenue → total revenue has no amount (not £0)');
+  check(pnlTest.totals.grossContribution.amountGbp === null && pnlTest.totals.operatingContribution.amountGbp === null, 'contribution is not computed when revenue or any cost is unknown (no "−£16.96")');
+  check(pnlTest.totals.totalOperatingCost.partial === true && pnlTest.totals.totalOperatingCost.amountGbp === 21.96, 'operating cost with missing lines → known part only (£21.96), flagged partial');
+  check(pnlTest.unitEconomics.revenueExVatPerGenuinePayingCustomer === null, 'no genuine paying customers → no per-customer revenue');
+
+  const allKnown = { revenue_ex_vat: { amountGbp: 100, provenance: 'ESTIMATED' }, payment_fees: { amountGbp: 4, provenance: 'ACTUAL' }, telephony: { amountGbp: 16, provenance: 'ACTUAL' }, ai_transcription: { amountGbp: 1, provenance: 'ESTIMATED' }, railway: { amountGbp: 5, provenance: 'MANUAL' }, supabase: { amountGbp: 20, provenance: 'MANUAL' }, resend: { amountGbp: 0, provenance: 'MANUAL' }, other: { amountGbp: 3, provenance: 'MANUAL' }, advertising: { amountGbp: 50, provenance: 'MANUAL' } };
+  const pnl = buildProfitAndLoss({ period, lines: allKnown, source: 'x', units: { accountsWithAccess: 10, genuinePayingCustomers: 4 } });
+  check(pnl.totals.grossContribution.amountGbp === 79 && pnl.totals.operatingContribution.amountGbp === 51 && pnl.totals.totalOperatingCost.amountGbp === 49, 'all known: gross contribution £79, operating contribution £51, total operating cost £49 (advertising separate)');
+  check(pnl.totals.marketing.amountGbp === 50 && pnl.unitEconomics.revenueExVatPerGenuinePayingCustomer.amountGbp === 25, 'marketing shown separately; revenue ex VAT per genuine paying customer £25');
+  check(pnl.unitEconomics.customerAcquisitionCost.provenance === 'NOT_CONNECTED', 'CAC NOT CONNECTED until attribution exists');
+
+  // Finance ledger views adapter (docs/finance/LEDGER_REPORTING_INTERFACE.md contract).
+  const viewsLines = linesFromFinanceViews({
+    contribution: { revenue: 59.88, tax: -9.98, payment_fees: -3.2, direct_service_costs: -17.1, infrastructure: -25, advertising: 0, estimated_or_allocated_part: -0.5, unknown_items: 2 },
+    bucketRows: [
+      { dashboard_bucket: 'payment_fees', amount_quality: 'ACTUAL', signed_total: -3.2, entries_without_amount: 0 },
+      { dashboard_bucket: 'telephony', amount_quality: 'ACTUAL', signed_total: -15.9, entries_without_amount: 2 },
+      { dashboard_bucket: 'telephony', amount_quality: 'ALLOCATED', signed_total: -0.7, entries_without_amount: 0 },
+      { dashboard_bucket: 'ai_transcription', amount_quality: 'ESTIMATED', signed_total: -0.5, entries_without_amount: 0 },
+    ],
+    infrastructureBySupplier: [{ supplier: 'railway', signed_total: -5 }, { supplier: 'supabase', signed_total: -20 }],
   });
-  check(live.revenue_stripe.provenance === 'ACTUAL' && live.revenue_stripe.amountGbp === 120, 'Stripe revenue is ACTUAL');
-  check(live.vat_output.amountGbp === 20 && live.vat_output.provenance === 'ESTIMATED', 'VAT: £120 VAT-inclusive at 20% → £20, labelled ESTIMATED');
-  check(live.telephony_usage.provenance === 'ACTUAL' && live.number_rental.amountGbp === 7, 'Twilio usage and number rental are ACTUAL supplier totals');
-  check(live.ai_transcription.provenance === 'ESTIMATED', 'OpenAI is ESTIMATED');
-  check(live.hosting.provenance === 'MANUAL' && live.email.provenance === 'NOT_CONNECTED', 'configured fixed costs are MANUAL; unset ones NOT CONNECTED');
-  check(live.revenue_app_stores.amountGbp === 0 && live.store_commission.amountGbp === 0, 'no app-store subscriptions → app-store revenue and commission are genuinely £0');
-
-  const pnl = buildProfitAndLoss({ period, ledgerEntries: null, liveFigures: live, units: { activeCustomers: 10, genuinePayingCustomers: 4, monitoredMinutes: 50 } });
-  check(pnl.totals.grossRevenue.amountGbp === 120 && pnl.totals.grossRevenue.complete, 'gross revenue £120, complete');
-  check(pnl.totals.netRevenueExVat.amountGbp === 100, 'revenue ex-VAT = 120 − 0 refunds − 20 VAT = £100');
-  check(pnl.totals.variableCost.amountGbp === 13.1, 'variable cost = 2.5 fees + 3.2 usage + 7 rental + 0.4 AI + 0 commission = £13.10');
-  check(pnl.totals.grossContribution.amountGbp === 86.9, 'gross contribution = £86.90');
-  check(pnl.totals.fixedCost.amountGbp === 25 && pnl.totals.fixedCost.complete === false, 'fixed cost £25 but incomplete (Resend and other overheads not connected)');
-  check(pnl.totals.operatingProfit.amountGbp === 61.9 && pnl.totals.operatingProfit.complete === false, 'operating profit £61.90, flagged incomplete');
-  check(pnl.unitEconomics.telephonyCostPerActiveCustomer.amountGbp === 1.02, 'telephony cost per active customer = 10.2 / 10');
-  check(pnl.unitEconomics.monitoredMinutesPerActiveCustomer === 5, 'monitored minutes per active customer = 50 / 10');
-  check(pnl.unitEconomics.netRevenuePerPayingCustomer.amountGbp === 25, 'net revenue per genuine paying customer = 100 / 4');
-  check(pnl.unitEconomics.customerAcquisitionCost.provenance === 'NOT_CONNECTED', 'CAC is NOT CONNECTED until attribution exists');
-  check(pnl.ledgerConnected === false, 'reports that the ledger is not connected');
-
-  // Ledger takes over line by line.
-  const ledgerEntries = [
-    { entry_class: 'cost', category: 'inbound_voice', supplier: 'twilio', provenance: 'provider_actual', amount: 1.1, native_currency: 'GBP', occurred_at: '2026-09-10T10:00:00Z' },
-    { entry_class: 'cost', category: 'media_stream', supplier: 'twilio', provenance: 'provider_allocated', amount: 0.9, native_currency: 'GBP', occurred_at: '2026-09-11T10:00:00Z' },
-    { entry_class: 'cost', category: 'app_leg', supplier: 'twilio', provenance: 'provider_actual', amount: null, native_currency: 'GBP', occurred_at: '2026-09-12T10:00:00Z' },
-    { entry_class: 'cost', category: 'inbound_voice', supplier: 'telnyx', provenance: 'provider_actual', amount: 5, native_currency: 'USD', occurred_at: '2026-09-12T10:00:00Z' },
-    { entry_class: 'cost', category: 'advertising', supplier: 'meta', provenance: 'manual', amount: 50, native_currency: 'GBP', occurred_at: '2026-09-05T00:00:00Z', campaign_ref: 'meta/paid_social/launch' },
-    { entry_class: 'cost', category: 'hosting', supplier: 'railway', provenance: 'manual', amount: 6, native_currency: 'GBP', occurred_at: '2026-08-01T00:00:00Z' },
-  ];
-  const usage = aggregateLedgerLine(ledgerEntries, LINE_DEFINITIONS.find((d) => d.id === 'telephony_usage'), period);
-  check(usage.amountGbp === 2 && usage.provenance === 'MIXED' && usage.provenanceMix.ACTUAL === 1 && usage.provenanceMix.ALLOCATED === 1, 'ledger telephony: £2.00 from one actual + one allocated row → MIXED provenance');
-  check(usage.unobservedEntries === 1 && usage.excludedNonGbpEntries === 1, 'a not-yet-observed charge is not counted as zero; a USD row is excluded (no FX yet), never silently converted');
-  const pnlLedger = buildProfitAndLoss({ period, ledgerEntries, liveFigures: live, units: {} });
-  const line = (id) => pnlLedger.lines.find((l) => l.id === id);
-  check(line('telephony_usage').source === 'ledger' && line('telephony_usage').amountGbp === 2, 'telephony usage now comes from the ledger');
-  check(line('advertising').source === 'ledger' && line('advertising').amountGbp === 50 && line('advertising').provenance === 'MANUAL', 'advertising from a manual ledger entry');
-  check(line('hosting').source === 'settings', 'a ledger row outside the period is ignored; hosting falls back to the live (settings) figure');
-  check(line('revenue_stripe').source === 'stripe', 'lines the ledger has nothing for keep their live source');
+  check(viewsLines.revenue_ex_vat.amountGbp === 49.9, 'views: revenue ex VAT = revenue − tax from finance_monthly_contribution');
+  check(viewsLines.telephony.amountGbp === 16.6 && viewsLines.telephony.provenance === 'MIXED' && /2 item\(s\) not yet priced/.test(viewsLines.telephony.basis), 'views: telephony bucket, mixed quality, unpriced items counted not zeroed');
+  check(viewsLines.railway.amountGbp === 5 && viewsLines.supabase.amountGbp === 20 && viewsLines.resend.amountGbp === null, 'views: infrastructure split by supplier; missing Resend stays NOT CONNECTED');
+  check(viewsLines.advertising.amountGbp === null, 'views: no advertising rows → NOT CONNECTED');
+  check(linesFromFinanceViews({ contribution: null }) === null, 'views: no contribution row for the month → adapter returns nothing (falls back, never zero)');
+  const src = readFileSync(path.join(__dirname, '..', 'services', 'businessControl', 'financialReadModel.js'), 'utf8');
+  check(!/from\(['"]financial_entries['"]\)/.test(src) && !/aggregateLedgerLine/.test(src), 'no competing ledger aggregation: financial_entries is never read directly');
 }
 
 // ============================================================
@@ -267,23 +247,28 @@ const LEDGER_048_CATEGORIES = [
   const routeSrc = readFileSync(path.join(__dirname, '..', 'routes', 'adminBusinessControl.js'), 'utf8');
   const decls = [...routeSrc.matchAll(/router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]\s*,([^\n]+)/g)];
   const anyRouterCall = [...routeSrc.matchAll(/router\.([a-zA-Z]+)\s*\(/g)].map((m) => m[1]);
-  check(anyRouterCall.length === 4 && anyRouterCall.every((m) => m === 'get'), 'the router registers nothing but four GET handlers (any quote style, no router.use/all/post)');
-  check(decls.length === 4 && decls.every((d) => d[1] === 'get'), 'exactly four routes, all GET — no write endpoint exists');
-  check(decls.map((d) => d[2]).join() === '/admin/api/business-control/subscriptions,/admin/api/business-control/reconciliation,/admin/api/business-control/finance,/admin/api/business-control/marketing', 'routes: subscriptions, reconciliation, finance, marketing');
+  check(anyRouterCall.length === 5 && anyRouterCall.every((m) => m === 'get'), 'the router registers nothing but five GET handlers (any quote style, no router.use/all/post)');
+  check(decls.length === 5 && decls.every((d) => d[1] === 'get'), 'exactly five routes, all GET — no write endpoint exists');
+  check(decls.map((d) => d[2]).join() === '/admin/api/business-control/overview,/admin/api/business-control/subscriptions,/admin/api/business-control/reconciliation,/admin/api/business-control/finance,/admin/api/business-control/marketing', 'routes: overview, subscriptions, reconciliation, finance, marketing');
   check(decls.every((d) => d[3].includes('requireAuth') && d[3].includes('requireAdmin')), 'every route requires an authenticated admin');
   check(!/recordAdminAction|express\.json\(\)/.test(routeSrc), 'no request bodies are parsed and no admin actions recorded (nothing to act on)');
 
   const dir = path.join(__dirname, '..', 'services', 'businessControl');
-  const files = ['subscriptionOverview.js', 'numberReconciliation.js', 'financialReadModel.js', 'financialOverview.js', 'campaignPerformance.js'];
+  const files = ['subscriptionOverview.js', 'numberReconciliation.js', 'financialReadModel.js', 'financialOverview.js', 'campaignPerformance.js', 'definitions.js', 'stripeRevenue.js', 'numberInventory.js', 'controlOverview.js', 'lifecycleTimeline.js', 'fixedCostSettings.js'];
   const code = (f) => readFileSync(path.join(dir, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
   const all = files.map(code).join('\n') + '\n' + routeSrc;
   check(!/\.(insert|update|upsert|delete|rpc)\(/.test(all), 'no database write or RPC anywhere in the dashboard services or routes');
-  check(!/from\(\s*['"](financial_entries|manual_cost_schedules|customer_acquisition|telephony_call_legs)['"]/.test(all), 'no query touches tables from migrations 048/049/050 (live-source fallback only)');
+  check(!/from\(\s*['"](financial_entries|manual_cost_schedules|customer_acquisition|telephony_call_legs)['"]/.test(all), 'no query touches ledger/attribution tables directly (financial_entries, manual_cost_schedules, customer_acquisition, telephony_call_legs)');
+  const finSrc = code('financialOverview.js');
+  check(/BUSINESS_FINANCE_LEDGER_VIEWS === 'enabled'/.test(finSrc) && /ledgerSwitch \? readFinanceViews/.test(finSrc), 'Finance ledger views (051) are read only behind the explicit BUSINESS_FINANCE_LEDGER_VIEWS=enabled switch');
   check(!/\.remove\(|\.create\(|availablePhoneNumbers|incomingPhoneNumbers\.create|incomingPhoneNumbers\([^)]*\)\.(update|remove)/.test(all), 'no Twilio number is purchased, released or updated');
   check(!/stripe\.[a-zA-Z]+\.(create|update|del|cancel)/.test(all), 'no Stripe object is created, updated or cancelled');
   const providerCalls = [...all.matchAll(/incomingPhoneNumbers\.[a-zA-Z]+/g)].map((m) => m[0]);
-  check(providerCalls.length === 1 && providerCalls[0] === 'incomingPhoneNumbers.list', 'the only Twilio number call is a read-only list');
-  check(!/pending_release|quarantine[a-zA-Z]*\(|markTwilio|releaseHousehold|release_household|mark_household_twilio/.test(all.replace(/twilio_number_pending_release_at/g, '').replace(/twilio_number_quarantine/g, '')), 'no number is scheduled, quarantined or released (only lifecycle columns are read)');
+  check(providerCalls.length > 0 && providerCalls.every((c) => c === 'incomingPhoneNumbers.list'), 'the only Twilio number calls are read-only lists');
+  check(!/usage\.triggers|\.purchase|\.messages\.create|\.calls\.create/.test(all), 'no Twilio usage trigger, message, call or purchase is created');
+  // Lifecycle actions are recognised by the real RPC/function names that
+  // perform them (P0-owned); reading lifecycle columns is allowed.
+  check(!/mark_household_twilio_number_pending_release|cancel_household_twilio_number_pending_release|release_household_twilio_number|record_twilio_release_attempt|expire_lapsed_entitlement|markTwilioNumber|releaseHousehold|releaseExpiredTwilioNumber|releaseQuarantinedTwilioNumber|quarantineHouseholdTwilioNumber|confirmTwilioNumberDeactivation|updateTwilioNumberForEntitlementChange|ensureTwilioNumberProvisioned/.test(all), 'no number is scheduled, quarantined, released or provisioned (no lifecycle RPC or function is called)');
   check(!existsSync(path.join(__dirname, '..', 'supabase', 'migrations', '050_manual_cost_schedules.sql')) && !existsSync(path.join(dir, 'manualCosts.js')), 'draft migration 050 and the manual-cost module are not part of this deployable');
 
   const server = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
@@ -307,43 +292,62 @@ const LEDGER_048_CATEGORIES = [
   const tabs = extract('businessControlTabs');
   check(monitorHelpers && dateTime && tabs, 'business-control UI block and shared helpers are extractable');
 
-  for (const id of ['subscriptions', 'reconciliation', 'finance', 'marketing']) {
+  for (const id of ['overview', 'subscriptions', 'reconciliation', 'finance', 'marketing']) {
     check(html.includes(`id="tabBtn-${id}"`) && html.includes(`<div id="${id}" class="tab-panel"`), `tab "${id}" has a button and a panel`);
   }
-  check(/const TAB_NAMES = \['business', 'customers', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'operations', 'systemhealth'\]/.test(html), 'existing Business / Customers / Operations / System Health tabs kept');
+  check(/const TAB_NAMES = \['overview', 'business', 'customers', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'operations', 'systemhealth'\]/.test(html), 'existing Business / Customers / Operations / System Health tabs kept; Overview first');
+  check(/fromHash : 'overview'/.test(html), 'the dashboard opens on the Overview');
 
   const evil = '"><img src=x onerror=alert(1)>';
   const elements = {};
   const stubEl = (id) => (elements[id] = elements[id] || { id, innerHTML: '', textContent: '', value: '', addEventListener() {}, hidden: false });
-  const documentStub = { getElementById: (id) => stubEl(id) };
+  const documentStub = { getElementById: (id) => stubEl(id), querySelectorAll: () => [], querySelector: () => null };
   const responses = {};
   const fetchStub = async (url) => ({ ok: true, redirected: false, status: 200, json: async () => responses[url.split('/business-control/')[1]] });
-  const factory = new Function('document', 'fetch', 'window', 'fmtNum', `${monitorHelpers}\n${dateTime}\n${tabs}\nreturn { renderSubscriptionsTab, renderReconciliationTab, renderFinanceTab, renderMarketingTab, provenanceBadge, formatGbpOrMissing, describeTotal, reconciliationBanner, chainStageClass, buildTrackedGoLinkClient };`);
+  const factory = new Function('document', 'fetch', 'window', 'fmtNum', `${monitorHelpers}\n${dateTime}\n${tabs}\nreturn { renderOverviewTab, renderSubscriptionsTab, renderReconciliationTab, renderFinanceTab, renderMarketingTab, provenanceBadge, statusBadge, overallBanner, formatGbpOrMissing, describeTotal, reconciliationBanner, chainStageClass, buildTrackedGoLinkClient };`);
   const fmtNum = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-GB'));
   const ui = factory(documentStub, fetchStub, { location: { origin: 'https://homecallguard.co.uk' } }, fmtNum);
 
   check(ui.formatGbpOrMissing(null) === 'Not connected' && ui.formatGbpOrMissing(0) === '£0.00' && ui.formatGbpOrMissing(-12.5) === '−£12.50', 'money formatting: missing is "Not connected", never £0; negatives shown');
-  check(ui.describeTotal({ amountGbp: 10, complete: false }).incomplete === true, 'incomplete totals flagged');
+  check(ui.describeTotal({ amountGbp: 10, complete: false, partial: true }).note === 'known part only' && ui.describeTotal({ amountGbp: null, complete: false }).text === 'Not connected' && ui.describeTotal({ amountGbp: 5, complete: true }).note === 'complete', 'totals: complete / known part only / not connected');
+  check(ui.statusBadge('red').includes('Action needed') && ui.statusBadge('grey').includes('Cannot check') && ui.statusBadge(evil).includes('&lt;img'), 'status badges state what the colour means and escape unknown values');
+  check(ui.overallBanner({ overall: 'green', counts: {}, incomplete: true }).text.includes('in what could be checked'), 'green banner is qualified when some checks could not run');
   check(ui.provenanceBadge('NOT_CONNECTED').includes('Not connected') && ui.provenanceBadge(evil).includes('&lt;img'), 'provenance badge labels and escapes unknown values');
   check(ui.reconciliationBanner('ACTION_REQUIRED', 2, 1).text.startsWith('ACTION REQUIRED') && ui.reconciliationBanner('OK', 0, 0).className === 'ready', 'reconciliation banner OK / ACTION REQUIRED');
   check(ui.chainStageClass({ state: 'awaiting confirmation' }) === 'chain-bad' && ui.chainStageClass({ state: 'yes' }) === 'chain-good', 'lifecycle chain stage colouring');
   check(ui.buildTrackedGoLinkClient('https://homecallguard.co.uk', { source: 'TikTok', medium: 'paid_social', campaign: 'Oct Launch', content: '123' }) === 'https://homecallguard.co.uk/go?utm_source=tiktok&utm_medium=paid_social&utm_campaign=oct-launch&utm_content=123', 'client link builder matches the server convention');
 
-  responses.subscriptions = { generatedAt: NOW.toISOString(), counts: { households: 1, deletedAccounts: 0, genuinePayingCustomers: 0, activePaidSubscriptions: { total: 0, genuine: 0, bySource: { [evil]: 1 } }, cancellingAtPeriodEnd: { total: 0, genuine: 0 }, paymentIssue: { total: 0, genuine: 0 }, cancelledSubscriptions: { total: 0, genuine: 0 }, complimentary: 1, trial: 0, nonGenuineAccounts: { internal_test: 0, admin: 0, reviewer: 0, qa_automation: 0 }, nonGenuineWithActiveAccess: 0, unclassifiedWithActiveAccess: 1, newGenuinePayingLast7d: 0, newGenuinePayingLast30d: 0 }, churn: { available: false, reason: evil }, needsClassification: [{ householdId: 'h', email: evil, entitlementType: evil }] };
-  responses.reconciliation = { generatedAt: NOW.toISOString(), overall: 'ACTION_REQUIRED', actionCount: 1, watchCount: 0, okCount: 0, anomalyCounts: { NUMBER_RETAINED_NO_ENTITLEMENT: 1 }, anomalyDefinitions: { NUMBER_RETAINED_NO_ENTITLEMENT: { severity: 'action', label: 'x' } }, rows: [{ householdId: 'h', email: evil, hcgNumber: evil, status: 'action_required', anomalies: [{ severity: 'action', label: evil, detail: evil }], chain: [{ key: 'number', label: evil, state: evil, at: null }] }], notes: [evil] };
-  responses.finance = { generatedAt: NOW.toISOString(), period: { label: evil }, totals: { grossRevenue: { amountGbp: null, complete: false }, netRevenueExVat: null, variableCost: null, grossContribution: null, fixedCost: null, marketingSpend: null, operatingProfit: null }, lines: [{ id: 'x', section: 'revenue', label: evil, amountGbp: null, provenance: evil, basis: evil }], unitEconomics: { activeCustomers: 1, genuinePayingCustomers: 0, costPerActiveCustomer: null, telephonyCostPerActiveCustomer: null, netRevenuePerPayingCustomer: null, monitoredMinutes: null, monitoredMinutesPerActiveCustomer: null, customerAcquisitionCost: { basis: evil } }, connections: { [evil]: evil } };
-  responses.marketing = { generatedAt: NOW.toISOString(), windowDays: 90, chain: [{ stage: evil, status: 'NOT_CONNECTED', note: evil }], rows: [{ label: evil, channel: evil, landingVisits: 1, registrationsCompleted: 0, spend: { amountGbp: null }, payingCustomers: null, cac: null }], unattributed: { checkoutsStarted: 0, paidConversions: 0, note: evil } };
+  responses.overview = { generatedAt: NOW.toISOString(), overall: 'red', incomplete: true, counts: { red: 1, amber: 0, green: 0, grey: 1 },
+    cards: [{ id: 'x', label: evil, value: evil, status: 'red', rule: evil, sub: evil, items: [{ email: evil, detail: evil }, { number: evil, detail: evil }] }],
+    stripe: { mode: evil }, inventory: { providerNumberCount: 1, releaseFailureRecording: evil, monthlyRental: { perNumber: 0.87, currency: 'GBP', basis: evil, flaggedNumbers: 0.87 },
+      rows: [{ number: evil, owner: { email: evil, householdId: 'h', accountClass: evil, membership: evil }, whyExpected: evil, stateLabel: evil, environment: evil, voiceHost: evil, monthlyRental: 0.87, severity: 'red', flags: [{ severity: 'red', label: evil }], recommendations: [evil] }] }, inventoryReason: null };
+  responses.subscriptions = { generatedAt: NOW.toISOString(), counts: { membership: { current: 1, upcoming: 0, cancelled: 2, expired: 3, never: 0 }, protection: { protected: 1, entitled_not_protected: 0 }, households: 1, deletedAccounts: 0, genuinePayingCustomers: 0, activePaidSubscriptions: { total: 0, genuine: 0, bySource: { [evil]: 1 } }, cancellingAtPeriodEnd: { total: 0, genuine: 0 }, paymentIssue: { total: 0, genuine: 0 }, cancelledSubscriptions: { total: 0, genuine: 0 }, complimentary: 1, trial: 0, nonGenuineAccounts: { internal_test: 0, admin: 0, reviewer: 0, qa_automation: 0 }, nonGenuineWithActiveAccess: 0, unclassifiedWithActiveAccess: 1, newGenuinePayingLast7d: 0, newGenuinePayingLast30d: 0 }, churn: { available: false, reason: evil }, needsClassification: [{ householdId: 'h', email: evil, entitlementType: evil }] };
+  responses.reconciliation = { generatedAt: NOW.toISOString(), overall: 'ACTION_REQUIRED', actionCount: 1, watchCount: 0, okCount: 0, anomalyCounts: { NUMBER_RETAINED_NO_ENTITLEMENT: 1 }, anomalyDefinitions: { NUMBER_RETAINED_NO_ENTITLEMENT: { severity: 'action', label: 'x' } }, rows: [{ householdId: 'h', email: evil, hcgNumber: evil, status: 'action_required', anomalies: [{ severity: 'action', label: evil, detail: evil }], chain: [], timeline: { steps: [{ key: 'number', label: evil, state: 'broken', at: '2026-09-01T00:00:00Z', note: evil }], firstBroken: 0 } }], notes: [evil] };
+  responses.finance = { generatedAt: NOW.toISOString(), period: { label: evil }, stripeMode: evil, source: evil,
+    totals: { revenueExVat: { amountGbp: null, complete: false }, totalOperatingCost: { amountGbp: 16.96, complete: false, partial: true }, grossContribution: { amountGbp: null, complete: false }, operatingContribution: { amountGbp: null, complete: false }, marketing: { amountGbp: null, complete: false } },
+    lines: [{ id: 'x', section: 'revenue', label: evil, amountGbp: null, provenance: evil, basis: evil }, { id: 'r', section: 'overhead', label: 'Railway', amountGbp: 5, provenance: 'MANUAL', stale: true, basis: evil }],
+    unitEconomics: { accountsWithAccess: 1, genuinePayingCustomers: 0, operatingCostPerAccountWithAccess: { amountGbp: 16.96, complete: false, partial: true }, telephonyPerAccountWithAccess: null, revenueExVatPerGenuinePayingCustomer: null, monitoredMinutes: null, customerAcquisitionCost: { basis: evil } },
+    fixedCostSettings: [{ label: evil, configured: false, amountVar: evil, asOfVar: evil, howToFind: evil }, { label: 'Railway', configured: true, valueGbp: 5, asOf: evil, stale: true, howToFind: evil }],
+    connections: { source: evil, [evil]: evil } };
+  responses.marketing = { generatedAt: NOW.toISOString(), windowDays: 90,
+    channelComparison: { rows: [{ label: evil, visits: 1, registrations: 0, otherDetails: { [evil]: 1 } }], stageStatus: { visits: { status: 'ACTUAL', note: evil }, signups: { status: 'PARTIAL', note: evil }, payingCustomers: { status: 'NOT_CONNECTED', note: evil }, revenue: { status: 'NOT_CONNECTED', note: evil }, cac: { status: 'NOT_CONNECTED', note: evil } }, selfReported: { status: 'NOT_CAPTURED', note: evil } },
+    chain: [{ stage: evil, status: 'NOT_CONNECTED', note: evil }], rows: [{ label: evil, channel: evil, landingVisits: 1, registrationsCompleted: 0, spend: { amountGbp: null }, payingCustomers: null, cac: null }], unattributed: { checkoutsStarted: 0, paidConversions: 0, note: evil } };
 
+  await ui.renderOverviewTab();
   await ui.renderSubscriptionsTab();
   await ui.renderReconciliationTab();
   await ui.renderFinanceTab();
   await ui.renderMarketingTab();
-  for (const id of ['subscriptions', 'reconciliation', 'finance', 'marketing']) {
+  for (const id of ['overview', 'subscriptions', 'reconciliation', 'finance', 'marketing']) {
     const out = elements[id].innerHTML;
     check(out.length > 200 && !out.includes('<img') && !out.includes('onerror=alert(1)>') && out.includes('&lt;img src=x onerror=alert(1)&gt;'), `${id} tab renders hostile data as escaped text, never markup`);
   }
-  check(elements.finance.innerHTML.includes('Not connected') && !/£0\.00/.test(elements.finance.innerHTML.split('Manual costs')[0]), 'finance tab shows missing figures as "Not connected", not £0.00');
-  check(elements.finance.innerHTML.includes('Manual costs') && elements.finance.innerHTML.includes('Not available yet') && !elements.finance.innerHTML.includes('<form'), 'finance tab explains manual costs are not available yet and offers no form');
+  check(elements.finance.innerHTML.includes('Not connected') && !/£0\.00/.test(elements.finance.innerHTML), 'finance tab shows missing figures as "Not connected", never £0.00');
+  check(elements.finance.innerHTML.includes('known part only') && elements.finance.innerHTML.includes('re-check'), 'finance tab labels partial totals "known part only" and stale fixed costs "re-check"');
+  check(elements.finance.innerHTML.includes('Manual costs') && !elements.finance.innerHTML.includes('<form'), 'finance tab explains manual costs arrive with the ledger and offers no form');
+  check(elements.overview.innerHTML.includes('Rule:') && elements.overview.innerHTML.includes('Definitions used on every tab'), 'overview shows each card\'s rule and the definitions');
+  check(elements.reconciliation.innerHTML.includes('First broken step') && elements.reconciliation.innerHTML.includes('Twilio number inventory'), 'reconciliation shows the first broken lifecycle step and the number inventory');
+  check(elements.marketing.innerHTML.includes('By channel') && elements.marketing.innerHTML.includes('Self-reported'), 'marketing shows the channel comparison and keeps self-report separate');
   check(!/method\s*:|'POST'|"POST"/.test(tabs), 'the business-control tabs only ever issue GET requests');
 }
 

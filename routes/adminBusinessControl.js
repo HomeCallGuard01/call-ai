@@ -17,6 +17,7 @@ const { getSubscriptionOverview } = require("../services/businessControl/subscri
 const { getNumberReconciliation } = require("../services/businessControl/numberReconciliation");
 const { getFinancialOverview } = require("../services/businessControl/financialOverview");
 const { getCampaignPerformance } = require("../services/businessControl/campaignPerformance");
+const { getControlOverview } = require("../services/businessControl/controlOverview");
 
 const router = express.Router();
 
@@ -24,6 +25,18 @@ function sendResult(res, result) {
   if (!result.available) return res.status(503).json({ error: "unavailable", reason: result.reason });
   res.json(result);
 }
+
+// Overview: the loose-ends cards + Twilio number inventory. Read-only
+// (database reads, Twilio number list + last-month usage records, Stripe
+// subscriptions/charges lists).
+router.get("/admin/api/business-control/overview", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    sendResult(res, await getControlOverview(new Date()));
+  } catch (err) {
+    console.error("BUSINESS CONTROL OVERVIEW ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
 
 router.get("/admin/api/business-control/subscriptions", requireAuth, requireAdmin, async (req, res) => {
   sendResult(res, await getSubscriptionOverview(new Date()));

@@ -235,6 +235,35 @@
   .manual-cost-form input:disabled, .manual-cost-form select:disabled, .manual-cost-form button:disabled { opacity: 0.45; cursor: not-allowed; }
   .link-output { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 13px; background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 12px; overflow-wrap: anywhere; }
 
+  /* --- Control centre v2 (2026-09-27) --- */
+  .control-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .control-card { background: #111a2e; border: 1px solid #1e293b; border-left-width: 5px; border-radius: 10px; padding: 14px 16px; }
+  .control-card.st-red { border-left-color: #ef4444; }
+  .control-card.st-amber { border-left-color: #f59e0b; }
+  .control-card.st-green { border-left-color: #10b981; }
+  .control-card.st-grey { border-left-color: #475569; }
+  .control-card.st-info { border-left-color: #334155; }
+  .control-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .control-label { font-size: 12.5px; font-weight: 700; color: #cbd5e1; }
+  .control-value { font-size: 26px; font-weight: 800; color: #e2e8f0; margin: 6px 0 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .control-rule { font-size: 11px; color: #64748b; margin-top: 6px; }
+  .st-badge { font-size: 10.5px; font-weight: 800; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .st-badge.st-red { background: #450a0a; color: #fca5a5; }
+  .st-badge.st-amber { background: #451a03; color: #fbbf24; }
+  .st-badge.st-green { background: #064e3b; color: #6ee7b7; }
+  .st-badge.st-grey { background: #1e293b; color: #94a3b8; }
+  .st-badge.st-info { background: #1e293b; color: #cbd5e1; }
+  .card-items { margin-top: 8px; font-size: 12px; }
+  .card-items summary { cursor: pointer; color: #93a3b8; }
+  .card-items ul { margin: 6px 0 0; padding-left: 18px; }
+  .lc-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+  .lc-step { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid #334155; }
+  .lc-step small { color: inherit; opacity: 0.75; }
+  .lc-arrow { color: #475569; font-size: 10px; }
+  .lc-first-broken { outline: 2px solid #ef4444; }
+  tr.inv-red td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+  tr.inv-amber td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+
   @media (max-width: 1300px) {
     .stat-grid { grid-template-columns: repeat(3, 1fr); }
   }
@@ -265,6 +294,7 @@
 
 <div class="main">
   <nav class="tab-nav" id="tabNav" role="tablist" aria-label="Admin dashboard sections">
+    <button type="button" class="tab-button" id="tabBtn-overview" role="tab" onclick="switchTab('overview')">Overview</button>
     <button type="button" class="tab-button" id="tabBtn-business" role="tab" onclick="switchTab('business')">Business</button>
     <button type="button" class="tab-button" id="tabBtn-customers" role="tab" onclick="switchTab('customers')">Customers</button>
     <button type="button" class="tab-button" id="tabBtn-subscriptions" role="tab" onclick="switchTab('subscriptions')">Subscriptions</button>
@@ -275,7 +305,8 @@
     <button type="button" class="tab-button" id="tabBtn-systemhealth" role="tab" onclick="switchTab('systemhealth')">System Health</button>
   </nav>
 
-  <div id="business" class="tab-panel" role="tabpanel"><div class="loading">Loading…</div></div>
+  <div id="overview" class="tab-panel" role="tabpanel"><div class="loading">Loading…</div></div>
+  <div id="business" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
   <div id="customers" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
   <div id="subscriptions" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
   <div id="reconciliation" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
@@ -422,7 +453,7 @@ function describeAdminAction(action) {
 // Tab switching — one visible panel at a time, active tab has a
 // solid-fill, high-contrast state (never just text colour/underline).
 // ============================================================
-const TAB_NAMES = ['business', 'customers', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'operations', 'systemhealth'];
+const TAB_NAMES = ['overview', 'business', 'customers', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'operations', 'systemhealth'];
 
 function switchTab(name) {
   for (const t of TAB_NAMES) {
@@ -440,7 +471,7 @@ function switchTab(name) {
 
 function initialTab() {
   const fromHash = (window.location.hash || '').replace('#', '');
-  return TAB_NAMES.includes(fromHash) ? fromHash : 'business';
+  return TAB_NAMES.includes(fromHash) ? fromHash : 'overview';
 }
 
 // ============================================================
@@ -759,7 +790,7 @@ const HEALTH_LABELS = {
 };
 
 const CUSTOMER_FILTERS = ["active", "needs_attention", "setup_incomplete", "healthy", "inactive"];
-const CUSTOMER_FILTER_LABELS = { active: "All customers", needs_attention: "Needs attention", setup_incomplete: "Setup incomplete", healthy: "Healthy", inactive: "Inactive" };
+const CUSTOMER_FILTER_LABELS = { active: "All with access", needs_attention: "Needs attention", setup_incomplete: "Setup incomplete", healthy: "Healthy", inactive: "Inactive" };
 
 const HEALTH_ORDER = ["needs_attention", "setup_incomplete", "healthy", "inactive"];
 
@@ -957,7 +988,7 @@ function renderCustomersTab() {
 
   const mix = [s.paying ? s.paying + ' paying' : null, s.complimentary ? s.complimentary + ' complimentary' : null, s.trial ? s.trial + ' trial' : null].filter(Boolean).join(' · ') || 'none';
   html += '<div class="summary-strip">' +
-    summaryCard('Customers', counts.active, mix + (s.test ? ' · incl. ' + s.test + ' test/reviewer' : ''), '', 'active') +
+    summaryCard('Accounts with access', counts.active, mix + (s.test ? ' · incl. ' + s.test + ' test/reviewer' : ''), '', 'active') +
     summaryCard('Healthy', counts.healthy, 'protected, no problems seen', 'good', 'healthy') +
     summaryCard('Needs attention', counts.needs_attention, counts.needs_attention ? 'click to see who and why' : 'nothing to investigate', counts.needs_attention ? 'bad' : '', 'needs_attention') +
     summaryCard('Setup incomplete', counts.setup_incomplete, 'not yet protected, nothing wrong seen', counts.setup_incomplete ? 'warn' : '', 'setup_incomplete') +
@@ -1512,8 +1543,19 @@ async function revokeInvite(inviteId) {
 // All data-derived values are rendered through escapeHtml.
 // ============================================================
 // TEST-EXTRACT-START: businessControlTabs
+// ============================================================
+// BUSINESS CONTROL CENTRE (2026-09-27, v2) — Overview, Subscriptions,
+// Reconciliation, Finance, Marketing. Data: /admin/api/business-control/*
+// (admin-only, GET-only). Each tab loads the first time it is opened.
+// Colours come from explicit factual rules shown on each card; every
+// figure carries its provenance (ACTUAL / ALLOCATED / ESTIMATED / MANUAL /
+// NOT CONNECTED) and a missing source is never shown as £0.
+// Strictly observational: these tabs only issue GET requests. All
+// data-derived values are rendered through escapeHtml.
+// ============================================================
 const businessControlLoaded = {};
-const BUSINESS_CONTROL_TABS = ['subscriptions', 'reconciliation', 'finance', 'marketing'];
+const businessControlCache = {};
+const BUSINESS_CONTROL_TABS = ['overview', 'subscriptions', 'reconciliation', 'finance', 'marketing'];
 
 // TEST-EXTRACT-START: businessControlHelpers
 const PROVENANCE_BADGES = {
@@ -1522,12 +1564,27 @@ const PROVENANCE_BADGES = {
   ESTIMATED: { label: 'Estimated', className: 'prov-estimated' },
   MANUAL: { label: 'Manual', className: 'prov-manual' },
   NOT_CONNECTED: { label: 'Not connected', className: 'prov-none' },
+  NOT_CAPTURED: { label: 'Not captured', className: 'prov-none' },
+  PARTIAL: { label: 'Partial', className: 'prov-estimated' },
   MIXED: { label: 'Mixed', className: 'prov-mixed' },
+};
+
+const STATUS_STYLES = {
+  red: { label: 'Action needed', className: 'st-red' },
+  amber: { label: 'Check', className: 'st-amber' },
+  green: { label: 'OK', className: 'st-green' },
+  grey: { label: 'Cannot check', className: 'st-grey' },
+  info: { label: 'Count', className: 'st-info' },
 };
 
 function provenanceBadge(provenance) {
   const b = PROVENANCE_BADGES[provenance] || { label: String(provenance || '—'), className: 'prov-none' };
   return '<span class="prov-badge ' + b.className + '">' + escapeHtml(b.label) + '</span>';
+}
+
+function statusBadge(status) {
+  const s = STATUS_STYLES[status] || { label: String(status || '—'), className: 'st-grey' };
+  return '<span class="st-badge ' + s.className + '">' + escapeHtml(s.label) + '</span>';
 }
 
 function formatGbpOrMissing(amount) {
@@ -1537,9 +1594,12 @@ function formatGbpOrMissing(amount) {
   return n < 0 ? '−' + s : s;
 }
 
+// A total: complete → the figure; partial → "known part only"; nothing
+// known → "Not connected". Never a figure that pretends to be complete.
 function describeTotal(total) {
-  if (!total) return { text: 'Not connected', incomplete: true };
-  return { text: formatGbpOrMissing(total.amountGbp), incomplete: total.complete === false };
+  if (!total || total.amountGbp === null || total.amountGbp === undefined) return { text: 'Not connected', incomplete: true, note: 'not connected' };
+  if (total.complete) return { text: formatGbpOrMissing(total.amountGbp), incomplete: false, note: 'complete' };
+  return { text: formatGbpOrMissing(total.amountGbp), incomplete: true, note: 'known part only' };
 }
 
 function reconciliationBanner(overall, actionCount, watchCount) {
@@ -1549,12 +1609,18 @@ function reconciliationBanner(overall, actionCount, watchCount) {
 }
 
 function chainStageClass(stage) {
-  const good = { active: 1, assigned: 1, yes: 1, released: 1 };
-  const bad = { failed: 1, 'awaiting confirmation': 1 };
+  const good = { active: 1, assigned: 1, yes: 1, released: 1, done: 1 };
+  const bad = { failed: 1, 'awaiting confirmation': 1, broken: 1 };
   if (good[stage.state]) return 'chain-good';
   if (bad[stage.state]) return 'chain-bad';
-  if (stage.state === 'no' || stage.state === 'none') return 'chain-off';
+  if (stage.state === 'no' || stage.state === 'none' || stage.state === 'na') return 'chain-off';
   return 'chain-neutral';
+}
+
+function overallBanner(overview) {
+  if (overview.overall === 'red') return { className: 'not_ready', text: 'Loose ends found — ' + overview.counts.red + ' card' + (overview.counts.red === 1 ? '' : 's') + ' need action' };
+  if (overview.overall === 'amber') return { className: 'ready_with_open_items', text: 'No broken states, ' + overview.counts.amber + ' item' + (overview.counts.amber === 1 ? '' : 's') + ' to check' };
+  return { className: 'ready', text: 'Nothing to act on' + (overview.incomplete ? ' in what could be checked' : '') };
 }
 // TEST-EXTRACT-END: businessControlHelpers
 
@@ -1566,14 +1632,19 @@ async function fetchBusinessControl(path) {
   return body;
 }
 
+async function fetchOverviewOnce(force) {
+  if (!businessControlCache.overview || force) businessControlCache.overview = await fetchBusinessControl('overview');
+  return businessControlCache.overview;
+}
+
 function loadBusinessControlTab(name, force) {
   if (!BUSINESS_CONTROL_TABS.includes(name)) return;
   if (businessControlLoaded[name] && !force) return;
   businessControlLoaded[name] = true;
   const el = document.getElementById(name);
   el.innerHTML = '<div class="loading">Loading…</div>';
-  const loaders = { subscriptions: renderSubscriptionsTab, reconciliation: renderReconciliationTab, finance: renderFinanceTab, marketing: renderMarketingTab };
-  loaders[name]().catch((err) => { el.innerHTML = '<div class="error">' + escapeHtml(err.message) + '</div>'; businessControlLoaded[name] = false; });
+  const loaders = { overview: renderOverviewTab, subscriptions: renderSubscriptionsTab, reconciliation: renderReconciliationTab, finance: renderFinanceTab, marketing: renderMarketingTab };
+  loaders[name](force).catch((err) => { el.innerHTML = '<div class="error">' + escapeHtml(err.message) + '</div>'; businessControlLoaded[name] = false; });
 }
 
 function sectionHeader(title, generatedAt, tab) {
@@ -1585,113 +1656,174 @@ function bcCard(label, value, sub, className) {
   return '<div class="card' + (className ? ' ' + className : '') + '"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + value + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
 }
 
+function itemsHtml(items) {
+  if (!items || !items.length) return '';
+  return '<details class="card-items"><summary>' + items.length + ' item' + (items.length === 1 ? '' : 's') + '</summary><ul>' +
+    items.map((it) => '<li>' + escapeHtml(it.email || it.number || it.householdId || '—') + (it.detail ? ' <span class="customer-sub">— ' + escapeHtml(it.detail) + '</span>' : '') + '</li>').join('') + '</ul></details>';
+}
+
+// ---------- Overview ----------
+const GLOSSARY_ROWS = [
+  ['Account / household', 'Any registered household. Neutral: not necessarily a customer.'],
+  ['Genuine customer', 'Explicitly classified as a genuine customer. Never inferred.'],
+  ['Internal test / reviewer / admin / QA', 'Explicitly classified non-customer accounts. Visible everywhere, never counted as customers or revenue.'],
+  ['Unclassified', 'Not yet classified. Not counted as a customer or revenue until classified.'],
+  ['Paid / complimentary / trial access', 'The type of the current entitlement.'],
+  ['Genuine paying customer', 'A genuine customer with paid access.'],
+  ['Cancelled', 'No current or upcoming membership; the subscription was cancelled or access revoked.'],
+  ['Expired', 'No current or upcoming membership; the last one ended by date.'],
+  ['Protected', 'Current membership + delivery confirmed + app registered (the customer-facing definition).'],
+  ['Entitled but not protected', 'Current membership, not (yet) Protected.'],
+  ['Revenue / MRR', 'Money from genuine customers only, read from the payment provider. Never an entitlement count multiplied by the list price.'],
+];
+
+async function renderOverviewTab(force) {
+  const d = await fetchOverviewOnce(force);
+  const banner = overallBanner(d);
+  let html = '<div class="section">' + sectionHeader('Control centre — are we paying for anything we shouldn\'t be, and is every customer in the right state?', d.generatedAt, 'overview');
+  html += '<div class="readiness-banner ' + banner.className + '">' + escapeHtml(banner.text) + (d.incomplete ? ' · some checks could not run (grey)' : '') + '</div>';
+  html += '<div class="control-grid">' + d.cards.map((c) =>
+    '<div class="control-card ' + (STATUS_STYLES[c.status] || STATUS_STYLES.grey).className + '">' +
+      '<div class="control-head"><span class="control-label">' + escapeHtml(c.label) + '</span>' + statusBadge(c.status) + '</div>' +
+      '<div class="control-value">' + escapeHtml(c.value) + '</div>' +
+      (c.sub ? '<div class="sub">' + escapeHtml(c.sub) + '</div>' : '') +
+      '<div class="control-rule">Rule: ' + escapeHtml(c.rule) + '</div>' +
+      itemsHtml(c.items) +
+    '</div>').join('') + '</div>';
+  html += '<p class="sub" style="margin-top:12px;">Stripe: ' + escapeHtml(d.stripe.mode === 'live' ? 'live mode' : d.stripe.mode === 'test' ? 'TEST mode — no real revenue in this environment' : (d.stripe.reason || d.stripe.mode)) + ' · Release failures: ' + escapeHtml(d.inventory ? d.inventory.releaseFailureRecording : 'provider inventory unavailable') + '</p>';
+  html += '<h3 style="margin-top:22px;">Definitions used on every tab</h3><table class="fact-table">' + GLOSSARY_ROWS.map((r) => '<tr><td>' + escapeHtml(r[0]) + '</td><td>' + escapeHtml(r[1]) + '</td></tr>').join('') + '</table>';
+  html += '</div>';
+  document.getElementById('overview').innerHTML = html;
+}
+
 // ---------- Subscriptions ----------
 async function renderSubscriptionsTab() {
   const d = await fetchBusinessControl('subscriptions');
   const c = d.counts;
   const src = Object.entries(c.activePaidSubscriptions.bySource).map(([k, v]) => escapeHtml(k) + ' ' + v).join(' · ') || 'none';
-  let html = '<div class="section">' + sectionHeader('Customers &amp; subscriptions', d.generatedAt, 'subscriptions');
-  html += '<p class="sub" style="margin-bottom:14px;">Genuine = explicitly classified genuine customer. Reviewer, test, internal, admin and unclassified accounts are never counted as genuine or as revenue.</p>';
+  const m = c.membership || {};
+  const p = c.protection || {};
+  let html = '<div class="section">' + sectionHeader('Accounts, access &amp; subscriptions', d.generatedAt, 'subscriptions');
+  html += '<p class="sub" style="margin-bottom:14px;">Genuine = explicitly classified genuine customer. Reviewer, test, internal, admin and unclassified accounts are never counted as customers or revenue. See Overview → Definitions.</p>';
   html += '<div class="cards">' +
-    bcCard('Genuine paying customers', fmtNum(c.genuinePayingCustomers), 'active paid entitlement', 'bc-primary') +
-    bcCard('Active paid subscriptions', fmtNum(c.activePaidSubscriptions.total), fmtNum(c.activePaidSubscriptions.genuine) + ' genuine · ' + src) +
+    bcCard('Genuine paying customers', fmtNum(c.genuinePayingCustomers), 'genuine + current paid access', 'bc-primary') +
+    bcCard('Paid access (all accounts)', fmtNum(c.activePaidSubscriptions.total), fmtNum(c.activePaidSubscriptions.genuine) + ' genuine · ' + src) +
+    bcCard('Complimentary access', fmtNum(c.complimentary), 'current, no payment') +
+    bcCard('Trial access', fmtNum(c.trial), 'current free trial') +
+    bcCard('Internal test / reviewer / admin / QA', fmtNum(c.nonGenuineWithActiveAccess), 'with access · ' + fmtNum(c.nonGenuineAccounts.reviewer) + ' reviewer, ' + fmtNum(c.nonGenuineAccounts.internal_test) + ' test, ' + fmtNum(c.nonGenuineAccounts.admin) + ' admin, ' + fmtNum(c.nonGenuineAccounts.qa_automation) + ' QA') +
+    bcCard('Unclassified with access', fmtNum(c.unclassifiedWithActiveAccess), 'not counted either way until classified') +
+    bcCard('Cancelled memberships', fmtNum(m.cancelled), 'subscription cancelled / access revoked') +
+    bcCard('Expired memberships', fmtNum(m.expired), 'ended by date') +
     bcCard('Cancelling at period end', fmtNum(c.cancellingAtPeriodEnd.total), fmtNum(c.cancellingAtPeriodEnd.genuine) + ' genuine') +
     bcCard('Payment issue', fmtNum(c.paymentIssue.total), fmtNum(c.paymentIssue.genuine) + ' genuine') +
-    bcCard('Cancelled subscriptions', fmtNum(c.cancelledSubscriptions.total), fmtNum(c.cancelledSubscriptions.genuine) + ' genuine') +
-    bcCard('Complimentary', fmtNum(c.complimentary), 'active, no payment') +
-    bcCard('Trial', fmtNum(c.trial), 'active free trial') +
-    bcCard('Reviewer / test / internal', fmtNum(c.nonGenuineWithActiveAccess), 'with active access · ' + fmtNum(c.nonGenuineAccounts.reviewer) + ' reviewer, ' + fmtNum(c.nonGenuineAccounts.internal_test) + ' test, ' + fmtNum(c.nonGenuineAccounts.admin) + ' admin, ' + fmtNum(c.nonGenuineAccounts.qa_automation) + ' QA') +
+    bcCard('Protected', fmtNum(p.protected), 'current membership + customer-facing Protected') +
+    bcCard('Entitled but not protected', fmtNum(p.entitled_not_protected), 'current membership, not yet Protected') +
     bcCard('New genuine paying', fmtNum(c.newGenuinePayingLast7d) + ' / ' + fmtNum(c.newGenuinePayingLast30d), 'last 7 / 30 days') +
     bcCard('Churn (30 days)', d.churn.available ? escapeHtml(d.churn.rate) + '%' : '—', d.churn.available ? escapeHtml(d.churn.lost + ' of ' + d.churn.base + ' genuine paying customers') : escapeHtml(d.churn.reason)) +
     '</div>';
-  html += '<div class="sub" style="margin-top:8px;">' + fmtNum(c.households) + ' accounts in total · ' + fmtNum(c.deletedAccounts) + ' deleted (anonymised) accounts excluded.</div>';
+  html += '<div class="sub" style="margin-top:8px;">' + fmtNum(c.households) + ' accounts · ' + fmtNum(c.deletedAccounts) + ' deleted (anonymised) accounts excluded.</div>';
   if (d.needsClassification.length) {
     html += '<h3 style="margin-top:22px;">Needs classification (' + d.needsClassification.length + ')</h3>';
-    html += '<p class="sub">Active access but not yet classified — not counted as genuine until you classify them.</p><table><tr><th>Account</th><th>Access</th></tr>' +
-      d.needsClassification.map((n) => '<tr><td>' + escapeHtml(n.email) + '</td><td>' + escapeHtml(n.entitlementType) + '</td></tr>').join('') + '</table>';
+    html += '<table><tr><th>Account</th><th>Access</th></tr>' + d.needsClassification.map((n) => '<tr><td>' + escapeHtml(n.email) + '</td><td>' + escapeHtml(n.entitlementType) + '</td></tr>').join('') + '</table>';
   }
   html += '</div>';
   document.getElementById('subscriptions').innerHTML = html;
 }
 
 // ---------- Reconciliation ----------
-async function renderReconciliationTab() {
-  const d = await fetchBusinessControl('reconciliation');
-  const banner = reconciliationBanner(d.overall, d.actionCount, d.watchCount);
-  let html = '<div class="section">' + sectionHeader('Protection &amp; number reconciliation', d.generatedAt, 'reconciliation');
-  html += '<div class="readiness-banner ' + banner.className + '">' + escapeHtml(banner.text) + '</div>';
-  const inv = d.providerInventory;
-  html += '<p class="sub" style="margin:-6px 0 12px;">' + (inv && inv.available
-    ? 'Provider account: ' + fmtNum(inv.providerCount) + ' number(s) · ' + fmtNum(inv.heldByHcgCount) + ' held by HCG households or open quarantines.'
-    : 'Provider number list unavailable — provider-side checks skipped.') + '</p>';
-  const nonZero = Object.entries(d.anomalyCounts).filter(([, n]) => n > 0);
-  if (nonZero.length) {
-    html += '<div class="filter-bar">' + nonZero.map(([code, n]) => {
-      const def = d.anomalyDefinitions[code];
-      return '<span class="filter-chip' + (def.severity === 'action' ? ' urgent' : '') + '">' + escapeHtml(def.label) + ' <span class="chip-count">' + n + '</span></span>';
-    }).join('') + '</div>';
+function timelineHtml(timeline) {
+  if (!timeline || !timeline.steps || !timeline.steps.length) return '<span class="text-muted">number only</span>';
+  return '<div class="lc-steps">' + timeline.steps.map((s, i) =>
+    '<span class="lc-step ' + chainStageClass(s) + (timeline.firstBroken === i ? ' lc-first-broken' : '') + '" title="' + escapeHtml((s.note || '') + (s.at ? ' (' + fmtDateTime(s.at) + ')' : '')) + '">' +
+      escapeHtml(s.label) + (s.at ? ' <small>' + escapeHtml(String(s.at).slice(0, 10)) + '</small>' : '') + '</span>').join('<span class="lc-arrow">→</span>') + '</div>' +
+    (timeline.firstBroken !== null ? '<div class="text-bad customer-sub">First broken step: ' + escapeHtml(timeline.steps[timeline.firstBroken].label) + ' — ' + escapeHtml(timeline.steps[timeline.firstBroken].note || '') + '</div>' : '');
+}
+
+function inventoryHtml(inv, reason) {
+  if (!inv) return '<div class="gaps">Twilio number inventory unavailable: ' + escapeHtml(reason || 'unknown') + '</div>';
+  const r = inv.monthlyRental;
+  let html = '<p class="sub">' + fmtNum(inv.providerNumberCount) + ' number(s) on the provider account · rental ' + (r.perNumber !== null ? escapeHtml(r.currency + ' ' + Number(r.perNumber).toFixed(4) + '/number/month (' + r.basis + ')') : 'not available') + ' · on flagged numbers ≈ ' + escapeHtml(r.flaggedNumbers !== null ? r.currency + ' ' + Number(r.flaggedNumbers).toFixed(2) + '/month' : '—') + '</p>';
+  html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Number</th><th>Household</th><th>Why HCG holds it</th><th>Lifecycle state</th><th>Environment</th><th>Rental/month</th><th>Anomaly &amp; next step</th></tr></thead><tbody>';
+  for (const row of inv.rows) {
+    const owner = row.owner ? escapeHtml(row.owner.email || row.owner.householdId) + (row.owner.accountClass ? '<div class="customer-sub">' + escapeHtml(row.owner.accountClass + ' · ' + (row.owner.membership || '')) + '</div>' : '') : '<span class="text-muted">none</span>';
+    const flags = row.flags.length ? row.flags.map((f) => '<div class="' + (f.severity === 'red' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(f.label) + '</div>').join('') + row.recommendations.map((t) => '<div class="customer-sub">→ ' + escapeHtml(t) + '</div>').join('') : '<span class="text-muted">—</span>';
+    html += '<tr class="inv-' + escapeHtml(row.severity) + '"><td>' + escapeHtml(row.number) + '</td><td class="cell-wrap">' + owner + '</td><td class="cell-wrap">' + escapeHtml(row.whyExpected) + '</td><td>' + escapeHtml(row.stateLabel) + '</td><td>' + escapeHtml((row.environment || '—').replace(/_/g, ' ')) + (row.voiceHost ? '<div class="customer-sub">' + escapeHtml(row.voiceHost) + '</div>' : '') + '</td><td class="num">' + escapeHtml(row.monthlyRental !== null ? Number(row.monthlyRental).toFixed(2) : '—') + '</td><td class="cell-wrap">' + flags + '</td></tr>';
   }
+  html += '</tbody></table></div>';
+  return html;
+}
+
+async function renderReconciliationTab(force) {
+  const [d, overview] = await Promise.all([fetchBusinessControl('reconciliation'), fetchOverviewOnce(force).catch(() => null)]);
+  const banner = reconciliationBanner(d.overall, d.actionCount, d.watchCount);
+  let html = '<div class="section">' + sectionHeader('Subscription → entitlement → number lifecycle', d.generatedAt, 'reconciliation');
+  html += '<div class="readiness-banner ' + banner.className + '">' + escapeHtml(banner.text) + '</div>';
+  html += '<p class="sub">Read-only. Nothing here schedules, quarantines or releases a number; lifecycle enforcement belongs to the number-lifecycle workstream.</p>';
   if (!d.rows.length) {
     html += '<div class="empty-state">No households with an entitlement, number or quarantine.</div>';
   } else {
-    html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Household / number</th><th>Status</th><th>Issues</th><th>Lifecycle</th></tr></thead><tbody>';
-    for (const r of d.rows) {
+    html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Household</th><th>Status</th><th>Issues</th><th>Lifecycle</th></tr></thead><tbody>';
+    for (const r of d.rows.filter((x) => !x.providerOnly)) {
       const statusPill = r.status === 'action_required' ? '<span class="status-pill bad">Action</span>' : r.status === 'watch' ? '<span class="status-pill warn">Watch</span>' : '<span class="status-pill good">OK</span>';
       const issues = r.anomalies.length ? r.anomalies.map((a) => '<div class="' + (a.severity === 'action' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(a.label) + (a.detail ? '<span class="customer-sub"> — ' + escapeHtml(a.detail) + '</span>' : '') + '</div>').join('') : '<span class="text-muted">—</span>';
-      const chain = (r.chain || []).map((s) => '<span class="chain-dot ' + chainStageClass(s) + '" title="' + escapeHtml(s.label + ': ' + s.state + (s.at ? ' (' + fmtDateTime(s.at) + ')' : '')) + '">' + escapeHtml(s.label) + '</span>').join('');
       html += '<tr><td class="cell-customer"><div class="customer-email">' + escapeHtml(r.email || (r.numberOnly ? 'Deleted account' : '—')) + '</div><div class="customer-sub">' + escapeHtml(r.hcgNumber || 'no number') + '</div></td>' +
-        '<td>' + statusPill + '</td><td class="cell-wrap">' + issues + '</td><td class="cell-chain">' + (chain || '<span class="text-muted">number only</span>') + '</td></tr>';
+        '<td>' + statusPill + '</td><td class="cell-wrap">' + issues + '</td><td class="cell-chain">' + timelineHtml(r.timeline) + '</td></tr>';
     }
     html += '</tbody></table></div>';
   }
+  html += '<h3 style="margin-top:26px;">Twilio number inventory</h3>';
+  html += inventoryHtml(overview && overview.inventory, overview ? overview.inventoryReason : 'overview unavailable');
   html += '<ul class="sub" style="margin-top:12px;">' + d.notes.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>';
   html += '</div>';
   document.getElementById('reconciliation').innerHTML = html;
 }
 
 // ---------- Finance ----------
-const FINANCE_SECTION_TITLES = { revenue: 'Revenue', deductions: 'Refunds &amp; VAT', variable: 'Variable costs', fixed: 'Fixed infrastructure', marketing: 'Marketing' };
+const FINANCE_SECTION_TITLES = { revenue: 'Revenue', direct: 'Direct costs', overhead: 'Infrastructure &amp; other', marketing: 'Marketing (shown separately)' };
 
 async function renderFinanceTab() {
   const d = await fetchBusinessControl('finance');
   const t = d.totals;
   const u = d.unitEconomics;
   let html = '<div class="section">' + sectionHeader('Finance — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
-  html += '<p class="sub" style="margin-bottom:14px;">' + provenanceBadge('ACTUAL') + ' supplier-reported ' + provenanceBadge('ALLOCATED') + ' supplier total apportioned ' + provenanceBadge('ESTIMATED') + ' calculated from assumptions ' + provenanceBadge('MANUAL') + ' entered by you ' + provenanceBadge('NOT_CONNECTED') + ' no source yet (never counted as £0). Totals marked <em>incomplete</em> are missing at least one line.</p>';
+  html += '<p class="sub" style="margin-bottom:6px;">Source: ' + escapeHtml(d.connections.source) + ' · Stripe: ' + escapeHtml(d.stripeMode) + '</p>';
+  html += '<p class="sub" style="margin-bottom:14px;">' + provenanceBadge('ACTUAL') + ' supplier-reported ' + provenanceBadge('ALLOCATED') + ' supplier total apportioned ' + provenanceBadge('ESTIMATED') + ' calculated ' + provenanceBadge('MANUAL') + ' entered by you ' + provenanceBadge('NOT_CONNECTED') + ' no source (never £0). A total missing any line is shown as <em>known part only</em> or not at all.</p>';
   const headline = [
-    ['Gross revenue', t.grossRevenue], ['Revenue ex-VAT', t.netRevenueExVat], ['Variable cost', t.variableCost], ['Gross contribution', t.grossContribution],
-    ['Fixed infrastructure', t.fixedCost], ['Marketing spend', t.marketingSpend], ['Operating profit', t.operatingProfit],
+    ['Revenue ex VAT (genuine)', t.revenueExVat], ['Total operating cost', t.totalOperatingCost], ['Gross contribution', t.grossContribution], ['Operating contribution', t.operatingContribution], ['Marketing', t.marketing],
   ];
   html += '<div class="cards">' + headline.map(([label, total]) => {
     const dt = describeTotal(total);
-    return bcCard(label, escapeHtml(dt.text), dt.incomplete ? '<span class="text-warn">incomplete</span>' : 'complete', label === 'Operating profit' ? 'bc-primary' : '');
+    return bcCard(label, escapeHtml(dt.text), dt.incomplete ? '<span class="text-warn">' + escapeHtml(dt.note) + '</span>' : 'complete', label === 'Operating contribution' ? 'bc-primary' : '');
   }).join('') + '</div>';
 
-  html += '<h3 style="margin-top:22px;">Profit &amp; loss lines</h3><table class="pnl-table"><tr><th>Line</th><th>Amount</th><th>Source</th><th>Basis</th></tr>';
+  html += '<h3 style="margin-top:22px;">Lines</h3><table class="pnl-table"><tr><th>Line</th><th>Amount</th><th>Source</th><th>Basis</th></tr>';
   for (const section of Object.keys(FINANCE_SECTION_TITLES)) {
+    const ls = d.lines.filter((x) => x.section === section);
+    if (!ls.length) continue;
     html += '<tr class="pnl-section"><td colspan="4">' + FINANCE_SECTION_TITLES[section] + '</td></tr>';
-    for (const l of d.lines.filter((x) => x.section === section)) {
-      html += '<tr><td>' + escapeHtml(l.label) + '</td><td class="num">' + escapeHtml(formatGbpOrMissing(l.amountGbp)) + '</td><td>' + provenanceBadge(l.provenance) + '</td><td class="customer-sub cell-wrap">' + escapeHtml(l.basis || '') + '</td></tr>';
+    for (const l of ls) {
+      html += '<tr><td>' + escapeHtml(l.label) + '</td><td class="num">' + escapeHtml(formatGbpOrMissing(l.amountGbp)) + '</td><td>' + provenanceBadge(l.provenance) + (l.stale ? ' <span class="text-warn">re-check</span>' : '') + '</td><td class="customer-sub cell-wrap">' + escapeHtml(l.basis || '') + '</td></tr>';
     }
   }
   html += '</table>';
 
-  const unit = (v) => (v && v.amountGbp !== null ? escapeHtml(formatGbpOrMissing(v.amountGbp)) + (v.complete === false ? ' <span class="text-warn">(incomplete)</span>' : '') : '—');
+  const unit = (v) => (v && v.amountGbp !== null ? escapeHtml(formatGbpOrMissing(v.amountGbp)) + (v.partial ? ' <span class="text-warn">(known part only)</span>' : v.complete === false ? ' <span class="text-warn">(incomplete)</span>' : '') : '—');
   html += '<h3 style="margin-top:22px;">Unit economics</h3><table class="fact-table">' +
-    '<tr><td>Active customers (paid + complimentary + trial)</td><td>' + fmtNum(u.activeCustomers) + '</td></tr>' +
+    '<tr><td>Accounts with access (any kind)</td><td>' + fmtNum(u.accountsWithAccess) + '</td></tr>' +
     '<tr><td>Genuine paying customers</td><td>' + fmtNum(u.genuinePayingCustomers) + '</td></tr>' +
-    '<tr><td>Cost per active customer</td><td>' + unit(u.costPerActiveCustomer) + '</td></tr>' +
-    '<tr><td>Telephony cost per active customer</td><td>' + unit(u.telephonyCostPerActiveCustomer) + '</td></tr>' +
-    '<tr><td>Net revenue per genuine paying customer</td><td>' + unit(u.netRevenuePerPayingCustomer) + '</td></tr>' +
-    '<tr><td>Monitored minutes (delivered unknown-caller calls)</td><td>' + (u.monitoredMinutes === null ? '—' : escapeHtml(u.monitoredMinutes)) + (u.monitoredMinutesPerActiveCustomer !== null ? ' · ' + escapeHtml(u.monitoredMinutesPerActiveCustomer) + ' per active customer' : '') + '</td></tr>' +
+    '<tr><td>Operating cost per account with access</td><td>' + unit(u.operatingCostPerAccountWithAccess) + '</td></tr>' +
+    '<tr><td>Telephony per account with access</td><td>' + unit(u.telephonyPerAccountWithAccess) + '</td></tr>' +
+    '<tr><td>Revenue ex VAT per genuine paying customer</td><td>' + unit(u.revenueExVatPerGenuinePayingCustomer) + '</td></tr>' +
+    '<tr><td>Monitored minutes (delivered unknown-caller calls)</td><td>' + (u.monitoredMinutes === null ? '—' : escapeHtml(u.monitoredMinutes)) + '</td></tr>' +
     '<tr><td>Customer acquisition cost</td><td>' + provenanceBadge('NOT_CONNECTED') + ' <span class="customer-sub">' + escapeHtml(u.customerAcquisitionCost.basis) + '</span></td></tr>' +
     '</table>';
 
+  html += '<h3 style="margin-top:22px;">Fixed-cost settings</h3><table class="fact-table">' + (d.fixedCostSettings || []).map((f) =>
+    '<tr><td>' + escapeHtml(f.label) + '</td><td>' + (f.configured ? escapeHtml(formatGbpOrMissing(f.valueGbp)) + '/month · ' + (f.asOf ? 'checked ' + escapeHtml(f.asOf) : 'no checked date') + (f.stale ? ' <span class="text-warn">re-check</span>' : '') : provenanceBadge('NOT_CONNECTED') + ' set <code>' + escapeHtml(f.amountVar) + '</code> and <code>' + escapeHtml(f.asOfVar) + '</code>') + '<div class="customer-sub">' + escapeHtml(f.howToFind) + '</div></td></tr>').join('') + '</table>';
+
   html += '<h3 style="margin-top:22px;">Data sources</h3><table class="fact-table">' +
     Object.entries(d.connections).map(([k, v]) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v) + '</td></tr>').join('') + '</table>';
-
-  html += '<h3 style="margin-top:26px;">Manual costs</h3>';
-  html += '<div class="gaps">Not available yet. Costs with no automatic source (advertising invoices, Apple Developer Program, insurance, accountancy, hosting bills) will be entered here once the ledger (migration 048) and manual-cost (migration 050) work is applied. Until then those lines stay <strong>Not connected</strong> — never £0.</div>';
+  html += '<div class="gaps" style="margin-top:16px;">Manual costs (advertising invoices, developer programmes, insurance, accountancy…) arrive with the Finance ledger (migration 051) and manual cost schedules. Until then those lines stay <strong>Not connected</strong> — never £0.</div>';
   html += '</div>';
   document.getElementById('finance').innerHTML = html;
 }
@@ -1711,8 +1843,15 @@ function buildTrackedGoLinkClient(baseUrl, fields) {
 
 async function renderMarketingTab() {
   const d = await fetchBusinessControl('marketing');
-  let html = '<div class="section">' + sectionHeader('Advertising &amp; attribution — last ' + escapeHtml(d.windowDays) + ' days', d.generatedAt, 'marketing');
-  html += '<h3>Attribution chain</h3><table class="fact-table">' + d.chain.map((s) => '<tr><td>' + escapeHtml(s.stage) + '</td><td>' + provenanceBadge(s.status === 'CONNECTED' ? 'ACTUAL' : s.status) + ' <span class="customer-sub">' + escapeHtml(s.note) + '</span></td></tr>').join('') + '</table>';
+  let html = '<div class="section">' + sectionHeader('Acquisition &amp; marketing — last ' + escapeHtml(d.windowDays) + ' days', d.generatedAt, 'marketing');
+  const cc = d.channelComparison;
+  if (cc) {
+    const st = cc.stageStatus;
+    html += '<h3>By channel</h3><table><tr><th>Channel</th><th class="num">Visits ' + provenanceBadge(st.visits.status) + '</th><th class="num">Signups ' + provenanceBadge(st.signups.status) + '</th><th>Paying customers ' + provenanceBadge(st.payingCustomers.status) + '</th><th>Revenue ' + provenanceBadge(st.revenue.status) + '</th><th>CAC ' + provenanceBadge(st.cac.status) + '</th></tr>' +
+      cc.rows.map((r) => '<tr><td>' + escapeHtml(r.label) + (Object.keys(r.otherDetails || {}).length ? '<div class="customer-sub">' + escapeHtml(Object.entries(r.otherDetails).map(([k, n]) => k + ' ' + n).join(' · ')) + '</div>' : '') + '</td><td class="num">' + fmtNum(r.visits) + '</td><td class="num">' + fmtNum(r.registrations) + '</td><td>—</td><td>—</td><td>—</td></tr>').join('') + '</table>';
+    html += '<ul class="sub">' + Object.values(st).map((s) => '<li>' + escapeHtml(s.note) + '</li>').join('') + '</ul>';
+    html += '<p class="sub"><strong>Self-reported ("How did you hear about us?"):</strong> ' + escapeHtml(cc.selfReported.note) + '</p>';
+  }
   html += '<h3 style="margin-top:22px;">By campaign / source</h3>';
   if (!d.rows.length) {
     html += '<div class="empty-state">No visits or registrations recorded in this window.</div>';
@@ -1723,11 +1862,11 @@ async function renderMarketingTab() {
         '<td>' + (r.payingCustomers === null ? provenanceBadge('NOT_CONNECTED') : fmtNum(r.payingCustomers)) + '</td>' +
         '<td>' + (r.cac === null ? '—' : escapeHtml(formatGbpOrMissing(r.cac))) + '</td></tr>').join('') + '</table>';
   }
-  html += '<p class="sub" style="margin-top:8px;">Visits are raw page requests (not unique people). ' + fmtNum(d.unattributed.checkoutsStarted) + ' checkout(s) and ' + fmtNum(d.unattributed.paidConversions) + ' paid conversion(s) in this window cannot be credited to any campaign: ' + escapeHtml(d.unattributed.note) + '</p>';
+  html += '<p class="sub" style="margin-top:8px;">Visits are raw page requests (not unique people). ' + fmtNum(d.unattributed.checkoutsStarted) + ' checkout(s) and ' + fmtNum(d.unattributed.paidConversions) + ' paid conversion(s) in this window cannot be credited to any channel: ' + escapeHtml(d.unattributed.note) + '</p>';
 
-  html += '<h3 style="margin-top:22px;">Tracked link builder</h3><p class="sub">Every channel links to the same /go page; only the tags differ. Nothing is saved — copy the link into your post or ad.</p>' +
+  html += '<h3 style="margin-top:22px;">Tracked link builder</h3><p class="sub">Every channel links to the same /go page; only the tags differ. Use utm_source=instagram or facebook explicitly (a "meta" source cannot be split). Nothing is saved.</p>' +
     '<div class="manual-cost-form" id="linkBuilder">' +
-    '<select id="lbPreset"><option value="">Preset…</option><option value="instagram|organic_social">Instagram (organic)</option><option value="tiktok|organic_social">TikTok (organic)</option><option value="facebook|community">Facebook group post</option><option value="meta|paid_social">Meta paid ad</option><option value="tiktok|paid_social">TikTok paid ad</option><option value="google|paid_search">Google Ads</option><option value="|pr">PR / press</option><option value="|qr">QR code</option></select>' +
+    '<select id="lbPreset"><option value="">Preset…</option><option value="instagram|organic_social">Instagram (organic)</option><option value="tiktok|organic_social">TikTok (organic)</option><option value="facebook|community">Facebook group post</option><option value="linkedin|organic_social">LinkedIn</option><option value="instagram|paid_social">Instagram paid ad</option><option value="facebook|paid_social">Facebook paid ad</option><option value="tiktok|paid_social">TikTok paid ad</option><option value="|pr">PR / press</option><option value="|qr">QR code</option></select>' +
     '<input id="lbSource" placeholder="utm_source"><input id="lbMedium" placeholder="utm_medium"><input id="lbCampaign" placeholder="utm_campaign"><input id="lbContent" placeholder="utm_content (ad id)"><input id="lbTerm" placeholder="utm_term (ad set)">' +
     '</div><div class="link-output" id="lbOutput"></div>';
   html += '</div>';

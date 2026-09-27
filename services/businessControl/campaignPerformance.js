@@ -126,6 +126,61 @@ function computeCampaignPerformance({ events, spendByCampaign = null, attributed
   };
 }
 
+// Fixed channel set for the comparison view. A visit is assigned from
+// utm_source first, then the referrer host; nothing is guessed:
+// utm_source=meta does not say Facebook or Instagram, so it stays in
+// "Other / unknown" (the link convention asks for instagram/facebook).
+const COMPARISON_CHANNELS = ['instagram', 'tiktok', 'facebook', 'linkedin', 'direct', 'other_unknown'];
+const COMPARISON_LABELS = { instagram: 'Instagram', tiktok: 'TikTok', facebook: 'Facebook', linkedin: 'LinkedIn', direct: 'Direct', other_unknown: 'Other / unknown' };
+
+function comparisonChannel(event) {
+  const src = clean(event.utm_source);
+  const host = clean(event.referrer_host);
+  const match = (v) => {
+    if (!v) return null;
+    if (/(^|\.|^)instagram|^ig$/.test(v)) return 'instagram';
+    if (/tiktok/.test(v)) return 'tiktok';
+    if (/(^|\.)facebook|^fb$|(^|\.)fb\.com|^l\.facebook/.test(v)) return 'facebook';
+    if (/linkedin|lnkd\.in/.test(v)) return 'linkedin';
+    return null;
+  };
+  if (src) return { channel: match(src) || 'other_unknown', detail: match(src) ? null : src };
+  if (host) return { channel: match(host) || 'other_unknown', detail: match(host) ? null : host };
+  if (clean(event.utm_medium) || clean(event.utm_campaign)) return { channel: 'other_unknown', detail: 'tagged without a source' };
+  return { channel: 'direct', detail: null };
+}
+
+// Pure — visits → signups → paying → revenue → CAC per channel, with each
+// stage's evidence status. Only visits and web registrations exist today;
+// the rest are NOT CONNECTED until attribution (049) and spend exist.
+function computeChannelComparison(events) {
+  const rows = Object.fromEntries(COMPARISON_CHANNELS.map((c) => [c, { channel: c, label: COMPARISON_LABELS[c], visits: 0, registrations: 0, otherDetails: {} }]));
+  for (const e of events || []) {
+    if (e.event_type !== 'landing_visit' && e.event_type !== 'registration_completed') continue;
+    const { channel, detail } = comparisonChannel(e);
+    const r = rows[channel];
+    if (e.event_type === 'landing_visit') r.visits += 1;
+    else r.registrations += 1;
+    if (detail) r.otherDetails[detail] = (r.otherDetails[detail] || 0) + 1;
+  }
+  return {
+    rows: COMPARISON_CHANNELS.map((c) => ({
+      ...rows[c],
+      payingCustomers: null,
+      revenue: null,
+      cac: null,
+    })),
+    stageStatus: {
+      visits: { status: 'ACTUAL', note: 'Raw page requests with UTMs/referrer (not unique people)' },
+      signups: { status: 'PARTIAL', note: 'Web registrations carry UTMs but are not linked to the account created; app signups carry none' },
+      payingCustomers: { status: 'NOT_CONNECTED', note: 'Needs customer attribution (migration 049)' },
+      revenue: { status: 'NOT_CONNECTED', note: 'Needs attribution + genuine revenue per household' },
+      cac: { status: 'NOT_CONNECTED', note: 'Needs spend per channel and attributed paying customers' },
+    },
+    selfReported: { status: 'NOT_CAPTURED', note: '"How did you hear about us?" is not asked anywhere yet; when it is, it will be shown here separately and never mixed into automatic attribution.' },
+  };
+}
+
 // Pure — a tracked /go link using the published convention (§9.2).
 function buildTrackedGoLink(baseUrl, { source, medium, campaign, content, term }) {
   const params = new URLSearchParams();
@@ -170,6 +225,7 @@ async function getCampaignPerformance(now = new Date(), days = 90) {
     windowDays: days,
     ledgerConnected: false,
     attributionConnected: false,
+    channelComparison: computeChannelComparison(eventsRes.data || []),
     ...computeCampaignPerformance({ events: eventsRes.data || [], spendByCampaign: null, attributedCustomers: null }),
   };
 }
@@ -179,5 +235,7 @@ module.exports = {
   deriveChannel,
   computeCampaignPerformance,
   buildTrackedGoLink,
+  comparisonChannel,
+  computeChannelComparison,
   getCampaignPerformance,
 };
