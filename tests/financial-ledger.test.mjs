@@ -306,8 +306,8 @@ const zeroDayPlan = buildBackfillPlan({
   providerCalls: [],
   usageRecords: [{ category: 'calls-media-stream-minutes', startDate: '2026-09-07', price: '0', priceUnit: 'gbp' }],
 });
-const z1 = zeroDayPlan.entries.find((e) => e.native_reference === 'CA_z1');
-const n1 = zeroDayPlan.entries.find((e) => e.native_reference === 'CA_n1');
+const z1 = zeroDayPlan.entries.find((e) => e.native_reference === 'CA_z1' && e.category === 'media_stream');
+const n1 = zeroDayPlan.entries.find((e) => e.native_reference === 'CA_n1' && e.category === 'media_stream');
 check(z1.provenance === 'provider_allocated' && z1.amount === 0 && z1.source_reference.includes('0 GBP'),
   "a day Twilio explicitly billed £0 Media Streams is allocated £0 from that record, not estimated");
 check(n1.provenance === 'estimated' && n1.amount > 0, 'a day with no Twilio record at all falls back to a labelled estimate');
@@ -379,6 +379,13 @@ check(n1.provenance === 'estimated' && n1.amount > 0, 'a day with no Twilio reco
   check(!fr.unallocated.residuals.some((x) => x.date === '2026-09-27'), 'full plan: a charge from a recent, unsettled day is not residualised (avoids double counting)');
   check(fr.tts.allocatedShares === 1 && fr.numberRental.allocatedShares === 1 && fr.sms.householdMatches.via_number === 1,
     'full plan: Polly and rental are allocated to the monitored call and owned number; the SMS links via the HCG number');
+  check(fr.transcription.estimatedCalls === 1 && fr.transcription.estimatedUsd === 0.0295,
+    'full plan: each monitored call gets a transcription estimate (295 s ≈ $0.0295, USD, not converted)');
+  const tx = full.entries.find((e) => e.category === 'transcription');
+  check(tx.provenance === 'estimated' && tx.native_currency === 'USD' && tx.reconciliation_status === 'unreconciled' && tx.household_id === 'hh-1',
+    'transcription estimate is ESTIMATED, USD, unreconciled and attributed to the monitored call\'s household');
+  check(!fr.totals.byCategory.some((c) => c.category === 'transcription'),
+    'transcription estimates are never mixed into the Twilio reconciliation totals');
   check(full.entries.every((e) => contract.problemsWithEntry(e).length === 0) && !JSON.stringify(full.entries).includes('7700900001'),
     'full plan: every entry passes the contract and no customer phone number is stored');
 }

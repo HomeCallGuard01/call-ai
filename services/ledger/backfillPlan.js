@@ -16,6 +16,7 @@
 
 const { money, problemsWithEntry, problemsWithLeg } = require('./contract');
 const { reconcileDailyTotals, utcDate } = require('./reconcile');
+const { transcriptionEstimate } = require('./estimates');
 
 function normaliseNumber(n) {
   return String(n || '').replace(/[^\d+]/g, '');
@@ -161,6 +162,16 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
     entries.push(...rows);
     for (const r of rows) (r.provenance === 'provider_allocated' ? rentalAllocated += 1 : unallocatedDays += 1);
   }
+  // Transcription (OpenAI): no per-call supplier billing is available, so
+  // each monitored call gets a labelled USD estimate (never reconciled
+  // against Twilio totals; reported separately).
+  let transcriptionEstimates = 0;
+  for (const calls of monitoredByDate.values()) {
+    for (const c of calls) {
+      entries.push(transcriptionEstimate({ callSid: c.callSid, callId: c.callId, householdId: c.householdId, monitoredSeconds: c.streamSeconds, occurredAt: c.occurredAt }));
+      transcriptionEstimates += 1;
+    }
+  }
   for (const [date, calls] of monitoredByDate) {
     const total = streamTotalsByDate.get(date);
     if (total) {
@@ -264,6 +275,11 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
     chargeObservations: count(entries.filter((e) => e.provenance === 'provider_actual'), (e) => `${e.category}:${e.charge_observation}`),
     mediaStreams: { allocatedFromDailyTotals: mediaAllocated, estimatedNoDailyTotal: mediaEstimated },
     tts: { allocatedShares: ttsAllocated },
+    transcription: {
+      estimatedCalls: transcriptionEstimates,
+      estimatedUsd: money(entries.filter((e) => e.category === 'transcription').reduce((s, e) => s + Number(e.amount || 0), 0)),
+      status: 'ESTIMATED, unreconciled (no OpenAI per-call billing available)',
+    },
     numberRental: { allocatedShares: rentalAllocated },
     sms: { messages: providerMessages.length, householdMatches: smsMatches },
     unallocated: {

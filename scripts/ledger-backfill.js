@@ -108,6 +108,7 @@ function printReport(r) {
     `Ambiguous legs: ${r.ambiguous.count}`,
     `Charge observations: ${JSON.stringify(r.chargeObservations)}`,
     `Media Streams: ${JSON.stringify(r.mediaStreams)} | Polly shares: ${r.tts.allocatedShares} | rental shares: ${r.numberRental.allocatedShares} | SMS: ${JSON.stringify(r.sms)}`,
+    `Transcription: ${r.transcription.estimatedCalls} monitored calls, ≈ $${r.transcription.estimatedUsd} USD (${r.transcription.status})`,
     `UNALLOCATED (real supplier charges with no evidence-based customer): ${r.unallocated.total} ${r.totals.currency} ${JSON.stringify(r.unallocated.byCategory)}; whole days ${r.unallocated.wholeDaysUnallocated}; residuals ${r.unallocated.residuals.length}`,
     `Ledger exceeds supplier (needs review): ${r.ledgerExceedsSupplier.length}`,
     `Planned: ${r.legsPlanned} legs, ${r.entriesPlanned} entries; invalid records: ${r.invalidRecords.length}`,
