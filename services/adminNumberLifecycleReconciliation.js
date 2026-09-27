@@ -79,6 +79,21 @@ const ANOMALY = {
   ENTITLED_PENDING_RELEASE: 'entitled_but_pending_release',
   PROVISIONING_FAILED: 'provisioning_failed',
   QUARANTINE_RELEASE_FAILED: 'quarantine_release_failed',
+  // 2026-09-27, found during this session's own Priority 7 audit: PR #50
+  // (fix/revenuecat-sandbox-environment-guard) deliberately grants an
+  // entitlement for a RevenueCat SANDBOX purchase (TestFlight/App
+  // Review/local dev) while skipping real Twilio provisioning — correct,
+  // intended behaviour, but WITHOUT this distinct anomaly type, every
+  // such purchase would have been indistinguishable from ACTIVE_NO_NUMBER
+  // (a genuine provisioning failure) below, and — since a sandbox
+  // purchaser is never auto-classified (account_classifications stays
+  // 'unclassified' by that fix's own deliberate design) — would have
+  // counted toward the genuine-customer anomaly total, exactly
+  // reproducing the false-alarm-y signal that raised tonight's own
+  // Priority 2 in the first place. Requires migration 053's
+  // entitlements.revenuecat_environment column — see this file's own
+  // dependency note near computeNumberLifecycleReconciliation.
+  SANDBOX_TEST_PURCHASE_NO_NUMBER: 'sandbox_test_purchase_no_number',
 };
 
 const ANOMALY_LABELS = {
@@ -87,7 +102,15 @@ const ANOMALY_LABELS = {
   [ANOMALY.ENTITLED_PENDING_RELEASE]: 'Currently or upcoming entitled, but a release is still pending (should have been auto-cancelled — migration 047)',
   [ANOMALY.PROVISIONING_FAILED]: 'Twilio provisioning is in a failed state',
   [ANOMALY.QUARANTINE_RELEASE_FAILED]: 'A quarantined number was never confirmed released at the provider',
+  [ANOMALY.SANDBOX_TEST_PURCHASE_NO_NUMBER]: 'A confirmed RevenueCat SANDBOX-environment purchase (TestFlight/App Review/local dev) — no number provisioned, correctly, by design (P0 fix, 2026-09-27, PR #50). Informational only, never counted toward the anomaly total or the OK/ACTION REQUIRED verdict.',
 };
+
+// Never counted toward totalAnomalies/status below — these are expected,
+// intended states, not something requiring operator action. Currently
+// only the sandbox case; kept as its own named set (rather than an
+// inline check) so a future addition to this list is a one-line change,
+// not a re-derivation of this reasoning.
+const INFORMATIONAL_ANOMALIES = new Set([ANOMALY.SANDBOX_TEST_PURCHASE_NO_NUMBER]);
 
 /**
  * Pure — no database, no Express, `now` always injected (matches this
@@ -96,7 +119,15 @@ const ANOMALY_LABELS = {
  * @param {Array<object>} households - each with: id, email,
  *   twilio_number, twilio_provisioning_status,
  *   twilio_provisioning_last_error, twilio_number_pending_release_at
- * @param {Map<string, object[]>} entitlementsByHousehold - household_id -> entitlement rows
+ * @param {Map<string, object[]>} entitlementsByHousehold - household_id -> entitlement rows.
+ *   Each row: status, starts_at, ends_at, and (2026-09-27, optional —
+ *   requires migration 053) source, revenuecat_environment — used only
+ *   to distinguish a known-sandbox no-number state from a genuine
+ *   provisioning failure. A caller not yet selecting these two columns
+ *   (i.e. querying a database without migration 053 applied) still works
+ *   correctly — every sandbox purchase just falls through to the
+ *   pre-existing ACTIVE_NO_NUMBER anomaly exactly as before this change,
+ *   never a crash or missing-field error.
  * @param {Map<string, string>} classificationByHousehold - household_id -> classification string (or absent = unclassified)
  * @param {Array<object>} quarantineRows - rows from public.twilio_number_quarantine
  * @param {Date} now
@@ -122,8 +153,20 @@ function computeNumberLifecycleReconciliation(households, entitlementsByHousehol
     const quarantine = quarantineByHousehold.get(h.id) || [];
     const unreleasedQuarantine = quarantine.find(q => q.deactivation_confirmed && !q.released_at) || null;
 
+    // Confirmed sandbox-origin: the relevant (current or upcoming)
+    // entitlement itself carries source='apple_revenuecat' and
+    // revenuecat_environment='sandbox' — stronger, more specific
+    // evidence than account_classification alone (a sandbox purchaser is
+    // never auto-classified, by PR #50's own deliberate design). Both
+    // fields undefined (pre-migration-053 caller) safely falls through
+    // to the pre-existing behaviour below.
+    const relevantEntitlement = current || upcoming;
+    const isSandboxOrigin = !!relevantEntitlement && relevantEntitlement.source === 'apple_revenuecat' && relevantEntitlement.revenuecat_environment === 'sandbox';
+
     const anomalies = [];
-    if ((current || upcoming) && !hasNumber) anomalies.push(ANOMALY.ACTIVE_NO_NUMBER);
+    if ((current || upcoming) && !hasNumber) {
+      anomalies.push(isSandboxOrigin ? ANOMALY.SANDBOX_TEST_PURCHASE_NO_NUMBER : ANOMALY.ACTIVE_NO_NUMBER);
+    }
     if (!current && !upcoming && hasNumber && !pendingReleaseAt) anomalies.push(ANOMALY.CANCELLED_RETAINS_NUMBER);
     if ((current || upcoming) && pendingReleaseAt) anomalies.push(ANOMALY.ENTITLED_PENDING_RELEASE);
     if (h.twilio_provisioning_status === 'failed') anomalies.push(ANOMALY.PROVISIONING_FAILED);
@@ -160,7 +203,12 @@ function computeNumberLifecycleReconciliation(households, entitlementsByHousehol
   for (const row of genuineRows) {
     for (const a of row.anomalies) {
       anomalyCounts[a] = (anomalyCounts[a] || 0) + 1;
-      totalAnomalies++;
+      // INFORMATIONAL_ANOMALIES (currently just the confirmed-sandbox
+      // no-number state) are visible in anomalyCounts/the row list, but
+      // deliberately never inflate totalAnomalies or flip status to
+      // ACTION_REQUIRED — they are a known, intended state, not
+      // something an operator needs to act on.
+      if (!INFORMATIONAL_ANOMALIES.has(a)) totalAnomalies++;
     }
   }
 
@@ -186,4 +234,5 @@ module.exports = {
   isUpcomingEntitlement,
   ANOMALY,
   ANOMALY_LABELS,
+  INFORMATIONAL_ANOMALIES,
 };

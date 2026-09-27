@@ -986,6 +986,22 @@ async function getNumberLifecycleReconciliation() {
       .select("id, twilio_number, twilio_provisioning_status, twilio_provisioning_last_error, twilio_number_pending_release_at"),
     supabaseAdmin
       .from("entitlements")
+      // NOT YET selecting source/revenuecat_environment here on purpose
+      // (2026-09-27): services/adminNumberLifecycleReconciliation.js can
+      // now use those two fields to distinguish a known-sandbox
+      // no-number state from a genuine provisioning failure (see that
+      // file's own comment on SANDBOX_TEST_PURCHASE_NO_NUMBER), but
+      // revenuecat_environment only exists once migration 053
+      // (fix/revenuecat-sandbox-environment-guard, PR #50) is actually
+      // applied. Adding it to this select before then would break this
+      // whole endpoint with a live "column does not exist" error the
+      // moment it's queried — the exact same danger already flagged in
+      // TOMORROW_INTEGRATION_PLAN.md's Stage 3 for the migration-052
+      // release-attempt columns. Add `, source, revenuecat_environment`
+      // to this select as part of that same Stage 3 follow-up, once 053
+      // is confirmed live — not before. Until then, every household
+      // simply falls through to the pre-existing ACTIVE_NO_NUMBER
+      // anomaly exactly as before this finding (safe, just less precise).
       .select("household_id, status, starts_at, ends_at"),
     supabaseAdmin
       .from("twilio_number_quarantine")

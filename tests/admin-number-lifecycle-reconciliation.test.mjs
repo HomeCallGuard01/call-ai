@@ -176,5 +176,58 @@ function findRow(result, id) {
   check(result.totalHouseholds === 0 && result.totalAnomalies === 0, 'zero households, zero anomalies');
 }
 
+// --- SANDBOX_TEST_PURCHASE_NO_NUMBER (2026-09-27, found during this
+// session's own Priority 7 audit — PR #50's sandbox fix would otherwise
+// have reproduced exactly the false-alarm this dashboard exists to
+// avoid: an unclassified sandbox purchaser counting as a genuine-customer
+// anomaly). ---
+{
+  const households = [household('sandbox1', { twilio_number: null })];
+  const entitlements = new Map([[
+    'sandbox1',
+    [activeEntitlement({ source: 'apple_revenuecat', revenuecat_environment: 'sandbox' })],
+  ]]);
+  // No classification row at all — exactly PR #50's own deliberate
+  // design (a sandbox purchase is never auto-classified).
+  const result = computeNumberLifecycleReconciliation(households, entitlements, new Map(), [], NOW);
+  const row = findRow(result, 'sandbox1');
+
+  check(row.anomalies.includes(ANOMALY.SANDBOX_TEST_PURCHASE_NO_NUMBER), 'a confirmed sandbox-origin entitlement with no number raises SANDBOX_TEST_PURCHASE_NO_NUMBER, not the genuine-failure ACTIVE_NO_NUMBER');
+  check(!row.anomalies.includes(ANOMALY.ACTIVE_NO_NUMBER), 'the same row never ALSO carries the genuine-failure anomaly — they are mutually exclusive for a single active_entitlement_no_number condition');
+  check(row.isGenuineCustomer === true, 'the row is still correctly treated as unclassified/"genuine" for visibility purposes (an operator can still see it in the full list)');
+  check(result.totalAnomalies === 0, 'THE ACTUAL FIX: despite being an unclassified household with an active entitlement and no number, totalAnomalies is 0 — the sandbox anomaly is informational, never counted');
+  check(result.status === 'OK', 'THE ACTUAL FIX: overall status stays OK — a confirmed sandbox purchase never flips the dashboard to ACTION_REQUIRED');
+  check(result.anomalyCounts[ANOMALY.SANDBOX_TEST_PURCHASE_NO_NUMBER] === 1, 'the sandbox anomaly is still counted in its OWN bucket (anomalyCounts) — visible/queryable, just excluded from the actionable total');
+}
+
+// --- Backward compatibility: a caller not yet selecting source/
+// revenuecat_environment (i.e. migration 053 not yet applied) must
+// continue to see the exact pre-existing ACTIVE_NO_NUMBER behaviour —
+// never crash, never silently misclassify. ---
+{
+  const households = [household('legacy1', { twilio_number: null })];
+  const entitlements = new Map([['legacy1', [activeEntitlement()]]]); // no source/revenuecat_environment fields at all
+  const result = computeNumberLifecycleReconciliation(households, entitlements, new Map(), [], NOW);
+  const row = findRow(result, 'legacy1');
+
+  check(row.anomalies.includes(ANOMALY.ACTIVE_NO_NUMBER), 'BACKWARD COMPAT: an entitlement row with no source/revenuecat_environment fields at all falls through to the pre-existing ACTIVE_NO_NUMBER anomaly, exactly as before this change');
+  check(!row.anomalies.includes(ANOMALY.SANDBOX_TEST_PURCHASE_NO_NUMBER), 'BACKWARD COMPAT: never guesses sandbox from absence of the field');
+  check(result.status === 'ACTION_REQUIRED', 'BACKWARD COMPAT: a genuine (or pre-053, indistinguishable) no-number state still correctly flips status to ACTION_REQUIRED');
+}
+
+// --- A real Stripe-sourced entitlement is never mistaken for sandbox,
+// even if some other bug ever set revenuecat_environment on a non-
+// apple_revenuecat row (defence in depth: both conditions required). ---
+{
+  const households = [household('stripe1', { twilio_number: null })];
+  const entitlements = new Map([[
+    'stripe1',
+    [activeEntitlement({ source: 'stripe', revenuecat_environment: 'sandbox' })],
+  ]]);
+  const result = computeNumberLifecycleReconciliation(households, entitlements, new Map(), [], NOW);
+  const row = findRow(result, 'stripe1');
+  check(row.anomalies.includes(ANOMALY.ACTIVE_NO_NUMBER), 'DEFENCE IN DEPTH: source must ALSO be apple_revenuecat, not just revenuecat_environment=sandbox — a non-RevenueCat row is never misclassified as sandbox no matter what stray field value it carries');
+}
+
 console.log(`\n${failures === 0 ? '✓ All' : `✗ ${failures}`} admin-number-lifecycle-reconciliation checks ${failures === 0 ? 'passed' : 'FAILED'}`);
 process.exitCode = failures === 0 ? 0 : 1;
