@@ -35,8 +35,11 @@ function shortSid(sid) {
  * @param {Date} args.now
  * @param {number} args.mediaStreamRatePerMinute - used only where no daily total exists
  * @param {string} [args.currency]
+ * @param {Array} [args.providerMessages] - provider SMS records
+ * @param {Array} [args.ownedNumbers] - numbers the provider currently bills for: { sid, phoneNumber, dateCreated }
+ * @param {number} [args.residualAfterDays] - supplier day totals older than this with no pending items are fully reconciled (residual → UNALLOCATED)
  */
-function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usageRecords, now, mediaStreamRatePerMinute, currency = 'GBP' }) {
+function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usageRecords, now, mediaStreamRatePerMinute, currency = 'GBP', providerMessages = [], ownedNumbers = [], residualAfterDays = 2 }) {
   const hcgBySid = new Map(hcgCalls.filter((c) => c.call_sid).map((c) => [c.call_sid, c]));
   const householdsByNumber = new Map();
   for (const h of households) {
@@ -91,6 +94,20 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
     entries.push(entry);
   }
 
+  // SMS: priced per message by the provider. Linked to a household only via
+  // the HCG number it was sent from; the customer's number is never stored.
+  const smsMatches = { via_number: 0, ambiguous: 0, unmatched: 0 };
+  for (const m of providerMessages) {
+    const candidates = householdsByNumber.get(normaliseNumber(m.from)) || [];
+    const link = candidates.length === 1 ? { householdId: candidates[0], householdMatch: 'via_number' }
+      : { householdId: null, householdMatch: candidates.length > 1 ? 'ambiguous' : 'unmatched' };
+    smsMatches[link.householdMatch] += 1;
+    const entry = adapter.normaliseMessage(m, link, { now });
+    const problems = problemsWithEntry(entry);
+    if (problems.length) invalid.push({ sid: shortSid(m.sid), problems });
+    entries.push(entry);
+  }
+
   // Media Streams: allocate each day's Twilio total across that day's
   // monitored calls; fall back to an explicit estimate where no total exists.
   const { totals: supplierTotals, unmapped } = adapter.supplierDailyTotals(usageRecords);
@@ -111,6 +128,39 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
   }
   let mediaAllocated = 0;
   let mediaEstimated = 0;
+  let unallocatedDays = 0;
+  for (const t of supplierTotals.filter((x) => x.category === 'media_stream' && x.amount > 0)) {
+    if (!monitoredByDate.has(t.date)) {
+      entries.push(adapter.unallocatedDailyCharge({ date: t.date, category: 'media_stream', sourceCategory: t.sourceCategory, amount: t.amount, currency: t.currency, count: t.count, now,
+        reason: 'Media Streams billed on a day with no HCG monitored call on record (e.g. staging or unlogged calls)' }));
+      unallocatedDays += 1;
+    }
+  }
+  // Polly greetings: one per monitored call; shared equally across the day's.
+  let ttsAllocated = 0;
+  for (const t of supplierTotals.filter((x) => x.category === 'tts' && x.amount > 0)) {
+    const calls = monitoredByDate.get(t.date) || [];
+    if (calls.length) {
+      const shares = adapter.allocateDailyTts({ date: t.date, usageTotal: t.amount, currency: t.currency, calls, now });
+      entries.push(...shares);
+      ttsAllocated += shares.length;
+    } else {
+      entries.push(adapter.unallocatedDailyCharge({ date: t.date, category: 'tts', sourceCategory: t.sourceCategory, amount: t.amount, currency: t.currency, count: t.count, now,
+        reason: 'Polly billed on a day with no HCG monitored call on record' }));
+      unallocatedDays += 1;
+    }
+  }
+  // Number rental: daily totals matched to numbers renewing that day.
+  const numberInputs = ownedNumbers.map((n) => {
+    const holders = householdsByNumber.get(normaliseNumber(n.phoneNumber)) || [];
+    return { sid: n.sid, dateCreated: n.dateCreated, householdId: holders.length === 1 ? holders[0] : null };
+  });
+  let rentalAllocated = 0;
+  for (const t of supplierTotals.filter((x) => x.category === 'number_rental' && x.amount > 0)) {
+    const rows = adapter.allocateDailyNumberRental({ date: t.date, usageTotal: t.amount, usageCount: t.count, currency: t.currency, numbers: numberInputs, now });
+    entries.push(...rows);
+    for (const r of rows) (r.provenance === 'provider_allocated' ? rentalAllocated += 1 : unallocatedDays += 1);
+  }
   for (const [date, calls] of monitoredByDate) {
     const total = streamTotalsByDate.get(date);
     if (total) {
@@ -122,6 +172,41 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
         entries.push(adapter.mediaStreamEstimate({ ...c, ratePerMinute: mediaStreamRatePerMinute, currency }));
         mediaEstimated += 1;
       }
+    }
+  }
+
+  // Residual: any supplier day total not fully explained by the entries
+  // above (e.g. an SMS processing fee with no priced message) is recorded as
+  // UNALLOCATED once the day is settled — never dropped. Days still holding
+  // pending items are left for reconciliation instead, to avoid double
+  // counting a charge that is about to be priced.
+  const settledBefore = new Date(now.getTime() - residualAfterDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const supplierDay = new Map();
+  for (const t of supplierTotals) {
+    const k = `${t.date}|${t.category}`;
+    const v = supplierDay.get(k) || { date: t.date, category: t.category, amount: 0, currency: t.currency };
+    v.amount = money(v.amount + t.amount);
+    supplierDay.set(k, v);
+  }
+  const ledgerDay = new Map();
+  const pendingDay = new Set();
+  for (const e of entries) {
+    const d = utcDate(e.occurred_at);
+    if (!d) continue;
+    const k = `${d}|${e.category}`;
+    if (e.charge_observation === 'pending' || e.charge_observation === 'unavailable') pendingDay.add(k);
+    if (e.amount != null) ledgerDay.set(k, money((ledgerDay.get(k) || 0) + Number(e.amount)));
+  }
+  const residuals = [];
+  const overages = [];
+  for (const [k, v] of supplierDay) {
+    const diff = money(v.amount - (ledgerDay.get(k) || 0));
+    if (diff < -0.0005) overages.push({ ...v, ledger: ledgerDay.get(k), difference: diff });
+    if (diff > 0.0005 && v.date < settledBefore && !pendingDay.has(k)) {
+      const r = adapter.unallocatedDailyCharge({ date: v.date, category: v.category, sourceCategory: `${v.category}-residual`, amount: diff, currency: v.currency, now,
+        reason: 'supplier day total not explained by any priced or allocated item' });
+      entries.push(r);
+      residuals.push({ date: v.date, category: v.category, amount: diff });
     }
   }
 
@@ -141,8 +226,9 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
   const supplierByCategory = {};
   for (const t of supplierTotals) supplierByCategory[t.category] = money((supplierByCategory[t.category] || 0) + t.amount);
 
-  // Categories the ledger reconstructs per call in this phase.
-  const RECONSTRUCTED = ['inbound_voice', 'app_leg', 'outbound_voice', 'media_stream'];
+  // Every mapped supplier category is reconstructed (per call, per message,
+  // allocated, or explicitly UNALLOCATED).
+  const RECONSTRUCTED = ['inbound_voice', 'app_leg', 'outbound_voice', 'media_stream', 'tts', 'sms', 'number_rental'];
   const ledgerFor = (category) => money(entries.filter((e) => e.category === category && e.amount != null).reduce((s, e) => s + Number(e.amount), 0));
   const categoryComparison = RECONSTRUCTED.map((category) => {
     const supplier = supplierByCategory[category] ?? 0;
@@ -177,6 +263,17 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
     },
     chargeObservations: count(entries.filter((e) => e.provenance === 'provider_actual'), (e) => `${e.category}:${e.charge_observation}`),
     mediaStreams: { allocatedFromDailyTotals: mediaAllocated, estimatedNoDailyTotal: mediaEstimated },
+    tts: { allocatedShares: ttsAllocated },
+    numberRental: { allocatedShares: rentalAllocated },
+    sms: { messages: providerMessages.length, householdMatches: smsMatches },
+    unallocated: {
+      entries: entries.filter((e) => e.evidence && String(e.evidence.allocation_status || '').startsWith('unallocated')).length,
+      total: money(entries.filter((e) => e.household_id == null && e.amount != null).reduce((s, e) => s + Number(e.amount), 0)),
+      byCategory: entries.filter((e) => e.household_id == null && e.amount != null).reduce((m, e) => { m[e.category] = money((m[e.category] || 0) + Number(e.amount)); return m; }, {}),
+      wholeDaysUnallocated: unallocatedDays,
+      residuals,
+    },
+    ledgerExceedsSupplier: overages,
     entriesPlanned: entries.length,
     legsPlanned: legs.length,
     invalidRecords: invalid,
@@ -196,6 +293,8 @@ function buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usage
       'Media Streams are not priced per call by Twilio: per-call figures are shares of the daily usage total (provider_allocated) or HCG estimates where no total exists.',
       'Usage-record days are treated as UTC.',
       'App legs with no price are recorded as not_observed (never £0).',
+      'Number rental and Polly are priced per day by Twilio; per-number/per-call figures are shares of those totals. Rental is attributed to each number\'s CURRENT household only (no assignment history).',
+      'UNALLOCATED = a real supplier charge with no evidence-based customer; household is left empty rather than guessed. Recent days (< residualAfterDays) are not residualised while items may still be pending.',
     ],
   };
 

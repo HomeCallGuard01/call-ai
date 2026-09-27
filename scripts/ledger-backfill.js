@@ -71,8 +71,10 @@ async function runBackfill({ admin, source, adapter, now = new Date(), from, to,
 
   const providerCalls = await source.listCalls({ startTimeAfter: start, startTimeBefore: end });
   const usageRecords = await source.listDailyUsage({ startDate: isoDay(start), endDate: isoDay(end) });
+  const providerMessages = source.listMessages ? await source.listMessages({ dateSentAfter: start, dateSentBefore: end }) : [];
+  const ownedNumbers = source.listOwnedNumbers ? await source.listOwnedNumbers() : [];
 
-  const plan = buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usageRecords, now, mediaStreamRatePerMinute });
+  const plan = buildBackfillPlan({ adapter, hcgCalls, households, providerCalls, usageRecords, now, mediaStreamRatePerMinute, providerMessages, ownedNumbers });
   plan.report.range = { from: start.toISOString(), to: end.toISOString() };
 
   if (!apply) return plan;
@@ -105,7 +107,9 @@ function printReport(r) {
     `Unmatched legs: ${r.unmatched.count}`,
     `Ambiguous legs: ${r.ambiguous.count}`,
     `Charge observations: ${JSON.stringify(r.chargeObservations)}`,
-    `Media Streams: ${JSON.stringify(r.mediaStreams)}`,
+    `Media Streams: ${JSON.stringify(r.mediaStreams)} | Polly shares: ${r.tts.allocatedShares} | rental shares: ${r.numberRental.allocatedShares} | SMS: ${JSON.stringify(r.sms)}`,
+    `UNALLOCATED (real supplier charges with no evidence-based customer): ${r.unallocated.total} ${r.totals.currency} ${JSON.stringify(r.unallocated.byCategory)}; whole days ${r.unallocated.wholeDaysUnallocated}; residuals ${r.unallocated.residuals.length}`,
+    `Ledger exceeds supplier (needs review): ${r.ledgerExceedsSupplier.length}`,
     `Planned: ${r.legsPlanned} legs, ${r.entriesPlanned} entries; invalid records: ${r.invalidRecords.length}`,
     '',
     `Supplier total (reconstructable categories): ${r.totals.supplierTotalReconstructableCategories} ${r.totals.currency}`,

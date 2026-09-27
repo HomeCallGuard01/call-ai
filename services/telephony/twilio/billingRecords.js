@@ -283,11 +283,196 @@ function supplierDailyTotals(usageRecords) {
     // are just noise and are skipped.
     if (price === 0 && !category) continue;
     const date = String(r.startDate instanceof Date ? r.startDate.toISOString() : r.startDate).slice(0, 10);
-    const entry = { date, category, amount: money(Math.abs(price)), currency: String(r.priceUnit || '').toUpperCase(), sourceCategory: r.category };
+    const entry = { date, category, amount: money(Math.abs(price)), currency: String(r.priceUnit || '').toUpperCase(), sourceCategory: r.category, count: r.count == null ? null : Number(r.count) };
     if (category) totals.push(entry);
     else unmapped.push(entry);
   }
   return { totals, unmapped };
+}
+
+// ---------------------------------------------------------------------------
+// Costs that are not a call leg. Every Twilio charge gets an explicit
+// treatment; nothing is dropped because it can't be tied to one call.
+//   SMS             priced per message by Twilio → provider_actual per message
+//   Polly (TTS)     priced per day → shared across that day's greeted calls
+//   Number rental   priced per day (on each number's monthly anniversary) →
+//                   shared across the numbers renewing that day when the
+//                   count matches, otherwise UNALLOCATED
+//   Anything else   → an explicit UNALLOCATED account-level entry
+// UNALLOCATED means: a real supplier charge with no evidence-based customer
+// to attribute it to. household_id stays null; nothing is guessed.
+// ---------------------------------------------------------------------------
+
+/**
+ * One Twilio Message resource → provider_actual SMS cost entry. Phone
+ * numbers are never stored; `link` (household, matched by the caller) is.
+ */
+function normaliseMessage(message, link = {}, opts = {}) {
+  const now = opts.now || new Date();
+  const windowMs = opts.reconciliationWindowMs || DEFAULT_RECONCILIATION_WINDOW_MS;
+  const terminal = ['delivered', 'undelivered', 'failed', 'sent', 'received', 'canceled', 'read'].includes(message.status);
+  const observed = observeCallPrice(
+    { price: message.price, priceUnit: message.priceUnit, status: terminal ? 'completed' : 'queued', endTime: message.dateSent || message.dateCreated, startTime: message.dateCreated },
+    now,
+    windowMs
+  );
+  const segments = message.numSegments == null ? null : Number(message.numSegments);
+  const priced = observed.charge_observation === 'reported_amount' || observed.charge_observation === 'reported_zero';
+  return {
+    source_system: PROVIDER,
+    supplier: PROVIDER,
+    entry_key: `${message.sid}:sms`,
+    native_reference: message.sid,
+    entry_class: 'cost',
+    category: 'sms',
+    cost_class: 'variable_direct',
+    billing_model: 'per_transaction',
+    provenance: 'provider_actual',
+    ...observed,
+    native_quantity: priced ? segments : null,
+    native_unit: priced ? 'segment' : null,
+    occurred_at: iso(message.dateSent || message.dateCreated),
+    household_id: link.householdId || null,
+    call_id: null,
+    evidence: {
+      sid: message.sid,
+      direction: message.direction || null,
+      status: message.status || null,
+      num_segments: segments,
+      price: message.price == null ? null : String(message.price),
+      price_unit: message.priceUnit || null,
+      household_match: link.householdMatch || 'unmatched',
+    },
+    retrieved_at: now.toISOString(),
+    finalised_at: observed.reconciliation_status === 'final' ? now.toISOString() : null,
+  };
+}
+
+/**
+ * Polly/TTS: Twilio prices it per day. Shared equally across that day's
+ * greeted (monitored) calls — one greeting each.
+ */
+function allocateDailyTts({ date, usageTotal, currency, calls, now = new Date() }) {
+  const shares = apportion(usageTotal, calls.map((c) => ({ key: c.callSid, weight: 1 })));
+  const byKey = new Map(calls.map((c) => [c.callSid, c]));
+  return shares.map((s) => {
+    const c = byKey.get(s.key);
+    return {
+      source_system: 'hcg',
+      supplier: PROVIDER,
+      entry_key: `${s.key}:tts`,
+      native_reference: s.key,
+      entry_class: 'cost',
+      category: 'tts',
+      cost_class: 'variable_direct',
+      billing_model: 'per_transaction',
+      provenance: 'provider_allocated',
+      charge_observation: null,
+      native_amount: null,
+      native_currency: currency,
+      native_quantity: null,
+      native_unit: null,
+      amount: s.amount,
+      occurred_at: iso(c.occurredAt),
+      household_id: c.householdId || null,
+      call_id: c.callId || null,
+      allocation_basis: `Twilio daily Polly total shared equally across the day's ${calls.length} greeted call(s)`,
+      source_reference: `twilio usage record amazon-polly ${date}: ${usageTotal} ${currency}`,
+      reconciliation_status: 'provisional',
+      retrieved_at: now.toISOString(),
+    };
+  });
+}
+
+/**
+ * Number rental: Twilio bills each number monthly on the anniversary of its
+ * purchase, and reports only a daily total. When the numbers renewing that
+ * day (by anniversary) exactly account for the day's count, the total is
+ * shared across them (provider_allocated, attributed to each number's
+ * CURRENT household only — there is no assignment history yet). Otherwise
+ * the whole day is UNALLOCATED rather than guessed.
+ *
+ * @param {object} args
+ * @param {string} args.date - YYYY-MM-DD (UTC)
+ * @param {number} args.usageTotal - the day's number-rental total
+ * @param {number} args.usageCount - numbers billed that day (usage record count)
+ * @param {Array<{ sid, dateCreated, householdId, environment }>} args.numbers - currently owned numbers
+ */
+function allocateDailyNumberRental({ date, usageTotal, usageCount, currency, numbers, now = new Date() }) {
+  const day = Number(date.slice(8, 10));
+  const lastDayOfMonth = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
+  const renewing = numbers.filter((n) => {
+    const created = new Date(n.dateCreated);
+    if (Number.isNaN(created.getTime()) || created.toISOString().slice(0, 10) > date) return false;
+    const anniversary = Math.min(created.getUTCDate(), lastDayOfMonth);
+    return anniversary === day;
+  });
+  if (renewing.length === 0 || renewing.length !== Number(usageCount)) {
+    return [unallocatedDailyCharge({ date, category: 'number_rental', sourceCategory: 'phonenumbers', amount: usageTotal, currency, count: usageCount, now,
+      reason: renewing.length === 0 ? 'no currently-owned number renews on this day (likely a number since released)' : `renewal count mismatch: ${renewing.length} owned number(s) renew today vs ${usageCount} billed` })];
+  }
+  const shares = apportion(usageTotal, renewing.map((n) => ({ key: n.sid, weight: 1 })));
+  const byKey = new Map(renewing.map((n) => [n.sid, n]));
+  return shares.map((s) => {
+    const n = byKey.get(s.key);
+    return {
+      source_system: 'hcg',
+      supplier: PROVIDER,
+      entry_key: `number:${s.key}:${date}`,
+      native_reference: s.key,
+      entry_class: 'cost',
+      category: 'number_rental',
+      cost_class: 'semi_variable',
+      billing_model: 'per_number',
+      provenance: 'provider_allocated',
+      charge_observation: null,
+      native_amount: null,
+      native_currency: currency,
+      native_quantity: 1,
+      native_unit: 'number-month',
+      amount: s.amount,
+      occurred_at: `${date}T00:00:00.000Z`,
+      household_id: n.householdId || null,
+      call_id: null,
+      allocation_basis: `Twilio daily number-rental total shared across the ${renewing.length} number(s) whose monthly anniversary is ${date}; attributed to the number's current household (no assignment history)`,
+      source_reference: `twilio usage record phonenumbers ${date}: ${usageCount} number(s), ${usageTotal} ${currency}`,
+      evidence: { number_sid: s.key, environment: n.environment || null, allocation_status: n.householdId ? 'allocated' : 'unallocated_number_without_household' },
+      reconciliation_status: 'provisional',
+      retrieved_at: now.toISOString(),
+    };
+  });
+}
+
+/**
+ * A real supplier day-total that no evidence ties to a customer or call.
+ * Recorded as the supplier's actual account-level charge, explicitly
+ * UNALLOCATED — visible in every total, never dropped, never guessed.
+ */
+function unallocatedDailyCharge({ date, category, sourceCategory, amount, currency, count = null, reason, now = new Date() }) {
+  return {
+    source_system: PROVIDER,
+    supplier: PROVIDER,
+    entry_key: `usage:${sourceCategory}:${date}:unallocated`,
+    native_reference: `usage:${sourceCategory}:${date}`,
+    entry_class: 'cost',
+    category,
+    cost_class: category === 'number_rental' ? 'semi_variable' : 'variable_direct',
+    billing_model: category === 'number_rental' ? 'per_number' : 'other',
+    provenance: 'provider_actual',
+    charge_observation: amount === 0 ? 'reported_zero' : 'reported_amount',
+    native_amount: amount, // usage records report positive prices; kept as reported
+    native_currency: currency,
+    native_quantity: count,
+    native_unit: count == null ? null : 'usage-count',
+    amount,
+    occurred_at: `${date}T00:00:00.000Z`,
+    household_id: null,
+    call_id: null,
+    evidence: { allocation_status: 'unallocated', reason, usage_category: sourceCategory },
+    reconciliation_status: 'final',
+    retrieved_at: now.toISOString(),
+    finalised_at: now.toISOString(),
+  };
 }
 
 /**
@@ -299,6 +484,8 @@ function createTwilioBillingSource(client) {
     listCalls: ({ startTimeAfter, startTimeBefore }) => client.calls.list({ startTimeAfter, startTimeBefore }),
     fetchCall: (sid) => client.calls(sid).fetch(),
     listDailyUsage: ({ startDate, endDate }) => client.usage.records.daily.list({ startDate, endDate }),
+    listMessages: ({ dateSentAfter, dateSentBefore }) => client.messages.list({ dateSentAfter, dateSentBefore }),
+    listOwnedNumbers: async () => (await client.incomingPhoneNumbers.list()).map((n) => ({ sid: n.sid, phoneNumber: n.phoneNumber, dateCreated: n.dateCreated })),
   };
 }
 
@@ -312,6 +499,10 @@ module.exports = {
   normaliseCall,
   observeCallPrice,
   mediaStreamEstimate,
+  normaliseMessage,
+  allocateDailyTts,
+  allocateDailyNumberRental,
+  unallocatedDailyCharge,
   allocateDailyMediaStreams,
   supplierDailyTotals,
   createTwilioBillingSource,
