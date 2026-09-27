@@ -50,7 +50,7 @@ Principles:
 
 These are the defaults in `spendGuard.js`. All need confirmation (DECISION REQUIRED).
 
-- Numbers above entitled households: WARNING at 3 or more spare, CRITICAL at 10 or more. Today: 19 owned for about 9 entitled, so **CRITICAL**.
+- Numbers above entitled households: WARNING at 3 or more spare, CRITICAL at 10 or more. Today: 19 owned, and at most 9 belong to production households (not all of them entitled), so **CRITICAL** on any count.
 - Daily telephony spend: WARNING at max(£3, entitled × £0.15), which is about 2× the break-even run-rate. CRITICAL at 3× that.
 - Monthly budget: max(£90, entitled × £2.50) unless set. WARNING at 80%.
 - Daily AI spend: max(£1, entitled × £0.05). CRITICAL at 3×.

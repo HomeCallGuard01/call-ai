@@ -13,7 +13,7 @@ function check(condition, message) {
 }
 const codes = (alerts) => alerts.map((a) => `${a.code}:${a.severity}`);
 
-// The real 2026-09-27 shape: 19 numbers owned, ~9 entitled households.
+// The 2026-09-27 shape: 19 numbers owned, at most 9 held by production households.
 const today = evaluateSpend({ entitledHouseholds: 9, ownedNumbers: 19 });
 check(codes(today).includes('NUMBERS_ABOVE_ENTITLED:CRITICAL'), '19 numbers for 9 entitled households is CRITICAL (10 spare)');
 check(codes(evaluateSpend({ entitledHouseholds: 9, ownedNumbers: 12 })).includes('NUMBERS_ABOVE_ENTITLED:WARNING'), '3+ spare numbers is a WARNING');
