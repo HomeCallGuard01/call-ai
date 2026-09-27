@@ -160,6 +160,8 @@
   .nav a { text-decoration: none; color: var(--muted); padding: 10px 2px; min-height: 44px; display: inline-flex; align-items: center; }
   .nav a:hover { color: var(--text); }
   .header-actions { display: flex; align-items: center; gap: 14px; }
+  .header-price { font-weight: 800; color: var(--green); white-space: nowrap; }
+  @media (max-width: 719px) { .header-price { display: none; } }
   .login { color: var(--muted); text-decoration: none; font-size: 0.98rem; padding: 10px 4px; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; }
   .login:hover { color: var(--text); }
   .btn-sm { background: var(--green); color: #04100a; font-weight: 800; text-decoration: none; padding: 11px 18px; border-radius: 12px; font-size: 0.98rem; white-space: nowrap; min-height: 44px; display: inline-flex; align-items: center; }
@@ -196,8 +198,8 @@
      objective ("£4.99/month needs to be considerably more prominent in the first
      screen"; "No contract · Cancel anytime · Keep your existing number" near the
      price, not buried further down). */
-  .hero-price-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 16px; margin-top: 30px; }
-  .hero-price { font-size: clamp(2.6rem, 7vw, 3.4rem); font-weight: 850; letter-spacing: -0.03em; line-height: 1; color: var(--text); }
+  .hero-price-block { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 16px; margin-top: 22px; }
+  .hero-price { font-size: clamp(3rem, 9vw, 4.2rem); font-weight: 850; letter-spacing: -0.03em; line-height: 1; color: var(--text); }
   .hero-price span { color: var(--green); }
   .hero-price-term { font-size: 1.05rem; font-weight: 600; color: var(--muted); }
   .reassure-line { margin-top: 14px; font-size: 1.02rem; font-weight: 600; color: var(--text); }
@@ -237,9 +239,6 @@
   .chip.green { background: var(--green-soft); border-color: var(--green-deep); } .chip.green::before { background: var(--green); }
   .chip.amber { background: var(--amber-soft); border-color: var(--amber); color: #fde68a; } .chip.amber::before { background: var(--amber); }
   @media (min-width: 900px) { .steps3 { grid-template-columns: repeat(3, 1fr); } }
-  .honest { margin-top: 24px; border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 22px 26px; background: rgba(255,255,255,0.02); max-width: 60rem; }
-  .honest strong { color: var(--text); }
-  .honest p { color: var(--muted); font-size: 1rem; }
 
   /* ---------- split sections (text + phone) ---------- */
   .split { display: grid; gap: 40px; align-items: center; }
@@ -342,6 +341,7 @@
     </nav>
     <div class="header-actions">
       <a class="login" href="/login.html">Log in</a>
+      <span class="header-price">£4.99/month</span>
       <a class="btn-sm" href="#get-started">Get started</a>
     </div>
   </div>
@@ -356,16 +356,17 @@
   <section class="hero">
     <div class="wrap grid">
       <div>
-        <p class="eyebrow">An extra layer of protection for UK phones</p>
+        <p class="eyebrow">Scam call protection for UK phones</p>
         <h1>Help protect you and your family from scam phone calls.</h1>
-        <!-- APPROVED-BEHAVIOUR-COPY -->
-        <p class="lead">Scammers can spoof or change the number they're calling from, so number-blocking apps can miss them. Home Call Guard adds another layer of protection: it watches for scam risk as the conversation itself develops, and can end the call if it detects serious risk. The people you trust always ring straight through.</p>
 
         <div class="hero-price-block">
           <p class="hero-price"><span>£4.99</span></p>
           <p class="hero-price-term">a month, including VAT</p>
         </div>
         <p class="reassure-line">No contract &middot; Cancel anytime &middot; Keep your number</p>
+
+        <!-- APPROVED-BEHAVIOUR-COPY (shortened 2026-09-27; the spoofing explanation now lives only in "Why it's different") -->
+        <p class="lead">Home Call Guard watches for scam risk while you talk, and can end the call if it detects serious risk. The people you trust ring straight through.</p>
 
         <p class="availability-line">Available now on Android. iPhone and landline are in development.</p>
 
@@ -463,10 +464,6 @@
           <p class="outcome">Shown in Activity as<br><span class="chip amber">High risk — call stopped</span></p>
         </li>
       </ol>
-      <div class="honest">
-        <!-- APPROVED-BEHAVIOUR-COPY -->
-        <p><strong>Good to know.</strong> Home Call Guard can't promise to catch every scam, so please stay cautious with any unexpected call. We don't store call audio or a transcript of what's said. You can see how every call was handled in your Activity list at any time.</p>
-      </div>
     </div>
   </section>
 
@@ -481,7 +478,7 @@
       <div class="copy">
         <p class="eyebrow">Peace of mind</p>
         <h2>Protect yourself, or someone you care about.</h2>
-        <p>Use Home Call Guard for your own phone, or help add another layer of protection for a parent, partner or anyone else you care about. Their number stays the same, and the people they trust still ring straight through.</p>
+        <p>Use Home Call Guard for your own phone, or set it up for a parent, partner or anyone else you care about. Their number stays the same.</p>
       </div>
       <div class="visual">
         <figure>
@@ -498,13 +495,12 @@
       <div class="section-head">
         <p class="eyebrow">Getting started</p>
         <h2>Simple, guided setup.</h2>
-        <p>We guide you through every step, from choosing your phone to turning on call forwarding.</p>
       </div>
       <ol class="steps">
         <li class="step"><div class="n" aria-hidden="true">1</div><h3>Choose your phone</h3><p>Tell us which phone you're protecting. We check that your mobile network is one we currently support <strong>before you pay</strong>.</p></li>
-        <li class="step"><div class="n" aria-hidden="true">2</div><h3>Add the people you trust</h3><p>Family, friends, your GP. Their calls ring straight through. Sync them from your phone or add them one by one.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">2</div><h3>Add the people you trust</h3><p>Family, friends, your GP — sync them from your phone or add them one by one.</p></li>
         <li class="step"><div class="n" aria-hidden="true">3</div><h3>Turn on call forwarding</h3><p>A one-time step: dial a short code so calls to your number come through Home Call Guard first. We show you exactly what to dial for your provider.</p></li>
-        <li class="step"><div class="n" aria-hidden="true">4</div><h3>You're protected</h3><p>Trusted contacts ring straight through. Anyone else's call connects as normal, and Home Call Guard monitors it while you talk.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">4</div><h3>You're set up</h3><p>Home Call Guard starts working straight away, and every call appears in your Activity list.</p></li>
       </ol>
     </div>
   </section>
@@ -522,7 +518,6 @@
         <ul class="ticks">
           <li>Monitoring of calls from numbers you don't know</li>
           <li>Your Activity list — see how every call was handled</li>
-          <li>Available now on Android — iPhone and landline in development</li>
           <li>No long-term contract — cancel any time</li>
         </ul>
         <div class="routes">
@@ -588,7 +583,7 @@
   <section class="final" style="margin-top:60px; background: var(--bg-2); border-top: 1px solid var(--border);">
     <div class="wrap">
       <h2>Feel more confident answering your phone.</h2>
-      <p>An extra layer of protection for you and your family — £4.99 a month including VAT, no contract.</p>
+      <p>£4.99 a month, including VAT. No contract — cancel any time.</p>
       <div class="routes">
         <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
         <div class="route disabled" data-app-store><small>In development</small><strong>App Store</strong></div>
