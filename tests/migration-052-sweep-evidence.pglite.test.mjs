@@ -1,11 +1,11 @@
-// Dedicated PGlite test for supabase/migrations/050_number_lifecycle_sweep_evidence.sql
+// Dedicated PGlite test for supabase/migrations/052_number_lifecycle_sweep_evidence.sql
 // — the 3 new RPCs the daily sweep runner depends on. Applies the FULL
-// migration chain (through 050, on top of 047), then exercises each RPC
+// migration chain (through 052, on top of 047), then exercises each RPC
 // directly against real Postgres, including the database-level
 // idempotency guarantee (ON CONFLICT DO NOTHING) for the expiry-warning
 // tracking table.
 //
-// Run with: node tests/migration-050-sweep-evidence.pglite.test.mjs
+// Run with: node tests/migration-052-sweep-evidence.pglite.test.mjs
 
 import { PGlite } from '@electric-sql/pglite';
 import { readdir, readFile } from 'node:fs/promises';
@@ -47,7 +47,7 @@ async function main() {
   await db.exec(BOOTSTRAP_SQL);
 
   const files = (await readdir(migrationsDir)).filter(f => f.endsWith('.sql')).sort();
-  assert(files.includes('050_number_lifecycle_sweep_evidence.sql'), 'migration 050 file is present');
+  assert(files.includes('052_number_lifecycle_sweep_evidence.sql'), 'migration 052 file is present');
 
   for (const file of files) {
     const sql = await readFile(path.join(migrationsDir, file), 'utf8');
@@ -59,7 +59,7 @@ async function main() {
       return;
     }
   }
-  console.log('All migrations (including 050, on top of 047) applied cleanly.\n');
+  console.log('All migrations (including 052, on top of 047) applied cleanly.\n');
 
   await db.exec('reset role');
   const { rows: [household] } = await db.query(
@@ -165,7 +165,7 @@ async function main() {
     await asServiceRole(db);
   }
 
-  console.log(`\n${failures === 0 ? '✓ All' : `✗ ${failures}`} migration-050-sweep-evidence checks ${failures === 0 ? 'passed' : 'FAILED'}`);
+  console.log(`\n${failures === 0 ? '✓ All' : `✗ ${failures}`} migration-052-sweep-evidence checks ${failures === 0 ? 'passed' : 'FAILED'}`);
   process.exitCode = failures === 0 ? 0 : 1;
 }
 

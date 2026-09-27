@@ -17,7 +17,7 @@
 //     047 guard is the ONLY thing that can actually decide a release is
 //     safe, and it decides again, independently, at execution time.
 //   - "expire_lapsed_entitlement" -> the new, narrow
-//     expire_lapsed_entitlement() RPC (migration 050), which re-checks
+//     expire_lapsed_entitlement() RPC (migration 052), which re-checks
 //     the entitlement's own end date itself before transitioning it.
 //   - "send_test_expiry_warning" -> the caller's own SMS/notification
 //     path, then record_entitlement_expiry_warning_sent() (idempotent by

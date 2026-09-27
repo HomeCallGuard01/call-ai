@@ -2,16 +2,24 @@
 -- provider-number lifecycle work, built on top of 047's entitlement
 -- guard.
 --
--- STATUS: DRAFT — NOT APPLIED to any database (staging or production).
+-- STATUS: APPLIED to STAGING (2026-09-27, under the pre-renumbering name
+-- 050_number_lifecycle_sweep_evidence.sql — identical SQL content, only
+-- the filename/version changed since). Staging's tracking table is being
+-- reconciled to the new "052" label via `supabase migration repair`
+-- (bookkeeping only, no SQL re-run) as part of this same renumbering.
+-- NOT APPLIED to production.
 --
--- NUMBERING: 050 is a PLACEHOLDER, not yet confirmed. 048 is reserved
--- for the paused billing-ledger branch. The monitored-minute allowance
--- branch is expected to take the next free number when it is rebased
--- (per 047's own header) — likely 049. This file must be renumbered at
--- integration time if either of those lands first, following this
--- project's own established convention (047 itself was renumbered from
--- 049). Run scripts/check-migration-numbering.js (fix/migration-safety-
--- tooling, PR #46) before merging to confirm no clash.
+-- NUMBERING: renumbered 050 -> 052 (2026-09-27, reconciled against
+-- concurrent work). At 050, this collided directly with Dashboard's
+-- own 050_manual_cost_schedules.sql (feature/admin-business-control).
+-- Finance's provider-neutral ledger has separately, independently
+-- claimed and staging-validated 051 (feature/provider-neutral-billing-
+-- ledger, renumbered from their own earlier 048) — do not reuse or
+-- renumber into 051. 052 sits cleanly above Finance's locked slot and
+-- avoids Dashboard's current 050 without requiring them to move first.
+-- Re-run scripts/check-migration-numbering.js (fix/migration-safety-
+-- tooling, PR #46) against the full current remote+local state before
+-- merging, in case anything has moved again since this was written.
 --
 -- Purpose: two small, additive pieces of durable state the daily
 -- reconciliation sweep (services/numberLifecycleSweep.js) needs, neither
@@ -51,7 +59,7 @@
 -- this migration adds evidence AROUND the release lifecycle, it does not
 -- change what is or isn't allowed to release a number. Rollback: drop
 -- the new table and the three new households columns; see
--- supabase/migrations/_rollbacks/050_rollback_number_lifecycle_sweep_evidence.sql.
+-- supabase/migrations/_rollbacks/052_rollback_number_lifecycle_sweep_evidence.sql.
 
 begin;
 
@@ -183,7 +191,7 @@ commit;
 do $$
 begin
   if to_regclass('public.entitlement_expiry_warnings_sent') is null then
-    raise exception 'MIGRATION 050 VERIFICATION FAILED: public.entitlement_expiry_warnings_sent does not exist';
+    raise exception 'MIGRATION 052 VERIFICATION FAILED: public.entitlement_expiry_warnings_sent does not exist';
   end if;
 
   if not exists (
@@ -191,7 +199,7 @@ begin
     where table_schema = 'public' and table_name = 'households'
       and column_name = 'twilio_release_last_attempt_at'
   ) then
-    raise exception 'MIGRATION 050 VERIFICATION FAILED: households.twilio_release_last_attempt_at missing';
+    raise exception 'MIGRATION 052 VERIFICATION FAILED: households.twilio_release_last_attempt_at missing';
   end if;
 
   if not exists (
@@ -199,7 +207,7 @@ begin
     where table_schema = 'public' and table_name = 'households'
       and column_name = 'twilio_release_attempt_count' and column_default is not null
   ) then
-    raise exception 'MIGRATION 050 VERIFICATION FAILED: households.twilio_release_attempt_count missing or has no default';
+    raise exception 'MIGRATION 052 VERIFICATION FAILED: households.twilio_release_attempt_count missing or has no default';
   end if;
 end
 $$;

@@ -1,4 +1,4 @@
--- Rollback for 050_number_lifecycle_sweep_evidence.sql.
+-- Rollback for 052_number_lifecycle_sweep_evidence.sql.
 -- STATUS: not applied anywhere. Drops the new table and the three new
 -- households columns. No other data changes. After rollback, the daily
 -- sweep's 14-day warning can no longer track idempotency durably, and
