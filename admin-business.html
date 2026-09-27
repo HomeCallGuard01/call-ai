@@ -211,6 +211,29 @@
   .recent-calls th, .recent-calls td, .fact-table td { padding: 5px 8px; white-space: normal; }
   .fact-table td:first-child { color: #93a3b8; white-space: nowrap; width: 110px; }
 
+  /* --- Business control tabs (2026-09-27) --- */
+  .prov-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
+  .prov-actual { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+  .prov-allocated { background: #083344; color: #67e8f9; border: 1px solid #06b6d4; }
+  .prov-estimated { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
+  .prov-manual { background: #1e1b4b; color: #c7d2fe; border: 1px solid #6366f1; }
+  .prov-mixed { background: #3b0764; color: #e9d5ff; border: 1px solid #a855f7; }
+  .prov-none { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .card.bc-primary { border-color: #22d3ee; }
+  .pnl-table td, .pnl-table th { vertical-align: top; }
+  .pnl-table .num, table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pnl-section td { color: #7dd3fc; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; padding-top: 16px; }
+  .cell-chain { white-space: normal; min-width: 280px; }
+  .chain-dot { display: inline-block; font-size: 10.5px; padding: 1px 6px; margin: 1px 2px; border-radius: 4px; border: 1px solid #334155; }
+  .chain-good { background: #064e3b; color: #6ee7b7; border-color: #10b981; }
+  .chain-bad { background: #450a0a; color: #fca5a5; border-color: #ef4444; }
+  .chain-off { color: #64748b; }
+  .chain-neutral { background: #1e293b; color: #cbd5e1; }
+  .manual-cost-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .manual-cost-form input, .manual-cost-form select { background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 7px 9px; font-size: 13px; }
+  .manual-cost-form input:disabled, .manual-cost-form select:disabled, .manual-cost-form button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .link-output { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 13px; background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 12px; overflow-wrap: anywhere; }
+
   @media (max-width: 1300px) {
     .stat-grid { grid-template-columns: repeat(3, 1fr); }
   }
@@ -243,12 +266,20 @@
   <nav class="tab-nav" id="tabNav" role="tablist" aria-label="Admin dashboard sections">
     <button type="button" class="tab-button" id="tabBtn-business" role="tab" onclick="switchTab('business')">Business</button>
     <button type="button" class="tab-button" id="tabBtn-customers" role="tab" onclick="switchTab('customers')">Customers</button>
+    <button type="button" class="tab-button" id="tabBtn-subscriptions" role="tab" onclick="switchTab('subscriptions')">Subscriptions</button>
+    <button type="button" class="tab-button" id="tabBtn-reconciliation" role="tab" onclick="switchTab('reconciliation')">Reconciliation</button>
+    <button type="button" class="tab-button" id="tabBtn-finance" role="tab" onclick="switchTab('finance')">Finance</button>
+    <button type="button" class="tab-button" id="tabBtn-marketing" role="tab" onclick="switchTab('marketing')">Marketing</button>
     <button type="button" class="tab-button" id="tabBtn-operations" role="tab" onclick="switchTab('operations')">Operations</button>
     <button type="button" class="tab-button" id="tabBtn-systemhealth" role="tab" onclick="switchTab('systemhealth')">System Health</button>
   </nav>
 
   <div id="business" class="tab-panel" role="tabpanel"><div class="loading">Loading…</div></div>
   <div id="customers" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
+  <div id="subscriptions" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
+  <div id="reconciliation" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
+  <div id="finance" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
+  <div id="marketing" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
   <div id="operations" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
   <div id="systemhealth" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
 </div>
@@ -390,7 +421,7 @@ function describeAdminAction(action) {
 // Tab switching — one visible panel at a time, active tab has a
 // solid-fill, high-contrast state (never just text colour/underline).
 // ============================================================
-const TAB_NAMES = ['business', 'customers', 'operations', 'systemhealth'];
+const TAB_NAMES = ['business', 'customers', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'operations', 'systemhealth'];
 
 function switchTab(name) {
   for (const t of TAB_NAMES) {
@@ -403,6 +434,7 @@ function switchTab(name) {
     }
   }
   window.location.hash = name;
+  if (typeof loadBusinessControlTab === 'function') loadBusinessControlTab(name);
 }
 
 function initialTab() {
@@ -1467,6 +1499,306 @@ async function revokeInvite(inviteId) {
     console.error('REVOKE INVITE ERROR:', err);
   }
 }
+
+// ============================================================
+// BUSINESS CONTROL TABS (2026-09-27) — Subscriptions, Reconciliation,
+// Finance, Marketing. Data: /admin/api/business-control/* (admin-only).
+// Each tab loads the first time it is opened (Finance calls Stripe and
+// Twilio read-only, so it is never fetched just because the page loaded).
+// Every figure carries its provenance: ACTUAL / ALLOCATED / ESTIMATED /
+// MANUAL / NOT CONNECTED — a missing source is never shown as £0.
+// All data-derived values are rendered through escapeHtml.
+// ============================================================
+// TEST-EXTRACT-START: businessControlTabs
+const businessControlLoaded = {};
+const BUSINESS_CONTROL_TABS = ['subscriptions', 'reconciliation', 'finance', 'marketing'];
+
+// TEST-EXTRACT-START: businessControlHelpers
+const PROVENANCE_BADGES = {
+  ACTUAL: { label: 'Actual', className: 'prov-actual' },
+  ALLOCATED: { label: 'Allocated', className: 'prov-allocated' },
+  ESTIMATED: { label: 'Estimated', className: 'prov-estimated' },
+  MANUAL: { label: 'Manual', className: 'prov-manual' },
+  NOT_CONNECTED: { label: 'Not connected', className: 'prov-none' },
+  MIXED: { label: 'Mixed', className: 'prov-mixed' },
+};
+
+function provenanceBadge(provenance) {
+  const b = PROVENANCE_BADGES[provenance] || { label: String(provenance || '—'), className: 'prov-none' };
+  return '<span class="prov-badge ' + b.className + '">' + escapeHtml(b.label) + '</span>';
+}
+
+function formatGbpOrMissing(amount) {
+  if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) return 'Not connected';
+  const n = Number(amount);
+  const s = '£' + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n < 0 ? '−' + s : s;
+}
+
+function describeTotal(total) {
+  if (!total) return { text: 'Not connected', incomplete: true };
+  return { text: formatGbpOrMissing(total.amountGbp), incomplete: total.complete === false };
+}
+
+function reconciliationBanner(overall, actionCount, watchCount) {
+  if (overall === 'ACTION_REQUIRED') return { className: 'not_ready', text: 'ACTION REQUIRED — ' + actionCount + ' household/number' + (actionCount === 1 ? '' : 's') + ' need action' + (watchCount ? ' · ' + watchCount + ' to watch' : '') };
+  if (overall === 'WATCH') return { className: 'ready_with_open_items', text: 'OK, with ' + watchCount + ' item' + (watchCount === 1 ? '' : 's') + ' to watch' };
+  return { className: 'ready', text: 'OK — every number matches its subscription and lifecycle' };
+}
+
+function chainStageClass(stage) {
+  const good = { active: 1, assigned: 1, yes: 1, released: 1 };
+  const bad = { failed: 1, 'awaiting confirmation': 1 };
+  if (good[stage.state]) return 'chain-good';
+  if (bad[stage.state]) return 'chain-bad';
+  if (stage.state === 'no' || stage.state === 'none') return 'chain-off';
+  return 'chain-neutral';
+}
+// TEST-EXTRACT-END: businessControlHelpers
+
+async function fetchBusinessControl(path) {
+  const res = await fetch('/admin/api/business-control/' + path, { credentials: 'include' });
+  if (res.redirected || res.status === 403) throw new Error('Not authorized');
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.reason || ('Failed (' + res.status + ')'));
+  return body;
+}
+
+function loadBusinessControlTab(name, force) {
+  if (!BUSINESS_CONTROL_TABS.includes(name)) return;
+  if (businessControlLoaded[name] && !force) return;
+  businessControlLoaded[name] = true;
+  const el = document.getElementById(name);
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const loaders = { subscriptions: renderSubscriptionsTab, reconciliation: renderReconciliationTab, finance: renderFinanceTab, marketing: renderMarketingTab };
+  loaders[name]().catch((err) => { el.innerHTML = '<div class="error">' + escapeHtml(err.message) + '</div>'; businessControlLoaded[name] = false; });
+}
+
+function sectionHeader(title, generatedAt, tab) {
+  return '<div class="section-header"><h2>' + title + '</h2><span class="last-updated">Updated ' + escapeHtml(fmtDateTime(generatedAt)) +
+    ' · <a href="#" onclick="loadBusinessControlTab(\'' + tab + '\', true);return false;">refresh</a></span></div>';
+}
+
+function bcCard(label, value, sub, className) {
+  return '<div class="card' + (className ? ' ' + className : '') + '"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + value + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
+}
+
+// ---------- Subscriptions ----------
+async function renderSubscriptionsTab() {
+  const d = await fetchBusinessControl('subscriptions');
+  const c = d.counts;
+  const src = Object.entries(c.activePaidSubscriptions.bySource).map(([k, v]) => escapeHtml(k) + ' ' + v).join(' · ') || 'none';
+  let html = '<div class="section">' + sectionHeader('Customers &amp; subscriptions', d.generatedAt, 'subscriptions');
+  html += '<p class="sub" style="margin-bottom:14px;">Genuine = explicitly classified genuine customer. Reviewer, test, internal, admin and unclassified accounts are never counted as genuine or as revenue.</p>';
+  html += '<div class="cards">' +
+    bcCard('Genuine paying customers', fmtNum(c.genuinePayingCustomers), 'active paid entitlement', 'bc-primary') +
+    bcCard('Active paid subscriptions', fmtNum(c.activePaidSubscriptions.total), fmtNum(c.activePaidSubscriptions.genuine) + ' genuine · ' + src) +
+    bcCard('Cancelling at period end', fmtNum(c.cancellingAtPeriodEnd.total), fmtNum(c.cancellingAtPeriodEnd.genuine) + ' genuine') +
+    bcCard('Payment issue', fmtNum(c.paymentIssue.total), fmtNum(c.paymentIssue.genuine) + ' genuine') +
+    bcCard('Cancelled subscriptions', fmtNum(c.cancelledSubscriptions.total), fmtNum(c.cancelledSubscriptions.genuine) + ' genuine') +
+    bcCard('Complimentary', fmtNum(c.complimentary), 'active, no payment') +
+    bcCard('Trial', fmtNum(c.trial), 'active free trial') +
+    bcCard('Reviewer / test / internal', fmtNum(c.nonGenuineWithActiveAccess), 'with active access · ' + fmtNum(c.nonGenuineAccounts.reviewer) + ' reviewer, ' + fmtNum(c.nonGenuineAccounts.internal_test) + ' test, ' + fmtNum(c.nonGenuineAccounts.admin) + ' admin, ' + fmtNum(c.nonGenuineAccounts.qa_automation) + ' QA') +
+    bcCard('New genuine paying', fmtNum(c.newGenuinePayingLast7d) + ' / ' + fmtNum(c.newGenuinePayingLast30d), 'last 7 / 30 days') +
+    bcCard('Churn (30 days)', d.churn.available ? escapeHtml(d.churn.rate) + '%' : '—', d.churn.available ? escapeHtml(d.churn.lost + ' of ' + d.churn.base + ' genuine paying customers') : escapeHtml(d.churn.reason)) +
+    '</div>';
+  html += '<div class="sub" style="margin-top:8px;">' + fmtNum(c.households) + ' accounts in total · ' + fmtNum(c.deletedAccounts) + ' deleted (anonymised) accounts excluded.</div>';
+  if (d.needsClassification.length) {
+    html += '<h3 style="margin-top:22px;">Needs classification (' + d.needsClassification.length + ')</h3>';
+    html += '<p class="sub">Active access but not yet classified — not counted as genuine until you classify them.</p><table><tr><th>Account</th><th>Access</th></tr>' +
+      d.needsClassification.map((n) => '<tr><td>' + escapeHtml(n.email) + '</td><td>' + escapeHtml(n.entitlementType) + '</td></tr>').join('') + '</table>';
+  }
+  html += '</div>';
+  document.getElementById('subscriptions').innerHTML = html;
+}
+
+// ---------- Reconciliation ----------
+async function renderReconciliationTab() {
+  const d = await fetchBusinessControl('reconciliation');
+  const banner = reconciliationBanner(d.overall, d.actionCount, d.watchCount);
+  let html = '<div class="section">' + sectionHeader('Protection &amp; number reconciliation', d.generatedAt, 'reconciliation');
+  html += '<div class="readiness-banner ' + banner.className + '">' + escapeHtml(banner.text) + '</div>';
+  const inv = d.providerInventory;
+  html += '<p class="sub" style="margin:-6px 0 12px;">' + (inv && inv.available
+    ? 'Provider account: ' + fmtNum(inv.providerCount) + ' number(s) · ' + fmtNum(inv.heldByHcgCount) + ' held by HCG households or open quarantines.'
+    : 'Provider number list unavailable — provider-side checks skipped.') + '</p>';
+  const nonZero = Object.entries(d.anomalyCounts).filter(([, n]) => n > 0);
+  if (nonZero.length) {
+    html += '<div class="filter-bar">' + nonZero.map(([code, n]) => {
+      const def = d.anomalyDefinitions[code];
+      return '<span class="filter-chip' + (def.severity === 'action' ? ' urgent' : '') + '">' + escapeHtml(def.label) + ' <span class="chip-count">' + n + '</span></span>';
+    }).join('') + '</div>';
+  }
+  if (!d.rows.length) {
+    html += '<div class="empty-state">No households with an entitlement, number or quarantine.</div>';
+  } else {
+    html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Household / number</th><th>Status</th><th>Issues</th><th>Lifecycle</th></tr></thead><tbody>';
+    for (const r of d.rows) {
+      const statusPill = r.status === 'action_required' ? '<span class="status-pill bad">Action</span>' : r.status === 'watch' ? '<span class="status-pill warn">Watch</span>' : '<span class="status-pill good">OK</span>';
+      const issues = r.anomalies.length ? r.anomalies.map((a) => '<div class="' + (a.severity === 'action' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(a.label) + (a.detail ? '<span class="customer-sub"> — ' + escapeHtml(a.detail) + '</span>' : '') + '</div>').join('') : '<span class="text-muted">—</span>';
+      const chain = (r.chain || []).map((s) => '<span class="chain-dot ' + chainStageClass(s) + '" title="' + escapeHtml(s.label + ': ' + s.state + (s.at ? ' (' + fmtDateTime(s.at) + ')' : '')) + '">' + escapeHtml(s.label) + '</span>').join('');
+      html += '<tr><td class="cell-customer"><div class="customer-email">' + escapeHtml(r.email || (r.numberOnly ? 'Deleted account' : '—')) + '</div><div class="customer-sub">' + escapeHtml(r.hcgNumber || 'no number') + '</div></td>' +
+        '<td>' + statusPill + '</td><td class="cell-wrap">' + issues + '</td><td class="cell-chain">' + (chain || '<span class="text-muted">number only</span>') + '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  html += '<ul class="sub" style="margin-top:12px;">' + d.notes.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>';
+  html += '</div>';
+  document.getElementById('reconciliation').innerHTML = html;
+}
+
+// ---------- Finance ----------
+const FINANCE_SECTION_TITLES = { revenue: 'Revenue', deductions: 'Refunds &amp; VAT', variable: 'Variable costs', fixed: 'Fixed infrastructure', marketing: 'Marketing' };
+
+async function renderFinanceTab() {
+  const [d, manual] = await Promise.all([fetchBusinessControl('finance'), fetchBusinessControl('manual-costs').catch(() => ({ connected: false, reason: 'unavailable', schedules: [] }))]);
+  const t = d.totals;
+  const u = d.unitEconomics;
+  let html = '<div class="section">' + sectionHeader('Finance — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
+  html += '<p class="sub" style="margin-bottom:14px;">' + provenanceBadge('ACTUAL') + ' supplier-reported ' + provenanceBadge('ALLOCATED') + ' supplier total apportioned ' + provenanceBadge('ESTIMATED') + ' calculated from assumptions ' + provenanceBadge('MANUAL') + ' entered by you ' + provenanceBadge('NOT_CONNECTED') + ' no source yet (never counted as £0). Totals marked <em>incomplete</em> are missing at least one line.</p>';
+  const headline = [
+    ['Gross revenue', t.grossRevenue], ['Revenue ex-VAT', t.netRevenueExVat], ['Variable cost', t.variableCost], ['Gross contribution', t.grossContribution],
+    ['Fixed infrastructure', t.fixedCost], ['Marketing spend', t.marketingSpend], ['Operating profit', t.operatingProfit],
+  ];
+  html += '<div class="cards">' + headline.map(([label, total]) => {
+    const dt = describeTotal(total);
+    return bcCard(label, escapeHtml(dt.text), dt.incomplete ? '<span class="text-warn">incomplete</span>' : 'complete', label === 'Operating profit' ? 'bc-primary' : '');
+  }).join('') + '</div>';
+
+  html += '<h3 style="margin-top:22px;">Profit &amp; loss lines</h3><table class="pnl-table"><tr><th>Line</th><th>Amount</th><th>Source</th><th>Basis</th></tr>';
+  for (const section of Object.keys(FINANCE_SECTION_TITLES)) {
+    html += '<tr class="pnl-section"><td colspan="4">' + FINANCE_SECTION_TITLES[section] + '</td></tr>';
+    for (const l of d.lines.filter((x) => x.section === section)) {
+      html += '<tr><td>' + escapeHtml(l.label) + '</td><td class="num">' + escapeHtml(formatGbpOrMissing(l.amountGbp)) + '</td><td>' + provenanceBadge(l.provenance) + '</td><td class="customer-sub cell-wrap">' + escapeHtml(l.basis || '') + '</td></tr>';
+    }
+  }
+  html += '</table>';
+
+  const unit = (v) => (v && v.amountGbp !== null ? escapeHtml(formatGbpOrMissing(v.amountGbp)) + (v.complete === false ? ' <span class="text-warn">(incomplete)</span>' : '') : '—');
+  html += '<h3 style="margin-top:22px;">Unit economics</h3><table class="fact-table">' +
+    '<tr><td>Active customers (paid + complimentary + trial)</td><td>' + fmtNum(u.activeCustomers) + '</td></tr>' +
+    '<tr><td>Genuine paying customers</td><td>' + fmtNum(u.genuinePayingCustomers) + '</td></tr>' +
+    '<tr><td>Cost per active customer</td><td>' + unit(u.costPerActiveCustomer) + '</td></tr>' +
+    '<tr><td>Telephony cost per active customer</td><td>' + unit(u.telephonyCostPerActiveCustomer) + '</td></tr>' +
+    '<tr><td>Net revenue per genuine paying customer</td><td>' + unit(u.netRevenuePerPayingCustomer) + '</td></tr>' +
+    '<tr><td>Monitored minutes (delivered unknown-caller calls)</td><td>' + (u.monitoredMinutes === null ? '—' : escapeHtml(u.monitoredMinutes)) + (u.monitoredMinutesPerActiveCustomer !== null ? ' · ' + escapeHtml(u.monitoredMinutesPerActiveCustomer) + ' per active customer' : '') + '</td></tr>' +
+    '<tr><td>Customer acquisition cost</td><td>' + provenanceBadge('NOT_CONNECTED') + ' <span class="customer-sub">' + escapeHtml(u.customerAcquisitionCost.basis) + '</span></td></tr>' +
+    '</table>';
+
+  html += '<h3 style="margin-top:22px;">Data sources</h3><table class="fact-table">' +
+    Object.entries(d.connections).map(([k, v]) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v) + '</td></tr>').join('') + '</table>';
+
+  html += renderManualCostsHtml(manual);
+  html += '</div>';
+  document.getElementById('finance').innerHTML = html;
+  wireManualCostForm();
+}
+
+const MANUAL_COST_CATEGORIES = ['hosting', 'database', 'email', 'developer_program', 'domain', 'saas', 'insurance', 'accountancy', 'other_overhead', 'advertising', 'acquisition_other', 'sms', 'transcription', 'ai_inference', 'number_rental', 'other'];
+
+function renderManualCostsHtml(manual) {
+  let html = '<h3 style="margin-top:26px;">Manual costs</h3>';
+  html += '<p class="sub">For costs with no automatic source — an advertising invoice, Apple Developer Program, insurance, accountancy, Railway/Supabase bills. Each due period becomes one ledger entry (provenance Manual); posting twice never double-counts.</p>';
+  if (!manual.connected) {
+    html += '<div class="gaps">Not connected yet: ' + escapeHtml(manual.reason || 'unavailable') + '. The form is disabled until the ledger (048) and manual-cost (050) migrations are applied.</div>';
+  }
+  if (manual.schedules && manual.schedules.length) {
+    html += '<table><tr><th>Supplier</th><th>Description</th><th>Category</th><th>Amount</th><th>Cadence</th><th>From</th><th>To</th><th>Campaign</th></tr>' +
+      manual.schedules.map((s) => '<tr><td>' + escapeHtml(s.supplier) + '</td><td>' + escapeHtml(s.description) + '</td><td>' + escapeHtml(s.category) + '</td><td>' + escapeHtml(s.native_currency + ' ' + Number(s.native_amount).toFixed(2)) + '</td><td>' + escapeHtml(s.cadence) + '</td><td>' + escapeHtml(s.start_date) + '</td><td>' + escapeHtml(s.end_date || '—') + '</td><td>' + escapeHtml(s.campaign_ref || '—') + '</td></tr>').join('') + '</table>';
+  }
+  const dis = manual.connected ? '' : ' disabled';
+  html += '<form id="manualCostForm" class="manual-cost-form">' +
+    '<input name="supplier" placeholder="Supplier (e.g. meta, railway)" required' + dis + '>' +
+    '<input name="description" placeholder="Description" required' + dis + '>' +
+    '<select name="category"' + dis + '>' + MANUAL_COST_CATEGORIES.map((c) => '<option value="' + c + '">' + c.replace(/_/g, ' ') + '</option>').join('') + '</select>' +
+    '<input name="amount" type="number" step="0.01" min="0.01" placeholder="Amount" required' + dis + '>' +
+    '<input name="currency" value="GBP" maxlength="3"' + dis + '>' +
+    '<select name="cadence"' + dis + '><option value="one_off">One-off</option><option value="monthly">Monthly</option><option value="annual">Annual</option></select>' +
+    '<input name="startDate" type="date" required' + dis + '>' +
+    '<input name="endDate" type="date"' + dis + '>' +
+    '<input name="campaignRef" placeholder="Campaign (source/medium/campaign) — ads only"' + dis + '>' +
+    '<input name="notes" placeholder="Notes"' + dis + '>' +
+    '<button type="submit" class="action-button"' + dis + '>Add cost</button>' +
+    '<button type="button" id="postDueCostsBtn" class="row-button"' + dis + '>Post due entries to ledger</button>' +
+    '</form><div class="quick-action-result" id="manualCostResult"></div>';
+  return html;
+}
+
+function wireManualCostForm() {
+  const form = document.getElementById('manualCostForm');
+  const result = document.getElementById('manualCostResult');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(form).entries());
+    result.textContent = 'Saving…';
+    try {
+      const res = await fetch('/admin/api/business-control/manual-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) { result.textContent = (data.errors || ['Failed']).join('; '); return; }
+      result.textContent = 'Saved. Use "Post due entries" to write due periods to the ledger.';
+      loadBusinessControlTab('finance', true);
+    } catch (err) { result.textContent = 'Request failed.'; }
+  });
+  const postBtn = document.getElementById('postDueCostsBtn');
+  if (postBtn) postBtn.addEventListener('click', async () => {
+    result.textContent = 'Posting…';
+    try {
+      const res = await fetch('/admin/api/business-control/manual-costs/post-due', { method: 'POST' });
+      const data = await res.json();
+      result.textContent = res.ok ? ('Done — ' + data.considered + ' due period(s) checked; already-posted periods are skipped.') : (data.errors || ['Failed']).join('; ');
+      if (res.ok) loadBusinessControlTab('finance', true);
+    } catch (err) { result.textContent = 'Request failed.'; }
+  });
+}
+
+// ---------- Marketing ----------
+// TEST-EXTRACT-START: buildTrackedGoLinkClient
+function buildTrackedGoLinkClient(baseUrl, fields) {
+  const params = new URLSearchParams();
+  for (const key of ['source', 'medium', 'campaign', 'content', 'term']) {
+    const v = (fields[key] || '').trim().toLowerCase().replace(/\s+/g, '-');
+    if (v) params.set('utm_' + key, v);
+  }
+  const qs = params.toString();
+  return String(baseUrl || '').replace(/\/+$/, '') + '/go' + (qs ? '?' + qs : '');
+}
+// TEST-EXTRACT-END: buildTrackedGoLinkClient
+
+async function renderMarketingTab() {
+  const d = await fetchBusinessControl('marketing');
+  let html = '<div class="section">' + sectionHeader('Advertising &amp; attribution — last ' + escapeHtml(d.windowDays) + ' days', d.generatedAt, 'marketing');
+  html += '<h3>Attribution chain</h3><table class="fact-table">' + d.chain.map((s) => '<tr><td>' + escapeHtml(s.stage) + '</td><td>' + provenanceBadge(s.status === 'CONNECTED' ? 'ACTUAL' : s.status) + ' <span class="customer-sub">' + escapeHtml(s.note) + '</span></td></tr>').join('') + '</table>';
+  html += '<h3 style="margin-top:22px;">By campaign / source</h3>';
+  if (!d.rows.length) {
+    html += '<div class="empty-state">No visits or registrations recorded in this window.</div>';
+  } else {
+    html += '<table><tr><th>Campaign / source</th><th>Channel</th><th class="num">Visits</th><th class="num">Registrations</th><th>Spend</th><th>Paying customers</th><th>CAC</th></tr>' +
+      d.rows.map((r) => '<tr><td>' + escapeHtml(r.label) + '</td><td>' + escapeHtml(r.channel.replace(/_/g, ' ')) + '</td><td class="num">' + fmtNum(r.landingVisits) + '</td><td class="num">' + fmtNum(r.registrationsCompleted) + '</td>' +
+        '<td>' + (r.spend && r.spend.amountGbp !== null ? escapeHtml(formatGbpOrMissing(r.spend.amountGbp)) : provenanceBadge('NOT_CONNECTED')) + '</td>' +
+        '<td>' + (r.payingCustomers === null ? provenanceBadge('NOT_CONNECTED') : fmtNum(r.payingCustomers)) + '</td>' +
+        '<td>' + (r.cac === null ? '—' : escapeHtml(formatGbpOrMissing(r.cac))) + '</td></tr>').join('') + '</table>';
+  }
+  html += '<p class="sub" style="margin-top:8px;">Visits are raw page requests (not unique people). ' + fmtNum(d.unattributed.checkoutsStarted) + ' checkout(s) and ' + fmtNum(d.unattributed.paidConversions) + ' paid conversion(s) in this window cannot be credited to any campaign: ' + escapeHtml(d.unattributed.note) + '</p>';
+
+  html += '<h3 style="margin-top:22px;">Tracked link builder</h3><p class="sub">Every channel links to the same /go page; only the tags differ. Nothing is saved — copy the link into your post or ad.</p>' +
+    '<div class="manual-cost-form" id="linkBuilder">' +
+    '<select id="lbPreset"><option value="">Preset…</option><option value="instagram|organic_social">Instagram (organic)</option><option value="tiktok|organic_social">TikTok (organic)</option><option value="facebook|community">Facebook group post</option><option value="meta|paid_social">Meta paid ad</option><option value="tiktok|paid_social">TikTok paid ad</option><option value="google|paid_search">Google Ads</option><option value="|pr">PR / press</option><option value="|qr">QR code</option></select>' +
+    '<input id="lbSource" placeholder="utm_source"><input id="lbMedium" placeholder="utm_medium"><input id="lbCampaign" placeholder="utm_campaign"><input id="lbContent" placeholder="utm_content (ad id)"><input id="lbTerm" placeholder="utm_term (ad set)">' +
+    '</div><div class="link-output" id="lbOutput"></div>';
+  html += '</div>';
+  document.getElementById('marketing').innerHTML = html;
+
+  const byId = (id) => document.getElementById(id);
+  const update = () => {
+    byId('lbOutput').textContent = buildTrackedGoLinkClient(window.location.origin, { source: byId('lbSource').value, medium: byId('lbMedium').value, campaign: byId('lbCampaign').value, content: byId('lbContent').value, term: byId('lbTerm').value });
+  };
+  byId('lbPreset').addEventListener('change', (e) => { const [s, m] = e.target.value.split('|'); if (s !== undefined) { byId('lbSource').value = s; byId('lbMedium').value = m || ''; } update(); });
+  for (const id of ['lbSource', 'lbMedium', 'lbCampaign', 'lbContent', 'lbTerm']) byId(id).addEventListener('input', update);
+  update();
+}
+
+// TEST-EXTRACT-END: businessControlTabs
 
 // ============================================================
 // Boot
