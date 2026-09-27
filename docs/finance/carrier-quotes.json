@@ -1,0 +1,83 @@
+{
+  "_instructions": "Enter each carrier's quoted prices in its own currency with fxToGbp (1 for GBP). Leave null when not quoted: the comparison reports that carrier as UNKNOWN rather than guessing. status: CONFIRMED (billing evidence) | QUOTED (written quote) | HYPOTHETICAL (list price / unquoted) | UNKNOWN. Run: node scripts/carrier-compare.js",
+  "scenario": {
+    "priceGbp": 4.99,
+    "monitoredShare": 0.15,
+    "usageLevels": [
+      100,
+      250,
+      500,
+      1000
+    ]
+  },
+  "carriers": [
+    {
+      "name": "Twilio (current)",
+      "status": "CONFIRMED",
+      "evidence": "Twilio Pricing API for this account + billing records, 2026-09-27. App leg billed £0 to date (list price $0.004/min).",
+      "currency": "GBP",
+      "fxToGbp": 1,
+      "numberMonthly": 0.86917,
+      "inboundPerMin": 0.007558,
+      "billingIncrementSec": 60,
+      "appLegPerMin": 0,
+      "apiFeePerMin": 0,
+      "streamPerMin": 0.003329,
+      "ttsPerUse": 0.0006,
+      "smsPerSegment": 0.042325,
+      "channelMonthly": null,
+      "channelsPerThousandHouseholds": null
+    },
+    {
+      "name": "Twilio if the app leg were billed at list price",
+      "status": "HYPOTHETICAL",
+      "evidence": "Risk scenario: the confirmed GBP baseline plus Twilio's public Voice SDK list price ($0.004/min ≈ £0.00316) on the app leg.",
+      "currency": "GBP",
+      "fxToGbp": 1,
+      "numberMonthly": 0.86917,
+      "inboundPerMin": 0.007558,
+      "billingIncrementSec": 60,
+      "appLegPerMin": 0.00316,
+      "apiFeePerMin": 0,
+      "streamPerMin": 0.003329,
+      "ttsPerUse": 0.0006,
+      "smsPerSegment": 0.042325,
+      "channelMonthly": null,
+      "channelsPerThousandHouseholds": null
+    },
+    {
+      "name": "Telnyx",
+      "status": "UNKNOWN",
+      "evidence": "Not quoted. Public pages: Voice API $0.002/min, WebRTC $0.002/min, streaming $0.0035/min, channel billing $10–15/channel/month (Europe zone) — UK inbound rate and UK channel eligibility unpublished.",
+      "currency": "USD",
+      "fxToGbp": null,
+      "numberMonthly": null,
+      "inboundPerMin": null,
+      "billingIncrementSec": null,
+      "appLegPerMin": null,
+      "apiFeePerMin": null,
+      "streamPerMin": null,
+      "ttsPerUse": null,
+      "smsPerSegment": null,
+      "channelMonthly": null,
+      "channelsPerThousandHouseholds": null
+    },
+    {
+      "name": "Plivo",
+      "status": "UNKNOWN",
+      "evidence": "Not quoted. Public UK list: number $0.85/mo, inbound $0.0055/min (60/60), SDK leg $0.0033/min, streaming included.",
+      "currency": "USD",
+      "fxToGbp": null,
+      "numberMonthly": null,
+      "inboundPerMin": null,
+      "billingIncrementSec": null,
+      "appLegPerMin": null,
+      "apiFeePerMin": null,
+      "streamPerMin": null,
+      "ttsPerUse": null,
+      "smsPerSegment": null,
+      "channelMonthly": null,
+      "channelsPerThousandHouseholds": null
+    }
+  ]
+}
