@@ -29,7 +29,17 @@ import { verifyActivation } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { colors, spacing, typography } from "../../lib/theme";
 
-type CheckState = "checking" | "verified" | "not_yet";
+// "forwarding_only" added 2026-09-27 (P0 launch hardening) — this screen
+// used to treat the backend's `verified` field alone as proof calls were
+// "forwarding correctly." `verified` only proves a call reached Home Call
+// Guard's own number; it never proved the call could reach this
+// customer's phone. The backend now also reports `deliveryConfirmed`
+// (routes/mobileApi.js, mirroring services/callRouting.js's own
+// computeProtectionStatus().endToEndDeliveryVerified — the exact signal
+// gating "You're protected" everywhere else in the app). A customer must
+// never see the stronger "Verified"/"protected" claim unless the backend
+// itself would make that claim.
+type CheckState = "checking" | "verified" | "forwarding_only" | "not_yet";
 
 export default function Verify() {
   const { session } = useAuth();
@@ -48,7 +58,17 @@ export default function Verify() {
     try {
       const result = await verifyActivation(session?.access_token);
       if (!isMounted.current) return;
-      setState(result.verified ? "verified" : "not_yet");
+      if (!result.verified) {
+        setState("not_yet");
+      } else if (result.deliveryConfirmed) {
+        setState("verified");
+      } else {
+        // Forwarding reached Home Call Guard, but there is not yet
+        // evidence it can reach this customer's phone (e.g. the Voice
+        // SDK has never registered) — a real, distinct state, not the
+        // same as full "Verified."
+        setState("forwarding_only");
+      }
     } catch {
       if (!isMounted.current) return;
       setState("not_yet");
@@ -84,6 +104,31 @@ export default function Verify() {
             header), and Home is always a correct destination from
             either. */}
         <PrimaryButton label="Continue" onPress={() => router.replace("/(tabs)")} />
+      </Screen>
+    );
+  }
+
+  if (state === "forwarding_only") {
+    return (
+      <Screen>
+        <SetupProgress currentStep={3} />
+        <Text style={styles.title} accessibilityRole="header">Almost there</Text>
+        <Text style={styles.body}>
+          Your calls are forwarding to Home Call Guard correctly. We just haven't been able to confirm the call
+          reaches your app yet — open the app and try your test call again, or check that notifications are
+          allowed for Home Call Guard in your phone's settings.
+        </Text>
+        <Banner
+          variant="notice"
+          message="We won't show your protection as fully active until we can confirm a call actually reaches your phone."
+        />
+        <PrimaryButton label="Check again" onPress={runCheck} />
+        <PrimaryButton label="Back to Home" variant="secondary" onPress={() => router.replace("/(tabs)")} />
+        <PrimaryButton
+          label="Contact support"
+          variant="secondary"
+          onPress={() => router.push("/(tabs)/account/support")}
+        />
       </Screen>
     );
   }

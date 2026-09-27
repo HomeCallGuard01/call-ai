@@ -256,11 +256,35 @@ async function markActivationVerified(householdId) {
 // registration event must move this timestamp forward, since staleness
 // (not "was it ever true") is exactly what services/callRouting.js's
 // isVoiceClientReachable checks. Returns the new timestamp.
-async function markVoiceClientRegistered(householdId) {
+//
+// Registration-history observability (2026-09-27, migration 046, P0-3
+// launch hardening) — updated to call record_voice_client_registration_event
+// instead of the older, single-timestamp-only mark_household_voice_client_registered
+// (migration 035, left in place untouched as a rollback path — see that
+// migration's own header). households.voice_client_registered_at is
+// still updated in exactly the same way, in the same statement, so every
+// existing reader (hasVoiceClientRegistrationHistory,
+// computeProtectionStatus, decideCallDeliveryPlan) is unaffected — this
+// change is additive: a durable, append-only history row now also
+// accumulates in public.voice_client_registration_events for every
+// genuine registration, so a future occurrence of "did this household's
+// app ever reliably register, or once, months ago, and never again" is
+// finally a real, queryable question instead of an unanswerable one.
+//
+// platform/appVersion/appBuildVersion are optional and best-effort —
+// mirrors the same fields markHouseholdAppVersion already records
+// separately on the household row (that call is untouched, kept
+// completely independent: it tracks "the household's current known app
+// version" for admin/support purposes, a different concern from "the
+// full history of registration events" this function now also feeds).
+async function markVoiceClientRegistered(householdId, { appPlatform, appVersion, appBuildVersion } = {}) {
   if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
 
-  const { data, error } = await supabaseAdmin.rpc("mark_household_voice_client_registered", {
+  const { data, error } = await supabaseAdmin.rpc("record_voice_client_registration_event", {
     p_household_id: householdId,
+    p_app_platform: appPlatform || null,
+    p_app_version: appVersion || null,
+    p_app_build_version: appBuildVersion || null,
   });
 
   if (error) {

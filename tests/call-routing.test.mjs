@@ -32,6 +32,7 @@ const {
   hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
   hasRecentDeliveryProblem,
+  shouldStartPaidMonitoring,
 } = require('../services/callRouting.js');
 
 let failures = 0;
@@ -362,6 +363,47 @@ check(
 check(
   hasRecentDeliveryProblem({ dial_call_status: 'busy', created_at: 'not-a-real-date' }, '2026-09-19T14:54:28Z') === true,
   'an unparseable timestamp fails closed (treated as a problem) rather than silently hiding a genuine failure behind a NaN comparison'
+);
+
+// --- shouldStartPaidMonitoring (subscription-enforcement cost-protection
+// safeguard, 2026-09-26) — closes a real, confirmed gap found via a
+// read-only production audit: /voice never checked entitlement status at
+// all before this, so an expired/cancelled household kept receiving full
+// paid AI monitoring for as long as their Twilio number and their own
+// carrier-side forwarding both remained live (up to the full 30-day
+// post-cancellation grace period — see docs/launch/TWILIO_NUMBER_LIFECYCLE.md).
+
+check(
+  shouldStartPaidMonitoring({ id: 'h-active' }, { id: 'ent-1', status: 'active' }) === true,
+  'household with a currently-active entitlement: monitoring should start'
+);
+check(
+  shouldStartPaidMonitoring({ id: 'h-lapsed' }, null) === false,
+  'household with NO active entitlement (cancelled, expired, or never subscribed) — getActiveEntitlement returned null: monitoring must NOT start — this is the exact gap this fix closes'
+);
+check(
+  shouldStartPaidMonitoring({ id: 'h-lapsed-2' }, undefined) === false,
+  'undefined activeEntitlement (defensive — same as null): monitoring must not start'
+);
+check(
+  shouldStartPaidMonitoring(null, { id: 'ent-2', status: 'active' }) === false,
+  'household itself null (no household matches the dialled Twilio number): monitoring must not start, regardless of any entitlement value — fails closed, matches decideCallDeliveryPlan\'s own null-household discipline'
+);
+check(
+  shouldStartPaidMonitoring(undefined, { id: 'ent-3', status: 'active' }) === false,
+  'household itself undefined: same fail-closed behaviour as null'
+);
+check(
+  shouldStartPaidMonitoring(null, null) === false,
+  'both household and entitlement null: fails closed, never throws'
+);
+check(
+  shouldStartPaidMonitoring({ id: 'h-source-test' }, { id: 'ent-4', status: 'active', source: 'admin_manual' }) === true,
+  'a complimentary (admin_manual) active entitlement counts exactly the same as a paid one — this function only asks "is there a currently-active row," never which kind'
+);
+check(
+  shouldStartPaidMonitoring({ id: 'h-truthy-object' }, {}) === true,
+  'a truthy (even empty) entitlement object counts as active — getActiveEntitlement itself is responsible for only ever returning a real row or null, this function never re-validates its shape'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

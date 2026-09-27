@@ -10,18 +10,45 @@
 const { WebSocketServer } = require('ws');
 const { createMediaStreamHandler } = require('./mediaStreamHandler');
 const { logEvent } = require('./structuredLog');
+const { describeMediaStreamSignatureCheck } = require('../twilioWebhookAuth');
 
 const MEDIA_STREAM_PATH = '/media-stream';
 
 /**
  * @param {import('http').Server} httpServer - the same server app.listen() returns
- * @param {object} deps - forwarded to createMediaStreamHandler
+ * @param {object} deps - forwarded to createMediaStreamHandler, plus:
+ * @param {string} [deps.twilioAuthToken] - for the shadow-mode signature
+ *   check below. Omit to skip the check entirely (e.g. in tests).
+ * @param {string} [deps.appUrl] - this app's own external base URL
+ *   (server.js's APP_URL), used the same way services/twilioWebhookAuth.js
+ *   already uses it for /voice — never req-derived values, which cannot
+ *   be trusted behind Railway's unconfigured proxy.
  */
 function attachMediaStreamServer(httpServer, deps) {
   const handler = createMediaStreamHandler(deps);
   const wss = new WebSocketServer({ server: httpServer, path: MEDIA_STREAM_PATH });
 
-  wss.on('connection', ws => {
+  wss.on('connection', (ws, req) => {
+    // Shadow-mode Twilio signature check (2026-09-27) — observes and
+    // logs only, NEVER rejects or closes a connection. See
+    // services/twilioWebhookAuth.js's describeMediaStreamSignatureCheck
+    // for the full reasoning. Wrapped in try/catch as a hard guarantee
+    // this diagnostic can never itself become a new way to drop a
+    // genuine call — a bug here must fail silent, not fail closed.
+    if (deps.twilioAuthToken && deps.appUrl) {
+      try {
+        const result = describeMediaStreamSignatureCheck({
+          authToken: deps.twilioAuthToken,
+          signature: req.headers['x-twilio-signature'],
+          appUrl: deps.appUrl,
+          path: req.url,
+        });
+        logEvent('media_stream_signature_check', result);
+      } catch (err) {
+        logEvent('media_stream_signature_check_error', { error: err.message });
+      }
+    }
+
     ws.on('message', data => {
       // closeConnection lets handleMessage stop this specific stream's
       // WebSocket once the per-call monitoring safety limit is reached
