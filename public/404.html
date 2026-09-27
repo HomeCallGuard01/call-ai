@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050a07">
+<meta name="robots" content="noindex">
+<title>Page not found | Home Call Guard</title>
+<link rel="icon" type="image/png" href="/hcg-shield.png">
+<link rel="apple-touch-icon" href="/hcg-shield.png">
+<style>
+  :root { --bg: #050a07; --card: #0c130f; --border: #1d2b23; --text: #f3f7f4; --muted: #a3b3aa; --green: #3cf07a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); }
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px 20px;
+    background: radial-gradient(ellipse 90% 40% at 50% 0%, rgba(60, 240, 122, 0.10), transparent 70%), var(--bg);
+    color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 1.125rem; line-height: 1.6; -webkit-font-smoothing: antialiased; text-align: center;
+  }
+  main { max-width: 30rem; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 800; font-size: 1.2rem; letter-spacing: -0.02em; min-height: 44px; }
+  .brand span span { color: var(--green); }
+  h1 { margin-top: 28px; font-size: clamp(1.9rem, 6vw, 2.4rem); line-height: 1.15; letter-spacing: -0.03em; }
+  p { margin-top: 14px; color: var(--muted); }
+  .links { margin-top: 28px; display: flex; flex-direction: column; gap: 12px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 12px 20px; border-radius: 12px; font-weight: 800; text-decoration: none; }
+  .btn.primary { background: var(--green); color: #04100a; }
+  .btn.secondary { border: 1px solid var(--border); background: var(--card); color: var(--text); }
+  a:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <a class="brand" href="/"><img src="/hcg-shield.png" alt="" width="34" height="34"><span>Home Call <span>Guard</span></span></a>
+  <h1>Sorry, we can't find that page.</h1>
+  <p>The link may be out of date, or the page may have moved.</p>
+  <div class="links">
+    <a class="btn primary" href="/">Go to the homepage</a>
+    <a class="btn secondary" href="/guides/">Read our scam advice</a>
+    <a class="btn secondary" href="/support.html">Get help from support</a>
+  </div>
+</main>
+</body>
+</html>

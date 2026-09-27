@@ -322,6 +322,8 @@
      brand and the main CTA; "Customer login" remains in the footer. */
   @media (max-width: 359px) { .header-actions .login { display: none; } }
 </style>
+<link rel="icon" type="image/png" href="/hcg-shield.png">
+<link rel="apple-touch-icon" href="/hcg-shield.png">
 </head>
 <body>
 <a class="skip" href="#main">Skip to main content</a>
@@ -515,8 +517,15 @@
         <details><summary>Will it stop every scam call?</summary>
           <!-- APPROVED-BEHAVIOUR-COPY -->
           <p>No service can promise that, so it's still sensible to be careful with any unexpected call that asks for money, bank details or passwords. Home Call Guard adds another layer of protection by looking for scam risk during the conversation itself, and you can see how every call was handled in your Activity list.</p></details>
+        <!-- PRIVACY-COPY (2026-09-27): evidence-based, deliberately not absolute. Verified in the
+             repository: no call recording is configured anywhere (no <Record>/record options); the
+             calls table keeps only outcome data and signal-category IDs, never the caller's words
+             (server.js recordMonitoringOutcome; mediaStreamHandler.js). Audio from non-trusted
+             callers is transcribed in real time by a third-party provider. Avoids claiming nothing
+             is ever retained anywhere: historical server logs (pre-PR #44) are an open issue, and
+             the provider's own retention is governed by its terms. -->
         <details><summary>Are my calls recorded?</summary>
-          <p>Home Call Guard doesn't store call audio or a transcript of what's said. Calls are analysed while they happen, using automated checks and a third-party transcription service. See our <a href="/privacy.html">Privacy Policy</a> for details.</p></details>
+          <p>No, Home Call Guard doesn't record your calls. When someone who isn't on your trusted list calls, the conversation is transcribed automatically while it happens, using a third-party service, so it can be checked for signs of a scam. We don't keep that transcript with your account — we keep a short record of each call, such as the time, the number and how it was handled. See our <a href="/privacy.html">Privacy Policy</a> for details.</p></details>
         <details><summary>Can I keep my phone number?</summary>
           <p>Yes. Your number stays exactly as it is, and the people you trust call it just as they do now.</p></details>
         <details><summary>Can I cancel at any time?</summary>

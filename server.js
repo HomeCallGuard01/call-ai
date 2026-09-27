@@ -2261,6 +2261,18 @@ app.get("/dashboard", requireAuth, async (req, res) => {
   res.sendFile(__dirname + "/upload.html");
 });
 
+// CUSTOMER-FACING 404 (2026-09-27, website launch pass) — a browser that
+// asks for a page that doesn't exist gets a branded "page not found" page
+// (still status 404) with links home, to the scam advice guides and to
+// support, instead of Express's bare "Cannot GET". Deliberately narrow:
+// GET/HEAD requests that accept HTML only — API clients, webhooks and any
+// other method fall through to Express's unchanged default 404. Registered
+// after every route, so it can only ever handle a request nothing else did.
+app.use((req, res, next) => {
+  if ((req.method !== "GET" && req.method !== "HEAD") || !req.accepts("html")) return next();
+  res.status(404).sendFile(__dirname + "/public/404.html");
+});
+
 // GLOBAL ERROR HANDLER (2026-08-23) — Express's own default error handler
 // (which runs if no error-handling middleware exists at all) just sends
 // a generic 500 page and logs nothing anywhere Andrew would see it. This
