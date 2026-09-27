@@ -1,10 +1,27 @@
 <!--
-STATUS (2026-09-27): this is the DEPLOYABLE, strictly observational version
-(branch feature/admin-business-control-observational). It needs no database
-migration and contains no write path. Manual costs, ledger mode, spend per
-campaign and draft migration 050 are NOT in this version; they remain on
-feature/admin-business-control until migrations 048/049/050 exist.
+STATUS (2026-09-27, v2): branch feature/admin-control-centre-v2 (pushed, no PR, not deployed).
+Builds on PR #48 + fix/admin-business-tab-statements. Strictly observational (GET only), no migration.
+See also: RECONCILIATION_CONSOLIDATION_PLAN.md, ACQUISITION_READINESS_REVIEW.md,
+DASHBOARD_FINANCIAL_STATEMENT_AUDIT.md (full branch), TWILIO_RELEASE_FAILURE_RECORDING_DESIGN.md (full branch).
 -->
+
+> **CORRECTION (2026-09-27, later):** the "Stripe £39.92 gross (ACTUAL)" figure in §6 below came from the local environment's Stripe **test-mode** key, not production revenue. v2 detects Stripe's mode and never shows test-mode figures as revenue (MRR/revenue go grey: "Stripe TEST mode").
+
+## v2 structure (summary)
+
+- **Overview (default tab):** twelve loose-end cards (genuine paying customers · complimentary/internal/test/reviewer access · genuine MRR from Stripe · Protected · entitled but not protected · households with a number · active Twilio numbers · numbers not mapped to an expected household · cancelled/expired households still holding a number · entitled households missing a number · pending release/quarantine · failed releases/unresolved anomalies).
+  - Colour comes from the stated rule on each card: red = loose end, amber = check, green = checked and zero, grey = cannot check, info = a count.
+  - The definitions glossary sits below the cards.
+- **Subscriptions:** paid / complimentary / trial / internal-reviewer / unclassified / cancelled / expired / protected / entitled but not protected, all from `definitions.js`.
+- **Reconciliation:**
+  - a per-household lifecycle timeline (active path and cancellation path, first broken step highlighted);
+  - the **Twilio number inventory**: owner, why HCG holds it, environment evidence, rental, state, anomaly and next step.
+- **Finance:**
+  - Revenue ex VAT (genuine only) · Payment fees · Telephony · AI · Railway · Supabase · Resend · Other → total operating cost, gross contribution and operating contribution; marketing is shown separately.
+  - Partial totals are labelled "known part only"; unknown ones are "Not connected".
+  - Finance ledger views (051) are used only when `BUSINESS_FINANCE_LEDGER_VIEWS=enabled`.
+- **Marketing:** a channel comparison (Instagram / TikTok / Facebook / LinkedIn / Direct / Other), the campaign table and the link builder. Self-report is kept separate.
+
 # Business control dashboard
 
 The admin dashboard (`/admin/business`) should answer three questions without logging into Twilio, Stripe, Railway or the database:
