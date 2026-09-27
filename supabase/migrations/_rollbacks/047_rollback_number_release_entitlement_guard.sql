@@ -1,6 +1,6 @@
--- Rollback for 049_number_release_entitlement_guard.sql.
+-- Rollback for 047_number_release_entitlement_guard.sql.
 -- STATUS: not applied anywhere. Restores the three function bodies exactly as
--- migration 017 defined them and removes the 049 guard function and trigger.
+-- migration 017 defined them and removes the 047 guard function and trigger.
 -- No data changes. After rollback the #8 failure mode (a stale cancellation
 -- releasing an entitled household's number) is possible again.
 
@@ -136,3 +136,5 @@ end;
 $$;
 
 drop function if exists public.household_blocks_number_release(uuid);
+drop function if exists public.household_has_upcoming_entitlement(uuid);
+drop function if exists public.household_is_currently_entitled(uuid);

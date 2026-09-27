@@ -3,13 +3,12 @@
 --
 -- STATUS: DRAFT — NOT APPLIED to any database (staging or production).
 --
--- NUMBERING: 049. On 2026-09-27 the highest migration on any branch or
--- worktree was 048 (feature/provider-neutral-billing-ledger); 047 is
--- reserved for the monitored-minute allowance migration's documented
--- renumber (it currently collides with main's 046). If this migration is
--- applied before 047/048 exist in a database, those later files are
--- out-of-order for `supabase db push` (needs --include-all); applying by
--- hand in number order is unaffected.
+-- NUMBERING: 047, assigned by merge/application order on main (rule adopted
+-- 2026-09-27: unmerged branches renumber/rebase before integration). Main's
+-- latest is 046. The billing-ledger branch keeps 048 (paused); the
+-- monitored-minute allowance branch (currently a duplicate 046) takes the
+-- next free number when it is rebased. Production's migration history must
+-- record 046 before this is applied (reconciliation owned by the P0 work).
 --
 -- The real failure this closes (production household 30f01a7a, 2026-09-23):
 --   22 Aug  Stripe test subscription starts; HCG number assigned.
@@ -25,11 +24,18 @@
 --
 -- Fix, in three independent layers so no single missed code path can
 -- repeat it:
---   1. household_blocks_number_release(): the single definition of "this
---      household must keep its number" — any entitlement that is active or
---      scheduled and has not ended (current OR upcoming; deliberately
---      broader than "active right now", so an about-to-start membership is
---      protected too).
+--   1. Two named concepts, composed explicitly:
+--        household_is_currently_entitled()   — EXACTLY the rule /voice uses
+--          (database/billing.js getActiveEntitlement): status 'active',
+--          starts_at <= now, and not ended.
+--        household_has_upcoming_entitlement() — a not-yet-started
+--          membership: status 'scheduled', or 'active' with a future
+--          starts_at, and not ended. Grants no call access; it only makes
+--          taking the assigned number away unsafe.
+--        household_blocks_number_release() = currently entitled OR upcoming.
+--      Every membership /voice accepts therefore also blocks release
+--      (property-tested), and an upcoming membership protects the number
+--      without granting /voice access early.
 --   2. Every release step re-reads it inside the same transaction, under
 --      the household row lock, immediately before acting:
 --        mark_household_twilio_number_pending_release   → refuses to schedule
@@ -47,13 +53,23 @@
 -- names are historical (migration 017).
 --
 -- Rollback: re-run the three function bodies from migration 017 and drop
--- the trigger, trigger function and household_blocks_number_release (see
--- supabase/migrations/_rollbacks/049_rollback_number_release_entitlement_guard.sql).
+-- the trigger, trigger function and the three entitlement functions (see
+-- supabase/migrations/_rollbacks/047_rollback_number_release_entitlement_guard.sql).
 -- No data is changed by this migration.
+--
+-- TECH DEBT (recorded 2026-09-27, deliberately not done in this P0 change):
+-- /voice still evaluates "currently entitled" in Node (getActiveEntitlement)
+-- while this file evaluates it in SQL. They are identical today and a test
+-- fails if getActiveEntitlement's filter changes, but the end state should be
+-- ONE implementation: getActiveEntitlement calling
+-- household_is_currently_entitled(). Converge in a later, separately tested
+-- change to the /voice path.
 
--- 1. The single definition ------------------------------------------------
+-- 1. The two concepts and their composition -------------------------------
 
-create or replace function public.household_blocks_number_release(p_household_id uuid)
+-- Currently entitled: the authoritative rule, identical to /voice's
+-- getActiveEntitlement (status active, started, not ended).
+create or replace function public.household_is_currently_entitled(p_household_id uuid)
 returns boolean
 language sql
 stable
@@ -64,11 +80,46 @@ as $$
     select 1
       from public.entitlements e
      where e.household_id = p_household_id
-       and e.status in ('active', 'scheduled')
+       and e.status = 'active'
+       and e.starts_at <= now()
        and (e.ends_at is null or e.ends_at > now())
   );
 $$;
 
+-- Upcoming: a membership that has not started yet but will. It grants no
+-- access; it only means releasing the household's number would be wrong.
+create or replace function public.household_has_upcoming_entitlement(p_household_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+      from public.entitlements e
+     where e.household_id = p_household_id
+       and (e.status = 'scheduled' or (e.status = 'active' and e.starts_at > now()))
+       and (e.ends_at is null or e.ends_at > now())
+  );
+$$;
+
+-- The release rule: currently entitled OR upcoming.
+create or replace function public.household_blocks_number_release(p_household_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.household_is_currently_entitled(p_household_id)
+      or public.household_has_upcoming_entitlement(p_household_id);
+$$;
+
+revoke all on function public.household_is_currently_entitled(uuid) from public, anon, authenticated;
+grant execute on function public.household_is_currently_entitled(uuid) to service_role;
+revoke all on function public.household_has_upcoming_entitlement(uuid) from public, anon, authenticated;
+grant execute on function public.household_has_upcoming_entitlement(uuid) to service_role;
 revoke all on function public.household_blocks_number_release(uuid) from public, anon, authenticated;
 grant execute on function public.household_blocks_number_release(uuid) to service_role;
 
@@ -101,7 +152,7 @@ begin
     return false;
   end if;
 
-  -- 049: a cancellation of ONE entitlement must not schedule a release
+  -- 047: a cancellation of ONE entitlement must not schedule a release
   -- while another (e.g. complimentary) entitlement still covers the household.
   if public.household_blocks_number_release(p_household_id) then
     return false;
@@ -146,7 +197,7 @@ begin
     return false;
   end if;
 
-  -- 049: re-read the CURRENT entitlement state under the row lock. A
+  -- 047: re-read the CURRENT entitlement state under the row lock. A
   -- schedule left over from an older cancellation is stale if the household
   -- is entitled now: cancel it and keep the number.
   if public.household_blocks_number_release(p_household_id) then
@@ -196,7 +247,7 @@ begin
     return null;
   end if;
 
-  -- 049: account deletion revokes the household's entitlement before
+  -- 047: account deletion revokes the household's entitlement before
   -- calling this; if one is still in force, refuse (the caller checks the
   -- same guard first and alerts, so this can't fail silently).
   if public.household_blocks_number_release(p_household_id) then
@@ -234,7 +285,9 @@ security definer
 set search_path = ''
 as $$
 begin
-  if new.status in ('active', 'scheduled')
+  -- The new/changed row is current or upcoming (the same two concepts as
+  -- household_blocks_number_release, evaluated for this one row).
+  if (new.status = 'scheduled' or new.status = 'active')
      and (new.ends_at is null or new.ends_at > now()) then
     update public.households
       set twilio_number_pending_release_at = null

@@ -703,7 +703,7 @@ async function run() {
     check(quarantineCalls[0].sid === null, 'the SID is simply null when the lookup failed, not a thrown error');
   }
 
-  // Migration 049 added an entitlement guard (deps.blocksRelease) to every
+  // Migration 047 added an entitlement guard (deps.blocksRelease) to every
   // release path; these existing scenarios describe households that are NOT
   // entitled (deletion has already revoked access), so they inject that.
   const notEntitled = async () => false;

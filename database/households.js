@@ -209,7 +209,7 @@ async function releaseHouseholdTwilioNumber(householdId, expectedNumber) {
   return data === true;
 }
 
-// Migration 049: true when the household has an entitlement that is active
+// Migration 047: true when the household has an entitlement that is active
 // or scheduled and has not ended — i.e. it must keep its number. Every
 // release step checks this immediately before acting (the SQL release
 // functions re-check it under their own row lock as well). Fails CLOSED:

@@ -1,4 +1,4 @@
-// Code-level half of migration 049: the two release paths that run in
+// Code-level half of migration 047: the two release paths that run in
 // Node (the provider release of a confirmed quarantine row, and account
 // deletion) must re-check the household's CURRENT entitlement immediately
 // before acting, fail closed if that check can't be completed, and make a
@@ -147,6 +147,42 @@ const n8Row = {
     }
   );
   check(result.quarantined === true && quarantined[0].reason === 'account_deletion', 'account deletion after the entitlement is revoked still quarantines as before');
+}
+
+// ---------- tripwire: /voice and migration 047 use the same "currently entitled" ----------
+// Two implementations exist until they converge (tech debt recorded in
+// migration 047): /voice's Node filter and household_is_currently_entitled()
+// in SQL. The property test in migrations.pglite.test.mjs proves they agree
+// for every membership shape; this makes any future edit to EITHER side fail
+// loudly until the other is re-aligned.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
+  const billing = fs.readFileSync(path.join(root, 'database/billing.js'), 'utf8');
+  const fnStart = billing.indexOf('async function getActiveEntitlement(');
+  const getActive = billing.slice(fnStart, billing.indexOf('\n}\n', fnStart));
+  check(fnStart >= 0 &&
+    getActive.includes('.eq("status", "active")') &&
+    getActive.includes('.lte("starts_at", new Date().toISOString())') &&
+    getActive.includes('.or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)'),
+    "/voice's getActiveEntitlement still filters status active, started, not ended (the rule migration 047 mirrors)");
+
+  const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  check(/const activeEntitlement = household \? await getActiveEntitlement\(household\.id\) : null;/.test(server),
+    '/voice still decides monitoring from getActiveEntitlement');
+
+  const migration = fs.readFileSync(path.join(root, 'supabase/migrations/047_number_release_entitlement_guard.sql'), 'utf8');
+  const sqlStart = migration.indexOf('create or replace function public.household_is_currently_entitled(');
+  const sqlBody = migration.slice(sqlStart, migration.indexOf('$$;', sqlStart));
+  check(sqlStart >= 0 &&
+    /e\.status = 'active'/.test(sqlBody) &&
+    /e\.starts_at <= now\(\)/.test(sqlBody) &&
+    /\(e\.ends_at is null or e\.ends_at > now\(\)\)/.test(sqlBody) &&
+    !/scheduled/.test(sqlBody),
+    'household_is_currently_entitled() is exactly status active, started, not ended — upcoming memberships are kept out of it');
+  check(/household_is_currently_entitled\(p_household_id\)\s+or public\.household_has_upcoming_entitlement\(p_household_id\)/.test(migration),
+    'household_blocks_number_release() is explicitly "currently entitled OR upcoming"');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

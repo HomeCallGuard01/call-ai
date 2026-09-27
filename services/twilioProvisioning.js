@@ -264,7 +264,7 @@ async function releaseTwilioNumberImmediately(household, deps = {}) {
   if (!household) return { released: false };
 
   try {
-    // Migration 049: never take a number from a household that still has an
+    // Migration 047: never take a number from a household that still has an
     // active or scheduled entitlement. Account deletion revokes the
     // entitlement first, so this only fires if something was left in force —
     // and then it alerts rather than silently leaving the number behind.
@@ -321,7 +321,7 @@ async function releaseQuarantinedTwilioNumber(quarantineRow, deps = {}) {
     return { released: false };
   }
 
-  // Migration 049: re-read the household's CURRENT entitlement immediately
+  // Migration 047: re-read the household's CURRENT entitlement immediately
   // before the provider release. A number quarantined from a household that
   // is entitled now (the real 2026-09-23 case, household 30f01a7a) must not
   // be returned to the provider; the returned error makes the daily runner
