@@ -45,6 +45,10 @@ No provider or account configuration has been changed.
   - The guard raises `twilio_provisioning_blocked_by_guard` and records a provisioning failure.
   - The failure appears on the admin onboarding monitor.
 - After deploy, staging will stop buying numbers. Staging tests that need a number must use `fake` mode until a sub-account exists.
+- **Relation to `feature/staging-safety-hardening`** (a57891e, 2026-09-12, unmerged, not this workstream's):
+  - That branch adds `APP_ENV=staging` boot validation and blocks number *release* in staging.
+  - Its `.env.staging.example` says outright that "provisioning a NEW number is not blocked". This guard closes that gap and doesn't depend on that branch. It also covers ngrok/local runs that never set `APP_ENV`.
+  - If both merge, `provisioningGuard.js` should import `PRODUCTION_SUPABASE_REF` from `services/serverConfig.js` rather than holding its own copy. That is a one-line follow-up.
 - **Coordination.** P0 branches also edit `services/twilioProvisioning.js`. This change is a single block inserted after `shouldAttemptProvisioning`, so it should rebase cleanly. P0 decides merge order.
 
 ## Tests
