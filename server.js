@@ -63,6 +63,7 @@ const { twilioRestClient } = require("./services/twilioClient");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
+const adminBusinessControlRoutes = require("./routes/adminBusinessControl");
 const mobileApiRoutes = require("./routes/mobileApi");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
@@ -175,6 +176,7 @@ app.use(express.static("public"));
 app.use(billingRoutes);
 app.use(adminRoutes);
 app.use(adminBusinessRoutes);
+app.use(adminBusinessControlRoutes);
 app.use(mobileApiRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
