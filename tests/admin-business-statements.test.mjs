@@ -70,6 +70,8 @@ check(!html.includes("'Active protected (real)'") && html.includes('not the same
 check(!/Real MRR ' \+ tag\('confirmed'\)/.test(html) && /Real MRR ' \+ tag\('derived'\)/.test(html), 'A6: Real MRR labelled derived (list price × count), not confirmed');
 check(html.includes('complimentary accounts excluded'), 'A3: MRR caption states complimentary accounts are excluded');
 
+check(!html.includes("headlineItem('Real customers'") && html.includes('Genuine customer accounts (any status)'), 'A13: "Real customers" (all genuine-classified accounts, incl. expired/never paid) relabelled so it is not read as current customers');
+
 // --- A5: known gaps
 const route = readFileSync(path.join(__dirname, '..', 'routes', 'adminBusiness.js'), 'utf8');
 check(!/duration_seconds (does not exist|still does not exist)/.test(route), 'A5: known gaps no longer claim calls.duration_seconds does not exist');

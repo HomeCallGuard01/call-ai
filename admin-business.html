@@ -553,11 +553,11 @@ function renderBusinessTab(d) {
 
   html += '<div class="headline"><div class="section-header" style="border:none;margin:0;padding:0;"><h2>At a glance ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Last updated ' + new Date(d.generatedAt).toLocaleString('en-GB') + '</span></div><div class="headline-grid">';
   if (g && g.genuineCustomers !== undefined) {
-    html += headlineItem('Real customers', fmtNum(g.genuineCustomers));
+    html += headlineItem('Genuine customer accounts (any status)', fmtNum(g.genuineCustomers));
     html += headlineItem('Real paying customers', fmtNum(g.genuinePayingCustomers));
     html += headlineItem('Real MRR ' + tag('derived'), d.revenue.confirmedMrr.available ? fmtGbp(d.revenue.confirmedMrr.amount) : '—');
   } else {
-    html += headlineItem('Real customers', 'unavailable' + (g && g.reason ? ' (' + g.reason + ')' : ''), true);
+    html += headlineItem('Genuine customer accounts (any status)', 'unavailable' + (g && g.reason ? ' (' + g.reason + ')' : ''), true);
   }
   html += headlineItem('Collected this month ' + tag('confirmed'), d.revenue.stripe.available ? fmtGbp(d.revenue.stripe.grossRevenueMtdGbp) : '—');
   if (pc) {
