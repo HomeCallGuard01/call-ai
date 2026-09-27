@@ -39,6 +39,7 @@ const {
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
+const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
 const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources } = require("../services/revenuecatWebhook");
@@ -566,6 +567,14 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // /dashboard-data — the app must use fullyProtected for any
     // "You're protected" claim, not activationVerifiedAt alone.
     const protectionStatus = computeProtectionStatus(req.household, new Date());
+    // 5-step customer-facing protection checklist (2026-09-27) — a pure
+    // presentation layer over the exact same protectionStatus computed
+    // just above (plus hasProvisionedNumber for step 1); see
+    // services/customerProtectionSteps.js's own header for why this
+    // introduces zero new verification logic. Additive: existing
+    // deliveryReady/endToEndDeliveryVerified/fullyProtected fields below
+    // are completely unchanged.
+    const customerProtectionSteps = buildCustomerProtectionSteps(req.household, new Date());
     // Diagnostic instrumentation (2026-09-24) — see services/callRouting.js's
     // hasRecentDeliveryProblem and migration 044's own comment. A real,
     // observed delivery failure more recent than the last confirmed
@@ -592,6 +601,11 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         deliveryReady: protectionStatus.deliveryReady,
         endToEndDeliveryVerified: protectionStatus.endToEndDeliveryVerified,
         fullyProtected: protectionStatus.fullyProtected,
+        // 5-step checklist (see services/customerProtectionSteps.js) —
+        // additive, new field only. steps[4] ("protection_active").done
+        // is always identical to fullyProtected above, by construction.
+        steps: customerProtectionSteps.steps,
+        guidance: customerProtectionSteps.guidance,
         recentDeliveryProblem,
         lastConfirmedProtectedAt,
         // Server-authoritative Mobile/Landline (households.device_type,
