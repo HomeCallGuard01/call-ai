@@ -3,6 +3,7 @@ const { stripe } = require("../services/stripeClient");
 const { deriveAdminCustomerState, ONBOARDING_ATTENTION_THRESHOLD_MS } = require("../services/adminOnboardingStatus");
 const { deriveCustomerHealth, summariseCustomerHealth } = require("../services/adminCustomerHealth");
 const { getClassificationMap, classifyHousehold } = require("../services/businessMetrics/accountClassification");
+const { computeNumberLifecycleReconciliation } = require("../services/adminNumberLifecycleReconciliation");
 
 // Cached in-process: the price of the one product this app sells changes
 // rarely, and fetching it from Stripe on every dashboard load would add
@@ -969,7 +970,57 @@ async function getHouseholdStatusDetail(householdId, now = new Date()) {
   };
 }
 
+// Admin number-lifecycle reconciliation (Priority 2, 2026-09-27) — bulk
+// data fetch only; all decision logic lives in the pure function
+// services/adminNumberLifecycleReconciliation.js. Read-only, three
+// independent queries run in parallel (households, entitlements,
+// quarantine) plus the existing getClassificationMap() reused unchanged.
+async function getNumberLifecycleReconciliation() {
+  if (!supabaseAdmin) {
+    return { available: false, reason: "SUPABASE_SERVICE_ROLE_KEY not configured" };
+  }
+
+  const [householdsRes, entitlementsRes, quarantineRes, classificationResult] = await Promise.all([
+    supabaseAdmin
+      .from("households")
+      .select("id, twilio_number, twilio_provisioning_status, twilio_provisioning_last_error, twilio_number_pending_release_at"),
+    supabaseAdmin
+      .from("entitlements")
+      .select("household_id, status, starts_at, ends_at"),
+    supabaseAdmin
+      .from("twilio_number_quarantine")
+      .select("household_id, release_reason, deactivation_confirmed, released_at, quarantined_at"),
+    getClassificationMap(),
+  ]);
+
+  if (householdsRes.error) return { available: false, reason: householdsRes.error.message };
+  if (entitlementsRes.error) return { available: false, reason: entitlementsRes.error.message };
+  if (quarantineRes.error) return { available: false, reason: quarantineRes.error.message };
+
+  const entitlementsByHousehold = new Map();
+  for (const e of entitlementsRes.data || []) {
+    const list = entitlementsByHousehold.get(e.household_id) || [];
+    list.push(e);
+    entitlementsByHousehold.set(e.household_id, list);
+  }
+
+  const reconciliation = computeNumberLifecycleReconciliation(
+    householdsRes.data || [],
+    entitlementsByHousehold,
+    classificationResult.available ? classificationResult.map : new Map(),
+    quarantineRes.data || [],
+    new Date()
+  );
+
+  return {
+    available: true,
+    classificationSourceAvailable: classificationResult.available,
+    ...reconciliation,
+  };
+}
+
 module.exports = {
+  getNumberLifecycleReconciliation,
   buildOnboardingRow,
   maskCallerNumber,
   getOnboardingMonitor,

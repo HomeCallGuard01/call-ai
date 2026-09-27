@@ -21,6 +21,7 @@ const {
   getBusinessOverview,
   getSubscriptionStatusBreakdown,
   getSubscriptionPrice,
+  getNumberLifecycleReconciliation,
 } = require("../database/adminMetrics");
 const { getStripeRevenueSnapshot, estimateAppleRevenueGbp, netOfVat } = require("../services/businessMetrics/revenue");
 const { getTwilioAccountSnapshot } = require("../services/businessMetrics/twilioCosts");
@@ -307,6 +308,27 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
     });
   } catch (err) {
     console.error("ADMIN BUSINESS DASHBOARD ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// Number-lifecycle reconciliation (Priority 2, 2026-09-27) — a separate
+// endpoint, not folded into /admin/api/business/overview: the overview
+// route already does a lot in one request, and this reconciliation query
+// (all households + all entitlements + all quarantine rows) is
+// independent of everything else there. Read-only, same requireAuth +
+// requireAdmin as every other route in this file. See
+// services/adminNumberLifecycleReconciliation.js for the full design
+// rationale — this route is deliberately a thin fetch-and-return.
+router.get("/admin/api/business/number-lifecycle", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await getNumberLifecycleReconciliation();
+    if (!result.available) {
+      return res.status(503).json({ available: false, reason: result.reason });
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("ADMIN NUMBER LIFECYCLE RECONCILIATION ERROR:", err.message);
     res.status(500).json({ error: "failed" });
   }
 });
