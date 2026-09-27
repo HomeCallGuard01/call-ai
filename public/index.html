@@ -5,53 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#050a07">
 
-<!-- COPY STATUS (2026-09-23, homepage simplification). Every statement about what Home
-     Call Guard does during a call uses ONLY the approved high-level proposition: it
-     monitors calls from numbers that aren't trusted contacts while the conversation is
-     happening, and can end a call when serious scam risk is detected. Deliberately
-     absent: SMS/text warnings, warnings to trusted contacts, scores/thresholds/risk
-     stages, "before it reaches you", pre-call screening, "no delays", "AI-powered",
-     any claim of guaranteed/complete detection. Search for APPROVED-BEHAVIOUR-COPY to
-     find every such statement.
-     STRUCTURE (revised 2026-09-23, round 2): Hero -> Protection beyond blocking known
-     numbers -> How Home Call Guard works (absorbs trusted contacts + Activity) ->
-     Protect yourself or someone you care about -> Simple setup -> Pricing -> FAQ ->
-     Final CTA -> Footer. Trusted Contacts and Supported Phones are no longer their own
-     sections: trusted-caller behaviour is explained once, in "How it works"; device
-     availability is stated once in the hero and once (consolidated) in the FAQ.
+<!-- COPY STATUS (2026-09-27, launch-ready pass; builds on the 2026-09-23 simplification).
+     Every statement about what Home Call Guard does during a call uses ONLY the approved
+     high-level proposition: it monitors calls from numbers that aren't trusted contacts
+     while the conversation is happening, and can end a call when serious scam risk is
+     detected. Deliberately absent: SMS/text warnings, warnings to trusted contacts,
+     scores/thresholds/risk stages, "before it reaches you", pre-call screening, "no
+     delays", "AI-powered", technical/provider names, any claim of guaranteed/complete
+     detection. Search for APPROVED-BEHAVIOUR-COPY to find every such statement.
+     PRICING: one price only - GBP 4.99 a month including VAT. No tiers, no minute
+     allowance (the allowance/fair-use work is internal, not a public proposition).
+     STRUCTURE (customer journey): Hero (what it is, price, get it) -> Why it's different
+     (the problem: numbers can be changed or faked) -> How it protects you (three call
+     outcomes, each explained once) -> Someone you care about -> Setup -> Questions ->
+     Pricing / get protected (single decision point) -> Footer. The former separate
+     "final CTA" block was merged into Pricing so the download tiles appear twice (hero,
+     pricing), not three times.
+     QUALIFICATIONS: the "can't catch every scam" limitation is stated once, calmly, in
+     the FAQ ("Will it stop every scam call?") and in the Terms - not in the sales
+     sections.
      AGE POSITIONING: no "elderly", "senior" or "vulnerable" wording anywhere on this
-     page — the "someone you care about" section is deliberately age-neutral (self,
-     parent, partner or anyone else).
-     SETUP-TIME CLAIM: "Set up in a few minutes" was removed from the hero reassurance
-     trio (no evidence cited for a specific duration). The pre-existing "usually a few
-     minutes" copy in the Setup section heading/FAQ is unchanged production wording,
-     not introduced by this pass — flagged to Andrew rather than silently altered.
-     DEVICE AVAILABILITY WORDING: "Coming soon" -> "In development" throughout (route
-     tiles, FAQ) per this round's brief. Purely a label change — see
-     services/goLanding.js / services/providerPolicy.js for the actual (unchanged)
-     availability logic; nothing here alters any gate.
-     LANDLINE (2026-09-21, unchanged logic): Landline is a non-clickable tile; nothing
-     on this page claims or implies it's available. The server independently refuses
-     landline checkout (LANDLINE_COMING_SOON) — see
-     docs/launch/LANDLINE_COMING_SOON_LAUNCH_FLAG.md.
+     page - the "someone you care about" section is deliberately age-neutral.
+     SETUP TIME: no duration is claimed anywhere (no evidence for one).
+     DEVICE AVAILABILITY: "In development" for iPhone and landline (tiles, FAQ) - a
+     label only; see services/goLanding.js / services/providerPolicy.js for the actual
+     availability logic. Landline is a non-clickable tile; nothing here claims or
+     implies it's available. The server independently refuses landline checkout
+     (LANDLINE_COMING_SOON) - see docs/launch/LANDLINE_COMING_SOON_LAUNCH_FLAG.md.
      Anchors #how-it-works, #pricing and #faq are linked from all 12 /guides/ pages and
-     from /go's own test — kept on the same sections. -->
+     from /go's own test - kept on the same sections. -->
 
 <title>Home Call Guard | Protect Your Phone From Scam Callers</title>
-<meta name="description" content="Home Call Guard helps protect you and your family from scam and nuisance calls. It monitors calls from numbers you don't know while you're talking, and can end a call if it detects serious scam risk. £4.99 a month including VAT, no long-term contract.">
+<meta name="description" content="Scammers can change or fake the number they call from. Home Call Guard looks for scam risk while you talk, and can end the call if it detects serious risk. £4.99 a month including VAT, no contract.">
 <link rel="canonical" href="https://homecallguard.co.uk/">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Home Call Guard">
 <meta property="og:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-<meta property="og:description" content="An extra layer of protection against scam and nuisance calls, for you and your family. £4.99/month including VAT, no long-term contract.">
+<meta property="og:description" content="Scam call protection that looks for risk while you talk, not just at the number calling. £4.99/month including VAT, no contract.">
 <meta property="og:url" content="https://homecallguard.co.uk/">
 <meta property="og:image" content="https://homecallguard.co.uk/logo.png">
 <meta property="og:locale" content="en_GB">
 
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-<meta name="twitter:description" content="An extra layer of protection against scam and nuisance calls, for you and your family.">
+<meta name="twitter:description" content="Scam call protection that looks for risk while you talk, not just at the number calling. £4.99/month including VAT, no contract.">
 <meta name="twitter:image" content="https://homecallguard.co.uk/logo.png">
 
 <script type="application/ld+json">
@@ -222,7 +220,6 @@
   .diff-join { display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 1.6rem; font-weight: 800; }
   @media (min-width: 900px) { .diff-grid { grid-template-columns: 1fr auto 1fr; gap: 20px; } .diff-join { padding: 0 4px; } }
   @media (max-width: 899px) { .diff-join { transform: rotate(90deg); margin: -4px 0; } }
-  .diff-note { margin-top: 22px; color: var(--muted); font-size: 0.98rem; max-width: 46rem; }
 
   /* ---------- how it works: three steps ---------- */
   .steps3 { display: grid; gap: 16px; list-style: none; counter-reset: s; }
@@ -302,9 +299,8 @@
   .notify button:disabled { opacity: 0.6; cursor: default; }
   .notify .msg-error { color: #fde68a; margin: 12px 0 0; }
   .notify .msg-ok { color: var(--green); margin: 12px 0 0; }
-  .final { text-align: center; }
-  .final .routes { margin-left: auto; margin-right: auto; }
-  .final p { color: var(--muted); max-width: 34em; margin: 14px auto 0; }
+  .pricing-final .section-head { margin-left: auto; margin-right: auto; text-align: center; }
+  .pricing-final .price-card { margin: 0 auto; }
   [hidden] { display: none !important; }
 
   footer { border-top: 1px solid var(--border); padding: 40px 0 48px; color: var(--muted); font-size: 0.95rem; }
@@ -359,14 +355,14 @@
         <p class="eyebrow">Scam call protection for UK phones</p>
         <h1>Help protect you and your family from scam phone calls.</h1>
 
+        <!-- APPROVED-BEHAVIOUR-COPY (shortened 2026-09-27; the spoofing explanation now lives only in "Why it's different") -->
+        <p class="lead">Home Call Guard looks for scam risk while you talk, and can end the call if it detects serious risk. The people you trust ring straight through.</p>
+
         <div class="hero-price-block">
           <p class="hero-price"><span>£4.99</span></p>
           <p class="hero-price-term">a month, including VAT</p>
         </div>
-        <p class="reassure-line">No contract &middot; Cancel anytime &middot; Keep your number</p>
-
-        <!-- APPROVED-BEHAVIOUR-COPY (shortened 2026-09-27; the spoofing explanation now lives only in "Why it's different") -->
-        <p class="lead">Home Call Guard watches for scam risk while you talk, and can end the call if it detects serious risk. The people you trust ring straight through.</p>
+        <p class="reassure-line">No contract &middot; Cancel any time &middot; Keep your number</p>
 
         <p class="availability-line">Available now on Android. iPhone and landline are in development.</p>
 
@@ -407,7 +403,7 @@
       <div class="section-head">
         <p class="eyebrow">Why it's different</p>
         <h2>Protection that goes beyond blocking known numbers.</h2>
-        <p>Scammers can change or spoof the number they're calling from — so a call from an unfamiliar or unexpected number isn't automatically a warning sign, and a familiar-looking number isn't automatically safe.</p>
+        <p>Scammers can easily change or fake the number they call from, so blocking known scam numbers only goes so far. What often gives a scam away is what the caller says and asks you to do.</p>
       </div>
       <div class="diff-grid">
         <div class="diff-panel">
@@ -422,7 +418,6 @@
           <p>Also looks for scam risk as the conversation itself develops — while you're talking, not just at the moment the phone rings.</p>
         </div>
       </div>
-      <p class="diff-note">Both matter. Home Call Guard is an extra layer on top of number-based protection, not a replacement for it.</p>
     </div>
   </section>
 
@@ -434,10 +429,8 @@
   <section id="how-it-works">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">How Home Call Guard works</p>
-        <h2>Three things happen on a call.</h2>
-        <!-- APPROVED-BEHAVIOUR-COPY -->
-        <p>Protection happens <strong>during</strong> the conversation, not before your phone rings. Home Call Guard doesn't block or delay a call before it reaches your phone.</p>
+        <p class="eyebrow">How it protects you</p>
+        <h2>What happens when your phone rings.</h2>
       </div>
       <ol class="steps3">
         <li class="step3 trusted">
@@ -452,7 +445,7 @@
           <p class="tag">Anyone else calls</p>
           <h3>It connects as normal — and is monitored.</h3>
           <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p class="body">Calls from numbers that aren't on your trusted list still ring your phone. While you talk, Home Call Guard monitors the conversation for signs of a scam.</p>
+          <p class="body">Calls from numbers that aren't on your trusted list ring your phone as normal. While you talk, Home Call Guard monitors the conversation for signs of a scam.</p>
           <p class="outcome">Shown in Activity as<br><span class="chip green">Screened, no concerns</span></p>
         </li>
         <li class="step3 serious">
@@ -490,7 +483,7 @@
   </section>
 
   <!-- ============ SETUP ============ -->
-  <section class="band" id="setup">
+  <section id="setup">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Getting started</p>
@@ -500,25 +493,58 @@
         <li class="step"><div class="n" aria-hidden="true">1</div><h3>Choose your phone</h3><p>Tell us which phone you're protecting. We check that your mobile network is one we currently support <strong>before you pay</strong>.</p></li>
         <li class="step"><div class="n" aria-hidden="true">2</div><h3>Add the people you trust</h3><p>Family, friends, your GP — sync them from your phone or add them one by one.</p></li>
         <li class="step"><div class="n" aria-hidden="true">3</div><h3>Turn on call forwarding</h3><p>A one-time step: dial a short code so calls to your number come through Home Call Guard first. We show you exactly what to dial for your provider.</p></li>
-        <li class="step"><div class="n" aria-hidden="true">4</div><h3>You're set up</h3><p>Home Call Guard starts working straight away, and every call appears in your Activity list.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">4</div><h3>You're set up</h3><p>Your calls now come through Home Call Guard, and each one appears in your Activity list so you can see how it was handled.</p></li>
       </ol>
     </div>
   </section>
 
-  <!-- ============ E. PRICING ============ -->
-  <section id="pricing">
+  <!-- ============ FAQ ============
+       Essential questions only; nothing here restates "How it protects you". The one
+       genuine limitation (no service can stop every scam) is stated once, here, in a
+       calm and practical way - not in the sales sections. Cost is left to the Pricing
+       section that follows; cancellation keeps its own answer. -->
+  <section class="band" id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Questions</p>
+        <h2>Everything you need to know.</h2>
+      </div>
+      <div class="faq">
+        <details><summary>Which phones and networks are supported?</summary>
+          <p>Home Call Guard is available now for Android phones, on many UK mobile networks — we check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is in development.">iPhone and landline support are in development and aren't available to new customers yet.</span></p></details>
+        <details><summary>Will it stop every scam call?</summary>
+          <!-- APPROVED-BEHAVIOUR-COPY -->
+          <p>No service can promise that, so it's still sensible to be careful with any unexpected call that asks for money, bank details or passwords. Home Call Guard adds another layer of protection by looking for scam risk during the conversation itself, and you can see how every call was handled in your Activity list.</p></details>
+        <details><summary>Are my calls recorded?</summary>
+          <p>Home Call Guard doesn't store call audio or a transcript of what's said. Calls are analysed while they happen, using automated checks and a third-party transcription service. See our <a href="/privacy.html">Privacy Policy</a> for details.</p></details>
+        <details><summary>Can I keep my phone number?</summary>
+          <p>Yes. Your number stays exactly as it is, and the people you trust call it just as they do now.</p></details>
+        <details><summary>Can I cancel at any time?</summary>
+          <p>Yes. There's no long-term contract. Cancelling stops future payments, and your protection continues until the end of the period you've already paid for. See our <a href="/terms.html">Terms and Conditions</a> for full details.</p></details>
+        <details><summary>Who can I contact for help?</summary>
+          <p>Visit our <a href="/support.html">support page</a> or email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> and we'll be glad to help — including if you're setting this up for someone else.</p></details>
+      </div>
+      <p class="faq-foot">Not sure what a scam call sounds like? Our plain-English guides explain the most common phone scams. <a href="/guides/">Read the scam advice guides →</a></p>
+    </div>
+  </section>
+
+  <!-- ============ PRICING / GET PROTECTED ============
+       The single purchase/download decision point, merged with the former separate
+       "final CTA" block so the same tiles and price aren't repeated twice in a row. -->
+  <section id="pricing" class="pricing-final">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Pricing</p>
-        <h2>One simple price.</h2>
+        <h2>Feel more confident answering your phone.</h2>
       </div>
       <div class="price-card">
         <h3>Home Call Guard</h3>
         <p class="price">£4.99 <small>a month, including VAT</small></p>
         <ul class="ticks">
-          <li>Monitoring of calls from numbers you don't know</li>
+          <li>The people you trust ring straight through</li>
+          <li>Calls from other numbers monitored while you talk</li>
           <li>Your Activity list — see how every call was handled</li>
-          <li>No long-term contract — cancel any time</li>
+          <li>Keep your number · No contract · Cancel any time</li>
         </ul>
         <div class="routes">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
@@ -529,39 +555,8 @@
     </div>
   </section>
 
-  <!-- ============ FAQ ============
-       Trimmed to essential questions only. Device-availability questions (previously
-       three overlapping entries — "Do I need an app?", "Which phones/networks?", "Can
-       I use it on my landline?") are consolidated into one; "Will calls from my family
-       and friends be affected?" is dropped as redundant with "How it works" and
-       "Protect yourself or someone you care about"; the three questions restating
-       "How it works" itself were already removed in the previous pass. -->
-  <section class="band" id="faq">
-    <div class="wrap">
-      <div class="section-head">
-        <p class="eyebrow">Questions</p>
-        <h2>Everything you need to know.</h2>
-      </div>
-      <div class="faq">
-        <details><summary>Which phones and networks are supported?</summary>
-          <p>Home Call Guard is available now for Android phones, on many UK mobile networks — we check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is in development.">iPhone and landline support are in development and aren't available to new customers yet.</span></p></details>
-        <details><summary>Are my calls recorded?</summary>
-          <p>Home Call Guard doesn't store call audio or a transcript of what's said. Calls are analysed while they happen, using automated checks and a third-party transcription service. See our <a href="/privacy.html">Privacy Policy</a> for details.</p></details>
-        <details><summary>Can I keep my phone number?</summary>
-          <p>Yes. Your number stays exactly as it is.</p></details>
-        <details><summary>How long does setup take?</summary>
-          <p>There's no fixed length of time — we guide you through each step, from choosing your phone to adding trusted contacts and turning on call forwarding, so you always know what to do next.</p></details>
-        <details><summary>How much does it cost, and can I cancel?</summary>
-          <p>£4.99 a month, including VAT. There's no long-term contract and you can cancel at any time from your account. See our <a href="/terms.html">Terms and Conditions</a> for full details.</p></details>
-        <details><summary>Who can I contact for help?</summary>
-          <p>Visit our <a href="/support.html">support page</a> or email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> and we'll be glad to help — including if you're setting this up for someone else.</p></details>
-      </div>
-      <p class="faq-foot">Not sure what a scam call sounds like? Our plain-English guides explain the most common phone scams. <a href="/guides/">Read the scam advice guides →</a></p>
-    </div>
-  </section>
-
   <!-- ============ IPHONE WAITING LIST (existing endpoint, unchanged behaviour) ============ -->
-  <section id="ios-waiting-list" data-ios-notify hidden style="padding-bottom:0">
+  <section id="ios-waiting-list" data-ios-notify hidden>
     <div class="wrap">
       <div class="notify">
         <h3>Home Call Guard for iPhone is in development</h3>
@@ -575,19 +570,6 @@
           <p class="msg-error" id="homepageWaitingListError" role="alert" hidden></p>
           <p class="msg-ok" id="homepageWaitingListSuccess" role="status" hidden>Thanks — we'll email you as soon as Home Call Guard for iPhone is available.</p>
         </form>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ G. FINAL CTA ============ -->
-  <section class="final" style="margin-top:60px; background: var(--bg-2); border-top: 1px solid var(--border);">
-    <div class="wrap">
-      <h2>Feel more confident answering your phone.</h2>
-      <p>£4.99 a month, including VAT. No contract — cancel any time.</p>
-      <div class="routes">
-        <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
-        <div class="route disabled" data-app-store><small>In development</small><strong>App Store</strong></div>
-        <div class="route disabled" data-landline-soon><small>In development</small><strong>Landline</strong></div>
       </div>
     </div>
   </section>
