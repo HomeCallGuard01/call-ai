@@ -41,6 +41,7 @@ const { insertWaitingListSignup } = require("./database/waitingList");
 const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
 const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
 const { findConfirmedUnreleasedQuarantine } = require("./database/twilioQuarantine");
+const { runNumberLifecycleSweepScheduled } = require("./services/numberLifecycleSweepScheduler");
 const { buildWebhookUrl, isGenuineTwilioRequest } = require("./services/twilioWebhookAuth");
 const { wouldCreateForwardingLoop } = require("./services/phone");
 const {
@@ -2370,6 +2371,49 @@ setTimeout(() => {
   setInterval(runTwilioNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
   setInterval(runQuarantinedNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
 }, TWILIO_RELEASE_FIRST_RUN_DELAY_MS);
+
+// Daily number-lifecycle sweep scheduler (Priority 4, 2026-09-27, Step
+// 2 of the number-lifecycle work — services/numberLifecycleSweep.js /
+// numberLifecycleSweepRunner.js / numberLifecycleSweepScheduler.js).
+// Mirrors the exact setTimeout-then-setInterval pattern immediately
+// above (runTwilioNumberReleaseCheck) — same existing infrastructure,
+// no new scheduling mechanism invented.
+//
+// EXPLICITLY OFF BY DEFAULT — unlike the release checks above, this is
+// gated behind an env var that defaults to disabled. This is a
+// deliberate extra safety margin beyond "just don't merge/deploy yet":
+// once this branch does merge and deploy, a bare setInterval here would
+// start actually running in production the moment the process starts,
+// with no further human action. Requiring an explicit
+// ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE=true keeps the schedule off
+// even after deploy, until a human deliberately turns it on — matching
+// tonight's own instruction: "Implement/test everything possible
+// without enabling the production schedule. Stop before actually
+// turning the production scheduler on."
+//
+// The sweep's own actions are safe regardless (every write is already
+// idempotent and goes through 047's guarded RPCs — see
+// numberLifecycleSweepScheduler.js's own header) — this flag exists for
+// deliberate, staged rollout control, not because running it would be
+// unsafe.
+const NUMBER_LIFECYCLE_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const NUMBER_LIFECYCLE_SWEEP_FIRST_RUN_DELAY_MS = 90 * 1000;
+
+if (process.env.ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE === "true") {
+  setTimeout(() => {
+    runNumberLifecycleSweepScheduled().catch(() => {
+      // Already logged and alerted inside runNumberLifecycleSweepScheduled
+      // itself — caught here only so a rejected promise from this
+      // fire-and-forget scheduled call can never become an unhandled
+      // rejection that takes down the whole process.
+    });
+    setInterval(() => {
+      runNumberLifecycleSweepScheduled().catch(() => {});
+    }, NUMBER_LIFECYCLE_SWEEP_INTERVAL_MS);
+  }, NUMBER_LIFECYCLE_SWEEP_FIRST_RUN_DELAY_MS);
+} else {
+  console.log("NUMBER LIFECYCLE SWEEP: schedule disabled (ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE is not \"true\")");
+}
 
 // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint
 // Twilio's <Start><Stream> (attachLiveMonitoring, above) connects to.
