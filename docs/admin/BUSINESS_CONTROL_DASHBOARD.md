@@ -175,3 +175,32 @@ See the architecture doc, section 6. In summary:
 5. Write 049 (`customer_acquisition` plus `/go/store` click and UTM content/term capture), then wire it into `getCampaignPerformance` (a single marked placeholder).
 6. Consider persisting provider release failures (e.g. a `release_error` column on `twilio_number_quarantine`), so failures stop being inferred.
 7. Later: OpenAI Admin key (actual AI cost), App Store Connect reports, ad-platform CSV import, FX rates.
+
+## 8. Fixed-cost settings interface (Railway, Supabase, Resend)
+
+Implemented on `feature/admin-business-control` (`services/businessControl/fixedCostSettings.js`). The amounts keep the existing settings that `services/businessMetrics/config.js` already reads.
+
+| Setting (Railway variable) | Meaning | Where to find the figure |
+|---|---|---|
+| `BUSINESS_FIXED_COST_RAILWAY_GBP` | Monthly Railway cost, £ as billed | Railway → Workspace → Usage / Billing (plan fee plus the month's usage estimate, or the last invoice) |
+| `BUSINESS_FIXED_COST_RAILWAY_AS_OF` | Date last checked, `YYYY-MM-DD` (optional) | — |
+| `BUSINESS_FIXED_COST_SUPABASE_GBP` | Monthly Supabase cost, production **and** staging | Supabase → Organization → Billing |
+| `BUSINESS_FIXED_COST_SUPABASE_AS_OF` | Date last checked (optional) | — |
+| `BUSINESS_FIXED_COST_RESEND_GBP` | Monthly Resend cost (`0` on the free tier) | Resend → Settings → Billing |
+| `BUSINESS_FIXED_COST_RESEND_AS_OF` | Date last checked (optional) | — |
+
+Rules:
+- **Unset or invalid:** NOT CONNECTED (never £0).
+- **An explicit `0`:** a real entered £0.
+- **Set:** MANUAL. Flagged "re-check" when the date is missing or more than 45 days old.
+
+Changing a Railway variable redeploys the service. Costs that change often therefore belong in manual cost schedules once 048/050 exist.
+
+## 9. DECISION REQUIRED (open)
+
+1. **VAT treatment of costs:** enter fixed and manual costs as billed (VAT-inclusive), or net of reclaimable VAT? It depends on HCG's VAT registration; confirm with your accountant. The dashboard currently takes the figure as entered.
+2. **Reconciliation consolidation with PR #47** (P0): after #47 merges, one rule set feeding this UI.
+3. **Audit fixes A2–A6** (`fix/admin-business-tab-statements`, pushed, no PR): a separate PR after #48, or fold them into #48? Recommended: separate PR.
+4. **Migration 049 column names:** confirm or replace the proposed read contract (`services/businessControl/attributionContract.js`).
+5. **Twilio release-failure recording:** ownership and migration number (P0); atomic detach + quarantine; handling of "not found at provider" (`TWILIO_RELEASE_FAILURE_RECORDING_DESIGN.md`).
+6. **The 8 unaccounted Twilio numbers:** check whether each belongs to staging/testing before any release.
