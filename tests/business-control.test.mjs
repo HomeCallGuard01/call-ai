@@ -339,6 +339,38 @@ const LEDGER_048_CATEGORIES = [
 }
 
 // ============================================================
+// 5b. Attribution read contract (for migration 049)
+// ============================================================
+{
+  const { aggregateAttribution, toAcquisitionRecord, ACQUISITION_COLUMNS } = require('../services/businessControl/attributionContract.js');
+  const { computeCampaignPerformance } = require('../services/businessControl/campaignPerformance.js');
+  check(ACQUISITION_COLUMNS.includes('household_id') && ACQUISITION_COLUMNS.includes('first_campaign') && ACQUISITION_COLUMNS.includes('self_reported_source'), 'read contract names first-touch, confidence and self-report columns');
+  const rows = [
+    { household_id: 'g1', first_source: 'Meta', first_medium: 'paid_social', first_campaign: 'oct', attribution_method: 'utm_url', confidence: 'high', self_reported_source: 'Facebook/Instagram ad' },
+    { household_id: 'g2', first_source: 'meta', first_medium: 'paid_social', first_campaign: 'oct', attribution_method: 'play_install_referrer', confidence: 'high' },
+    { household_id: 'r1', first_source: 'meta', first_medium: 'paid_social', first_campaign: 'oct', attribution_method: 'utm_url', confidence: 'high' },
+    { household_id: 'g3', first_source: null, first_medium: null, first_campaign: null, channel: null, attribution_method: 'none', confidence: 'none', self_reported_source: 'Friend or family' },
+  ];
+  const agg = aggregateAttribution(rows, { payingGenuineHouseholdIds: new Set(['g1', 'g3']), genuineHouseholdIds: new Set(['g1', 'g2', 'g3']) });
+  const oct = agg.byCampaign['meta/paid_social/oct'];
+  check(oct && oct.signups === 3 && oct.genuineSignups === 2 && oct.payingGenuine === 1, 'per campaign: 3 attributed signups, 2 genuine, 1 genuine paying (reviewer never counts)');
+  check(oct.confidence.high === 3 && oct.methods.utm_url === 2 && oct.methods.play_install_referrer === 1, 'confidence and method mix kept per campaign');
+  check(agg.unattributed.signups === 1 && agg.unattributed.payingGenuine === 1, 'no campaign → counted as unattributed, never assigned to a campaign');
+  check(agg.selfReported['Friend or family'] === 1 && agg.selfReported['Facebook/Instagram ad'] === 1 && !agg.byCampaign['friend or family'], 'self-reported answers counted separately and never create or change a campaign attribution');
+  check(toAcquisitionRecord({ household_id: 'x', confidence: 'certain' }).confidence === 'none', 'unknown confidence values become "none", never upgraded');
+
+  const events = [{ event_type: 'landing_visit', utm_source: 'meta', utm_medium: 'paid_social', utm_campaign: 'oct' }];
+  const perf = computeCampaignPerformance({ events, spendByCampaign: { 'meta/paid_social/oct': { amountGbp: 50, provenance: 'manual' } }, attributedCustomers: agg.byCampaign });
+  const row = perf.rows.find((r) => r.campaignRef === 'meta/paid_social/oct');
+  check(row.payingCustomers === 1 && row.attributedSignups === 3 && row.cac === 50, 'with 049 + spend: paying customers from attribution, CAC = £50 spend ÷ 1 genuine paying');
+  check(perf.chain.find((c) => c.stage === 'Paying customers by campaign').status === 'CONNECTED', 'chain shows paying-customer attribution as connected');
+  const noSpend = computeCampaignPerformance({ events, spendByCampaign: null, attributedCustomers: agg.byCampaign });
+  check(noSpend.rows.find((r) => r.campaignRef === 'meta/paid_social/oct').cac === null, 'attribution without spend never produces a CAC');
+  const offWindow = computeCampaignPerformance({ events: [], spendByCampaign: null, attributedCustomers: { 'tiktok/paid_social/sept': { signups: 1, payingGenuine: 1, confidence: { high: 1, medium: 0, low: 0, none: 0 }, methods: {} } } });
+  check(offWindow.rows.some((r) => r.campaignRef === 'tiktok/paid_social/sept' && r.payingCustomers === 1 && r.landingVisits === 0), 'a campaign with paying customers but no visits in the window still gets a row');
+}
+
+// ============================================================
 // 6. Routes and write boundaries (full branch: manual costs allowed)
 // ============================================================
 {
@@ -416,7 +448,7 @@ const LEDGER_048_CATEGORIES = [
   responses.finance = { generatedAt: NOW.toISOString(), period: { label: evil }, totals: { grossRevenue: { amountGbp: null, complete: false }, netRevenueExVat: null, variableCost: null, grossContribution: null, fixedCost: null, marketingSpend: null, operatingProfit: null }, lines: [{ id: 'x', section: 'revenue', label: evil, amountGbp: null, provenance: evil, basis: evil }], unitEconomics: { activeCustomers: 1, genuinePayingCustomers: 0, costPerActiveCustomer: null, telephonyCostPerActiveCustomer: null, netRevenuePerPayingCustomer: null, monitoredMinutes: null, monitoredMinutesPerActiveCustomer: null, customerAcquisitionCost: { basis: evil } }, connections: { [evil]: evil } };
   responses['manual-costs'] = { connected: true, schedules: [{ supplier: evil, description: evil, category: evil, native_amount: 1, native_currency: evil, cadence: evil, start_date: evil, end_date: evil, campaign_ref: evil }, { id: evil, supplier: 'railway', description: 'x', category: 'hosting', native_amount: 1, native_currency: 'GBP', cadence: 'monthly', start_date: '2026-09-01', end_date: null, campaign_ref: null }] };
   responses['manual-costs/preview'] = { connected: true, pending: [{}], totals: { [evil]: 1 } };
-  responses.marketing = { generatedAt: NOW.toISOString(), windowDays: 90, chain: [{ stage: evil, status: 'NOT_CONNECTED', note: evil }], rows: [{ label: evil, channel: evil, landingVisits: 1, registrationsCompleted: 0, spend: { amountGbp: null }, payingCustomers: null, cac: null }], unattributed: { checkoutsStarted: 0, paidConversions: 0, note: evil } };
+  responses.marketing = { generatedAt: NOW.toISOString(), windowDays: 90, attributionConnected: true, attributionNote: evil, attributionUnattributed: { signups: 1, payingGenuine: 0 }, selfReported: { [evil]: 2 }, chain: [{ stage: evil, status: 'NOT_CONNECTED', note: evil }], rows: [{ label: evil, channel: evil, landingVisits: 1, registrationsCompleted: 0, attributedSignups: 1, confidence: { high: 1 }, spend: { amountGbp: null }, payingCustomers: null, cac: null }], unattributed: { checkoutsStarted: 0, paidConversions: 0, note: evil } };
 
   await ui.renderSubscriptionsTab();
   await ui.renderReconciliationTab();

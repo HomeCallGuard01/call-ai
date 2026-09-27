@@ -1546,6 +1546,12 @@ function reconciliationBanner(overall, actionCount, watchCount) {
   return { className: 'ready', text: 'OK — every number matches its subscription and lifecycle' };
 }
 
+function describeConfidenceMix(confidence) {
+  if (!confidence) return '—';
+  const parts = [['high', 'H'], ['medium', 'M'], ['low', 'L']].filter(([k]) => confidence[k]).map(([k, s]) => s + ' ' + confidence[k]);
+  return parts.length ? parts.join(' · ') : 'none';
+}
+
 function chainStageClass(stage) {
   const good = { active: 1, assigned: 1, yes: 1, released: 1 };
   const bad = { failed: 1, 'awaiting confirmation': 1 };
@@ -1804,14 +1810,26 @@ async function renderMarketingTab() {
   if (!d.rows.length) {
     html += '<div class="empty-state">No visits or registrations recorded in this window.</div>';
   } else {
-    html += '<table><tr><th>Campaign / source</th><th>Channel</th><th class="num">Visits</th><th class="num">Registrations</th><th>Spend</th><th>Paying customers</th><th>CAC</th></tr>' +
+    const attr = !!d.attributionConnected;
+    html += '<table><tr><th>Campaign / source</th><th>Channel</th><th class="num">Visits</th><th class="num">Registrations</th>' +
+      (attr ? '<th class="num">Attributed signups</th><th>Confidence</th>' : '') +
+      '<th>Spend</th><th>Paying customers</th><th>CAC</th></tr>' +
       d.rows.map((r) => '<tr><td>' + escapeHtml(r.label) + '</td><td>' + escapeHtml(r.channel.replace(/_/g, ' ')) + '</td><td class="num">' + fmtNum(r.landingVisits) + '</td><td class="num">' + fmtNum(r.registrationsCompleted) + '</td>' +
+        (attr ? '<td class="num">' + fmtNum(r.attributedSignups) + '</td><td>' + escapeHtml(describeConfidenceMix(r.confidence)) + '</td>' : '') +
         '<td>' + (r.spend && r.spend.amountGbp !== null ? escapeHtml(formatGbpOrMissing(r.spend.amountGbp)) : provenanceBadge('NOT_CONNECTED')) + '</td>' +
         '<td>' + (r.payingCustomers === null ? provenanceBadge('NOT_CONNECTED') : fmtNum(r.payingCustomers)) + '</td>' +
         '<td>' + (r.cac === null ? '—' : escapeHtml(formatGbpOrMissing(r.cac))) + '</td></tr>').join('') + '</table>';
   }
   html += '<p class="sub" style="margin-top:8px;">Visits are raw page requests (not unique people). ' + fmtNum(d.unattributed.checkoutsStarted) + ' checkout(s) and ' + fmtNum(d.unattributed.paidConversions) + ' paid conversion(s) in this window cannot be credited to any campaign: ' + escapeHtml(d.unattributed.note) + '</p>';
 
+  html += '<p class="sub">Customer attribution: ' + escapeHtml(d.attributionNote || 'not connected') + '.</p>';
+  if (d.attributionConnected && d.attributionUnattributed) {
+    html += '<p class="sub">No campaign recorded (direct / unknown): ' + fmtNum(d.attributionUnattributed.signups) + ' signup(s), ' + fmtNum(d.attributionUnattributed.payingGenuine) + ' genuine paying — never assigned to a campaign by guesswork.</p>';
+  }
+  if (d.selfReported && Object.keys(d.selfReported).length) {
+    html += '<h3 style="margin-top:22px;">"How did you hear about us?" (self-reported)</h3><p class="sub">Shown separately; never used to fill in or change automatic attribution.</p><table>' +
+      Object.entries(d.selfReported).sort((a, b) => b[1] - a[1]).map(([k, n]) => '<tr><td>' + escapeHtml(k) + '</td><td class="num">' + fmtNum(n) + '</td></tr>').join('') + '</table>';
+  }
   html += '<h3 style="margin-top:22px;">Tracked link builder</h3><p class="sub">Every channel links to the same /go page; only the tags differ. Nothing is saved — copy the link into your post or ad.</p>' +
     '<div class="manual-cost-form" id="linkBuilder">' +
     '<select id="lbPreset"><option value="">Preset…</option><option value="instagram|organic_social">Instagram (organic)</option><option value="tiktok|organic_social">TikTok (organic)</option><option value="facebook|community">Facebook group post</option><option value="meta|paid_social">Meta paid ad</option><option value="tiktok|paid_social">TikTok paid ad</option><option value="google|paid_search">Google Ads</option><option value="|pr">PR / press</option><option value="|qr">QR code</option></select>' +

@@ -92,14 +92,29 @@ function computeCampaignPerformance({ events, spendByCampaign = null, attributed
     else if (e.event_type === 'registration_completed') row.registrationsCompleted += 1;
   }
 
+  // Campaigns with attributed customers (049) but no events in the window
+  // still get a row, so a paying customer is never dropped from the table.
+  if (attributedCustomers) {
+    for (const ref of Object.keys(attributedCustomers)) {
+      if (![...byKey.values()].some((r) => r.campaignRef === ref)) {
+        byKey.set(ref, { campaignRef: ref, label: ref, channel: 'other_tagged', landingVisits: 0, registrationsSubmitted: 0, registrationsCompleted: 0 });
+      }
+    }
+  }
+
   const rows = [...byKey.values()].map((r) => {
     const spend = spendByCampaign && r.campaignRef ? spendByCampaign[r.campaignRef] || null : null;
-    const paying = attributedCustomers && r.campaignRef ? attributedCustomers[r.campaignRef] || 0 : null;
+    // attributedCustomers values: a number (paying customers) or an
+    // aggregateAttribution() object { signups, payingGenuine, confidence }.
+    const attr = attributedCustomers && r.campaignRef ? attributedCustomers[r.campaignRef] : undefined;
+    const paying = attributedCustomers ? (typeof attr === 'number' ? attr : attr ? attr.payingGenuine : 0) : null;
     const cac = spend && spend.amountGbp !== null && paying ? Math.round((spend.amountGbp / paying) * 100) / 100 : null;
     return {
       ...r,
       spend: spendByCampaign ? spend : { amountGbp: null, provenance: 'NOT_CONNECTED' },
       payingCustomers: paying,
+      attributedSignups: attributedCustomers ? (attr && typeof attr === 'object' ? attr.signups : attr ? null : 0) : null,
+      confidence: attr && typeof attr === 'object' ? attr.confidence : null,
       cac,
     };
   });
@@ -182,17 +197,46 @@ async function getCampaignPerformance(now = new Date(), days = 90) {
     }
   }
 
-  // customer_acquisition (migration 049) has no agreed column set yet, so
-  // paying customers per campaign stay NOT CONNECTED even if a table of
-  // that name appears; wire the query here when 049 is written.
-  const attributedCustomers = null;
+  // customer_acquisition (migration 049) through the read contract in
+  // attributionContract.js. Any mismatch keeps attribution NOT CONNECTED
+  // with the reason, never a partial guess.
+  let attributedCustomers = null;
+  let attributionUnattributed = null;
+  let selfReported = null;
+  let attributionNote = 'customer_acquisition not present (migration 049 not written/applied)';
+  if (!acquisitionProbe.error) {
+    const { ACQUISITION_COLUMNS, aggregateAttribution } = require('./attributionContract');
+    const { getClassificationMap } = require('../businessMetrics/accountClassification');
+    const { isEntitlementCurrentlyActive } = require('../adminOnboardingStatus');
+    const [acqRes, entRes, classification] = await Promise.all([
+      supabaseAdmin.from('customer_acquisition').select(ACQUISITION_COLUMNS.join(', ')).limit(100000),
+      supabaseAdmin.from('entitlements').select('household_id, entitlement_type, status, starts_at, ends_at'),
+      getClassificationMap(),
+    ]);
+    if (acqRes.error) {
+      attributionNote = `customer_acquisition exists but does not match the dashboard read contract: ${acqRes.error.message}`;
+    } else if (entRes.error || !classification.available) {
+      attributionNote = 'Could not read entitlements/classifications to identify genuine paying customers';
+    } else {
+      const genuine = new Set([...classification.map.entries()].filter(([, c]) => c === 'genuine_customer').map(([id]) => id));
+      const paying = new Set((entRes.data || []).filter((e) => e.entitlement_type === 'paid_subscription' && isEntitlementCurrentlyActive(e, now) && genuine.has(e.household_id)).map((e) => e.household_id));
+      const agg = aggregateAttribution(acqRes.data || [], { payingGenuineHouseholdIds: paying, genuineHouseholdIds: genuine });
+      attributedCustomers = agg.byCampaign;
+      attributionUnattributed = agg.unattributed;
+      selfReported = agg.selfReported;
+      attributionNote = 'connected';
+    }
+  }
 
   return {
     available: true,
     generatedAt: now.toISOString(),
     windowDays: days,
     ledgerConnected: !ledgerProbe.error,
-    attributionConnected: !acquisitionProbe.error,
+    attributionConnected: attributedCustomers !== null,
+    attributionNote,
+    attributionUnattributed,
+    selfReported,
     ...computeCampaignPerformance({ events: eventsRes.data || [], spendByCampaign, attributedCustomers }),
   };
 }
