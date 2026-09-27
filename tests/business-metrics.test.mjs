@@ -313,5 +313,45 @@ check(
   );
 }
 
+// --- REGRESSION (2026-09-27): Twilio total and number rental ---
+// The category allow-list missed UK number rental ("phonenumbers-local"),
+// Media Streams and TTS, so the dashboard showed £0.70 for a month Twilio
+// itself totalled at £16.50. Fixture = the real category set this account
+// returned for 1-27 Sep 2026 (categories and amounts only).
+{
+  const { splitRentalVsUsageGbp } = require('../services/businessMetrics/twilioCosts.js');
+  const realSept = [
+    { category: 'totalprice', price: '-16.50058', usage: '16.50058', usageUnit: 'gbp' },
+    { category: 'phonenumbers-local', price: '-15.64510', usage: '18', usageUnit: 'numbers' },
+    { category: 'calls-inbound', price: '-0.69550', usage: '92', usageUnit: 'minutes' },
+    { category: 'calls-inbound-local', price: '-0.69550', usage: '92', usageUnit: 'minutes' },
+    { category: 'calls-media-stream-minutes', price: '-0.13650', usage: '41', usageUnit: 'minutes' },
+    { category: 'amazon-polly', price: '-0.02280', usage: '38', usageUnit: 'use' },
+    { category: 'calls-text-to-speech', price: '-0.02280', usage: '38', usageUnit: 'Use' },
+    { category: 'channels', price: '-0.00080', usage: '1', usageUnit: '' },
+  ];
+  const fake = (records) => ({ usage: { records: { list: async () => records } } });
+  const r = await fetchUsageTotalGbp(fake(realSept), { startDate: new Date(), endDate: new Date() });
+  check(Math.abs(r.totalGbp - 16.50058) < 1e-9 && r.totalSource === 'twilio_totalprice', 'Twilio total is Twilio\'s own totalprice record (£16.50), not a partial category sum');
+  check(Math.abs(r.rentalGbp - 15.6451) < 1e-9, 'UK number rental ("phonenumbers-local") is counted (£15.65)');
+  const split = splitRentalVsUsageGbp(r.byCategory, r);
+  check(split.numberRentalGbp === 15.6451 && split.callUsageGbp === 0.8555, 'split: rental £15.6451, everything else (calls, media streams, TTS, channels) £0.8555, nothing double-counted');
+  check(!r.byCategory.some((c) => c.category === 'totalprice'), 'display breakdown excludes the overall total');
+
+  const withParent = await fetchUsageTotalGbp(fake([
+    { category: 'totalprice', price: '-10' },
+    { category: 'phonenumbers', price: '-8' },
+    { category: 'phonenumbers-local', price: '-8' },
+  ]), { startDate: new Date(), endDate: new Date() });
+  check(withParent.rentalGbp === 8, 'when Twilio reports the "phonenumbers" parent, its children are not added again');
+
+  const noTotal = await fetchUsageTotalGbp(fake([
+    { category: 'calls-inbound', price: '-1.5' },
+    { category: 'phonenumbers', price: '-2' },
+  ]), { startDate: new Date(), endDate: new Date() });
+  check(noTotal.totalGbp === 3.5 && noTotal.totalSource === 'category_sum', 'no totalprice record → falls back to the original category sum');
+  check(JSON.stringify(splitRentalVsUsageGbp([{ category: 'phonenumbers', priceGbp: 2 }, { category: 'calls-inbound', priceGbp: 1 }])) === JSON.stringify({ numberRentalGbp: 2, callUsageGbp: 1 }), 'splitRentalVsUsageGbp without totals keeps its original behaviour');
+}
+
 console.log(failures === 0 ? '\nAll business-metrics checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;
