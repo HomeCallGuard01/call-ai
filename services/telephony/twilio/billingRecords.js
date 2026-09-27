@@ -274,9 +274,14 @@ function supplierDailyTotals(usageRecords) {
   const unmapped = [];
   for (const r of usageRecords) {
     const price = Number(r.price);
-    if (!Number.isFinite(price) || price === 0) continue;
+    if (!Number.isFinite(price)) continue;
     if (ROLLUP_OR_DUPLICATE_CATEGORIES.has(r.category)) continue;
     const category = USAGE_CATEGORY_MAP[r.category];
+    // An explicit £0 day for a mapped category is kept: it is the supplier's
+    // own figure (e.g. 2026-09-07: five 2–5 s streams billed 0 Media Streams
+    // minutes) and must win over an HCG estimate. Zero unmapped categories
+    // are just noise and are skipped.
+    if (price === 0 && !category) continue;
     const date = String(r.startDate instanceof Date ? r.startDate.toISOString() : r.startDate).slice(0, 10);
     const entry = { date, category, amount: money(Math.abs(price)), currency: String(r.priceUnit || '').toUpperCase(), sourceCategory: r.category };
     if (category) totals.push(entry);

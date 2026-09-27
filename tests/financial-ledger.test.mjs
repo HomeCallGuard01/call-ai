@@ -289,6 +289,25 @@ check(r.totals.supplierCategoriesNotReconstructedPerCall.some((c) => c.category 
 check(r.invalidRecords.length === 0 && plan.entries.every((e) => contract.problemsWithEntry(e).length === 0), 'every planned entry passes the contract');
 check(r.chargeObservations['app_leg:not_observed'] === 2, 'unpriced app legs appear as not_observed in the report');
 
+// Real case, 2026-09-07: Twilio's daily record billed £0 of Media Streams for
+// five 2–5 s monitored calls. The supplier's explicit zero must beat an HCG
+// estimate; an estimate is only used when no daily record exists at all.
+const zeroDayPlan = buildBackfillPlan({
+  adapter: twilio, now: NOW, mediaStreamRatePerMinute: 0.00333,
+  hcgCalls: [
+    { id: 'z1', call_sid: 'CA_z1', household_id: 'hh-1', status: 'Unknown', created_at: '2026-09-07T10:00:00Z', monitored_duration_seconds: 5 },
+    { id: 'n1', call_sid: 'CA_n1', household_id: 'hh-1', status: 'Unknown', created_at: '2026-09-08T10:00:00Z', monitored_duration_seconds: 5 },
+  ],
+  households: [{ id: 'hh-1', twilio_number: '+441234000533' }],
+  providerCalls: [],
+  usageRecords: [{ category: 'calls-media-stream-minutes', startDate: '2026-09-07', price: '0', priceUnit: 'gbp' }],
+});
+const z1 = zeroDayPlan.entries.find((e) => e.native_reference === 'CA_z1');
+const n1 = zeroDayPlan.entries.find((e) => e.native_reference === 'CA_n1');
+check(z1.provenance === 'provider_allocated' && z1.amount === 0 && z1.source_reference.includes('0 GBP'),
+  "a day Twilio explicitly billed £0 Media Streams is allocated £0 from that record, not estimated");
+check(n1.provenance === 'estimated' && n1.amount > 0, 'a day with no Twilio record at all falls back to a labelled estimate');
+
 // ---------------- backfill write guard ----------------
 throws(() => assertSafeApplyTarget({ supabaseUrl: 'https://psbzynxplxfbyrbdidmn.supabase.co', target: 'staging', confirm: 'write-staging' }),
   'backfill --apply refuses the production project unconditionally');
