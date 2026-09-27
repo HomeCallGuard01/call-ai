@@ -14,6 +14,20 @@ export interface ResendConfirmationResponse {
   status: "resent" | "already_registered" | "no_action";
 }
 
+// services/customerProtectionSteps.js's exact 5 step keys/labels, in
+// order. `label` is already customer-safe copy from the server — the app
+// never needs its own translation of internal states into wording.
+export interface ProtectionStep {
+  key: "number_active" | "forwarding_detected" | "app_registered" | "delivery_confirmed" | "protection_active";
+  label: string;
+  done: boolean;
+}
+
+export interface ProtectionGuidance {
+  key: "number_pending" | "forwarding_not_detected" | "app_not_ready" | "confirming_delivery" | "reconnecting";
+  message: string;
+}
+
 // POST /verify-confirmation-token (server.js — shared with the web
 // confirmation flow, see public/confirmed.html) — 2026-09-20, the
 // TokenHash confirmation mechanism. Only present for defence-in-depth
@@ -84,6 +98,15 @@ export interface DashboardResponse {
     // Server-authoritative device classification (households.device_type)
     // — parity with web's /dashboard-data.
     deviceType: DeviceType | null;
+    // 5-step customer-facing protection checklist (2026-09-27,
+    // services/customerProtectionSteps.js) — a pure presentation layer
+    // over the exact same fields above (plus HCG-number provisioning).
+    // steps[4] ("protection_active").done is always identical to
+    // fullyProtected above, by construction — never a separately-derived
+    // claim. One simple, ready-to-display message for whichever step is
+    // currently blocking, or null once all 5 are done.
+    steps: ProtectionStep[];
+    guidance: ProtectionGuidance | null;
   };
   membership: {
     planName: string;

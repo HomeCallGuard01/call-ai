@@ -646,6 +646,19 @@ export default function Home() {
             message="There's a problem with your payment. Please update your billing details to keep your protection active."
           />
         )}
+
+        {/* 5-step protection checklist (2026-09-27) — always reachable
+            regardless of which state above rendered, most useful exactly
+            while not yet fully protected (it's what explains WHY, step
+            by step). A small, unobtrusive text link, matching the
+            existing lastConfirmedText/lastConfirmedLink treatment above
+            rather than a prominent button — this is supplementary detail,
+            never the primary call to action on this screen. */}
+        <Text style={styles.protectionStatusLinkRow}>
+          <Text style={styles.lastConfirmedLink} onPress={() => router.push("/(setup)/protection-status")}>
+            View protection status
+          </Text>
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -737,6 +750,12 @@ const styles = StyleSheet.create({
   lastConfirmedLink: {
     color: colors.accent,
     fontWeight: "600",
+  },
+  protectionStatusLinkRow: {
+    ...typography.caption,
+    textAlign: "center",
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   statusBody: {
     ...typography.body,
