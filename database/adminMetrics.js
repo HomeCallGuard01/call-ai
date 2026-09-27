@@ -379,7 +379,15 @@ async function getBusinessOverview() {
       .from("households")
       .select("id", { count: "exact", head: true })
       .gte("created_at", startOfThisWeek().toISOString()),
-    supabaseAdmin.from("entitlements").select("id", { count: "exact", head: true }).eq("status", "active"),
+    // Audit A2/A3 (2026-09-27): only PAID entitlements count as active paid
+    // customers and towards MRR. Counting every active entitlement made 7
+    // complimentary accounts show as "Active paid customers: 7" and
+    // "MRR £34.93" while nobody was paying.
+    supabaseAdmin
+      .from("entitlements")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .eq("entitlement_type", "paid_subscription"),
     // "Failed payments" — this app stores no separate payment/invoice
     // table, so the real available signal is a subscription Stripe itself
     // has marked past_due or unpaid (a payment attempt that failed and is
