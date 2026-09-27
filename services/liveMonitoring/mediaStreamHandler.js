@@ -29,7 +29,7 @@ const { transcribeChunk } = require('./transcribeChunk');
 const { createCallMonitor } = require('./riskMonitor');
 const { logEvent } = require('./structuredLog');
 const { sendCriticalAlert } = require('../alerting');
-const { resolveMonitoringMaxDurationMs, hasReachedDurationThreshold, elapsedSeconds } = require('./monitoringLimit');
+const { resolveMonitoringMaxDurationMs, hasReachedDurationThreshold, elapsedSeconds, resolveMaxConcurrentStreams } = require('./monitoringLimit');
 const { MONITORING_LIMIT_ENDED_BODY } = require('./smsWarning');
 
 const DEFAULT_FINALIZE_WAIT_MS = 15000;
@@ -70,6 +70,13 @@ function isPlainObject(value) {
  *   (default 15s). Bounded so a hung transcription request can never
  *   stop a call's outcome being recorded.
  * @param {(type: string, message: string, context?: object) => Promise<boolean>} [deps.sendAlert]
+ * @param {number} [deps.maxConcurrentStreams] - abuse/cost-exhaustion
+ *   guard (default resolved from MEDIA_STREAM_MAX_CONCURRENT_STREAMS, 200)
+ *   — see monitoringLimit.js's own comment. /media-stream has no
+ *   authentication yet (shadow-mode signature check only, see
+ *   mediaStreamServer.js), so this is the one thing standing between a
+ *   flood of forged "start" events and unbounded memory growth / real
+ *   OpenAI transcription cost from forged "media" events on top of them.
  */
 function createMediaStreamHandler({
   transcribeClient,
@@ -82,6 +89,7 @@ function createMediaStreamHandler({
   now = () => new Date(),
   sendAlert = sendCriticalAlert,
   finalizeWaitMs = DEFAULT_FINALIZE_WAIT_MS,
+  maxConcurrentStreams = resolveMaxConcurrentStreams(),
 }) {
   // Per-stream state, keyed by Twilio's streamSid — one entry per active
   // call being monitored. Cleaned up on "stop" (or when the monitoring
@@ -229,6 +237,37 @@ function createMediaStreamHandler({
         logEvent('media_stream_malformed_message', { error: '"start" event has no "start" object', streamSid: typeof message.streamSid === 'string' ? message.streamSid : null });
         return Promise.resolve();
       }
+
+      // Concurrent-stream cap (see monitoringLimit.js's own comment) —
+      // checked BEFORE any pipeline resource is allocated (windowBuffer,
+      // monitor, the streams.set() entry itself), so a rejected "start"
+      // costs almost nothing and never touches any OTHER already-active
+      // stream's state. This can never affect a genuine call under any
+      // plausible real load (default 200, this business's busiest single
+      // household has never exceeded ~30 calls total, let alone
+      // concurrent) — it exists purely to bound a flood, not to
+      // distinguish genuine from forged traffic.
+      if (streams.size >= maxConcurrentStreams) {
+        logEvent('media_stream_concurrent_limit_reached', {
+          streamSid: typeof message.streamSid === 'string' ? message.streamSid : null,
+          activeStreams: streams.size,
+          maxConcurrentStreams,
+        });
+        sendAlert(
+          'media_stream_concurrent_limit_reached',
+          `/media-stream refused a new stream — ${streams.size} already active, at the configured limit of ${maxConcurrentStreams}. Investigate for a genuine traffic spike or abuse.`,
+          { activeStreams: streams.size, maxConcurrentStreams }
+        ).catch(() => {});
+        if (typeof closeConnection === 'function') {
+          try {
+            closeConnection();
+          } catch (err) {
+            logEvent('media_stream_close_failed', { error: err.message });
+          }
+        }
+        return Promise.resolve();
+      }
+
       const { streamSid, callSid } = message.start;
       // Guarded separately from the destructuring above: a default value
       // (`= {}`) only applies when the destructured property is

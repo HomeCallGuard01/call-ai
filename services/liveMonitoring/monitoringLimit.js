@@ -41,9 +41,41 @@ function elapsedSeconds(startedAt, now) {
   return Math.max(0, Math.round((now.getTime() - startedAtMs) / 1000));
 }
 
+// Concurrent-stream cap (2026-09-27, launch-hardening) — a second, distinct
+// safety limit from the per-call duration one above. /media-stream is an
+// unauthenticated WebSocket endpoint (see mediaStreamServer.js/
+// mediaStreamHandler.js's own comments on the shadow-mode signature check
+// for why it can't safely be authentication-gated yet). Without this, a
+// flood of forged "start" events — each one well-formed enough to pass the
+// crash-hardening shape guards — would grow the handler's in-memory
+// `streams` Map without bound, and every forged "media" event on top of
+// that triggers a REAL OpenAI Whisper API call (transcribeChunk), a real
+// per-frame cost. This is a cost-and-resource-exhaustion guard, not an
+// authenticity check: it never distinguishes genuine Twilio traffic from
+// forged traffic (nothing here can, yet), it only bounds the *total*
+// concurrent damage either one can do. Default (200) is deliberately far
+// above any realistic real concurrent-call volume for this business
+// (production's busiest single household has never exceeded ~30 calls
+// total, let alone concurrent) — safe for genuine traffic under any
+// plausible real load, while still capping a flood at a fixed ceiling
+// instead of unbounded growth.
+const DEFAULT_MAX_CONCURRENT_MEDIA_STREAMS = 200;
+
+function resolvePositiveIntEnv(value, fallback) {
+  const n = Number(value);
+  if (Number.isInteger(n) && n > 0) return n;
+  return fallback;
+}
+
+function resolveMaxConcurrentStreams(env = process.env) {
+  return resolvePositiveIntEnv(env.MEDIA_STREAM_MAX_CONCURRENT_STREAMS, DEFAULT_MAX_CONCURRENT_MEDIA_STREAMS);
+}
+
 module.exports = {
   DEFAULT_MAX_MONITORING_DURATION_MINUTES,
   resolveMonitoringMaxDurationMs,
   hasReachedDurationThreshold,
   elapsedSeconds,
+  DEFAULT_MAX_CONCURRENT_MEDIA_STREAMS,
+  resolveMaxConcurrentStreams,
 };
