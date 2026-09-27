@@ -2,6 +2,12 @@
 // frames (Twilio Media Streams sends 20ms mulaw frames) into overlapping
 // transcription windows.
 //
+// NOT used by the live pipeline since 2026-09-26 — replaced by
+// speechSegmenter.js's pause-aligned, non-overlapping segments, which
+// transcribe each second of audio once instead of twice (this buffer's
+// 2s overlap doubled paid transcription). Kept intact and still tested
+// as the rollback path: mediaStreamHandler.js swaps back in one line.
+//
 // Deliberately frame-count-based, not wall-clock-based: Twilio's frame
 // size/interval is fixed and known (20ms), so counting frames is simpler
 // and fully deterministic for testing than timing real audio.

@@ -18,13 +18,21 @@
 
 'use strict';
 
-const { createWindowBuffer } = require('./audioWindow');
+// 2026-09-26: pause-aligned, non-overlapping segments replace
+// audioWindow.js's 4s-window/2s-overlap buffer, so each second of audio
+// is transcribed once instead of twice — see speechSegmenter.js for why
+// that's safe. audioWindow.js is deliberately left intact (and still
+// tested) as the one-line rollback: swap createSpeechSegmenter() back to
+// createWindowBuffer() below.
+const { createSpeechSegmenter } = require('./speechSegmenter');
 const { transcribeChunk } = require('./transcribeChunk');
 const { createCallMonitor } = require('./riskMonitor');
 const { logEvent } = require('./structuredLog');
 const { sendCriticalAlert } = require('../alerting');
 const { resolveMonitoringMaxDurationMs, hasReachedDurationThreshold, elapsedSeconds } = require('./monitoringLimit');
 const { MONITORING_LIMIT_ENDED_BODY } = require('./smsWarning');
+
+const DEFAULT_FINALIZE_WAIT_MS = 15000;
 
 // True only for a genuine JSON object ({...}) — excludes null (typeof
 // 'object' but not safe to property-access) and arrays (structurally the
@@ -56,6 +64,11 @@ function isPlainObject(value) {
  *   transcription/scoring pipeline stops for that call — the underlying
  *   dialled call is never touched.
  * @param {() => Date} [deps.now] - injectable clock for tests.
+ * @param {number} [deps.finalizeWaitMs] - on "stop", the longest the
+ *   audit record (recordOutcome) waits for the hang-up tail and any
+ *   still-in-flight chunks to finish before being written anyway
+ *   (default 15s). Bounded so a hung transcription request can never
+ *   stop a call's outcome being recorded.
  * @param {(type: string, message: string, context?: object) => Promise<boolean>} [deps.sendAlert]
  */
 function createMediaStreamHandler({
@@ -68,6 +81,7 @@ function createMediaStreamHandler({
   maxMonitoringDurationMs = resolveMonitoringMaxDurationMs(),
   now = () => new Date(),
   sendAlert = sendCriticalAlert,
+  finalizeWaitMs = DEFAULT_FINALIZE_WAIT_MS,
 }) {
   // Per-stream state, keyed by Twilio's streamSid — one entry per active
   // call being monitored. Cleaned up on "stop" (or when the monitoring
@@ -95,6 +109,7 @@ function createMediaStreamHandler({
       warningSent: summary.warningSent,
       peakRiskScore: summary.peakRiskScore,
       terminatedBySystem: summary.terminatedBySystem,
+      detectedAfterCallEnded: summary.detectedAfterCallEnded,
       monitoredDurationSeconds,
       monitoringLimitReached,
     });
@@ -129,6 +144,55 @@ function createMediaStreamHandler({
   // routing. Optional so every existing test (which drives this handler
   // with plain message objects, no real socket) continues to work
   // unchanged.
+  // Transcribes one segment exactly once and hands the text to the
+  // monitor at its audio-order position. Shared by live segments and the
+  // hang-up tail flush, so both go through identical, never-throwing
+  // handling. Tracked in entry.inFlight until settled.
+  function processSegment(streamSid, entry, segment) {
+    const sequence = entry.nextSequence;
+    entry.nextSequence += 1;
+
+    const promise = transcribeChunk(segment, { client: transcribeClient, callSid: entry.callSid, promptContext: entry.lastTranscript })
+      .then(text => {
+        if (text) entry.lastTranscript = text;
+        return entry.monitor.handleTranscribedChunk(text, { sequence });
+      })
+      .catch(err => {
+        // Belt-and-braces: transcribeChunk already never throws, but a
+        // failure anywhere in this pipeline must never propagate up to
+        // the WebSocket connection or the live call. Alerted (rate-
+        // limited by type, see services/alerting.js) since a run of
+        // these across calls in a short window usually means the
+        // whole transcription/scoring pipeline is broken (e.g. OpenAI
+        // down), not one bad audio frame.
+        logEvent('media_stream_pipeline_error', { streamSid, error: err.message });
+        sendAlert('live_monitoring_pipeline_error', `Live-monitoring pipeline error: ${err.message}`, {
+          streamSid,
+        }).catch(() => {});
+      });
+
+    entry.inFlight.add(promise);
+    promise.then(() => entry.inFlight.delete(promise));
+    return promise;
+  }
+
+  // Resolves once every in-flight segment has settled, or after
+  // finalizeWaitMs — whichever is first. Never rejects.
+  function waitForInFlight(streamSid, entry) {
+    if (entry.inFlight.size === 0) return Promise.resolve();
+    let timer;
+    const timeout = new Promise(resolve => {
+      timer = setTimeout(() => {
+        logEvent('monitoring_outcome_wait_timed_out', { streamSid, callSid: entry.callSid, pending: entry.inFlight.size, finalizeWaitMs });
+        resolve();
+      }, finalizeWaitMs);
+      // Deliberately NOT unref()'d: if nothing else is keeping the
+      // process alive, the audit record must still be written, so this
+      // timer holds the process for at most finalizeWaitMs.
+    });
+    return Promise.race([Promise.allSettled([...entry.inFlight]), timeout]).then(() => clearTimeout(timer));
+  }
+
   function handleMessage(rawMessage, { closeConnection } = {}) {
     let message;
     try {
@@ -173,7 +237,7 @@ function createMediaStreamHandler({
       // next line. Same class of bug as the guards above, closed the same way.
       const customParameters = isPlainObject(message.start.customParameters) ? message.start.customParameters : {};
       const householdId = customParameters.householdId || null;
-      const windowBuffer = createWindowBuffer();
+      const windowBuffer = createSpeechSegmenter();
       const monitor = createCallMonitor({
         callSid,
         householdId,
@@ -201,6 +265,15 @@ function createMediaStreamHandler({
         callSid,
         householdId,
         lastTranscript: null,
+        // Audio-order position of the next segment sent for
+        // transcription — passed to the monitor with the result so a
+        // response that resolves out of order is still placed where its
+        // audio belongs (riskMonitor.js's handleTranscribedChunk).
+        nextSequence: 0,
+        // Transcribe-and-score promises not yet settled — awaited (with a
+        // bound) on "stop" so the audit record includes any detection
+        // that lands after the caller hangs up.
+        inFlight: new Set(),
         startedAt: now(),
         // Guards against ever running the limit-reached branch twice for
         // the same stream — the narrow window between us deciding to
@@ -298,24 +371,7 @@ function createMediaStreamHandler({
       const window = entry.windowBuffer.addFrame(frame);
       if (!window) return Promise.resolve();
 
-      return transcribeChunk(window, { client: transcribeClient, callSid: entry.callSid, promptContext: entry.lastTranscript })
-        .then(text => {
-          if (text) entry.lastTranscript = text;
-          return entry.monitor.handleTranscribedChunk(text);
-        })
-        .catch(err => {
-          // Belt-and-braces: transcribeChunk already never throws, but a
-          // failure anywhere in this pipeline must never propagate up to
-          // the WebSocket connection or the live call. Alerted (rate-
-          // limited by type, see services/alerting.js) since a run of
-          // these across calls in a short window usually means the
-          // whole transcription/scoring pipeline is broken (e.g. OpenAI
-          // down), not one bad audio frame.
-          logEvent('media_stream_pipeline_error', { streamSid: message.streamSid, error: err.message });
-          sendAlert('live_monitoring_pipeline_error', `Live-monitoring pipeline error: ${err.message}`, {
-            streamSid: message.streamSid,
-          }).catch(() => {});
-        });
+      return processSegment(message.streamSid, entry, window);
     }
 
     if (message.event === 'stop') {
@@ -338,7 +394,28 @@ function createMediaStreamHandler({
         return Promise.resolve();
       }
 
-      return finalizeStream(message.streamSid, entry, { monitoringLimitReached: false });
+      // Hang-up flush (2026-09-26). The call is over: mark it so before
+      // anything else, so the flushed tail AND any chunk still in flight
+      // can warn the customer (post-call wording for a red line) but can
+      // never attempt to terminate a call that no longer exists — see
+      // riskMonitor.js's markCallEnded. The stream entry was already
+      // removed above, so no further media can reach this segmenter;
+      // flush() also empties it, so the tail is transcribed at most once.
+      // Not done at the monitoring limit (that path finalizes above and
+      // deliberately stops all transcription for the call).
+      entry.monitoringStopped = true;
+      entry.monitor.markCallEnded();
+      const tail = entry.windowBuffer.flush();
+      if (tail) {
+        logEvent('hangup_tail_flushed', { streamSid: message.streamSid, callSid: entry.callSid, tailMs: Math.round(tail.length / 8) });
+        processSegment(message.streamSid, entry, tail);
+      }
+
+      // The audit record waits (bounded) for the tail and any in-flight
+      // chunks, so a detection landing after hang-up is recorded rather
+      // than lost — previously it was written before they resolved.
+      return waitForInFlight(message.streamSid, entry)
+        .then(() => finalizeStream(message.streamSid, entry, { monitoringLimitReached: false }));
     }
 
     // "connected" and any other/unknown event: nothing to do.
