@@ -87,7 +87,7 @@ Consumers (no rules of their own):
 | QUARANTINE_AWAITING_CONFIRMATION | C, D (age) | watch → action at 45 days, critical at 90 | 45/90 days |
 | QUARANTINE_CONFIRMED_NOT_RELEASED | A, B, C | action | 48h |
 | QUARANTINED_NUMBER_OF_ENTITLED_HOUSEHOLD | D, C | critical | — |
-| RECORDED_RELEASE_FAILURE (P0 050 columns) | B (writes), C (reads) | action | — |
+| RECORDED_RELEASE_FAILURE (P0 052 columns) | B (writes), C (reads) | action | — |
 | PROVIDER_NUMBER_UNACCOUNTED: orphan / staging | C, D | action / amber | — |
 | MARKED_RELEASED_STILL_AT_PROVIDER | C | action | — |
 | HOUSEHOLD_NUMBER_MISSING_AT_PROVIDER | C | action | — |
