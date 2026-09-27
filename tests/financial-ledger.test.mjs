@@ -285,7 +285,11 @@ const inboundCmp = r.totals.byCategory.find((c) => c.category === 'inbound_voice
 check(inboundCmp.supplierTotal === 0.0907 && inboundCmp.ledgerTotal === 0.0907 && inboundCmp.discrepancy === 0,
   'reconstructed inbound total equals the Twilio usage total (0.0907), discrepancy 0');
 check(r.totals.byCategory.find((c) => c.category === 'media_stream').discrepancy === 0, 'allocated Media Streams reconcile exactly to the daily total');
-check(r.totals.supplierCategoriesNotReconstructedPerCall.some((c) => c.category === 'number_rental'), 'number rental is shown as a supplier total not reconstructed per call');
+{
+  const rental = r.totals.byCategory.find((c) => c.category === 'number_rental');
+  check(rental && rental.supplierTotal === 1.73834 && rental.discrepancy === 0 && r.unallocated.byCategory.number_rental === 1.73834,
+    'number rental no owned number explains is reconstructed in full as UNALLOCATED (never dropped, never guessed)');
+}
 check(r.invalidRecords.length === 0 && plan.entries.every((e) => contract.problemsWithEntry(e).length === 0), 'every planned entry passes the contract');
 check(r.chargeObservations['app_leg:not_observed'] === 2, 'unpriced app legs appear as not_observed in the report');
 
@@ -307,6 +311,77 @@ const n1 = zeroDayPlan.entries.find((e) => e.native_reference === 'CA_n1');
 check(z1.provenance === 'provider_allocated' && z1.amount === 0 && z1.source_reference.includes('0 GBP'),
   "a day Twilio explicitly billed £0 Media Streams is allocated £0 from that record, not estimated");
 check(n1.provenance === 'estimated' && n1.amount > 0, 'a day with no Twilio record at all falls back to a labelled estimate');
+
+// ---------------- non-call costs: SMS, Polly, number rental, UNALLOCATED ----------------
+{
+  const priced = twilio.normaliseMessage({
+    sid: 'SM_priced', direction: 'outbound-api', status: 'delivered', numSegments: '2', price: '-0.08465', priceUnit: 'GBP',
+    from: '+441234000533', to: '+447700900001', dateCreated: new Date('2026-09-19T15:00:00Z'), dateSent: new Date('2026-09-19T15:00:01Z'),
+  }, { householdId: 'hh-1', householdMatch: 'via_number' }, { now: NOW });
+  check(priced.provenance === 'provider_actual' && priced.charge_observation === 'reported_amount' && priced.amount === 0.08465
+    && priced.native_amount === -0.08465 && priced.native_quantity === 2 && priced.native_unit === 'segment',
+    'SMS: Twilio\'s per-message price and segment count are recorded as provider_actual');
+  check(!JSON.stringify(priced).includes('7700900001') && !JSON.stringify(priced).includes('1234000533'), 'SMS entries store no phone numbers');
+  check(contract.problemsWithEntry(priced).length === 0, 'SMS entry passes the contract');
+  const unpriced = twilio.normaliseMessage({ sid: 'SM_null', status: 'failed', numSegments: '1', price: null, priceUnit: 'GBP', dateCreated: new Date('2026-09-10T10:00:00Z') }, {}, { now: NOW });
+  check(unpriced.charge_observation === 'not_observed' && unpriced.amount === null, 'an unpriced (e.g. failed) SMS is not_observed, never £0');
+
+  const tts = twilio.allocateDailyTts({ date: '2026-09-19', usageTotal: 0.0012, currency: 'GBP', now: NOW,
+    calls: [{ callSid: 'CA_a', occurredAt: NOW, householdId: 'hh-1' }, { callSid: 'CA_b', occurredAt: NOW, householdId: 'hh-2' }] });
+  check(tts.length === 2 && tts[0].amount === 0.0006 && tts[1].amount === 0.0006 && tts.every((e) => e.provenance === 'provider_allocated' && e.source_reference.includes('amazon-polly 2026-09-19')),
+    'Polly: the day\'s total is shared equally across greeted calls, labelled provider_allocated with its source');
+
+  const numbers = [
+    { sid: 'PN_owned', dateCreated: '2026-08-07T10:00:00Z', householdId: 'hh-1' },
+    { sid: 'PN_spare', dateCreated: '2026-07-07T09:00:00Z', householdId: null },
+    { sid: 'PN_other_day', dateCreated: '2026-08-12T09:00:00Z', householdId: 'hh-2' },
+  ];
+  const rent = twilio.allocateDailyNumberRental({ date: '2026-09-07', usageTotal: 1.73834, usageCount: 2, currency: 'GBP', numbers, now: NOW });
+  check(rent.length === 2 && rent.every((e) => e.amount === 0.86917 && e.provenance === 'provider_allocated' && e.billing_model === 'per_number'),
+    'rental: the day\'s total is shared across exactly the numbers renewing that day (anniversary match)');
+  check(rent.find((e) => e.native_reference === 'PN_owned').household_id === 'hh-1'
+    && rent.find((e) => e.native_reference === 'PN_spare').household_id === null
+    && rent.find((e) => e.native_reference === 'PN_spare').evidence.allocation_status === 'unallocated_number_without_household',
+    'rental: attributed to the number\'s current household; a number with no household stays unallocated');
+  const mismatch = twilio.allocateDailyNumberRental({ date: '2026-09-07', usageTotal: 2.60751, usageCount: 3, currency: 'GBP', numbers, now: NOW });
+  check(mismatch.length === 1 && mismatch[0].household_id === null && mismatch[0].amount === 2.60751 && mismatch[0].evidence.allocation_status === 'unallocated',
+    'rental: when owned numbers don\'t account for the day\'s count (a since-released number), the whole day is UNALLOCATED, not guessed');
+  const feb = twilio.allocateDailyNumberRental({ date: '2027-02-28', usageTotal: 0.86917, usageCount: 1, currency: 'GBP',
+    numbers: [{ sid: 'PN_31st', dateCreated: '2026-10-31T09:00:00Z', householdId: 'hh-3' }], now: NOW });
+  check(feb.length === 1 && feb[0].native_reference === 'PN_31st', 'rental: a number bought on the 31st renews on the last day of shorter months');
+  check([...rent, ...mismatch, ...feb].every((e) => contract.problemsWithEntry(e).length === 0), 'all rental entries pass the contract');
+
+  // Full plan: every supplier category reconciles, an unexplained settled
+  // charge becomes an explicit residual, a recent day is left for reconciliation.
+  const full = buildBackfillPlan({
+    adapter: twilio, now: NOW, mediaStreamRatePerMinute: 0.00333,
+    hcgCalls: [{ id: 'c-m', call_sid: monitoredParent.sid, household_id: 'hh-1', status: 'Unknown', created_at: '2026-09-19T14:49:28Z', monitored_duration_seconds: 295 }],
+    households: [{ id: 'hh-1', twilio_number: '+441234000533' }],
+    providerCalls: [monitoredParent, monitoredChild],
+    providerMessages: [{ sid: 'SM_1', status: 'delivered', numSegments: '1', price: '-0.04233', priceUnit: 'GBP', from: '+441234000533', to: '+447700900001', dateCreated: new Date('2026-09-19T15:00:00Z'), dateSent: new Date('2026-09-19T15:00:00Z') }],
+    ownedNumbers: [{ sid: 'PN_hh1', phoneNumber: '+441234000533', dateCreated: '2026-08-19T08:00:00Z' }],
+    usageRecords: [
+      { category: 'calls-inbound', startDate: '2026-09-19', price: '0.03779', priceUnit: 'gbp' },
+      { category: 'calls-media-stream-minutes', startDate: '2026-09-19', price: '0.01663', priceUnit: 'gbp' },
+      { category: 'amazon-polly', startDate: '2026-09-19', price: '0.0006', priceUnit: 'gbp' },
+      { category: 'phonenumbers', startDate: '2026-09-19', price: '0.86917', priceUnit: 'gbp', count: '1' },
+      { category: 'failed-message-processing-fee', startDate: '2026-09-19', price: '0.00076', priceUnit: 'gbp' },
+      { category: 'sms', startDate: '2026-09-19', price: '0.04233', priceUnit: 'gbp' },
+      { category: 'failed-message-processing-fee', startDate: '2026-09-27', price: '0.00076', priceUnit: 'gbp' },
+    ],
+  });
+  const fr = full.report;
+  const byCat = Object.fromEntries(fr.totals.byCategory.map((c) => [c.category, c]));
+  check(['inbound_voice', 'media_stream', 'tts', 'number_rental'].every((c) => byCat[c].discrepancy === 0),
+    'full plan: inbound, Media Streams, Polly and rental each reconcile exactly to Twilio');
+  check(byCat.sms.supplierTotal === 0.04385 && byCat.sms.ledgerTotal === 0.04309 && fr.unallocated.residuals.length === 1 && fr.unallocated.residuals[0].amount === 0.00076,
+    'full plan: a settled SMS processing fee with no priced message becomes an explicit UNALLOCATED residual');
+  check(!fr.unallocated.residuals.some((x) => x.date === '2026-09-27'), 'full plan: a charge from a recent, unsettled day is not residualised (avoids double counting)');
+  check(fr.tts.allocatedShares === 1 && fr.numberRental.allocatedShares === 1 && fr.sms.householdMatches.via_number === 1,
+    'full plan: Polly and rental are allocated to the monitored call and owned number; the SMS links via the HCG number');
+  check(full.entries.every((e) => contract.problemsWithEntry(e).length === 0) && !JSON.stringify(full.entries).includes('7700900001'),
+    'full plan: every entry passes the contract and no customer phone number is stored');
+}
 
 // ---------------- backfill write guard ----------------
 throws(() => assertSafeApplyTarget({ supabaseUrl: 'https://psbzynxplxfbyrbdidmn.supabase.co', target: 'staging', confirm: 'write-staging' }),
