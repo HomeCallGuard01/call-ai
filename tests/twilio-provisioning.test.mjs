@@ -703,6 +703,11 @@ async function run() {
     check(quarantineCalls[0].sid === null, 'the SID is simply null when the lookup failed, not a thrown error');
   }
 
+  // Migration 047 added an entitlement guard (deps.blocksRelease) to every
+  // release path; these existing scenarios describe households that are NOT
+  // entitled (deletion has already revoked access), so they inject that.
+  const notEntitled = async () => false;
+
   // --- releaseTwilioNumberImmediately (used by services/accountDeletion.js
   // — also now QUARANTINES rather than genuinely releasing, closing the
   // same unsafe-release gap for account deletion, not just subscription
@@ -714,7 +719,7 @@ async function run() {
 
     const result = await releaseTwilioNumberImmediately(
       { id: 'household-13', twilio_number: null },
-      { releaseImmediately, quarantine }
+      { releaseImmediately, quarantine, blocksRelease: notEntitled }
     );
 
     check(
@@ -732,7 +737,7 @@ async function run() {
 
     const result = await releaseTwilioNumberImmediately(
       { id: 'household-14', twilio_number: '+447700900042' },
-      { releaseImmediately, quarantine, client: undefined }
+      { releaseImmediately, quarantine, client: undefined, blocksRelease: notEntitled }
     );
 
     check(
@@ -786,7 +791,7 @@ async function run() {
 
     const result = await releaseQuarantinedTwilioNumber(
       { id: 'q-3', household_id: 'household-22', twilio_number: '+447700900052', deactivation_confirmed: true, released_at: null },
-      { client, markReleased }
+      { client, markReleased, blocksRelease: notEntitled }
     );
 
     check(
