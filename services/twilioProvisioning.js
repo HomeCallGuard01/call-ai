@@ -12,6 +12,7 @@ const {
   markTwilioNumberQuarantineReleased,
 } = require("../database/twilioQuarantine");
 const { sendCriticalAlert } = require("./alerting");
+const { decideNumberPurchase, fakeNumber } = require("./telephony/provisioningGuard");
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
@@ -95,10 +96,46 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     addressSid = process.env.TWILIO_ADDRESS_SID,
     bundleSid = process.env.TWILIO_BUNDLE_SID,
     maxAttempts = DEFAULT_MAX_ATTEMPTS,
+    guard = decideNumberPurchase,
+    guardEnv = process.env,
   } = deps;
 
   if (!shouldAttemptProvisioning(household, { maxAttempts })) {
     return { attempted: false };
+  }
+
+  // Environment guard (services/telephony/provisioningGuard.js): a staging
+  // or local server must never buy a real number on the production provider
+  // account. It protects the REAL provider client — every production path
+  // calls this without injecting a client; tests that inject a fake client
+  // opt in with deps.enforceGuard. A blocked purchase is recorded as a
+  // failure (so the existing attempt limit stops retries), never silently.
+  if (!("client" in deps) || deps.enforceGuard) {
+    let decision = guard(guardEnv);
+    if (decision.action === "purchase" && decision.environment === "nonproduction" && client) {
+      const owned = await client.incomingPhoneNumbers.list().catch(() => null);
+      decision = guard(guardEnv, { ownedNumberCount: owned ? owned.length : Infinity });
+    }
+    if (decision.action === "block") {
+      console.warn("TWILIO PROVISIONING BLOCKED BY ENVIRONMENT GUARD:", household.id, decision.reason);
+      await recordFailure(household.id, `provisioning blocked: ${decision.reason}`).catch(err =>
+        console.error("TWILIO PROVISIONING FAILURE-RECORD ERROR:", err.message)
+      );
+      // A process that believes it is production but fails the production
+      // signature would leave real customers without a number: shout.
+      if (guardEnv.NODE_ENV === "production") {
+        sendAlert("twilio_provisioning_blocked_by_guard", `Number purchase blocked in a production process: ${decision.reason}`, {
+          householdId: household.id,
+        }).catch(() => {});
+      }
+      return { attempted: true, success: false, blocked: true, error: decision.reason };
+    }
+    if (decision.action === "fake") {
+      const number = fakeNumber(Date.now());
+      const assigned = await assign(household.id, number);
+      console.log("TWILIO PROVISIONING FAKE NUMBER (no provider call):", household.id, number);
+      return { attempted: true, success: Boolean(assigned), fake: true, twilioNumber: number };
+    }
   }
 
   if (!client) {
