@@ -30,6 +30,7 @@ const {
   decideCallDeliveryPlan,
   hasVoiceClientRegistrationHistory,
   computeProtectionStatus,
+  shouldStartPaidMonitoring,
 } = require("./services/callRouting");
 const { buildVoiceClientIdentity } = require("./services/voiceAccessToken");
 const { setHouseholdPhoneNumber } = require("./services/householdPhoneNumber");
@@ -576,7 +577,37 @@ async function recordApprovedCallDeliveryOutcome(callSid, dialCallStatus, durati
     return;
   }
 
-  const householdId = data && data.household_id;
+  // Duration-recording observability (2026-09-26) — a read-only production
+  // audit found real, genuinely-answered calls (Twilio's own Call resource
+  // confirmed a completed, multi-second Client leg) whose calls.duration_seconds
+  // was never recorded — this UPDATE's WHERE clause (.eq("call_sid", callSid))
+  // matched zero rows for them, and .maybeSingle() treats zero matched rows
+  // as an ordinary, error-free result ({ data: null, error: null }) — so the
+  // failure was completely silent, with no trace anywhere. The exact trigger
+  // couldn't be established from Twilio + Supabase data alone (Twilio's own
+  // Debugger/Monitor Alerts showed no webhook-delivery failure for any
+  // affected call, which points at this update racing the fire-and-forget
+  // logCall() INSERT in /voice rather than the webhook itself failing to
+  // arrive — not proven, and deliberately not "fixed" by guessing at that
+  // mechanism here). This is the smallest safe first step: make the zero-
+  // match case loud instead of silent, so the next real occurrence comes
+  // with server-log evidence to actually diagnose it by. Never throws, never
+  // affects the TwiML response already returned to Twilio for this request —
+  // same fail-open discipline as the rest of this function.
+  if (!data) {
+    console.error(
+      "CALL DURATION RECORD FAILED: update matched no row for this CallSid — duration_seconds/dial_call_status were NOT recorded",
+      { callSid, dialCallStatus, durationSeconds }
+    );
+    sendCriticalAlert(
+      "call_duration_record_no_matching_row",
+      "An approved call's delivery outcome could not be recorded — no calls row matched this CallSid",
+      { callSid, dialCallStatus, durationSeconds }
+    ).catch(() => {});
+    return;
+  }
+
+  const householdId = data.household_id;
 
   if (dialCallStatus === "completed" && householdId) {
     markHouseholdDeliveryVerified(householdId).catch(err =>
@@ -760,12 +791,38 @@ app.post("/voice", async (req, res) => {
     console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
   }
 
-  twiml.say(
-    { voice: "Polly.Amy", language: "en-GB" },
-    "This number is monitored and protected by Home Call Guard."
-  );
+  // Subscription-enforcement cost-protection safeguard (2026-09-26) — see
+  // services/callRouting.js's shouldStartPaidMonitoring for the full
+  // reasoning and the production evidence that found this gap. A
+  // household with no currently-active entitlement must never trigger
+  // paid AI monitoring, regardless of how long its Twilio number and the
+  // customer's own carrier-side forwarding happen to remain live. The
+  // call itself is never affected either way — dialHouseholdOrFailClosed
+  // below still runs unconditionally, so an unentitled household's calls
+  // are still connected exactly as before; they simply stop being
+  // screened. The announcement is honesty-gated alongside monitoring: it
+  // must never tell a caller the number is "monitored and protected" when
+  // no monitoring is actually about to happen.
+  const activeEntitlement = household ? await getActiveEntitlement(household.id) : null;
 
-  attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+  if (shouldStartPaidMonitoring(household, activeEntitlement)) {
+    twiml.say(
+      { voice: "Polly.Amy", language: "en-GB" },
+      "This number is monitored and protected by Home Call Guard."
+    );
+
+    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+  } else if (household) {
+    // Expected, steady-state behaviour for a lapsed/cancelled/never-
+    // subscribed household — not a fault, so no sendCriticalAlert (that's
+    // reserved for genuine delivery failures elsewhere in this file).
+    // Logged so it's visible in server logs without being treated as an
+    // incident.
+    console.error(
+      "MONITORING SKIPPED: no active entitlement for household — call will still connect, without paid AI monitoring",
+      household.id
+    );
+  }
 
   dialHouseholdOrFailClosed(twiml, household);
 
@@ -2329,4 +2386,9 @@ attachMediaStreamServer(httpServer, {
   twilioRestClient,
   redLineRedirectUrl: buildRedLineTerminateUrl(APP_URL),
   recordOutcome: recordMonitoringOutcome,
+  // Shadow-mode Twilio signature check only (see mediaStreamServer.js and
+  // services/twilioWebhookAuth.js) — observes and logs, never rejects a
+  // connection. Same APP_URL/TWILIO_AUTH_TOKEN already used for /voice.
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
+  appUrl: APP_URL,
 });
