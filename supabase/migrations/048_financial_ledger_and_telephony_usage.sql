@@ -56,8 +56,10 @@
 --   * No phone numbers or other personal data; link by id. Service role only.
 --
 -- Additive only: two new tables; no existing table is altered.
--- Rollback: drop table public.financial_entries; drop table
--- public.telephony_call_legs;  (entries first, because of the FK).
+-- Rollback: drop view public.finance_monthly_contribution,
+-- public.finance_household_monthly, public.finance_monthly_summary,
+-- public.finance_entries_reporting; then drop table public.financial_entries;
+-- drop table public.telephony_call_legs;  (entries before legs, because of the FK).
 
 create table if not exists public.telephony_call_legs (
   id uuid primary key default gen_random_uuid(),
@@ -250,3 +252,110 @@ revoke all on public.financial_entries from public, anon, authenticated;
 
 grant select, insert, update, delete on public.telephony_call_legs to service_role;
 grant select, insert, update, delete on public.financial_entries to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Reporting interface for the admin dashboard (read-only views).
+--
+-- The dashboard reads money ONLY through these views, so every figure it
+-- shows carries:
+--   dashboard_bucket  revenue | tax | payment_fees | telephony |
+--                     ai_transcription | infrastructure | advertising | other
+--   amount_quality    ACTUAL     supplier priced this item (reported amount or explicit zero)
+--                     ALLOCATED  share of a supplier aggregate
+--                     ESTIMATED  HCG calculation
+--                     MANUAL     entered by a person
+--                     UNKNOWN    supplier outcome pending / not observed / unavailable (no amount)
+--   is_unallocated    a cost with no evidence-based household
+--   signed_amount     revenue positive; refunds, tax, fees and costs negative
+-- Amounts stay in native currency; views group by currency and never
+-- convert (FX belongs to the reporting layer).
+--
+-- security_invoker so the views can never bypass the tables' RLS, and
+-- service-role only, like the tables.
+-- ---------------------------------------------------------------------------
+
+create or replace view public.finance_entries_reporting
+with (security_invoker = true) as
+select
+  e.*,
+  case
+    when e.entry_class in ('revenue', 'refund') then 'revenue'
+    when e.entry_class = 'tax' then 'tax'
+    when e.entry_class = 'fee' then 'payment_fees'
+    when e.cost_class = 'customer_acquisition' then 'advertising'
+    when e.category in ('transcription', 'ai_inference') then 'ai_transcription'
+    when e.category in ('number_rental', 'inbound_voice', 'app_leg', 'outbound_voice', 'media_stream',
+                        'tts', 'channel_capacity', 'platform_fee', 'sms') then 'telephony'
+    when e.category in ('hosting', 'database', 'domain', 'developer_program', 'saas', 'insurance',
+                        'accountancy', 'other_overhead', 'email') then 'infrastructure'
+    else 'other'
+  end as dashboard_bucket,
+  case
+    when e.provenance = 'provider_actual' and e.charge_observation in ('reported_amount', 'reported_zero') then 'ACTUAL'
+    when e.provenance = 'provider_allocated' then 'ALLOCATED'
+    when e.provenance = 'estimated' then 'ESTIMATED'
+    when e.provenance = 'manual' then 'MANUAL'
+    else 'UNKNOWN'
+  end as amount_quality,
+  (e.household_id is null and e.entry_class in ('cost', 'fee')) as is_unallocated,
+  case when e.entry_class = 'revenue' then e.amount else -e.amount end as signed_amount,
+  date_trunc('month', coalesce(e.occurred_at, e.period_start, e.created_at)) as reporting_month
+from public.financial_entries e;
+
+create or replace view public.finance_monthly_summary
+with (security_invoker = true) as
+select
+  reporting_month,
+  dashboard_bucket,
+  amount_quality,
+  native_currency,
+  count(*)                                   as entries,
+  count(*) filter (where amount is null)     as entries_without_amount,
+  coalesce(sum(signed_amount), 0)            as signed_total,
+  coalesce(sum(signed_amount) filter (where is_unallocated), 0) as unallocated_signed_total
+from public.finance_entries_reporting
+group by reporting_month, dashboard_bucket, amount_quality, native_currency;
+
+create or replace view public.finance_household_monthly
+with (security_invoker = true) as
+select
+  household_id,
+  reporting_month,
+  dashboard_bucket,
+  amount_quality,
+  native_currency,
+  count(*)                        as entries,
+  coalesce(sum(signed_amount), 0) as signed_total
+from public.finance_entries_reporting
+where household_id is not null
+group by household_id, reporting_month, dashboard_bucket, amount_quality, native_currency;
+
+-- Contribution per month and currency. Only same-currency amounts are ever
+-- added together; a dashboard showing a single GBP figure converts
+-- explicitly. estimated_/unknown_ columns say how much of each total isn't
+-- supplier-confirmed.
+create or replace view public.finance_monthly_contribution
+with (security_invoker = true) as
+select
+  reporting_month,
+  native_currency,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket = 'revenue'), 0)                          as revenue,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket = 'tax'), 0)                              as tax,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket = 'payment_fees'), 0)                     as payment_fees,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket in ('telephony', 'ai_transcription')), 0) as direct_service_costs,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket in ('revenue', 'tax', 'payment_fees', 'telephony', 'ai_transcription')), 0) as contribution,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket = 'infrastructure'), 0)                   as infrastructure,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket = 'advertising'), 0)                      as advertising,
+  coalesce(sum(signed_amount) filter (where dashboard_bucket <> 'other'), 0)                           as operating_result,
+  coalesce(sum(signed_amount) filter (where is_unallocated), 0)                                        as unallocated_costs,
+  coalesce(sum(signed_amount) filter (where amount_quality in ('ESTIMATED', 'ALLOCATED')), 0)          as estimated_or_allocated_part,
+  count(*) filter (where amount_quality = 'UNKNOWN')                                                   as unknown_items
+from public.finance_entries_reporting
+group by reporting_month, native_currency;
+
+revoke all on public.finance_entries_reporting, public.finance_monthly_summary,
+              public.finance_household_monthly, public.finance_monthly_contribution
+  from public, anon, authenticated;
+grant select on public.finance_entries_reporting, public.finance_monthly_summary,
+                public.finance_household_monthly, public.finance_monthly_contribution
+  to service_role;

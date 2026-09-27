@@ -1502,6 +1502,52 @@ async function main() {
     entry_key: 'period:backwards', period_start: '2026-10-01T00:00:00Z', period_end: '2026-09-01T00:00:00Z',
   }), '048: a period must end after it starts');
 
+  // --- 048 reporting views (the dashboard's read interface) ---
+  await asServiceRole(db);
+  await db.query(entrySql, entry({
+    entry_key: 'stripe:rev:1', source_system: 'stripe', supplier: 'stripe', entry_class: 'revenue', category: 'subscription',
+    cost_class: null, billing_model: 'fixed_period', native_amount: 4.99, native_currency: 'GBP', amount: 4.99, telephony_leg_id: null,
+  }));
+  await db.query(entrySql, entry({
+    entry_key: 'openai:est:1', source_system: 'hcg', supplier: 'openai', category: 'transcription', provenance: 'estimated',
+    charge_observation: null, native_amount: null, native_currency: 'USD', amount: 0.0295, telephony_leg_id: null,
+    allocation_basis: 'HCG estimate: monitored seconds × list price',
+  }));
+  const { rows: rep } = await db.query(
+    `select entry_key, dashboard_bucket, amount_quality, is_unallocated, signed_amount from public.finance_entries_reporting order by entry_key`
+  );
+  const by = Object.fromEntries(rep.map((r) => [r.entry_key, r]));
+  assert(by['CA_ledger_parent:inbound_voice'].dashboard_bucket === 'telephony' && by['CA_ledger_parent:inbound_voice'].amount_quality === 'ACTUAL'
+      && Number(by['CA_ledger_parent:inbound_voice'].signed_amount) === -0.03023,
+    '048 view: a priced Twilio leg is telephony / ACTUAL with a negative signed amount');
+  assert(by['CA_child:app_leg:not_observed'].amount_quality === 'UNKNOWN' && by['CA_child:app_leg:not_observed'].signed_amount === null,
+    '048 view: an unobserved charge is UNKNOWN with no amount (never shown as £0)');
+  assert(by['usage:calls-media-stream-minutes:2026-09-19:CA_ledger_parent'].amount_quality === 'ALLOCATED', '048 view: an allocated share is ALLOCATED');
+  assert(by['openai:est:1'].dashboard_bucket === 'ai_transcription' && by['openai:est:1'].amount_quality === 'ESTIMATED', '048 view: a transcription estimate is ai_transcription / ESTIMATED');
+  assert(by['schedule:railway:2026-09'].dashboard_bucket === 'infrastructure' && by['schedule:railway:2026-09'].amount_quality === 'MANUAL'
+      && by['schedule:railway:2026-09'].is_unallocated === true, '048 view: manual hosting cost is infrastructure / MANUAL / unallocated');
+  assert(by['stripe:rev:1'].dashboard_bucket === 'revenue' && Number(by['stripe:rev:1'].signed_amount) === 4.99 && by['stripe:rev:1'].is_unallocated === false,
+    '048 view: revenue is positive and never counted as unallocated cost');
+  const { rows: contrib } = await db.query(`select native_currency, revenue, direct_service_costs, contribution, unknown_items from public.finance_monthly_contribution order by native_currency`);
+  const usdRow = contrib.filter((r) => r.native_currency === 'USD');
+  const nullRows = contrib.filter((r) => r.native_currency === null);
+  const gbpRows = contrib.filter((r) => r.native_currency === 'GBP');
+  assert(usdRow.some((r) => Number(r.direct_service_costs) === -0.0295) && usdRow.every((r) => Number(r.revenue) === 0)
+      && gbpRows.length === 1 && Number(gbpRows[0].revenue) === 4.99 && Number(gbpRows[0].direct_service_costs) === -0.04686,
+    '048 contribution view keeps each currency on its own row (USD transcription and USD channel fees never added to GBP)');
+  assert(nullRows.every((r) => Number(r.revenue) === 0 && Number(r.direct_service_costs) === 0 && Number(r.unknown_items) > 0),
+    '048 contribution view: items with no amount (UNKNOWN) have no currency, carry no money and are counted as unknown_items');
+  const { rows: [summaryCount] } = await db.query(`select count(*)::int as n from public.finance_monthly_summary`);
+  assert(summaryCount.n > 0, '048 monthly summary view returns grouped rows');
+
+  await asAuthUser(db, userId, 'a@example.com');
+  await rejects(`select count(*) from public.finance_entries_reporting`, [], '048: authenticated users cannot read the reporting views');
+  await rejects(`select count(*) from public.finance_monthly_contribution`, [], '048: authenticated users cannot read the contribution view');
+  await db.exec('reset role; set role anon;');
+  await rejects(`select count(*) from public.finance_monthly_summary`, [], '048: anon cannot read the reporting views');
+  await db.exec('reset role;');
+  await db.query(`delete from public.financial_entries where entry_key in ('stripe:rev:1', 'openai:est:1')`);
+
   await asAuthUser(db, userId, 'a@example.com');
   await rejects(`select count(*) from public.financial_entries`, [], '048: authenticated users cannot read financial_entries');
   await rejects(`select count(*) from public.telephony_call_legs`, [], '048: authenticated users cannot read telephony_call_legs');
