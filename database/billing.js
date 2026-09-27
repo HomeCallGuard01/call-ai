@@ -183,7 +183,20 @@ async function getSubscriptionByHouseholdId(householdId) {
 // third argument, so this is a zero-behavior-change addition: every
 // production call site continues to use the real supabaseAdmin exactly
 // as before.
-async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTransactionId, expiresAtMs }, deps = {}) {
+//
+// `environment` (2026-09-27, P0 fix): the RevenueCat event's own
+// `environment` field ('sandbox' | 'production' | null/undefined),
+// lower-cased by the caller before it reaches here — see
+// routes/mobileApi.js. Purely recorded on the row (migration 053's
+// revenuecat_environment column); this function itself makes no
+// decision based on it and grants the entitlement identically either
+// way, matching the existing "app still shows subscribed" requirement
+// for a legitimate sandbox/TestFlight purchase. The actual safety
+// behaviour (skipping real Twilio provisioning for a sandbox grant)
+// lives at the call site in routes/mobileApi.js, which has the
+// information needed to decide that; this function's only job is to
+// make sure the fact is never lost once decided.
+async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTransactionId, expiresAtMs, environment = null }, deps = {}) {
   const { client = supabaseAdmin } = deps;
   if (!client) throw new Error("Supabase admin client not configured");
 
@@ -206,17 +219,24 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
     existingActive.source === "apple_revenuecat" &&
     existingActive.external_reference === originalTransactionId
   ) {
-    if (existingActive.ends_at !== endsAt) {
+    const patch = {};
+    if (existingActive.ends_at !== endsAt) patch.ends_at = endsAt;
+    // A renewal can genuinely flip environment (e.g. a sandbox
+    // subscription's own accelerated renewal cadence) — always keep the
+    // stored value in sync with the most recent event rather than
+    // freezing whatever the very first grant happened to report.
+    if (existingActive.revenuecat_environment !== environment) patch.revenuecat_environment = environment;
+    if (Object.keys(patch).length > 0) {
       const { error: updateError } = await client
         .from("entitlements")
-        .update({ ends_at: endsAt })
+        .update(patch)
         .eq("id", existingActive.id);
       if (updateError) {
         console.error("SUPABASE ENTITLEMENT ENDS_AT UPDATE ERROR:", updateError);
         throw updateError;
       }
     }
-    return { action: "renewed", entitlementId: existingActive.id };
+    return { action: "renewed", entitlementId: existingActive.id, environment };
   }
 
   if (existingActive) {
@@ -239,6 +259,7 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
       source: "apple_revenuecat",
       external_reference: originalTransactionId,
       ends_at: endsAt,
+      revenuecat_environment: environment,
       notes: "Granted via RevenueCat (Apple In-App Purchase, StoreKit).",
     })
     .select("*")
@@ -248,7 +269,7 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
     console.error("SUPABASE ENTITLEMENT GRANT ERROR (revenuecat):", error);
     throw error;
   }
-  return { action: "granted", entitlementId: data.id };
+  return { action: "granted", entitlementId: data.id, environment };
 }
 
 // Admin-granted complimentary access (2026-09) — no Stripe or RevenueCat
