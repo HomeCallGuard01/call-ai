@@ -5,6 +5,7 @@
 'use strict';
 
 const { logEvent } = require('./structuredLog');
+const { maskPhoneNumber, redactPhoneNumbers } = require('./logRedaction');
 
 const WARNING_BODY = 'Home Call Guard: this call is showing signs of a possible scam. Stay cautious and avoid sharing personal or financial information.';
 
@@ -43,10 +44,10 @@ const MONITORING_LIMIT_ENDED_BODY =
 async function sendWarningSms({ client, to, from, callSid, body = WARNING_BODY }) {
   try {
     await client.messages.create({ to, from, body });
-    logEvent('sms_warning_sent', { callSid, to, redLine: body === RED_LINE_WARNING_BODY || body === POST_CALL_RED_LINE_WARNING_BODY, postCall: body === POST_CALL_RED_LINE_WARNING_BODY });
+    logEvent('sms_warning_sent', { callSid, to: maskPhoneNumber(to), redLine: body === RED_LINE_WARNING_BODY || body === POST_CALL_RED_LINE_WARNING_BODY, postCall: body === POST_CALL_RED_LINE_WARNING_BODY });
     return { sent: true };
   } catch (err) {
-    logEvent('sms_warning_failed', { callSid, to, error: err.message });
+    logEvent('sms_warning_failed', { callSid, to: maskPhoneNumber(to), error: redactPhoneNumbers(err.message) });
     return { sent: false, error: err.message };
   }
 }

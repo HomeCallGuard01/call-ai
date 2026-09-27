@@ -36,6 +36,7 @@ const { THRESHOLDS } = require('./scoring/thresholds');
 const { extractCriticalSignals } = require('./scoring/criticalSignals');
 const { sendWarningSms, RED_LINE_WARNING_BODY, POST_CALL_RED_LINE_WARNING_BODY } = require('./smsWarning');
 const { terminateCall } = require('./callTermination');
+const { describeTranscriptChunk, redactPhoneNumbers } = require('./logRedaction');
 const { logEvent } = require('./structuredLog');
 
 /**
@@ -117,7 +118,7 @@ function createCallMonitor({
       // notification failure must never cause repeated attempts that
       // could spam the household once the underlying issue clears, and
       // must never affect the live call either way.
-      logEvent('sms_warning_not_delivered', { callSid, householdId, error: result.error });
+      logEvent('sms_warning_not_delivered', { callSid, householdId, error: redactPhoneNumbers(result.error) });
     }
   }
 
@@ -203,11 +204,13 @@ function createCallMonitor({
       peakRiskIndicatorIds = scored.riskIndicators.map(r => r.id);
     }
 
+    // Never log the transcript text itself (privacy fix 2026-09-27; see
+    // logRedaction.js): only non-content diagnostics.
     logEvent('transcript_chunk', {
       callSid,
       householdId,
       chunkIndex: chunkCount,
-      chunkText,
+      ...describeTranscriptChunk(chunkText),
       riskScore: scored.riskScore,
       confidence: scored.confidence,
     });
