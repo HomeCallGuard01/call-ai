@@ -6,6 +6,7 @@ const {
   cancelTwilioNumberPendingRelease,
   releaseHouseholdTwilioNumber,
   releaseHouseholdTwilioNumberImmediately,
+  householdBlocksNumberRelease,
 } = require("../database/households");
 const {
   quarantineHouseholdTwilioNumber,
@@ -256,11 +257,28 @@ async function releaseTwilioNumberImmediately(household, deps = {}) {
     releaseImmediately = releaseHouseholdTwilioNumberImmediately,
     quarantine = quarantineHouseholdTwilioNumber,
     findSid = findTwilioIncomingNumberSid,
+    blocksRelease = householdBlocksNumberRelease,
+    sendAlert = sendCriticalAlert,
   } = deps;
 
   if (!household) return { released: false };
 
   try {
+    // Migration 049: never take a number from a household that still has an
+    // active or scheduled entitlement. Account deletion revokes the
+    // entitlement first, so this only fires if something was left in force —
+    // and then it alerts rather than silently leaving the number behind.
+    // Fails closed: if the check can't be completed, treat as entitled.
+    if (await blocksRelease(household.id).catch(() => true)) {
+      console.error("NUMBER RELEASE BLOCKED (account deletion, household still entitled):", household.id);
+      sendAlert(
+        "number_release_blocked_entitled",
+        "Account deletion could not release a number: the household still has an active or scheduled entitlement",
+        { householdId: household.id, path: "account_deletion" }
+      ).catch(() => {});
+      return { released: false, blocked: "household_entitled" };
+    }
+
     const releasedNumber = await releaseImmediately(household.id);
 
     if (!releasedNumber) {
@@ -296,10 +314,22 @@ async function releaseQuarantinedTwilioNumber(quarantineRow, deps = {}) {
     client = twilioRestClient,
     findSid = findTwilioIncomingNumberSid,
     markReleased = markTwilioNumberQuarantineReleased,
+    blocksRelease = householdBlocksNumberRelease,
   } = deps;
 
   if (!quarantineRow || !quarantineRow.deactivation_confirmed || quarantineRow.released_at) {
     return { released: false };
+  }
+
+  // Migration 049: re-read the household's CURRENT entitlement immediately
+  // before the provider release. A number quarantined from a household that
+  // is entitled now (the real 2026-09-23 case, household 30f01a7a) must not
+  // be returned to the provider; the returned error makes the daily runner
+  // raise a critical alert so it's investigated, never silently skipped.
+  // Fails closed: if the check can't be completed, treat as entitled.
+  if (quarantineRow.household_id && (await blocksRelease(quarantineRow.household_id).catch(() => true))) {
+    console.error("NUMBER RELEASE BLOCKED (quarantine, household currently entitled):", quarantineRow.household_id);
+    return { released: false, blocked: "household_entitled", error: "household currently has an active or scheduled entitlement" };
   }
 
   try {
