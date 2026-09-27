@@ -1,7 +1,9 @@
-// Tests for the business control dashboard (2026-09-27):
-// services/businessControl/{subscriptionOverview, numberReconciliation,
-// financialReadModel, manualCosts, campaignPerformance}.js and the
-// routes/adminBusinessControl.js wiring. Pure functions only — no
+// Tests for the business control dashboard (2026-09-27), full branch
+// (observational tabs + manual costs / ledger mode, not deployable until
+// migrations 048 + 050 exist): services/businessControl/{subscriptionOverview,
+// numberReconciliation, financialReadModel, campaignPerformance,
+// financialOverview}.js, routes/adminBusinessControl.js and the four
+// admin-business.html tabs. Pure functions and source guards only — no
 // database, Stripe or Twilio.
 //
 // Run with: node tests/business-control.test.mjs
@@ -95,6 +97,11 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   check(codes(h('q1', { twilio_number: null }), [], [{ household_id: 'q1', twilio_number: '+447700900111', deactivation_confirmed: false, quarantined_at: ago(3 * DAY), released_at: null, release_reason: 'subscription_grace_expired' }]).includes('QUARANTINE_AWAITING_CONFIRMATION'), 'quarantined number awaiting deactivation confirmation');
   check(codes(h('q2', { twilio_number: null }), [], [{ household_id: 'q2', deactivation_confirmed: true, deactivation_confirmed_at: ago(3 * DAY), released_at: null }]).includes('QUARANTINE_RELEASE_OVERDUE'), 'confirmed quarantine unreleased 3 days later → inferred provider release failure');
   check(codes(h('q3', { twilio_number: null }), [], [{ household_id: 'q3', deactivation_confirmed: true, deactivation_confirmed_at: ago(3 * DAY), released_at: ago(2 * DAY) }]).length === 0, 'released quarantine → no anomaly');
+  // Upcoming entitlements (047 / PR #47 definition).
+  check(codes(h('u1'), [ent('u1', 'paid_subscription', -2 * DAY)]).length === 0, 'active entitlement starting in 2 days: keeping the number is expected, not "retained without entitlement"');
+  check(codes(h('u2'), [ent('u2', 'paid_subscription', 0, { status: 'scheduled', starts_at: ago(-5 * DAY) })]).length === 0, 'scheduled entitlement: keeping the number is expected');
+  check(codes(h('u3', { twilio_number_pending_release_at: ago(-1 * DAY) }), [ent('u3', 'paid_subscription', -2 * DAY)]).includes('ENTITLED_PENDING_RELEASE'), 'upcoming entitlement with a release scheduled → flagged (the incident 047 guards against)');
+  check(codes(h('u4', { twilio_number: null }), [ent('u4', 'paid_subscription', -2 * DAY)]).length === 0, 'upcoming entitlement without a number yet → no anomaly');
 
   const report = computeNumberReconciliation({
     households: [h('ok1'), h('v2', { delivery_verified_at: null }), h('n1'), { id: 'x9', email: 'never@x.com', twilio_number: null }],
@@ -299,19 +306,35 @@ const LEDGER_048_CATEGORIES = [
 }
 
 // ============================================================
-// 6. Routes
+// 6. Routes and write boundaries (full branch: manual costs allowed)
 // ============================================================
 {
   const routeSrc = readFileSync(path.join(__dirname, '..', 'routes', 'adminBusinessControl.js'), 'utf8');
-  const decls = [...routeSrc.matchAll(/router\.(get|post)\("([^"]+)",([^\n]+)/g)];
-  check(decls.length === 8, 'eight business-control routes declared');
-  check(decls.every((d) => d[3].includes('requireAuth') && d[3].includes('requireAdmin')), 'every business-control route requires an authenticated admin');
+  const decls = [...routeSrc.matchAll(/router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]\s*,([^\n]+)/g)];
+  const anyRouterCall = [...routeSrc.matchAll(/router\.([a-zA-Z]+)\s*\(/g)].map((m) => m[1]);
+  check(anyRouterCall.length === decls.length, 'every router registration is a plain route declaration (no router.use/all)');
+  check(decls.length === 8, 'eight routes: four observational GETs + manual-cost list/create/end/post-due');
+  check(decls.every((d) => d[3].includes('requireAuth') && d[3].includes('requireAdmin')), 'every route requires an authenticated admin');
+  check(decls.filter((d) => d[1] !== 'get').every((d) => d[1] === 'post' && d[2].startsWith('/admin/api/business-control/manual-costs')), 'the only write routes are the manual-cost routes');
   for (const d of decls.filter((x) => x[1] === 'get')) {
     const start = routeSrc.indexOf(d[0]);
     const block = routeSrc.slice(start, routeSrc.indexOf('\n});', start));
     check(!/create|endManual|postDue|insert|update|upsert|delete/i.test(block), `GET ${d[2]} is read-only`);
   }
-  check(!/stripe\.|twilioRestClient|incomingPhoneNumbers|updateTwilioNumber|grantComplimentary/.test(routeSrc), 'routes touch no Stripe, Twilio, number or entitlement operations');
+
+  const dir = path.join(__dirname, '..', 'services', 'businessControl');
+  const code = (f) => readFileSync(path.join(dir, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  const observational = ['subscriptionOverview.js', 'numberReconciliation.js', 'financialReadModel.js', 'financialOverview.js', 'campaignPerformance.js'].map(code).join('\n');
+  check(!/\.(insert|update|upsert|delete|rpc)\(/.test(observational), 'no database write or RPC outside the manual-cost module');
+  const manualSrc = code('manualCosts.js');
+  const writes = [...manualSrc.matchAll(/from\(\s*['"]([a-z_]+)['"]\s*\)\s*\n?\s*\.(insert|update|upsert|delete)/g)].map((m) => m[1] + '.' + m[2]);
+  check(writes.length > 0 && writes.every((w) => /^(manual_cost_schedules\.(insert|update)|financial_entries\.upsert)$/.test(w)), `manual-cost writes limited to manual_cost_schedules insert/update and financial_entries upsert (found: ${writes.join(', ')})`);
+  check(!/\.delete\(/.test(manualSrc), 'manual costs never delete anything (schedules are ended, entries are history)');
+  const all = observational + '\n' + manualSrc + '\n' + routeSrc;
+  check(!/\.remove\(|\.create\(|availablePhoneNumbers|incomingPhoneNumbers\([^)]*\)\.(update|remove)/.test(all), 'no Twilio number is purchased, released or updated');
+  const providerCalls = [...all.matchAll(/incomingPhoneNumbers\.[a-zA-Z]+/g)].map((m) => m[0]);
+  check(providerCalls.length === 1 && providerCalls[0] === 'incomingPhoneNumbers.list', 'the only Twilio number call is a read-only list');
+  check(existsSync(path.join(__dirname, '..', 'supabase', 'migrations', '050_manual_cost_schedules.sql')), 'draft migration 050 present on this (non-deployable) branch');
   const server = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   check(/app\.use\(adminBusinessControlRoutes\)/.test(server), 'business-control routes mounted in server.js');
 }
@@ -375,6 +398,8 @@ const LEDGER_048_CATEGORIES = [
   responses['manual-costs'] = { connected: false, reason: 'manual_cost_schedules not present (draft migration 050 not applied)', schedules: [] };
   await ui.renderFinanceTab();
   check(elements.finance.innerHTML.includes('Not connected yet') && elements.finance.innerHTML.includes('disabled>Add cost'), 'manual-cost form disabled with an explanation until migrations 048 + 050 are applied');
+  const postTargets = [...tabs.matchAll(/fetch\('([^']+)'[^)]*method: 'POST'/g)].map((m) => m[1]);
+  check(postTargets.every((u) => u.startsWith('/admin/api/business-control/manual-costs')), 'the tabs only POST to the manual-cost endpoints');
 }
 
 console.log('');

@@ -35,7 +35,7 @@ const SEVERITY = { ACTION: 'action', WATCH: 'watch' };
 const ANOMALIES = {
   PAID_WITHOUT_NUMBER: { severity: SEVERITY.ACTION, label: 'Paying customer without an HCG number' },
   ENTITLED_WITHOUT_NUMBER: { severity: SEVERITY.ACTION, label: 'Entitled household without an HCG number' },
-  ENTITLED_PENDING_RELEASE: { severity: SEVERITY.ACTION, label: 'Entitled household whose number is scheduled for release' },
+  ENTITLED_PENDING_RELEASE: { severity: SEVERITY.ACTION, label: 'Entitled (or about to be) household whose number is scheduled for release' },
   NUMBER_RETAINED_NO_ENTITLEMENT: { severity: SEVERITY.ACTION, label: 'No entitlement, number retained, no release scheduled' },
   RELEASE_OVERDUE: { severity: SEVERITY.ACTION, label: 'Number still held after its scheduled release' },
   QUARANTINE_AWAITING_CONFIRMATION: { severity: SEVERITY.ACTION, label: 'Quarantined number awaiting deactivation confirmation' },
@@ -46,6 +46,20 @@ const ANOMALIES = {
   VOICE_SDK_NEVER_REGISTERED: { severity: SEVERITY.WATCH, label: 'App (Voice SDK) never registered' },
   DELIVERY_NEVER_CONFIRMED: { severity: SEVERITY.WATCH, label: 'Call delivery never confirmed' },
 };
+
+// An entitlement that has not started yet: status 'scheduled', or
+// 'active' with a future starts_at. Same definition as migration 047's
+// household_has_upcoming_entitlement (fix/number-lifecycle-entitlement-
+// guard) and PR #47's reconciliation: a household about to become
+// entitled legitimately keeps its number, and scheduling its release is
+// exactly the incident 047 guards against.
+function isUpcomingEntitlement(entitlement, now) {
+  if (!entitlement) return false;
+  if (entitlement.status === 'scheduled') return true;
+  if (entitlement.status !== 'active') return false;
+  const startsMs = parseTimestampMs(entitlement.starts_at);
+  return startsMs !== null && startsMs > now.getTime();
+}
 
 function anomaly(code, detail) {
   return { code, severity: ANOMALIES[code].severity, label: ANOMALIES[code].label, detail: detail || null };
@@ -77,6 +91,7 @@ function buildLifecycleChain({ household, currentEntitlement, latestEntitlement,
 function detectHouseholdAnomalies({ household, entitlements, quarantineRows }, now) {
   const nowMs = now.getTime();
   const current = (entitlements || []).find((e) => isEntitlementCurrentlyActive(e, now)) || null;
+  const upcoming = current ? null : (entitlements || []).find((e) => isUpcomingEntitlement(e, now)) || null;
   const hasNumber = !!household.twilio_number;
   const pendingReleaseMs = parseTimestampMs(household.twilio_number_pending_release_at);
   const found = [];
@@ -98,6 +113,12 @@ function detectHouseholdAnomalies({ household, entitlements, quarantineRows }, n
     }
     if (hasNumber && !household.voice_client_registered_at) found.push(anomaly('VOICE_SDK_NEVER_REGISTERED'));
     if (hasNumber && !household.delivery_verified_at) found.push(anomaly('DELIVERY_NEVER_CONFIRMED'));
+  } else if (upcoming) {
+    // About to be entitled: keeping (or not yet having) a number is
+    // expected; a scheduled release is not.
+    if (pendingReleaseMs !== null) {
+      found.push(anomaly('ENTITLED_PENDING_RELEASE', `Upcoming entitlement from ${upcoming.starts_at || 'a scheduled date'}; release scheduled for ${new Date(pendingReleaseMs).toISOString()}`));
+    }
   } else if (hasNumber) {
     if (pendingReleaseMs === null) {
       found.push(anomaly('NUMBER_RETAINED_NO_ENTITLEMENT'));
@@ -118,7 +139,7 @@ function detectHouseholdAnomalies({ household, entitlements, quarantineRows }, n
     }
   }
 
-  return { anomalies: found, currentEntitlement: current };
+  return { anomalies: found, currentEntitlement: current, upcomingEntitlement: upcoming };
 }
 
 function normaliseNumber(n) {
@@ -160,8 +181,8 @@ function computeNumberReconciliation({ households, entitlements, subscriptions, 
   for (const h of households || []) {
     const ents = entByHousehold.get(h.id) || [];
     const qRows = quarantineByHousehold.get(h.id) || [];
-    const { anomalies, currentEntitlement } = detectHouseholdAnomalies({ household: h, entitlements: ents, quarantineRows: qRows }, now);
-    const relevant = currentEntitlement || h.twilio_number || h.twilio_number_pending_release_at || qRows.length > 0;
+    const { anomalies, currentEntitlement, upcomingEntitlement } = detectHouseholdAnomalies({ household: h, entitlements: ents, quarantineRows: qRows }, now);
+    const relevant = currentEntitlement || upcomingEntitlement || h.twilio_number || h.twilio_number_pending_release_at || qRows.length > 0;
     if (!relevant) continue;
     for (const a of anomalies) counts[a.code] += 1;
     let latestEntitlement = null;
@@ -298,6 +319,7 @@ module.exports = {
   SEVERITY,
   RELEASE_JOB_GRACE_MS,
   buildLifecycleChain,
+  isUpcomingEntitlement,
   detectHouseholdAnomalies,
   computeNumberReconciliation,
   getNumberReconciliation,

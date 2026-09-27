@@ -1,6 +1,9 @@
 <!--
-STATUS (2026-09-27): branch feature/admin-business-control — committed and pushed, NOT merged, NOT deployed.
-Migration 050 is a DRAFT and has not been applied anywhere.
+STATUS (2026-09-27): this copy lives on feature/admin-business-control (NOT deployable).
+It contains everything in the deployable observational version (PR #48,
+feature/admin-business-control-observational) PLUS the parts that need
+migrations 048/049/050: manual-cost routes/UI, Finance ledger mode, spend
+per campaign, and DRAFT migration 050 (not applied anywhere).
 -->
 # Business control dashboard
 
@@ -10,7 +13,14 @@ The admin dashboard (`/admin/business`) should answer three questions without lo
 2. Does every HCG number match its subscription and lifecycle?
 3. Is HCG profitable, and which marketing pays for itself?
 
-This branch adds four tabs next to the existing ones: **Subscriptions, Reconciliation, Finance, Marketing**. Business, Customers, Operations and System Health are unchanged. Each new tab loads only when opened.
+This version adds four tabs next to the existing ones: **Subscriptions, Reconciliation, Finance, Marketing**. Business, Customers, Operations and System Health are unchanged. Each new tab loads only when opened.
+
+**Strictly observational.** The four API routes are GET-only. Opening a tab performs:
+- database reads;
+- read-only Stripe balance-transaction and Twilio usage-record reads (the same calls the Business tab already makes);
+- a read-only Twilio number list.
+
+Nothing purchases, releases, quarantines, schedules or modifies a number, subscription, entitlement or any database row.
 
 It builds on existing work and duplicates none of it:
 
@@ -56,6 +66,8 @@ Each household's chain: subscription → entitlement → HCG number → app regi
 | App (Voice SDK) never registered | Watch | Entitled, number assigned, no registration |
 | Call delivery never confirmed | Watch | Entitled, number assigned, no delivered call |
 
+**Upcoming entitlements** (status `scheduled`, or `active` with a future start) follow migration 047's definition and PR #47's rule. Keeping a number for one is expected; a scheduled release while one exists is flagged.
+
 Overall status is **ACTION REQUIRED** if any action item exists, **WATCH** if only watch items exist, otherwise **OK**. The provider list is a read-only `incomingPhoneNumbers.list`. Once the provider-neutral numbers seam (`architecture/voice-provider-portability`) merges, it should read through that seam instead.
 
 ## 3. Finance
@@ -86,7 +98,7 @@ Any total that includes a not-connected line is marked *incomplete*.
 | Other overheads | NOT CONNECTED until manual costs exist | developer_program, domain, saas, insurance, accountancy, other_overhead, other |
 | Advertising | NOT CONNECTED until manual costs or an ad import exist | advertising, acquisition_other |
 
-The ledger takes over **line by line**: a line switches once `financial_entries` holds rows of its category for the period. Rows in currencies other than GBP are excluded and counted (FX isn't built yet). Unobserved charges are never treated as zero.
+**This version runs in live-source fallback mode only:** it never queries `financial_entries`. The read model already supports ledger mode, line by line, as a tested pure function: GBP only, and unobserved charges are never zero. Turning ledger mode on is a small, separately reviewed change once 048 is applied.
 
 ### Totals and unit economics
 
@@ -96,8 +108,9 @@ The ledger takes over **line by line**: a line switches once `financial_entries`
 - **Monitored minutes:** `calls.duration_seconds` of delivered unknown-caller calls.
 - **CAC:** NOT CONNECTED.
 
-### Manual costs
+### Manual costs (not in this version)
 
+The Finance tab says "Not available yet". The design below lives on `feature/admin-business-control`:
 - **Form:** Finance → Manual costs. Fields: supplier, description, category, amount, currency, one-off / monthly / annual, dates, and a campaign for ads.
 - **Posting:** "Post due entries" writes one ledger row per due period (`source_system='manual'`, `provenance='manual'`, `entry_key='schedule:<id>:<period>'`). Posting again never duplicates.
 - **Ending:** a schedule is ended by setting an end date. Posted entries stay as history.
@@ -136,8 +149,9 @@ See the architecture doc, section 6. In summary:
 | 047 number-release entitlement guard | Branch, draft | Prevents what "entitled household pending release" reports. Reconciliation works without it |
 | 048 `financial_entries` + `telephony_call_legs` | Branch, draft | Ledger mode in Finance, manual costs, spend per campaign |
 | 049 `customer_acquisition` + `acquisition_events` extensions | Designed (architecture doc §9.5), **not written** | Paying customers / revenue / CAC by campaign |
-| **050 `manual_cost_schedules`** (this branch) | **Draft, not applied** | Manual costs. Needs 048 applied to post entries |
-| Twilio-costs fix (this branch) | Code | Correct Twilio totals on both Business and Finance |
+| 050 `manual_cost_schedules` | Draft on `feature/admin-business-control`, **not included here**, not applied | Manual costs. Needs 048 applied to post entries |
+| Twilio-costs fix (this version) | Code, no migration | Correct Twilio totals on both Business and Finance |
+| PR #47 `feature/admin-lifecycle-reconciliation` | Open, not merged | A separate read-only reconciliation API (no UI) that overlaps the Reconciliation tab. **DECISION REQUIRED:** consolidate into one rule set after #47 merges |
 
 **Migration numbering conflict (pre-existing, not from this branch):** `wip/monitoring-allowance-financial-safety-2026-09-26` has a `046_…` that collides with `main`'s `046_voice_client_registration_history.sql`.
 
@@ -154,7 +168,7 @@ See the architecture doc, section 6. In summary:
 
 ## 7. Recommended next steps
 
-1. Review the branch; deploy the admin change (Twilio fix and the four tabs) when you're ready. No migration is needed for it.
+1. Review and merge this observational PR; deploy when you're ready. No migration is needed.
 2. Set `BUSINESS_FIXED_COST_RAILWAY_GBP`, `…_SUPABASE_GBP` and `…_RESEND_GBP` in Railway so fixed costs show as MANUAL rather than NOT CONNECTED.
 3. Verify the 8 unaccounted Twilio numbers (staging, or leaked?). Release only through the existing lifecycle.
 4. Land 048 (ledger) → apply 050 → enter manual costs (Apple Developer, domains, insurance, ad invoices).
