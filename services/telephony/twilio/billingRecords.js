@@ -407,13 +407,28 @@ function allocateDailyNumberRental({ date, usageTotal, usageCount, currency, num
     const anniversary = Math.min(created.getUTCDate(), lastDayOfMonth);
     return anniversary === day;
   });
-  if (renewing.length === 0 || renewing.length !== Number(usageCount)) {
+  const billed = Number(usageCount);
+  // More owned numbers renew today than Twilio billed: we can't tell which
+  // were charged, so the whole day stays UNALLOCATED. None renewing: the
+  // day's charge is for numbers no longer owned.
+  if (renewing.length === 0 || !(billed > 0) || renewing.length > billed) {
     return [unallocatedDailyCharge({ date, category: 'number_rental', sourceCategory: 'phonenumbers', amount: usageTotal, currency, count: usageCount, now,
-      reason: renewing.length === 0 ? 'no currently-owned number renews on this day (likely a number since released)' : `renewal count mismatch: ${renewing.length} owned number(s) renew today vs ${usageCount} billed` })];
+      reason: renewing.length === 0 ? 'no currently-owned number renews on this day (number(s) since released)' : `renewal count mismatch: ${renewing.length} owned number(s) renew today vs ${usageCount} billed` })];
   }
-  const shares = apportion(usageTotal, renewing.map((n) => ({ key: n.sid, weight: 1 })));
+  // Each billed number carries an equal share of the day's total; the
+  // identifiable owned numbers take theirs, and any extra billed numbers
+  // (bought or renewed that day, since released) are an explicit
+  // UNALLOCATED remainder rather than hiding the owned numbers' attribution.
+  const perNumber = usageTotal / billed;
+  const allocatedTotal = money(perNumber * renewing.length);
+  const remainder = money(usageTotal - allocatedTotal);
+  const extra = remainder > 0.0000005
+    ? [unallocatedDailyCharge({ date, category: 'number_rental', sourceCategory: 'phonenumbers-released', amount: remainder, currency, count: billed - renewing.length, now,
+        reason: `${billed - renewing.length} of ${billed} number(s) billed on this day are no longer owned (since released)` })]
+    : [];
+  const shares = apportion(allocatedTotal, renewing.map((n) => ({ key: n.sid, weight: 1 })));
   const byKey = new Map(renewing.map((n) => [n.sid, n]));
-  return shares.map((s) => {
+  return [...extra, ...shares.map((s) => {
     const n = byKey.get(s.key);
     return {
       source_system: 'hcg',
@@ -434,13 +449,13 @@ function allocateDailyNumberRental({ date, usageTotal, usageCount, currency, num
       occurred_at: `${date}T00:00:00.000Z`,
       household_id: n.householdId || null,
       call_id: null,
-      allocation_basis: `Twilio daily number-rental total shared across the ${renewing.length} number(s) whose monthly anniversary is ${date}; attributed to the number's current household (no assignment history)`,
+      allocation_basis: `Twilio daily number-rental total: one of ${billed} equal per-number shares for the number(s) whose monthly anniversary is ${date}; attributed to the number's current household (no assignment history)`,
       source_reference: `twilio usage record phonenumbers ${date}: ${usageCount} number(s), ${usageTotal} ${currency}`,
       evidence: { number_sid: s.key, environment: n.environment || null, allocation_status: n.householdId ? 'allocated' : 'unallocated_number_without_household' },
       reconciliation_status: 'provisional',
       retrieved_at: now.toISOString(),
     };
-  });
+  })];
 }
 
 /**

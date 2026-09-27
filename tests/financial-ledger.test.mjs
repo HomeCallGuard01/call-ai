@@ -11,6 +11,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 const contract = require('../services/ledger/contract.js');
+const { money } = contract;
 const { apportion } = require('../services/ledger/allocation.js');
 const { decideEntryWrite, reconcileDailyTotals } = require('../services/ledger/reconcile.js');
 const twilio = require('../services/telephony/twilio/billingRecords.js');
@@ -344,8 +345,14 @@ check(n1.provenance === 'estimated' && n1.amount > 0, 'a day with no Twilio reco
     && rent.find((e) => e.native_reference === 'PN_spare').evidence.allocation_status === 'unallocated_number_without_household',
     'rental: attributed to the number\'s current household; a number with no household stays unallocated');
   const mismatch = twilio.allocateDailyNumberRental({ date: '2026-09-07', usageTotal: 2.60751, usageCount: 3, currency: 'GBP', numbers, now: NOW });
-  check(mismatch.length === 1 && mismatch[0].household_id === null && mismatch[0].amount === 2.60751 && mismatch[0].evidence.allocation_status === 'unallocated',
-    'rental: when owned numbers don\'t account for the day\'s count (a since-released number), the whole day is UNALLOCATED, not guessed');
+  const released = mismatch.filter((e) => e.evidence && e.evidence.allocation_status === 'unallocated');
+  check(mismatch.length === 3 && released.length === 1 && released[0].amount === 0.86917 && released[0].household_id === null
+      && mismatch.filter((e) => e.provenance === 'provider_allocated').every((e) => e.amount === 0.86917),
+    'rental: 3 billed but 2 owned numbers renew → the 2 owned numbers keep their shares and only the since-released number\'s share is UNALLOCATED');
+  check(money(mismatch.reduce((a, e) => a + e.amount, 0)) === 2.60751, 'rental: shares plus the released remainder sum exactly to the day\'s total');
+  const overOwned = twilio.allocateDailyNumberRental({ date: '2026-09-07', usageTotal: 0.86917, usageCount: 1, currency: 'GBP', numbers, now: NOW });
+  check(overOwned.length === 1 && overOwned[0].household_id === null && overOwned[0].amount === 0.86917,
+    'rental: more owned numbers renewing than Twilio billed → the whole day stays UNALLOCATED (we cannot tell which was charged)');
   const feb = twilio.allocateDailyNumberRental({ date: '2027-02-28', usageTotal: 0.86917, usageCount: 1, currency: 'GBP',
     numbers: [{ sid: 'PN_31st', dateCreated: '2026-10-31T09:00:00Z', householdId: 'hh-3' }], now: NOW });
   check(feb.length === 1 && feb[0].native_reference === 'PN_31st', 'rental: a number bought on the 31st renews on the last day of shorter months');
