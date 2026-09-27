@@ -1349,47 +1349,6 @@ async function main() {
 
   await asServiceRole(db);
 
-  // --- 050 (DRAFT): manual_cost_schedules — the business control
-  // dashboard's manual-cost facility. Applied by the bulk loop above;
-  // tested directly here. ---
-  const insertSchedule = (cols) =>
-    db.query(
-      `insert into public.manual_cost_schedules (supplier, description, category, cost_class, native_amount, native_currency, cadence, start_date, end_date, campaign_ref)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, native_currency, allocation_rule`,
-      [cols.supplier ?? 'railway', cols.description ?? 'Hosting', cols.category ?? 'hosting', cols.cost_class ?? 'fixed_overhead', cols.native_amount ?? 5, cols.native_currency ?? 'GBP', cols.cadence ?? 'monthly', cols.start_date ?? '2026-09-01', cols.end_date ?? null, cols.campaign_ref ?? null]
-    );
-  const rejects050 = async (cols) => {
-    try { await insertSchedule(cols); return false; } catch { return true; }
-  };
-  const { rows: [schedule050] } = await insertSchedule({});
-  assert(schedule050.native_currency === 'GBP' && schedule050.allocation_rule === 'none', '050: service_role can create a monthly manual cost schedule (defaults GBP, allocation none)');
-  const { rows: [adSchedule050] } = await insertSchedule({ supplier: 'meta', description: 'Launch ads', category: 'advertising', cost_class: 'customer_acquisition', cadence: 'one_off', native_amount: 150, campaign_ref: 'meta/paid_social/launch-oct' });
-  assert(!!adSchedule050.id, '050: a one-off advertising invoice with a campaign_ref is accepted');
-  assert(await rejects050({ category: 'subscription' }), '050: a revenue category is rejected (cost categories only)');
-  assert(await rejects050({ native_amount: 0 }), '050: a zero amount is rejected');
-  assert(await rejects050({ cadence: 'weekly' }), '050: an unknown cadence is rejected');
-  assert(await rejects050({ cadence: 'one_off', end_date: '2026-10-01' }), '050: a one-off with an end date is rejected');
-  assert(await rejects050({ start_date: '2026-09-10', end_date: '2026-09-01' }), '050: end date before start date is rejected');
-  assert(await rejects050({ supplier: 'Railway Inc' }), '050: supplier must be a lower-case slug (same rule as financial_entries)');
-  assert(await rejects050({ category: 'advertising', cost_class: 'customer_acquisition', campaign_ref: 'Not A Ref' }), '050: a malformed campaign_ref is rejected');
-
-  await asAuthUser(db, userId2, 'manual-cost-rls-test@example.com');
-  let authenticatedManualCostSelectDenied = false;
-  try {
-    await db.query('select * from public.manual_cost_schedules limit 1');
-  } catch {
-    authenticatedManualCostSelectDenied = true;
-  }
-  assert(authenticatedManualCostSelectDenied, '050: authenticated role cannot read manual_cost_schedules');
-  let authenticatedManualCostInsertDenied = false;
-  try {
-    await insertSchedule({});
-  } catch {
-    authenticatedManualCostInsertDenied = true;
-  }
-  assert(authenticatedManualCostInsertDenied, '050: authenticated role cannot create manual cost schedules');
-  await asServiceRole(db);
-
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //
   // Discovers every SECURITY DEFINER function in public from pg_proc

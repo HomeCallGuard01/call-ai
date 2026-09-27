@@ -3,7 +3,12 @@
 -- invoice, Apple Developer Program fee, insurance, accountancy, a domain,
 -- Railway/Supabase bills until their billing APIs are connected).
 --
--- STATUS: DRAFT — NOT APPLIED to any database (staging or production).
+-- STATUS: PROPOSAL — NOT A MIGRATION, NOT APPLIED ANYWHERE.
+-- Withdrawn from supabase/migrations/ on 2026-09-27: number 050 is taken by
+-- P0's 050_number_lifecycle_sweep_evidence.sql (applied to staging), and the
+-- Finance workstream (owner of the ledger, migration 051) asks for manual
+-- cost schedules to be numbered above 051. Finance to adopt, number and
+-- apply it with scripts/check-migration-numbering.js (PR #46).
 --
 -- Designed in docs/architecture/FINANCIAL_DATA_ARCHITECTURE.md §4
 -- (feature/provider-neutral-billing-ledger). A schedule is NOT money in

@@ -271,10 +271,10 @@ const LEDGER_048_CATEGORIES = [
   const oneOff = toFinancialEntry({ ...monthly, cadence: 'one_off' }, duePeriods({ ...monthly, cadence: 'one_off', start_date: '2026-09-02' }, NOW)[0]);
   check(oneOff.billing_model === 'other' && oneOff.entry_key.endsWith(':once') && new Date(oneOff.period_end) > new Date(oneOff.period_start), 'one-off row: single period, valid period ordering');
 
-  const mig = readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '050_manual_cost_schedules.sql'), 'utf8');
-  check(/STATUS: DRAFT — NOT APPLIED/.test(mig), 'migration 050 is marked DRAFT — NOT APPLIED');
-  check(/enable row level security/.test(mig) && /revoke all on table public\.manual_cost_schedules from anon, authenticated/.test(mig), 'migration 050: RLS on, no anon/authenticated access');
-  check(!/financial_entries\s*\(/i.test(mig.replace(/--.*$/gm, '')), 'migration 050 DDL does not depend on 048 tables (safe to apply in either order)');
+  const mig = readFileSync(path.join(__dirname, '..', 'docs', 'admin', 'proposals', 'manual_cost_schedules.sql.proposal'), 'utf8');
+  check(/STATUS: PROPOSAL — NOT A MIGRATION/.test(mig), 'manual_cost_schedules is a proposal, not a numbered migration (050 belongs to P0; Finance numbers it above 051)');
+  check(/enable row level security/.test(mig) && /revoke all on table public\.manual_cost_schedules from anon, authenticated/.test(mig), 'proposal: RLS on, no anon/authenticated access');
+  check(!existsSync(path.join(__dirname, '..', 'supabase', 'migrations', '050_manual_cost_schedules.sql')), 'no dashboard migration occupies number 050');
 }
 
 // ============================================================
@@ -399,7 +399,7 @@ const LEDGER_048_CATEGORIES = [
   check(!/\.remove\(|\.create\(|availablePhoneNumbers|incomingPhoneNumbers\([^)]*\)\.(update|remove)/.test(all), 'no Twilio number is purchased, released or updated');
   const providerCalls = [...all.matchAll(/incomingPhoneNumbers\.[a-zA-Z]+/g)].map((m) => m[0]);
   check(providerCalls.length === 1 && providerCalls[0] === 'incomingPhoneNumbers.list', 'the only Twilio number call is a read-only list');
-  check(existsSync(path.join(__dirname, '..', 'supabase', 'migrations', '050_manual_cost_schedules.sql')), 'draft migration 050 present on this (non-deployable) branch');
+  check(existsSync(path.join(__dirname, '..', 'docs', 'admin', 'proposals', 'manual_cost_schedules.sql.proposal')), 'manual cost schedules kept as a proposal for Finance (not a numbered migration)');
   const server = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   check(/app\.use\(adminBusinessControlRoutes\)/.test(server), 'business-control routes mounted in server.js');
 }
