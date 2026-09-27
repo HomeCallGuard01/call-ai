@@ -1,17 +1,23 @@
 -- Financial ledger core + provider-neutral telephony usage (2026-09-27).
 --
--- STATUS: DRAFT — NOT APPLIED to any database (staging or production).
--- Apply to staging first; production only with explicit approval.
+-- STATUS: APPLIED TO STAGING (tigwgmayeuisrxjjykqd) 2026-09-27 and
+-- validated there (application-path, privacy-deletion and non-interference
+-- checks). NOT applied to production; production only with explicit
+-- approval. The financial_entries(call_id) index, the begin/commit wrapper
+-- and the _rollbacks file were added after the staging apply, before any
+-- production apply; the index was applied to staging separately
+-- (idempotent `create index if not exists`) so staging matches this file.
 --
 -- NUMBERING: 051. Rule (adopted 2026-09-27): migration numbers follow
 -- merge/application order; unmerged branches renumber before integration.
 -- This file was 048 until staging applied 047 (number-release entitlement
--- guard) and 050 (number_lifecycle_sweep_evidence); applying 048 after 050
--- would be out of order (`supabase db push --include-all`), so it moved to
--- the next number above the highest applied. Pending elsewhere: the
--- dashboard branch's manual_cost_schedules (currently a duplicate 050) and
--- the planned attribution migration take numbers above this one when they
--- are applied. tests/migration-number-uniqueness.test.mjs fails on any
+-- guard) and P0's lifecycle-sweep evidence migration (then 050, since
+-- renumbered 052). Current slots: 047 P0 guard, 050 dashboard
+-- manual_cost_schedules, 051 this ledger, 052 P0 sweep evidence; the
+-- planned attribution migration takes the next free number when applied.
+-- The CLI applies in ascending order, so production must receive them as
+-- 047 → 050 → 051 → 052 (or a later one renumbers above the highest
+-- applied). tests/migration-number-uniqueness.test.mjs fails on any
 -- duplicate.
 --
 -- Why: HCG cannot yet say what a customer, or the business, costs.
@@ -58,10 +64,11 @@
 --   * No phone numbers or other personal data; link by id. Service role only.
 --
 -- Additive only: two new tables; no existing table is altered.
--- Rollback: drop view public.finance_monthly_contribution,
--- public.finance_household_monthly, public.finance_monthly_summary,
--- public.finance_entries_reporting; then drop table public.financial_entries;
--- drop table public.telephony_call_legs;  (entries before legs, because of the FK).
+-- Rollback: supabase/migrations/_rollbacks/051_rollback_financial_ledger_and_telephony_usage.sql
+-- (views, then financial_entries, then telephony_call_legs — entries before
+-- legs because of the FK). Destroys ledger rows: export them first.
+
+begin;
 
 create table if not exists public.telephony_call_legs (
   id uuid primary key default gen_random_uuid(),
@@ -231,6 +238,10 @@ create table if not exists public.financial_entries (
 
 create index if not exists financial_entries_household_idx
   on public.financial_entries (household_id, occurred_at);
+-- Supports the calls FK (on delete set null): without it every call
+-- deletion (account/privacy deletion) scans financial_entries.
+create index if not exists financial_entries_call_idx
+  on public.financial_entries (call_id);
 create index if not exists financial_entries_leg_idx
   on public.financial_entries (telephony_leg_id);
 create index if not exists financial_entries_supplier_category_idx
@@ -361,3 +372,5 @@ revoke all on public.finance_entries_reporting, public.finance_monthly_summary,
 grant select on public.finance_entries_reporting, public.finance_monthly_summary,
                 public.finance_household_monthly, public.finance_monthly_contribution
   to service_role;
+
+commit;

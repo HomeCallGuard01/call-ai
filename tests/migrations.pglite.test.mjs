@@ -1565,6 +1565,20 @@ async function main() {
   );
   assert(legAfter.household_id === null && legAfter.call_id === null && entryAfter.household_id === null && Number(entryAfter.amount) === 0.03023,
     '051: deleting a household or call keeps the cost history (links set null, amounts intact)');
+  const { rows: callIdx } = await db.query(
+    `select 1 from pg_indexes where schemaname = 'public' and tablename = 'financial_entries' and indexdef like '%(call_id)%'`);
+  assert(callIdx.length === 1, '051: financial_entries.call_id (the calls FK) is indexed, so call deletion never scans the ledger');
+
+  // Rollback, then re-apply: the rollback removes exactly the 051 objects and
+  // the migration applies cleanly again afterwards.
+  await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '051_rollback_financial_ledger_and_telephony_usage.sql'), 'utf8'));
+  const { rows: [gone] } = await db.query(`select to_regclass('public.financial_entries') as fe, to_regclass('public.telephony_call_legs') as tl,
+    to_regclass('public.finance_entries_reporting') as v, to_regclass('public.calls') as calls`);
+  assert(gone.fe === null && gone.tl === null && gone.v === null && gone.calls !== null,
+    '051 rollback: drops the ledger tables and views and nothing else');
+  await db.exec(await readFile(path.join(migrationsDir, '051_financial_ledger_and_telephony_usage.sql'), 'utf8'));
+  const { rows: [back] } = await db.query(`select to_regclass('public.financial_entries') as fe, to_regclass('public.finance_monthly_contribution') as v`);
+  assert(back.fe !== null && back.v !== null, '051: re-applies cleanly after rollback');
   await asServiceRole(db);
 
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
