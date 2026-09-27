@@ -2386,4 +2386,9 @@ attachMediaStreamServer(httpServer, {
   twilioRestClient,
   redLineRedirectUrl: buildRedLineTerminateUrl(APP_URL),
   recordOutcome: recordMonitoringOutcome,
+  // Shadow-mode Twilio signature check only (see mediaStreamServer.js and
+  // services/twilioWebhookAuth.js) — observes and logs, never rejects a
+  // connection. Same APP_URL/TWILIO_AUTH_TOKEN already used for /voice.
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
+  appUrl: APP_URL,
 });

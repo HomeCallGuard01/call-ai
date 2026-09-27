@@ -26,6 +26,15 @@ const { sendCriticalAlert } = require('../alerting');
 const { resolveMonitoringMaxDurationMs, hasReachedDurationThreshold, elapsedSeconds } = require('./monitoringLimit');
 const { MONITORING_LIMIT_ENDED_BODY } = require('./smsWarning');
 
+// True only for a genuine JSON object ({...}) — excludes null (typeof
+// 'object' but not safe to property-access) and arrays (structurally the
+// wrong shape for every message.* field this handler reads). Used
+// throughout handleMessage below to validate untrusted WebSocket input
+// before any property access or destructuring, never after.
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * @param {object} deps
  * @param {object} deps.transcribeClient - passed through to transcribeChunk
@@ -129,8 +138,40 @@ function createMediaStreamHandler({
       return Promise.resolve();
     }
 
+    // Shape guard (2026-09-27, P0 launch hardening) — Twilio's documented
+    // protocol (this file's own header comment) always sends a JSON
+    // object with a string "event" field, but nothing upstream guarantees
+    // that. JSON.parse happily returns null, an array, a string, a
+    // number, or an object missing the nested "start"/"media" property
+    // this handler used to destructure/access unconditionally. Each of
+    // those previously reached a genuine synchronous TypeError — e.g.
+    // JSON.parse("null") then `message.event` throws "Cannot read
+    // properties of null"; `{"event":"start"}` with no `.start` throws on
+    // destructuring — that escapes mediaStreamServer.js's `.catch()`
+    // entirely (a .catch() can only catch a REJECTED PROMISE, never a
+    // SYNCHRONOUS throw from this non-async function), reaching server.js's
+    // global uncaughtException handler, which calls alertThenExit() and
+    // kills the whole process — dropping every live call being monitored
+    // from a single malformed WebSocket frame. Confirmed by independent
+    // local reproduction, not assumed. Treated exactly like a JSON.parse
+    // failure: logged, never processed, never thrown.
+    if (!isPlainObject(message) || typeof message.event !== 'string') {
+      logEvent('media_stream_malformed_message', { error: 'parsed message is not a JSON object with a string "event" field' });
+      return Promise.resolve();
+    }
+
     if (message.event === 'start') {
-      const { streamSid, callSid, customParameters = {} } = message.start;
+      if (!isPlainObject(message.start)) {
+        logEvent('media_stream_malformed_message', { error: '"start" event has no "start" object', streamSid: typeof message.streamSid === 'string' ? message.streamSid : null });
+        return Promise.resolve();
+      }
+      const { streamSid, callSid } = message.start;
+      // Guarded separately from the destructuring above: a default value
+      // (`= {}`) only applies when the destructured property is
+      // undefined, NOT when it is explicitly null — {"start":{"customParameters":null}}
+      // would otherwise set customParameters to null and crash the very
+      // next line. Same class of bug as the guards above, closed the same way.
+      const customParameters = isPlainObject(message.start.customParameters) ? message.start.customParameters : {};
       const householdId = customParameters.householdId || null;
       const windowBuffer = createWindowBuffer();
       const monitor = createCallMonitor({
@@ -240,6 +281,17 @@ function createMediaStreamHandler({
         }
 
         return finalizePromise;
+      }
+
+      // Same shape guard as the "start" branch above — {"event":"media"}
+      // with no "media" object, or a "media" object with no string
+      // "payload", previously reached Buffer.from(undefined, 'base64'),
+      // a synchronous TypeError with the exact same server-crashing
+      // consequence. A single hostile/malformed "media" frame mid-call
+      // must never bring down monitoring for every other live call.
+      if (!isPlainObject(message.media) || typeof message.media.payload !== 'string') {
+        logEvent('media_stream_malformed_message', { error: '"media" event missing a string "media.payload"', streamSid: message.streamSid });
+        return Promise.resolve();
       }
 
       const frame = Buffer.from(message.media.payload, 'base64');
