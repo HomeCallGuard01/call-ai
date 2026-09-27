@@ -1349,6 +1349,211 @@ async function main() {
 
   await asServiceRole(db);
 
+  // --- 049: number release must never take a number from an entitled household ---
+  //
+  // Replays the real 2026-09-23 failure (production household 30f01a7a):
+  // a Stripe test subscription was cancelled (release scheduled +30 days),
+  // an open-ended complimentary entitlement was then granted through a path
+  // that didn't cancel the schedule, and the daily job released the number
+  // from the now-entitled household. Every scenario runs against the real
+  // migration functions; fixtures are seeded as the bootstrap superuser.
+  {
+    let seq = 0;
+    async function lifecycleHousehold(label) {
+      await db.exec('reset role;');
+      seq += 1;
+      const number = `+4417000049${String(seq).padStart(2, '0')}`;
+      const { rows: [h] } = await db.query(
+        `insert into public.households (auth_user_id, email, twilio_number, twilio_provisioning_status)
+         values (null, $1, $2, 'active') returning id`,
+        [`lifecycle-${label}@example.com`, number]
+      );
+      return { id: h.id, number };
+    }
+    async function addEntitlement(householdId, { type = 'paid_subscription', status = 'active', startsAt = "now() - interval '40 days'", endsAt = null, source = 'stripe' } = {}) {
+      await db.exec('reset role;');
+      const { rows: [e] } = await db.query(
+        `insert into public.entitlements (household_id, entitlement_type, status, starts_at, ends_at, source)
+         values ($1, $2, $3, ${startsAt}, ${endsAt || 'null'}, $4) returning id`,
+        [householdId, type, status, source]
+      );
+      return e.id;
+    }
+    async function expireEntitlement(id, endsAt = "now() - interval '35 days'") {
+      await db.exec('reset role;');
+      await db.query(`update public.entitlements set status = 'expired', ends_at = ${endsAt} where id = $1`, [id]);
+    }
+    async function household(id) {
+      await db.exec('reset role;');
+      const { rows: [h] } = await db.query(
+        `select twilio_number, twilio_number_pending_release_at, twilio_provisioning_status from public.households where id = $1`, [id]
+      );
+      return h;
+    }
+    async function asService(sql, params) {
+      await asServiceRole(db);
+      const { rows: [r] } = await db.query(sql, params);
+      return r;
+    }
+    const mark = (id) => asService(`select public.mark_household_twilio_number_pending_release($1, interval '30 days') as ok`, [id]);
+    const release = (id, n) => asService(`select public.release_household_twilio_number($1, $2) as ok`, [id, n]);
+    const releaseNow = (id) => asService(`select public.release_household_twilio_number_immediately($1) as released`, [id]);
+    const blocks = (id) => asService(`select public.household_blocks_number_release($1) as blocked`, [id]);
+    async function forcePendingInPast(id) {
+      await db.exec('reset role;');
+      await db.query(`update public.households set twilio_number_pending_release_at = now() - interval '1 day' where id = $1`, [id]);
+    }
+
+    // (a) #8 as it actually existed in production: complimentary entitlement
+    //     in force AND a stale pending release already past its deadline
+    //     (state created before this migration). The release must refuse,
+    //     keep the number and clear the stale schedule.
+    {
+      const h = await lifecycleHousehold('n8-legacy-state');
+      const paid = await addEntitlement(h.id);
+      await expireEntitlement(paid);
+      await addEntitlement(h.id, { type: 'complimentary', source: 'admin_manual', startsAt: "now() - interval '30 days'" });
+      await forcePendingInPast(h.id); // the stale schedule, exactly as found in production
+      const r = await release(h.id, h.number);
+      const after = await household(h.id);
+      assert(r.ok === false, '049 #8 replay (legacy state): release refuses while an open-ended complimentary entitlement is in force');
+      assert(after.twilio_number === h.number && after.twilio_provisioning_status === 'active', '049 #8 replay: the entitled household keeps its number');
+      assert(after.twilio_number_pending_release_at === null, '049 #8 replay: the stale release schedule is cancelled, so it cannot fire later');
+    }
+
+    // (b) #8 in real event order: cancellation → schedule → complimentary
+    //     grant → deadline passes → daily job. The grant itself now cancels
+    //     the schedule (trigger), and the release re-check is a second wall.
+    {
+      const h = await lifecycleHousehold('n8-event-order');
+      const paid = await addEntitlement(h.id);
+      await expireEntitlement(paid);
+      const scheduled = await mark(h.id);
+      assert(scheduled.ok === true, '049 #8 event order: the Stripe cancellation schedules a release (no other entitlement yet)');
+      await addEntitlement(h.id, { type: 'complimentary', source: 'admin_manual', startsAt: 'now()' });
+      const afterGrant = await household(h.id);
+      assert(afterGrant.twilio_number_pending_release_at === null, '049 #8 event order: granting the complimentary entitlement cancels the pending release immediately (any grant path, via trigger)');
+      await forcePendingInPast(h.id); // even if something re-set it, the release still refuses
+      const r = await release(h.id, h.number);
+      assert(r.ok === false && (await household(h.id)).twilio_number === h.number, '049 #8 event order: the daily release job cannot take the number from the entitled household');
+    }
+
+    // (b2) The grant arrives through the real application role (service_role,
+    //      e.g. the admin grant endpoint / invite redemption), which has no
+    //      UPDATE on households — the trigger must still cancel the schedule.
+    {
+      const h = await lifecycleHousehold('grant-as-service-role');
+      const paid = await addEntitlement(h.id);
+      await expireEntitlement(paid);
+      assert((await mark(h.id)).ok === true, '049 service-role grant: release scheduled after cancellation');
+      await asServiceRole(db);
+      await db.query(
+        `insert into public.entitlements (household_id, entitlement_type, status, starts_at, source) values ($1, 'complimentary', 'active', now(), 'admin_manual')`,
+        [h.id]
+      );
+      assert((await household(h.id)).twilio_number_pending_release_at === null,
+        '049 service-role grant: an entitlement inserted by service_role cancels the pending release (trigger runs with definer rights)');
+    }
+
+    // (c) A cancellation of one entitlement must not even schedule a release
+    //     while another entitlement covers the household (reverse order).
+    {
+      const h = await lifecycleHousehold('reverse-order');
+      await addEntitlement(h.id, { type: 'complimentary', source: 'admin_manual', startsAt: "now() - interval '1 day'" });
+      const r = await mark(h.id);
+      assert(r.ok === false && (await household(h.id)).twilio_number_pending_release_at === null,
+        '049: a late cancellation event cannot schedule a release while a current entitlement exists');
+    }
+
+    // (d) Normal cancellation still works end to end.
+    {
+      const h = await lifecycleHousehold('normal-cancel');
+      const paid = await addEntitlement(h.id);
+      await expireEntitlement(paid);
+      assert((await mark(h.id)).ok === true, '049 normal cancellation: release is scheduled');
+      const early = await release(h.id, h.number);
+      assert(early.ok === false, '049 normal cancellation: nothing is released before the grace period ends');
+      await forcePendingInPast(h.id);
+      const r = await release(h.id, h.number);
+      const after = await household(h.id);
+      assert(r.ok === true && after.twilio_number === null && after.twilio_provisioning_status === 'pending',
+        '049 normal cancellation: after the grace period the number is released (unchanged behaviour)');
+    }
+
+    // (e) Re-subscribing during the grace period keeps the number.
+    {
+      const h = await lifecycleHousehold('resubscribe');
+      const paid = await addEntitlement(h.id);
+      await expireEntitlement(paid);
+      await mark(h.id);
+      await addEntitlement(h.id, { startsAt: 'now()' });
+      assert((await household(h.id)).twilio_number_pending_release_at === null, '049 resubscribe during grace: the new subscription cancels the pending release');
+      await forcePendingInPast(h.id);
+      assert((await release(h.id, h.number)).ok === false && (await household(h.id)).twilio_number === h.number,
+        '049 resubscribe during grace: the number is kept');
+    }
+
+    // (f) Complimentary expiry by date: while in force it blocks; once its
+    //     end date has passed it no longer blocks, so the lifecycle can proceed.
+    {
+      const live = await lifecycleHousehold('comp-live');
+      await addEntitlement(live.id, { type: 'complimentary', source: 'admin_manual', startsAt: "now() - interval '5 days'", endsAt: "now() + interval '10 days'" });
+      assert((await blocks(live.id)).blocked === true, '049 complimentary with a future end date blocks release');
+      assert((await mark(live.id)).ok === false, '049 complimentary in force: no release can be scheduled');
+
+      const ended = await lifecycleHousehold('comp-ended');
+      await addEntitlement(ended.id, { type: 'complimentary', source: 'admin_manual', startsAt: "now() - interval '20 days'", endsAt: "now() - interval '1 day'" });
+      assert((await blocks(ended.id)).blocked === false, '049 complimentary whose end date has passed (status still "active") no longer blocks release');
+      assert((await mark(ended.id)).ok === true, '049 date-expired complimentary: a release can be scheduled (the daily sweep that does this automatically is Step 2)');
+    }
+
+    // (g) Extending an entitlement's end date also cancels a pending release.
+    {
+      const h = await lifecycleHousehold('extend');
+      const comp = await addEntitlement(h.id, { type: 'complimentary', source: 'admin_manual', startsAt: "now() - interval '20 days'", endsAt: "now() - interval '1 day'" });
+      assert((await mark(h.id)).ok === true, '049 extend: an ended complimentary household is scheduled for release');
+      await db.exec('reset role;');
+      await db.query(`update public.entitlements set ends_at = now() + interval '30 days' where id = $1`, [comp]);
+      assert((await household(h.id)).twilio_number_pending_release_at === null, '049 extend: extending the end date cancels the pending release');
+    }
+
+    // (h) Scheduled (upcoming) entitlements protect the number; revoked and
+    //     expired ones don't.
+    {
+      const up = await lifecycleHousehold('scheduled');
+      await addEntitlement(up.id, { status: 'scheduled', startsAt: "now() + interval '2 days'" });
+      assert((await blocks(up.id)).blocked === true, '049 an upcoming (scheduled) entitlement blocks release');
+      const rev = await lifecycleHousehold('revoked');
+      await addEntitlement(rev.id, { type: 'complimentary', status: 'revoked', source: 'admin_manual', startsAt: "now() - interval '3 days'" });
+      assert((await blocks(rev.id)).blocked === false, '049 a revoked entitlement does not block release');
+    }
+
+    // (i) Immediate (account-deletion) release respects the same guard.
+    {
+      const h = await lifecycleHousehold('deletion-entitled');
+      await addEntitlement(h.id, { type: 'complimentary', source: 'admin_manual', startsAt: "now() - interval '1 day'" });
+      const r = await releaseNow(h.id);
+      assert(r.released === null && (await household(h.id)).twilio_number === h.number, '049 immediate release refuses while the household is still entitled');
+      const d = await lifecycleHousehold('deletion-revoked');
+      const comp = await addEntitlement(d.id, { type: 'complimentary', source: 'admin_manual', startsAt: "now() - interval '1 day'" });
+      await db.exec('reset role;');
+      await db.query(`update public.entitlements set status = 'revoked' where id = $1`, [comp]);
+      const r2 = await releaseNow(d.id);
+      assert(r2.released === d.number && (await household(d.id)).twilio_number === null, '049 immediate release proceeds once deletion has revoked the entitlement');
+    }
+
+    // (j) The guard is service-role only.
+    await asAuthUser(db, userId, 'a@example.com');
+    let authDenied = false;
+    try { await db.query(`select public.household_blocks_number_release($1)`, [householdId]); } catch { authDenied = true; }
+    assert(authDenied, '049 authenticated users cannot call household_blocks_number_release');
+    await db.exec('reset role; set role anon;');
+    let anonDenied = false;
+    try { await db.query(`select public.household_blocks_number_release($1)`, [householdId]); } catch { anonDenied = true; }
+    assert(anonDenied, '049 anon cannot call household_blocks_number_release');
+    await asServiceRole(db);
+  }
+
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //
   // Discovers every SECURITY DEFINER function in public from pg_proc
