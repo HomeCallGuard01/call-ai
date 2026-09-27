@@ -4,10 +4,10 @@
 -- Railway/Supabase bills until their billing APIs are connected).
 --
 -- STATUS: PROPOSAL — NOT A MIGRATION, NOT APPLIED ANYWHERE.
--- Withdrawn from supabase/migrations/ on 2026-09-27: number 050 is taken by
--- P0's 050_number_lifecycle_sweep_evidence.sql (applied to staging), and the
--- Finance workstream (owner of the ledger, migration 051) asks for manual
--- cost schedules to be numbered above 051. Finance to adopt, number and
+-- Withdrawn from supabase/migrations/ on 2026-09-27: staging already has a
+-- different 050, P0's lifecycle sweep is now 052 (PR #49), and the Finance
+-- workstream (owner of the ledger, migration 051) asks for manual cost
+-- schedules to be numbered above 051 — so no number is claimed here. Finance to adopt, number and
 -- apply it with scripts/check-migration-numbering.js (PR #46).
 --
 -- Designed in docs/architecture/FINANCIAL_DATA_ARCHITECTURE.md §4
