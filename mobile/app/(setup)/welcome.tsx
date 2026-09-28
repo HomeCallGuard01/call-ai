@@ -12,6 +12,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { resumeSetupAt } from "../../lib/setupFlow";
+import { hasProvenActivation } from "../../lib/homeStatus";
 import { colors, spacing, typography } from "../../lib/theme";
 
 const RESUME_ROUTE: Record<string, string> = {
@@ -34,7 +35,7 @@ export default function SetupWelcome() {
         const target = resumeSetupAt({
           isEntitled: true,
           contactCount: data.contacts.length,
-          isActivationVerified: !!data.protection.activationVerifiedAt,
+          isActivationProven: hasProvenActivation(data),
         });
         if (target.screen === "subscribe") {
           // Shouldn't happen (fetchDashboard succeeded, so entitlement

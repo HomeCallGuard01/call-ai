@@ -174,6 +174,45 @@ async function selectSpeakerForRinging(): Promise<void> {
   }
 }
 
+// Audio-quality fix (2026-09-13, physical-test finding): selectSpeakerForRinging's
+// Speaker selection above records it as AudioSwitch's userSelectedDevice,
+// which — per that same comment — persists across re-enumeration.
+// Nothing previously reverted this once a call actually connected, so
+// the *entire* connected conversation (not just the ring) played through
+// the phone's loudspeaker rather than the earpiece — a real, confirmed
+// cause of the "muffled/reduced quality compared with a normal mobile
+// call" complaint from the 12 September physical test, since speakerphone
+// audio picked up/played by a phone held to the ear (not positioned for
+// far-field speaker use) characteristically sounds exactly like that.
+// This mirrors selectSpeakerForRinging's own pattern exactly — same
+// getAudioDevices()/.select() API, same fail-open swallowing of errors
+// (a routing failure must never break an otherwise-connected call) —
+// just selecting Earpiece instead, and called once the call is actually
+// connected rather than at registration time.
+async function selectEarpieceForConnectedCall(): Promise<void> {
+  try {
+    const { audioDevices } = await voice.getAudioDevices();
+    const earpiece = audioDevices.find((device) => device.type === AudioDevice.Type.Earpiece);
+    if (!earpiece) {
+      if (__DEV__) {
+        console.warn(
+          "VOICE DEBUG: no Earpiece audio device found, available:",
+          audioDevices.map((device) => device.type)
+        );
+      }
+      return;
+    }
+    await earpiece.select();
+    if (__DEV__) {
+      console.log("VOICE DEBUG: Earpiece audio device selected for connected call");
+    }
+  } catch (err) {
+    if (__DEV__) {
+      console.warn("VOICE DEBUG: failed to select Earpiece audio device:", err);
+    }
+  }
+}
+
 // TEMPORARY diagnostic beacon (2026-08-23 physical iOS Voice SDK
 // verification pass) — reports registration progress to the backend
 // since iOS redacts on-device console output by default and there is no
@@ -337,6 +376,28 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   seenCallSids.add(callSid);
 
   console.log("Voice SDK: CallInvite received", callSid);
+
+  // Audio-quality fix (2026-09-13): CallInvite.Event.Accepted fires with
+  // the resulting Call object regardless of how the call was actually
+  // accepted — including the native notification's own Answer action,
+  // which is the real path this app uses (see this handler's own
+  // comment on why CallInvite is deliberately left unaccepted from JS).
+  // The native CallListenerProxy.onConnected callback (confirmed
+  // directly in the installed SDK source) bridges to this same Call
+  // object's Connected event once the call is genuinely connected — this
+  // is the one correct point to switch audio routing back to Earpiece,
+  // after selectSpeakerForRinging's Speaker selection has done its job
+  // of making the ring audible. iOS is untouched: this whole block is
+  // Android-only, matching selectSpeakerForRinging's own scoping and its
+  // comment on why iOS's CallKit-owned audio routing must not be
+  // touched here.
+  if (Platform.OS === "android") {
+    callInvite.on(CallInvite.Event.Accepted, (call: Call) => {
+      call.on(Call.Event.Connected, () => {
+        selectEarpieceForConnectedCall();
+      });
+    });
+  }
 });
 
 voice.on(Voice.Event.Registered, () => {

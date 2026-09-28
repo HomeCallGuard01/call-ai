@@ -128,23 +128,62 @@ check(
   '"Check again" is only ever reachable behind the pollingBroken guard — never shown during normal provisioning, only when polling itself is failing'
 );
 
-// --- Fail-safe #1/#2 (2026-08-08/09): undo code shown, loop blocked before activation ---
-
-check(
-  source.includes('forwardingLoopError') && source.includes('err.code === "forwarding_loop"'),
-  'the screen handles a forwarding_loop ApiError from the backend as its own distinct state, not a generic error'
-);
-
-check(
-  source.includes('params.protectedNumber') &&
-    source.includes('fetchActivationInstructions(params.deviceType, params.provider, params.protectedNumber, session?.access_token)'),
-  'the confirmed phone number from device-picker is actually sent to the backend for the loop check, not silently dropped'
-);
+// --- Fail-safe #1 (2026-08-08/09): undo code shown ---
 
 check(
   source.includes('UndoForwardingSection') && source.includes('instructions.cancelCode'),
   'the real cancel code from the backend response is shown on the activation screen — never a hardcoded/invented universal code'
 );
+
+// --- Obsolete forwarding-loop check removed (2026-09-12 physical-test
+// finding): the "What's this phone's number?" screen and its
+// forwarding_loop block belonged to the old PSTN dual-dial delivery
+// architecture. The current client-only Voice SDK delivery path never
+// constructs a PSTN target for any household, so the loop this
+// protected against is no longer possible — and the check was producing
+// a real, confirmed false-positive block. The customer must never need
+// a second/different number to reach this screen. ---
+
+check(
+  !source.includes('forwardingLoopError') && !source.includes('err.code === "forwarding_loop"'),
+  'the obsolete forwarding_loop error state no longer exists on this screen — it belonged to the PSTN dual-dial architecture PR #24 already removed'
+);
+
+check(
+  !source.includes('protectedNumber'),
+  'the screen no longer reads or sends a protectedNumber param at all — no second/different callback number is required by the setup flow'
+);
+
+check(
+  source.includes('fetchActivationInstructions(params.deviceType, params.provider, session?.access_token)'),
+  'fetchActivationInstructions is called with exactly deviceType, provider, and the access token — the removed protectedNumber argument is gone from the call site, not just unused'
+);
+
+check(
+  !source.includes('Choose a different number'),
+  'the obsolete "Choose a different number" screen no longer exists'
+);
+
+// --- The allocated HCG number is shown as its own plain value (2026-09-12) ---
+
+check(
+  source.includes('extractForwardingNumberFromCode') && source.includes('formatUkPhoneForDisplay'),
+  'the screen derives and displays the plain HCG forwarding number from the activation code, rather than only ever showing it embedded in the raw MMI string'
+);
+
+check(
+  source.includes('Your Home Call Guard number'),
+  'the plain forwarding number is shown under a clear, non-technical label'
+);
+
+{
+  const numberLabelIndex = source.indexOf('Your Home Call Guard number');
+  const codeBoxIndex = source.indexOf('styles.codeBox');
+  check(
+    numberLabelIndex !== -1 && codeBoxIndex !== -1 && numberLabelIndex < codeBoxIndex,
+    'the plain HCG number is presented before/separately from the carrier activation code, not mixed into it'
+  );
+}
 
 check(
   source.includes('saveActivationDevice'),
@@ -174,6 +213,29 @@ const genericErrorIndex = source.indexOf('We couldn\'t load your activation code
 check(
   notEntitledIndex !== -1 && genericErrorIndex !== -1 && notEntitledIndex < genericErrorIndex,
   'the NotEntitledError check is placed before the generic fallback error, so it actually intercepts this case rather than the fallback firing first'
+);
+
+// --- device-picker.tsx: the obsolete "What's this phone's number?"
+// screen is gone for iPhone/Android (2026-09-12 physical-test finding) ---
+
+const devicePickerSource = readFileSync(
+  path.join(__dirname, '..', 'mobile', 'app', '(setup)', 'device-picker.tsx'),
+  'utf8'
+);
+
+check(
+  !devicePickerSource.includes('accessibilityRole="header">What\'s this phone\'s number?'),
+  'device-picker.tsx no longer renders the "What\'s this phone\'s number?" screen — the customer never needs a second/different number to reach activation (the phrase may still appear in an explanatory code comment about why it was removed)'
+);
+
+check(
+  !devicePickerSource.includes('protectedNumber') && !devicePickerSource.includes('looksLikePhoneNumber'),
+  'device-picker.tsx no longer collects, validates, or sends a protectedNumber for the (now-obsolete) forwarding-loop check'
+);
+
+check(
+  devicePickerSource.includes('router.push({ pathname: "/(setup)/activate", params: { deviceType: type } })'),
+  'selecting iPhone or Android navigates straight to the activation screen with just deviceType — no intermediate number-entry step, mirroring how landline already goes straight to activate after picking a provider'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
