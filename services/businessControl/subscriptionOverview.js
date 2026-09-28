@@ -80,6 +80,10 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
     // Business definitions (definitions.js), counted per account:
     membership: { current: 0, upcoming: 0, cancelled: 0, expired: 0, never: 0 },
     protection: { protected: 0, entitled_not_protected: 0 },
+    // Payment history (definitions.js): a paid membership recorded in
+    // any status. Genuine former payers are what "0 genuine paying now"
+    // must never hide.
+    paymentHistory: { genuineEverPaid: 0, genuineFormerPaying: 0, unclassifiedEverPaid: 0, nonGenuineEverPaid: 0 },
   };
   const needsClassification = [];
 
@@ -108,6 +112,28 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
 
     if (!deleted && NON_GENUINE_CLASSIFICATIONS.includes(classification)) counts.nonGenuineAccounts[classification] += 1;
 
+    if (!deleted && biz.everPaid) {
+      if (genuine) {
+        counts.paymentHistory.genuineEverPaid += 1;
+        if (biz.formerPaying) counts.paymentHistory.genuineFormerPaying += 1;
+      } else if (classification === UNCLASSIFIED) {
+        counts.paymentHistory.unclassifiedEverPaid += 1;
+      } else {
+        counts.paymentHistory.nonGenuineEverPaid += 1;
+      }
+    }
+    // Unclassified accounts that must be classified: anyone with access
+    // now, and anyone who ever paid (a former payer has no access, but is
+    // exactly the account a buyer — or Andrew — will ask about).
+    if (!deleted && classification === UNCLASSIFIED && (current || biz.everPaid)) {
+      needsClassification.push({
+        householdId: h.id,
+        email: h.email,
+        entitlementType: current ? current.entitlement_type : null,
+        reason: biz.everPaid ? (biz.access === 'paid' ? 'paying now' : 'paid before (former paying · ' + biz.membership + ')') : 'has access',
+      });
+    }
+
     if (current) {
       const type = current.entitlement_type;
       if (PAID_TYPES.has(type)) {
@@ -124,10 +150,7 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
         counts.trial += 1;
       }
       if (NON_GENUINE_CLASSIFICATIONS.includes(classification)) counts.nonGenuineWithActiveAccess += 1;
-      if (classification === UNCLASSIFIED && !deleted) {
-        counts.unclassifiedWithActiveAccess += 1;
-        needsClassification.push({ householdId: h.id, email: h.email, entitlementType: type });
-      }
+      if (classification === UNCLASSIFIED && !deleted) counts.unclassifiedWithActiveAccess += 1;
     }
 
     if (latestSub) {

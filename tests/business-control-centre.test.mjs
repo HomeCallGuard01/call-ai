@@ -194,7 +194,7 @@ const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.c
   const liveStripe = { available: true, mode: 'live', mrr: { genuine: { GBP: 4.99 }, genuineExVat: { GBP: 4.16 }, genuineSubscriptions: 1, excludedSubscriptions: 1 } };
   const o = computeControlOverview({ households, entitlementsByHousehold: ents, subscriptionsByHousehold: new Map(), classificationMap: classes, quarantineRows: [], inventory, stripeRevenue: liveStripe, releaseRecordingAvailable: false }, NOW);
   const card = (id) => o.cards.find((c) => c.id === id);
-  check(o.cards.length === 12, 'twelve cards');
+  check(o.cards.length === 13, 'thirteen cards (twelve + paid-but-unclassified)');
   check(o.cards.every((c) => c.rule && ['red', 'amber', 'green', 'grey', 'info'].includes(c.status)), 'every card has a stated rule and a defined status');
   check(card('genuine_paying').value === 1 && card('genuine_paying').status === 'info', 'genuine paying customers: 1 (count, no colour judgement)');
   check(card('non_paying_access').value === 2 && card('non_paying_access').status === 'amber' && /1 reviewer/.test(card('non_paying_access').sub) && /1 unclassified/.test(card('non_paying_access').sub), 'complimentary/internal/test/reviewer: counted by class; amber because one account is unclassified');
@@ -265,6 +265,67 @@ const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.c
   check(row('instagram').visits === 1 && row('instagram').registrations === 1 && row('direct').visits === 1 && row('other_unknown').otherDetails['chatgpt.com'] === 1, 'visits and signups per channel; Other/unknown shows what it contains');
   check(cc.rows.every((r) => r.payingCustomers === null && r.revenue === null && r.cac === null), 'paying customers, revenue and CAC per channel are NOT CONNECTED (never 0)');
   check(cc.stageStatus.payingCustomers.status === 'NOT_CONNECTED' && cc.selfReported.status === 'NOT_CAPTURED', 'stage evidence stated; self-report kept separate and marked not captured');
+}
+
+// ============================================================
+// 7. "0 genuine paying customers" vs Stripe evidence (2026-09-28)
+// A customer who paid by Stripe and cancelled days later (the real
+// production pattern: paid 6 Sep, cancelled 9 Sep) must not vanish from
+// every figure — whether they are classified genuine or not yet
+// classified at all.
+// ============================================================
+{
+  const { classifyHouseholdForBusiness } = require('../services/businessControl/definitions.js');
+  const { computeControlOverview } = require('../services/businessControl/controlOverview.js');
+  const { computeSubscriptionOverview } = require('../services/businessControl/subscriptionOverview.js');
+  const { computeRecognisedMrr, computeCollectedRevenue } = require('../services/businessControl/stripeRevenue.js');
+
+  const cancelledPaid = [ent('paid_subscription', 21 * DAY, { status: 'revoked', updated_at: ago(18 * DAY) })];
+  const cancelledSub = [{ status: 'canceled', cancel_at_period_end: false, updated_at: ago(18 * DAY) }];
+
+  const b = classifyHouseholdForBusiness({ household: { id: 'p', email: 'p@x' }, entitlements: cancelledPaid, subscriptions: cancelledSub, classification: 'genuine_customer' }, NOW);
+  check(b.everPaid && b.formerPaying && !b.isGenuinePayingCustomer && b.membership === 'cancelled' && b.audience === 'genuine' && b.paidSources.join() === 'stripe', 'definitions: a genuine customer who paid then cancelled is a FORMER paying customer (not paying now), with payment history from stripe');
+  check(classifyHouseholdForBusiness({ household: { id: 'r', email: 'r@x' }, entitlements: [], subscriptions: [], classification: 'reviewer' }, NOW).audience === 'test', 'definitions: reviewer/test/admin/QA share one "test" audience badge');
+  check(classifyHouseholdForBusiness({ household: { id: 'n', email: 'n@x' }, entitlements: [ent('complimentary', DAY)], subscriptions: [], classification: undefined }, NOW).everPaid === false, 'definitions: complimentary access is not payment history');
+
+  const run = (cls) => computeControlOverview({
+    households: [{ id: 'p', email: 'payer@x', twilio_number: '+1', twilio_number_pending_release_at: new Date(NOW.getTime() + 12 * DAY).toISOString() }],
+    entitlementsByHousehold: new Map([['p', cancelledPaid]]), subscriptionsByHousehold: new Map([['p', cancelledSub]]),
+    classificationMap: new Map(cls ? [['p', cls]] : []), quarantineRows: [], inventory: null, stripeRevenue: null, releaseRecordingAvailable: true,
+  }, NOW);
+  const card = (o, id) => o.cards.find((c) => c.id === id);
+
+  const asGenuine = run('genuine_customer');
+  check(card(asGenuine, 'genuine_paying').value === 0 && /1 ever paid · 1 former paying/.test(card(asGenuine, 'genuine_paying').sub) && card(asGenuine, 'genuine_paying').items.some((i) => /former paying · cancelled/.test(i.detail)), 'overview: classified genuine → "0 paying now" AND "1 ever paid · 1 former paying", with the account listed');
+  check(card(asGenuine, 'paid_unclassified').value === 0 && card(asGenuine, 'paid_unclassified').status === 'green', 'overview: nothing to classify when the payer is classified');
+
+  const unclassified = run(null);
+  check(card(unclassified, 'genuine_paying').value === 0 && /0 ever paid/.test(card(unclassified, 'genuine_paying').sub), 'overview: an unclassified payer is not silently counted as genuine…');
+  check(card(unclassified, 'paid_unclassified').value === 1 && card(unclassified, 'paid_unclassified').status === 'amber' && /former paying · cancelled · stripe/.test(card(unclassified, 'paid_unclassified').items[0].detail), '…but is surfaced (amber) as "paid at some point, not classified" instead of vanishing');
+  check(unclassified.overall !== 'green', 'overview: an unclassified payer stops the overall status being green');
+
+  const sub = computeSubscriptionOverview({ households: [{ id: 'p', email: 'payer@x' }, { id: 'g', email: 'g@x' }], entitlements: [...cancelledPaid.map((e) => ({ ...e, household_id: 'p' })), { ...cancelledPaid[0], household_id: 'g' }], subscriptions: [], classificationMap: new Map([['g', 'genuine_customer']]) }, NOW);
+  check(sub.counts.paymentHistory.unclassifiedEverPaid === 1 && sub.counts.paymentHistory.genuineEverPaid === 1 && sub.counts.paymentHistory.genuineFormerPaying === 1, 'subscriptions: payment history counted per class (1 genuine former payer, 1 unclassified payer)');
+  check(sub.needsClassification.length === 1 && sub.needsClassification[0].householdId === 'p' && /paid before/.test(sub.needsClassification[0].reason), 'subscriptions: a former payer with no access still appears in "needs classification", with the reason');
+
+  // Stripe: live payments from unclassified / unknown customers are
+  // reported as UNATTRIBUTED, never silently dropped; explicit test
+  // accounts are merely excluded.
+  const genuineByCustomer = new Map([['cus_g', 'g']]);
+  const classByCustomer = new Map([['cus_g', 'genuine'], ['cus_u', 'unclassified'], ['cus_r', 'reviewer']]);
+  const price = { unit_amount: 499, currency: 'gbp', recurring: { interval: 'month', interval_count: 1 } };
+  const subs = ['cus_g', 'cus_u', 'cus_r', 'cus_nohousehold'].map((customer) => ({ customer, status: 'active', livemode: true, items: { data: [{ price, quantity: 1 }] } }));
+  const mrr = computeRecognisedMrr(subs, genuineByCustomer, classByCustomer);
+  check(mrr.genuine.GBP === 4.99 && mrr.excludedSubscriptions === 3 && mrr.unattributedSubscriptions === 2 && mrr.unattributed.GBP === 9.98, 'stripe MRR: 1 genuine; of 3 excluded, 2 (unclassified + no household) are UNATTRIBUTED; the reviewer is only excluded');
+  const charges = ['cus_g', 'cus_u', 'cus_r'].map((customer) => ({ customer, paid: true, status: 'succeeded', amount: 499, amount_refunded: 0, currency: 'gbp', livemode: true }));
+  const col = computeCollectedRevenue(charges, genuineByCustomer, classByCustomer);
+  check(col.genuine.GBP === 4.99 && col.unattributedCharges === 1 && col.unattributed.GBP === 4.99, 'stripe collected: the unclassified customer\'s live payment is reported as unattributed');
+  check(computeRecognisedMrr(subs, genuineByCustomer).unattributedSubscriptions === 0, 'stripe: without a class map (older callers) nothing is guessed as unattributed');
+
+  const overviewLive = computeControlOverview({ households: [], entitlementsByHousehold: new Map(), subscriptionsByHousehold: new Map(), classificationMap: new Map(), quarantineRows: [], inventory: null,
+    stripeRevenue: { available: true, mode: 'live', mrr: { ...mrr, genuineExVat: { GBP: 4.16 } }, collectedThisMonth: col }, releaseRecordingAvailable: true }, NOW);
+  const mrrCard = overviewLive.cards.find((c) => c.id === 'mrr');
+  check(mrrCard.status === 'amber' && /UNATTRIBUTED: 2 subscription\(s\)/.test(mrrCard.sub) && /1 payment\(s\) £4\.99 this month/.test(mrrCard.sub), 'overview MRR card: amber, and states the unattributed live subscriptions and payments');
 }
 
 console.log('');

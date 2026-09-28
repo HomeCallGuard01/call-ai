@@ -1,7 +1,7 @@
 // Business control centre — the Overview: "Are we paying for anything we
 // shouldn't be, and is every customer in the state they should be?"
 //
-// Twelve headline cards. Each card's colour is derived from an explicit,
+// Thirteen headline cards. Each card's colour is derived from an explicit,
 // displayed factual rule:
 //   red   — a loose end exists (something is wrong now)
 //   amber — something needs a decision/action but is within the normal
@@ -49,9 +49,11 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
 
   // 1. Genuine paying customers
   const genuinePaying = live.filter((b) => b.isGenuinePayingCustomer);
-  cards.push(card('genuine_paying', 'Genuine paying customers', genuinePaying.length, 'info',
-    'Count only. Genuine = classified genuine customer; paying = current paid subscription.',
-    { sub: `${live.filter((b) => b.isGenuine).length} genuine customer account(s) in total`, items: genuinePaying.map((b) => ref(b)) }));
+  const genuineFormer = live.filter((b) => b.isGenuine && b.formerPaying);
+  cards.push(card('genuine_paying', 'Genuine paying customers (now)', genuinePaying.length, 'info',
+    'Count only. Genuine = classified genuine customer; paying = current paid subscription. A customer who paid and then cancelled is a former paying customer, not a paying one.',
+    { sub: `${live.filter((b) => b.isGenuine).length} genuine account(s) · ${genuinePaying.length + genuineFormer.length} ever paid · ${genuineFormer.length} former paying`,
+      items: [...genuinePaying.map((b) => ref(b, 'paying now')), ...genuineFormer.map((b) => ref(b, `former paying · ${b.membership}`))] }));
 
   // 2. Non-customer / non-paying access
   const withAccess = live.filter((b) => b.membership === 'current' && !b.isGenuinePayingCustomer);
@@ -66,6 +68,16 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
     'Amber when any account with access is unclassified (it cannot be counted either way until classified).',
     { sub: Object.entries(breakdown).map(([k, n]) => `${n} ${k}`).join(' · ') || 'none', items: withAccess.map((b) => ref(b, `${b.accountClass} · ${b.access}`)) }));
 
+  // 2b. Payment history that no figure counts: a paid membership was
+  // recorded but the account is unclassified, so it is neither a genuine
+  // (or former) paying customer nor a known test account.
+  const paidUnclassified = live.filter((b) => b.everPaid && b.accountClass === 'unclassified');
+  cards.push(card('paid_unclassified', 'Paid at some point, not classified', paidUnclassified.length,
+    paidUnclassified.length ? 'amber' : 'green',
+    'Amber when an account has a recorded paid membership (any status) but no classification. Until it is classified it is counted nowhere — this is how a real payer can be missing from "genuine paying customers".',
+    { sub: paidUnclassified.length ? 'Classify as genuine customer or test/reviewer/admin' : 'Every account with payment history is classified',
+      items: paidUnclassified.map((b) => ref(b, `${b.access === 'paid' ? 'paying now' : 'former paying · ' + b.membership} · ${b.paidSources.join('/')}`)) }));
+
   // 3. MRR — genuine customers only, from Stripe
   let mrrCard;
   if (!stripeRevenue || !stripeRevenue.available) {
@@ -77,9 +89,16 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
   } else {
     const m = stripeRevenue.mrr;
     const appleGenuinePaid = live.filter((b) => b.isGenuinePayingCustomer && b.currentEntitlement && b.currentEntitlement.source === 'apple_revenuecat').length;
-    mrrCard = card('mrr', 'MRR — genuine customers', fmtMoneyMap(m.genuine), appleGenuinePaid ? 'amber' : 'info',
-      'From Stripe subscriptions of genuine customers only (never entitlement count × price). Amber when App Store subscriptions exist, because their revenue is not connected.',
-      { sub: `${fmtMoneyMap(m.genuineExVat)} ex VAT · ${m.genuineSubscriptions} subscription(s)` + (m.excludedSubscriptions ? ` · ${m.excludedSubscriptions} non-genuine subscription(s) excluded` : '') + (appleGenuinePaid ? ` · ${appleGenuinePaid} App Store subscription(s) NOT CONNECTED` : '') });
+    const col = stripeRevenue.collectedThisMonth || {};
+    const unattributedSubs = m.unattributedSubscriptions || 0;
+    const unattributedCharges = col.unattributedCharges || 0;
+    const unattributed = unattributedSubs + unattributedCharges > 0;
+    mrrCard = card('mrr', 'MRR — genuine customers', fmtMoneyMap(m.genuine), appleGenuinePaid || unattributed ? 'amber' : 'info',
+      'From Stripe subscriptions of genuine customers only (never entitlement count × price). Amber when App Store subscriptions exist (revenue not connected), or when live Stripe subscriptions/payments belong to an unclassified account or to no household (real money no figure counts).',
+      { sub: `${fmtMoneyMap(m.genuineExVat)} ex VAT · ${m.genuineSubscriptions} subscription(s) · collected this month ${fmtMoneyMap(col.genuine)}` +
+          (m.excludedSubscriptions ? ` · ${m.excludedSubscriptions} non-genuine subscription(s) excluded` : '') +
+          (unattributed ? ` · UNATTRIBUTED: ${unattributedSubs} subscription(s) ${fmtMoneyMap(m.unattributed)}/month, ${unattributedCharges} payment(s) ${fmtMoneyMap(col.unattributed)} this month — classify the account` : '') +
+          (appleGenuinePaid ? ` · ${appleGenuinePaid} App Store subscription(s) NOT CONNECTED` : '') });
   }
   cards.push(mrrCard);
 
@@ -265,10 +284,14 @@ async function getControlOverview(now = new Date()) {
 
   // Genuine revenue from Stripe.
   const genuineByCustomer = new Map();
+  const classByCustomer = new Map();
   for (const h of households) {
-    if (h.stripe_customer_id && classification.map.get(h.id) === 'genuine_customer') genuineByCustomer.set(h.stripe_customer_id, h.id);
+    if (!h.stripe_customer_id) continue;
+    const cls = classification.map.get(h.id);
+    if (cls === 'genuine_customer') genuineByCustomer.set(h.stripe_customer_id, h.id);
+    classByCustomer.set(h.stripe_customer_id, cls === 'genuine_customer' ? 'genuine' : cls || 'unclassified');
   }
-  const stripeRevenue = await getGenuineStripeRevenue({ stripe: resolveStripe(), genuineByCustomer, vatRate: resolveVatRate(), now });
+  const stripeRevenue = await getGenuineStripeRevenue({ stripe: resolveStripe(), genuineByCustomer, classByCustomer, vatRate: resolveVatRate(), now });
 
   return {
     available: true,

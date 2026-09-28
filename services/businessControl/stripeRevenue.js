@@ -11,6 +11,15 @@
 // Both are shown VAT-inclusive (as charged) and ex-VAT at the configured
 // rate (labelled estimated VAT treatment).
 //
+// Payments that are NOT from a genuine customer are split in two:
+//   - explained: the customer maps to a household explicitly classified
+//     test / reviewer / admin / QA;
+//   - unattributed: the customer maps to an UNCLASSIFIED household, or to
+//     no household at all. In live mode these are real payments that no
+//     figure counts, so the dashboard surfaces them for classification
+//     instead of silently dropping them (how "0 genuine paying" can hide a
+//     real payer).
+//
 // Stripe TEST mode is detected (object.livemode === false, or a test key)
 // and reported as such — test figures are never presented as revenue.
 // Read-only: subscriptions.list and charges.list only. Other currencies
@@ -45,13 +54,24 @@ function toMajor(map) {
   return Object.fromEntries(Object.entries(map).map(([c, v]) => [c, Math.round(v) / 100]));
 }
 
+// Pure. `classByCustomer` (optional): Map stripe_customer_id → account
+// class ('genuine' | 'unclassified' | 'internal_test' | …) for every
+// household holding a Stripe customer id. Unknown customer → no household.
+function isUnattributed(customer, classByCustomer) {
+  if (!classByCustomer) return false;
+  const cls = classByCustomer.get(customer);
+  return cls === undefined || cls === 'unclassified';
+}
+
 // Pure. `genuineByCustomer`: Map stripe_customer_id → household id for
 // genuine_customer households only. Returns per-currency totals.
-function computeRecognisedMrr(subscriptions, genuineByCustomer) {
+function computeRecognisedMrr(subscriptions, genuineByCustomer, classByCustomer) {
   const genuine = {};
   const excluded = {};
+  const unattributed = {};
   let genuineCount = 0;
   let excludedCount = 0;
+  let unattributedCount = 0;
   let livemode = null;
   for (const s of subscriptions || []) {
     if (!['active', 'past_due', 'trialing'].includes(s.status)) continue;
@@ -63,15 +83,21 @@ function computeRecognisedMrr(subscriptions, genuineByCustomer) {
     } else {
       addTo(excluded, currencyOf(s), minor);
       excludedCount += 1;
+      if (isUnattributed(s.customer, classByCustomer)) {
+        addTo(unattributed, currencyOf(s), minor);
+        unattributedCount += 1;
+      }
     }
   }
-  return { genuine: toMajor(genuine), genuineSubscriptions: genuineCount, excludedNonGenuine: toMajor(excluded), excludedSubscriptions: excludedCount, livemode };
+  return { genuine: toMajor(genuine), genuineSubscriptions: genuineCount, excludedNonGenuine: toMajor(excluded), excludedSubscriptions: excludedCount, unattributed: toMajor(unattributed), unattributedSubscriptions: unattributedCount, livemode };
 }
 
 // Pure. Charges since the period start: succeeded + paid, net of refunds.
-function computeCollectedRevenue(charges, genuineByCustomer) {
+function computeCollectedRevenue(charges, genuineByCustomer, classByCustomer) {
   const genuine = {};
   const other = {};
+  const unattributed = {};
+  let unattributedCount = 0;
   const genuineFees = {};
   let genuineCount = 0;
   let feesMissing = 0;
@@ -91,9 +117,13 @@ function computeCollectedRevenue(charges, genuineByCustomer) {
       else feesMissing += 1;
     } else {
       addTo(other, cur, net);
+      if (isUnattributed(c.customer, classByCustomer)) {
+        addTo(unattributed, cur, net);
+        unattributedCount += 1;
+      }
     }
   }
-  return { genuine: toMajor(genuine), genuineCharges: genuineCount, genuineFees: toMajor(genuineFees), feesMissing, otherNonGenuine: toMajor(other), livemode };
+  return { genuine: toMajor(genuine), genuineCharges: genuineCount, genuineFees: toMajor(genuineFees), feesMissing, otherNonGenuine: toMajor(other), unattributed: toMajor(unattributed), unattributedCharges: unattributedCount, livemode };
 }
 
 function exVat(amountsByCurrency, vatRate) {
@@ -126,7 +156,7 @@ async function listAll(listFn, params, max = 2000) {
 
 // Read-only fetch. `genuineByCustomer` is built by the caller from
 // households + classifications (so this module never reads the DB).
-async function getGenuineStripeRevenue({ stripe, genuineByCustomer, vatRate, now = new Date(), env = process.env }) {
+async function getGenuineStripeRevenue({ stripe, genuineByCustomer, classByCustomer, vatRate, now = new Date(), env = process.env }) {
   if (!stripe) return { available: false, reason: 'STRIPE_SECRET_KEY not configured' };
   try {
     const periodStart = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
@@ -134,8 +164,8 @@ async function getGenuineStripeRevenue({ stripe, genuineByCustomer, vatRate, now
       listAll((p) => stripe.subscriptions.list(p), { status: 'all' }),
       listAll((p) => stripe.charges.list(p), { created: { gte: periodStart }, expand: ['data.balance_transaction'] }),
     ]);
-    const mrr = computeRecognisedMrr(subscriptions, genuineByCustomer);
-    const collected = computeCollectedRevenue(charges, genuineByCustomer);
+    const mrr = computeRecognisedMrr(subscriptions, genuineByCustomer, classByCustomer);
+    const collected = computeCollectedRevenue(charges, genuineByCustomer, classByCustomer);
     const liveFlags = [mrr.livemode, collected.livemode].filter((v) => v !== null);
     const mode = stripeMode(liveFlags.length ? liveFlags.every(Boolean) : null, env.STRIPE_SECRET_KEY);
     return {

@@ -766,6 +766,10 @@ function buildOnboardingRow({ household, entitlements, subscription, lastCallAt,
     email: household.email,
     signedUpAt: household.created_at,
     classification,
+    // Payment history (a paid entitlement ever recorded, any status) —
+    // lets the Customers tab mark former payers, who otherwise look like
+    // any other "membership ended" row.
+    everPaid: (entitlements || []).some((e) => e.entitlement_type === "paid_subscription"),
     membershipStatus,
     provisioningStatus: household.twilio_provisioning_status,
     state: derived.state,

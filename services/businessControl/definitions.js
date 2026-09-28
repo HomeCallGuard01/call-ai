@@ -18,6 +18,15 @@
 //                            promotion/founding_offer entitlement.
 //   trial access             a current 'free_trial' entitlement.
 //   genuine paying customer  genuine customer WITH paid access.
+//   payment history          any paid entitlement ever recorded, in any
+//                            status (active, expired, revoked). Stripe
+//                            test / Apple sandbox rows are indistinguishable
+//                            here, so this is "a paid membership was
+//                            recorded", not "money was received".
+//   former paying            payment history, but no paid access now.
+//   audience                 genuine | unclassified | test (internal_test,
+//                            reviewer, admin, QA) | deleted — the one badge
+//                            the dashboard shows on every account.
 //   membership current       an entitlement active right now (same test
 //                            as requireEntitlement).
 //   membership upcoming      scheduled, or active with a future start
@@ -54,6 +63,8 @@ const GLOSSARY = [
   ['Paid access', 'A current paid subscription entitlement.'],
   ['Complimentary access', 'A current complimentary (or staff/partner/promotion) entitlement. No payment.'],
   ['Genuine paying customer', 'A genuine customer with paid access.'],
+  ['Payment history', 'A paid membership was recorded at some point (any status). Stripe test or Apple sandbox purchases look the same here, so this is not proof money was received.'],
+  ['Former paying', 'Payment history, but no paid access now (cancelled, expired or moved to complimentary).'],
   ['Cancelled', 'No current or upcoming membership, and the subscription was cancelled or access was revoked.'],
   ['Expired', 'No current or upcoming membership; the last one ended by date.'],
   ['Protected', 'Current membership and the customer-facing Protected test (delivery confirmed and app registered).'],
@@ -110,6 +121,9 @@ function classifyHouseholdForBusiness({ household, entitlements, subscriptions, 
   else membership = 'expired';
 
   const access = accessOf(current);
+  const paidEntitlements = ents.filter((e) => PAID_TYPES.has(e.entitlement_type));
+  const everPaid = paidEntitlements.length > 0;
+  const audience = accountClass === 'genuine' || accountClass === 'unclassified' || accountClass === 'deleted' ? accountClass : 'test';
   const technical = computeProtectionStatus(household, now);
   const protection = current ? (technical.fullyProtected ? 'protected' : 'entitled_not_protected') : 'not_entitled';
 
@@ -127,6 +141,10 @@ function classifyHouseholdForBusiness({ household, entitlements, subscriptions, 
     access,
     membership,
     isGenuinePayingCustomer: accountClass === 'genuine' && access === 'paid',
+    audience,
+    everPaid,
+    formerPaying: everPaid && access !== 'paid',
+    paidSources: [...new Set(paidEntitlements.map((e) => e.source || 'unknown'))],
     cancellingAtPeriodEnd: !!(current && latestSubscription && latestSubscription.cancel_at_period_end && latestSubscription.status !== 'canceled'),
     paymentIssue: !!(latestSubscription && (latestSubscription.status === 'past_due' || latestSubscription.status === 'unpaid')),
     protection,
