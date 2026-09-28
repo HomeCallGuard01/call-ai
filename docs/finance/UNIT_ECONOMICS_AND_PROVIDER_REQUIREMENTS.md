@@ -13,7 +13,7 @@ Prepared 2026-09-27. Internal analysis only: **no public price, allowance, custo
 | Item | Cost | Status | Evidence |
 |---|---|---|---|
 | UK local number | £0.86917 / month | CONFIRMED | Pricing API; 45 number-months billed at exactly this rate |
-| Inbound (forwarded) call | £0.007558 / started minute | CONFIRMED | Pricing API; a 239 s call billed 4 min = £0.03023 |
+| Inbound (forwarded) call | £0.007558 / started minute | CONFIRMED | Pricing API; a 239 s call billed 4 min = £0.03023. Twilio Support (2026-09): the inbound PSTN leg stays billable for the whole connected call, including when bridged to the app, so this applies to **trusted calls too** |
 | App / Voice SDK (`<Dial><Client>`) leg | £0 billed so far | CONFIRMED observation | 100 legs with no price; `calls-client` has never appeared. Twilio's public list price is $0.004/min, so future billing is **UNKNOWN** (a risk). |
 | Media Streams | £0.003329 / minute | CONFIRMED | Billing: 41 min = £0.13647; billed per started minute per stream (inferred) |
 | Polly greeting (unknown callers) | £0.0006 each | CONFIRMED | Billing: 38 uses = £0.02282 |

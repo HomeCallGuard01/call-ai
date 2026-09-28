@@ -3,6 +3,8 @@
 Status: design only. There is one pure alert evaluator, `services/finance/spendGuard.js`, with tests.
 No provider configuration has been changed and nothing is enforced.
 
+**2026-09-28 update:** the rest of the alerting layer now exists (not wired): household cost accumulation, anomaly detection, company protection levels, the monitor job and the worst-case exposure model. See `FINANCIAL_SAFETY_CONTROLS.md`. Twilio Support has confirmed that the inbound PSTN leg is billable for the whole connected call, including `<Dial><Client>` bridging, so trusted calls are not free.
+
 ## Where spend is uncontrolled today (evidence)
 
 | Exposure | Current control | Evidence |
