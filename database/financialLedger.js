@@ -106,7 +106,50 @@ async function markLegUnavailable(legId, deps = {}) {
   if (error) throw error;
 }
 
+// Everything services/finance/spendMonitor.js needs, read-only: ledger cost
+// entries and legs since `since`, the HCG calls they link to (for trusted
+// vs unknown), the entitled-household count and the newest ledger write.
+// Paged, so a busy month is never silently truncated.
+async function loadSpendMonitorData({ since, pageSize = 1000 }, deps = {}) {
+  const admin = resolveAdmin(deps);
+  const page = async (build) => {
+    const rows = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await build().range(from, from + pageSize - 1);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) return rows;
+    }
+  };
+  const [entries, legs, calls, entitlements, newest] = await Promise.all([
+    page(() => admin.from('financial_entries')
+      .select('household_id, call_id, category, entry_class, provenance, charge_observation, native_amount, native_currency, occurred_at, period_start, evidence')
+      .in('entry_class', ['cost', 'fee'])
+      .or(`occurred_at.gte.${since},period_start.gte.${since}`)
+      .order('id')),
+    page(() => admin.from('telephony_call_legs')
+      .select('call_id, household_id, leg_type, provider_duration_seconds, billed_quantity, billed_unit, started_at, ended_at')
+      .gte('started_at', since)
+      .order('id')),
+    page(() => admin.from('calls')
+      .select('id, household_id, status, monitored_duration_seconds')
+      .gte('created_at', since)
+      .order('id')),
+    page(() => admin.from('entitlements').select('household_id').eq('status', 'active').order('household_id')),
+    admin.from('financial_entries').select('updated_at').order('updated_at', { ascending: false }).limit(1),
+  ]);
+  if (newest.error) throw newest.error;
+  return {
+    entries,
+    legs,
+    calls,
+    entitledHouseholds: new Set(entitlements.map((e) => e.household_id)).size,
+    lastIngestedAt: newest.data && newest.data[0] ? newest.data[0].updated_at : null,
+  };
+}
+
 module.exports = {
+  loadSpendMonitorData,
   markLegUnavailable,
   getLeg,
   upsertLeg,
