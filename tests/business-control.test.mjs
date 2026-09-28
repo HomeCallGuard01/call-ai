@@ -293,11 +293,20 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   const tabs = extract('businessControlTabs');
   check(monitorHelpers && dateTime && tabs, 'business-control UI block and shared helpers are extractable');
 
-  for (const id of ['overview', 'subscriptions', 'reconciliation', 'finance', 'marketing']) {
+  // Five tabs (2026-09-28 consolidation); the former tabs are sections.
+  for (const id of ['overview', 'customers', 'numbers', 'money', 'operations']) {
     check(html.includes(`id="tabBtn-${id}"`) && html.includes(`<div id="${id}" class="tab-panel"`), `tab "${id}" has a button and a panel`);
   }
-  check(/const TAB_NAMES = \['overview', 'business', 'customers', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'operations', 'systemhealth'\]/.test(html), 'existing Business / Customers / Operations / System Health tabs kept; Overview first');
-  check(/fromHash : 'overview'/.test(html), 'the dashboard opens on the Overview');
+  check(/const TAB_NAMES = \['overview', 'customers', 'numbers', 'money', 'operations'\]/.test(html), 'five tabs, Overview first');
+  check((html.match(/class="tab-button"/g) || []).length === 5, 'exactly five tab buttons (was nine)');
+  for (const [section, tab] of [['overviewBody', 'overview'], ['attention', 'overview'], ['customerHealth', 'customers'], ['subscriptions', 'customers'], ['reconciliation', 'numbers'], ['finance', 'money'], ['marketing', 'money'], ['acquisition', 'money'], ['callActivity', 'operations'], ['systemhealth', 'operations'], ['opsTools', 'operations']]) {
+    const panelStart = html.indexOf(`<div id="${tab}" class="tab-panel"`);
+    const panelEnd = html.indexOf('\n', panelStart);
+    check(panelStart !== -1 && html.slice(panelStart, panelEnd).includes(`id="${section}"`), `section "${section}" sits in the ${tab} tab`);
+  }
+  check(!html.includes('tabBtn-business') && !html.includes('tabBtn-systemhealth') && !html.includes('renderBusinessTab'), 'the superseded Business and System Health tabs are gone');
+  check(/LEGACY_TAB_HASHES = \{ business: 'money', subscriptions: 'customers', reconciliation: 'numbers', finance: 'money', marketing: 'money', systemhealth: 'operations' \}/.test(html), 'old #tab bookmarks land on the tab that now holds that content');
+  check(/TAB_NAMES.includes\(mapped\) \? mapped : 'overview'/.test(html), 'the dashboard opens on the Overview');
 
   const evil = '"><img src=x onerror=alert(1)>';
   const elements = {};
@@ -305,7 +314,7 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   const documentStub = { getElementById: (id) => stubEl(id), querySelectorAll: () => [], querySelector: () => null };
   const responses = {};
   const fetchStub = async (url) => ({ ok: true, redirected: false, status: 200, json: async () => responses[url.split('/business-control/')[1]] });
-  const factory = new Function('document', 'fetch', 'window', 'fmtNum', `${monitorHelpers}\n${dateTime}\n${tabs}\nreturn { renderOverviewTab, renderSubscriptionsTab, renderReconciliationTab, renderFinanceTab, renderMarketingTab, provenanceBadge, statusBadge, overallBanner, formatGbpOrMissing, describeTotal, reconciliationBanner, chainStageClass, buildTrackedGoLinkClient };`);
+  const factory = new Function('document', 'fetch', 'window', 'fmtNum', `${monitorHelpers}\n${dateTime}\n${tabs}\nreturn { renderOverviewTab, renderSubscriptionsTab, renderReconciliationTab, renderFinanceTab, renderMarketingTab, provenanceBadge, statusBadge, overallBanner, formatGbpOrMissing, describeTotal, reconciliationBanner, chainStageClass, buildTrackedGoLinkClient, buildAttentionItems, groupOverviewCards, audienceOfRow, filterRowsByAudience, countAudiences, describeAudienceBadges };`);
   const fmtNum = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-GB'));
   const ui = factory(documentStub, fetchStub, { location: { origin: 'https://homecallguard.co.uk' } }, fmtNum);
 
@@ -339,14 +348,39 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   await ui.renderReconciliationTab();
   await ui.renderFinanceTab();
   await ui.renderMarketingTab();
-  for (const id of ['overview', 'subscriptions', 'reconciliation', 'finance', 'marketing']) {
+  for (const id of ['overviewBody', 'attention', 'subscriptions', 'reconciliation', 'finance', 'marketing']) {
     const out = elements[id].innerHTML;
     check(out.length > 200 && !out.includes('<img') && !out.includes('onerror=alert(1)>') && out.includes('&lt;img src=x onerror=alert(1)&gt;'), `${id} tab renders hostile data as escaped text, never markup`);
   }
   check(elements.finance.innerHTML.includes('Not connected') && !/£0\.00/.test(elements.finance.innerHTML), 'finance tab shows missing figures as "Not connected", never £0.00');
   check(elements.finance.innerHTML.includes('known part only') && elements.finance.innerHTML.includes('re-check'), 'finance tab labels partial totals "known part only" and stale fixed costs "re-check"');
   check(elements.finance.innerHTML.includes('Manual costs') && !elements.finance.innerHTML.includes('<form'), 'finance tab explains manual costs arrive with the ledger and offers no form');
-  check(elements.overview.innerHTML.includes('Rule:') && elements.overview.innerHTML.includes('Definitions used on every tab'), 'overview shows each card\'s rule and the definitions');
+  check(elements.overviewBody.innerHTML.includes('control-rule') && elements.overviewBody.innerHTML.includes('Definitions used on every tab'), 'overview shows each card\'s rule and the definitions');
+  check(elements.attention.innerHTML.includes('Needs your attention (1)') && elements.attention.innerHTML.includes('att-red'), 'overview leads with a "Needs your attention" list built from the red/amber checks');
+
+  // Attention list: every source, red first, each linked to its tab.
+  const att = ui.buildAttentionItems(
+    { cards: [{ id: 'mrr', label: 'MRR', value: '£0', status: 'amber' }, { id: 'unmapped_numbers', label: 'Unmapped', value: 8, status: 'red' }, { id: 'protected', label: 'Protected', value: 3, status: 'info' }] },
+    { rows: [{ health: 'needs_attention' }, { health: 'needs_attention', deletedAccount: true }, { health: 'healthy' }] },
+    { systemHealth: { components: { stripe: { status: 'GREEN', reason: 'ok' }, twilio: { status: 'AMBER', reason: 'configured, not confirmed' } } } });
+  check(att.length === 4 && att[0].severity === 'red' && att.filter((a) => a.severity === 'red').length === 2, 'attention: red/amber checks + customers needing attention (deleted excluded) + non-green system components; info/green ignored; red first');
+  check(att.find((a) => /Unmapped/.test(a.text)).tab === 'numbers' && att.find((a) => /MRR/.test(a.text)).tab === 'money' && att.find((a) => /customer/.test(a.text)).tab === 'customers' && att.find((a) => /System/.test(a.text)).tab === 'operations', 'attention: each item links to the tab that explains it');
+  check(ui.buildAttentionItems(null, null, null).length === 0, 'attention: nothing loaded yet → empty, no crash');
+  // Customers: every row says what kind of account it is.
+  const rows = [
+    { householdId: 'g', classification: 'genuine_customer', account: { kind: 'paying' }, everPaid: true, health: 'healthy' },
+    { householdId: 'f', classification: 'genuine_customer', account: { kind: 'ended' }, everPaid: true, health: 'setup_incomplete' },
+    { householdId: 'u', classification: 'unclassified', account: { kind: 'complimentary' }, health: 'healthy' },
+    { householdId: 'r', classification: 'reviewer', account: { kind: 'complimentary', testLabel: 'Reviewer' }, health: 'healthy' },
+    { householdId: 'x', classification: 'genuine_customer', account: { kind: 'none' }, health: 'inactive' },
+  ];
+  check(ui.audienceOfRow(rows[0]) === 'genuine' && ui.audienceOfRow(rows[2]) === 'unclassified' && ui.audienceOfRow({ classification: null }) === 'unclassified' && ui.audienceOfRow(rows[3]) === 'test', 'customers: audience is genuine / unclassified / test — a missing classification is never genuine');
+  check(ui.filterRowsByAudience(rows, 'genuine').map((r) => r.householdId).join() === 'g,f,x' && ui.filterRowsByAudience(rows, 'all').length === 5, 'customers: audience filter');
+  const ac = ui.countAudiences(rows);
+  check(ac.all === 4 && ac.genuine === 2 && ac.unclassified === 1 && ac.test === 1, 'customers: audience chip counts exclude inactive/deleted, like the health counts');
+  check(ui.describeAudienceBadges(rows[0]).map((b) => b.label).join() === 'Genuine' && ui.describeAudienceBadges(rows[1]).map((b) => b.label).join() === 'Genuine,Paid before' && ui.describeAudienceBadges(rows[2])[0].label === 'Unclassified' && ui.describeAudienceBadges(rows[3])[0].label === 'Reviewer', 'customers: badges — Genuine / Unclassified / Reviewer, plus "Paid before" for a former payer');
+  const groups = ui.groupOverviewCards([{ id: 'mrr' }, { id: 'protected' }, { id: 'provider_numbers' }, { id: 'new_future_card' }]);
+  check(groups.map((g) => g.title).join('|') === 'Customers & revenue|Protection|Numbers & cost|Other checks', 'overview cards grouped customers → protection → numbers; an unknown card is never dropped');
   check(elements.reconciliation.innerHTML.includes('First broken step') && elements.reconciliation.innerHTML.includes('Twilio number inventory'), 'reconciliation shows the first broken lifecycle step and the number inventory');
   check(elements.marketing.innerHTML.includes('By channel') && elements.marketing.innerHTML.includes('Self-reported'), 'marketing shows the channel comparison and keeps self-report separate');
   check(!/method\s*:|'POST'|"POST"/.test(tabs), 'the business-control tabs only ever issue GET requests');

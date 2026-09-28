@@ -42,9 +42,9 @@ function extractBetween(source, name) {
   return source.slice(startIdx + startMarker.length, endIdx);
 }
 
+// formatCurrency / formatProtectionRate were removed with the raw
+// "All accounts" block and the "Protection rate" card (2026-09-28).
 const names = [
-  'formatCurrency',
-  'formatProtectionRate',
   'describeActivityEvent',
   'describeAlert',
   'formatQuickActionResult',
@@ -61,8 +61,6 @@ if (sources.some(s => !s)) {
 } else {
   const combinedSource = `${sources.join('\n')}\nreturn { ${names.join(', ')} };`;
   const {
-    formatCurrency,
-    formatProtectionRate,
     describeActivityEvent,
     describeAlert,
     formatQuickActionResult,
@@ -70,25 +68,6 @@ if (sources.some(s => !s)) {
     describeReadinessBanner,
     describeAdminAction,
   } = new Function(combinedSource)();
-
-  // --- formatCurrency ---
-
-  check(
-    formatCurrency({ available: true, amount: 69.93, currency: 'gbp' }) === '£69.93',
-    'formatCurrency: formats an available amount as GBP currency'
-  );
-
-  check(
-    formatCurrency({ available: false, amount: null, currency: null }) === '—',
-    'formatCurrency: renders an em dash, not a fabricated number, when unavailable'
-  );
-
-  check(formatCurrency(null) === '—', 'formatCurrency: handles a missing money object without throwing');
-
-  // --- formatProtectionRate ---
-
-  check(formatProtectionRate(25) === '25%', 'formatProtectionRate: formats a numeric rate with a percent sign');
-  check(formatProtectionRate(null) === 'No calls yet', 'formatProtectionRate: null renders as "No calls yet", not "0%" or "null%"');
 
   // --- describeActivityEvent ---
 

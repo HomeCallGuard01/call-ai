@@ -65,12 +65,15 @@ check(mixed.activePaidCustomers === 2 && Math.abs(mixed.mrr.amount - 9.98) < 1e-
 
 // --- A4/A6: labels
 const html = readFileSync(path.join(__dirname, '..', 'admin-business.html'), 'utf8');
-check(!html.includes("'Active protected households'") && html.includes('Households with an active HCG number'), 'A4: "has a number" is no longer labelled "Active protected households"');
-check(!html.includes("'Active protected (real)'") && html.includes('not the same as Protected'), 'A4: Business card says a number is not the same as Protected');
-check(!/Real MRR ' \+ tag\('confirmed'\)/.test(html) && /Real MRR ' \+ tag\('derived'\)/.test(html), 'A6: Real MRR labelled derived (list price × count), not confirmed');
-check(html.includes('complimentary accounts excluded'), 'A3: MRR caption states complimentary accounts are excluded');
-
-check(!html.includes("headlineItem('Real customers'") && html.includes('Genuine customer accounts (any status)'), 'A13: "Real customers" (all genuine-classified accounts, incl. expired/never paid) relabelled so it is not read as current customers');
+// 2026-09-28: the Business tab and the raw "All accounts" block were
+// removed (superseded by Overview + Money), so the A3/A4/A6/A13 labels no
+// longer exist. What must hold instead: no entitlement × list-price MRR,
+// no "Active paid customers" from all accounts and no "has a number =
+// protected" figure anywhere in the UI.
+check(!html.includes("'Active protected households'") && !html.includes('Active protected (real)'), 'A4: "has a number" is never labelled as protected');
+check(!/Real MRR/.test(html) && !html.includes('MRR — paid entitlements × list price') && !html.includes('MRR (all sources/accounts)'), 'A3/A6: no entitlement × list-price MRR is shown anywhere (MRR comes only from Stripe, genuine customers)');
+check(!html.includes("label: 'Active paid customers'") && !html.includes("'Real customers'"), 'A2/A13: no all-accounts "Active paid customers" / ambiguous "Real customers" figure');
+check(html.includes('Genuine paying now') && html.includes('Genuine former paying'), 'A13: genuine customers are split into paying now and former paying');
 
 // --- A5: known gaps
 const route = readFileSync(path.join(__dirname, '..', 'routes', 'adminBusiness.js'), 'utf8');
