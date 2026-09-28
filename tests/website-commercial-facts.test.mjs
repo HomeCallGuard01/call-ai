@@ -107,6 +107,16 @@ check(!FAMILY.test(strip(home)) && !FAMILY.test(strip(go)), 'homepage and /go (i
 check(/Does one subscription cover more than one phone\?/.test(faq) && /one phone number/.test(visible(faq)), 'FAQ: states plainly that each subscription protects one phone number');
 check(/<h1>[^<]*your mobile phone[^<]*<\/h1>/.test(home), 'hero headline is singular and product-specific (your mobile phone)');
 
+// ---------- 3c. 2026-09-28 pass: differentiator, one decision point, no unverifiable status ----------
+check(/(call-blocking|caller-ID)[^.]*check the number/i.test(heroText) && /checks the conversation/.test(heroText), 'hero: says in one line how it differs from blocking/caller-ID apps (they check the number; HCG also checks the conversation)');
+check(/How is this different from a call-blocking or caller-ID app\?/.test(faq), 'FAQ: answers "How is this different from a call-blocking or caller-ID app?"');
+const pricingLinks = [...pricing.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('#'));
+check(JSON.stringify(pricingLinks) === JSON.stringify([PLAY]) && !/data-landline-soon/.test(pricing), `pricing: the decision point has exactly one outbound action, Google Play, and no repeated Landline tile (found: ${pricingLinks.join(', ')})`);
+for (const [name, html] of [['homepage', home], ['/go', go]]) {
+  check(!/App Store approval|awaiting approval|waiting for (final )?(Apple|App Store)/i.test(visible(html)), `${name}: no App Review status claimed that the page can't verify`);
+}
+check(!/querySelectorAll\(['"]a\[href="\/register\.html"\]/.test(home), 'homepage: no dead /register.html query-string passthrough left in the page script');
+
 // ---------- 4. no technical / provider language on marketing pages ----------
 const TECH = /\b(Twilio|Media Streams?|Voice SDK|WebSockets?|LLMs?|OpenAI|Deepgram|Anthropic|Supabase|Stripe|carrier routing|AI-powered)\b/;
 const marketing = [path.join(root, 'public', 'index.html'), path.join(root, 'public', 'go.html'), path.join(root, 'public', 'support.html'),

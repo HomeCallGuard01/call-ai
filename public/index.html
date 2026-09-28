@@ -20,9 +20,12 @@
                    (numbers can be faked; it checks the conversation), price, get the app.
        How it works - the three concrete call outcomes, as the Activity list shows them.
        Setup     - the three one-time steps, in the app.
-       Questions - supported devices, limitation, privacy, one-phone-per-subscription,
-                   cancelling, help.
-       Pricing   - the single decision point: £4.99 incl. VAT + download.
+       Questions - supported devices, difference from blocking/caller-ID apps (the
+                   detailed version, with concrete examples), limitation, privacy,
+                   one-phone-per-subscription, cancelling, help.
+       Pricing   - the single decision point: £4.99 incl. VAT + Google Play. Since
+                   2026-09-28 the App Store / Landline "In development" tiles appear only
+                   in the hero (device choice), not again here.
      Removed in this pass: the separate "Why it's different" section (its one idea now
      lives in the hero lead) and "Protect yourself, or someone you care about" (implied
      cover for other people; there is no family plan).
@@ -43,20 +46,20 @@
      from /go's own test - kept on the same sections. -->
 
 <title>Home Call Guard | Protect Your Phone From Scam Callers</title>
-<meta name="description" content="Scammers can change or fake the number they call from. Home Call Guard looks for scam risk while you talk, and can end the call if it detects serious risk. £4.99 a month including VAT, no contract.">
+<meta name="description" content="Scam call protection for your Android phone. Blocking apps check the number, which scammers can fake — Home Call Guard also checks the conversation while you talk. £4.99 a month including VAT, no contract.">
 <link rel="canonical" href="https://homecallguard.co.uk/">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Home Call Guard">
 <meta property="og:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-<meta property="og:description" content="Scam call protection that looks for risk while you talk, not just at the number calling. £4.99/month including VAT, no contract.">
+<meta property="og:description" content="Scam call protection that checks the conversation while you talk, not just the number calling. £4.99 a month including VAT, no contract.">
 <meta property="og:url" content="https://homecallguard.co.uk/">
 <meta property="og:image" content="https://homecallguard.co.uk/logo.png">
 <meta property="og:locale" content="en_GB">
 
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Home Call Guard | Protect Your Phone From Scam Callers">
-<meta name="twitter:description" content="Scam call protection that looks for risk while you talk, not just at the number calling. £4.99/month including VAT, no contract.">
+<meta name="twitter:description" content="Scam call protection that checks the conversation while you talk, not just the number calling. £4.99 a month including VAT, no contract.">
 <meta name="twitter:image" content="https://homecallguard.co.uk/logo.png">
 
 <script type="application/ld+json">
@@ -351,7 +354,7 @@
 
         <!-- APPROVED-BEHAVIOUR-COPY (2026-09-27 simplification): the ONLY place the
              "numbers can be faked / blocking isn't enough" differentiator is explained. -->
-        <p class="lead">Scammers can change or fake the number they call from, so blocking known numbers only goes so far. Home Call Guard checks your calls for signs of a scam as the conversation develops, and can end the call if the risk is serious.</p>
+        <p class="lead">Call-blocking and caller-ID apps check the number that's calling &mdash; and scammers can fake that. Home Call Guard also checks the conversation for signs of a scam while you talk, and can end the call if the risk is serious.</p>
 
         <div class="hero-price-block">
           <p class="hero-price"><span>£4.99</span></p>
@@ -453,6 +456,12 @@
       <div class="faq">
         <details><summary>Which phones and networks are supported?</summary>
           <p>Home Call Guard is available now for Android phones, on many UK mobile networks — we check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is in development.">iPhone and landline support are in development and aren't available to new customers yet.</span></p></details>
+        <!-- APPROVED-BEHAVIOUR-COPY (2026-09-28): examples map to real monitor signals in
+             services/liveMonitoring (payment_or_transfer_request / financial_redirection,
+             credential_or_otp_request, remote_access_request). Number blocking is framed as
+             useful, not disparaged. No claim that both can run together on the same call. -->
+        <details><summary>How is this different from a call-blocking or caller-ID app?</summary>
+          <p>Those apps decide based on the number that's calling, before you answer. That's useful, but a scammer can use a number that has never been reported, or fake a genuine one such as your bank's. Home Call Guard looks at what happens during the call &mdash; for example, a caller asking you to move money, read out a security code or install software on your device.</p></details>
         <details><summary>Will it stop every scam call?</summary>
           <!-- APPROVED-BEHAVIOUR-COPY -->
           <p>No service can promise that, so it's still sensible to be careful with any unexpected call that asks for money, bank details or passwords.</p></details>
@@ -496,7 +505,7 @@
         <div class="routes">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
           <div class="route disabled" data-app-store><small>In development</small><strong>App Store</strong></div>
-          <div class="route disabled" data-landline-soon><small>In development</small><strong>Landline</strong></div>
+          <p class="route-note" data-ios-notify hidden>Have an iPhone? <a href="#ios-waiting-list">Tell me when it's ready</a></p>
         </div>
       </div>
     </div>
@@ -507,7 +516,7 @@
     <div class="wrap">
       <div class="notify">
         <h3>Home Call Guard for iPhone is in development</h3>
-        <p>We're waiting for App Store approval. Leave your email and we'll let you know as soon as it's available.</p>
+        <p>It isn't available yet. Leave your email and we'll let you know as soon as it is.</p>
         <form id="homepageWaitingListForm" novalidate>
           <label for="homepageWaitingListEmail">Email address</label>
           <div class="row">
@@ -540,15 +549,12 @@
 
 <script>
 (function () {
-  // 1. Acquisition analytics passthrough — unchanged behaviour from production: if
-  //    this page was reached with UTM (or any) query parameters, append this exact
-  //    page's own query string to the existing registration links so /register.html's
-  //    own capture can record them. No cookie, no localStorage, no fingerprinting.
-  if (window.location.search) {
-    document.querySelectorAll('a[href="/register.html"]').forEach(function (link) {
-      link.href = "/register.html" + window.location.search;
-    });
-  }
+  // 1. Acquisition analytics: the visit (with any utm_* parameters and the referrer
+  //    host) is recorded server-side by GET / as a cookie-free landing_visit event.
+  //    The former /register.html query-string passthrough was removed 2026-09-28:
+  //    this page no longer links to web registration (the acquisition route is
+  //    Google Play), so it had nothing to act on. Attribution beyond the landing
+  //    visit (Play install -> app sign-up) is NOT captured today.
 
   var yearEl = document.getElementById("currentYear");
   if (yearEl) yearEl.textContent = new Date().getFullYear();

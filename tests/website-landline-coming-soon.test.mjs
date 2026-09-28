@@ -123,8 +123,10 @@ check(!/Call Divert|BT, Sky|Sign-up currently accepts|Works with BT/.test(homeVi
 // proven in section 1/2 above). Same protective intent, updated to match.
 const landlineTiles = [...strip(home).matchAll(/<(\w+)[^>]*data-landline-soon[^>]*>/g)];
 // 2026-09-27 (launch-ready pass): the separate final-CTA block was merged into
-// Pricing, so the tiles appear twice (hero, pricing). Same protective intent.
-check(landlineTiles.length === 2 && landlineTiles.every((m) => m[1] === 'div'), 'homepage: Landline appears as 2 non-clickable "In development" tiles — all <div>, none a link');
+// Pricing, so the tiles appear twice (hero, pricing).
+// 2026-09-28: the pricing card is a single Google Play action, so the tile now
+// appears once (hero device choice). Same protective intent: never a link.
+check(landlineTiles.length === 1 && landlineTiles.every((m) => m[1] === 'div'), 'homepage: Landline appears as 1 non-clickable "In development" tile — a <div>, not a link');
 check(/Which phones and networks are supported\?[\s\S]{0,600}>iPhone and landline support are in development and aren't available to new customers yet/.test(home), 'homepage FAQ: the consolidated "Which phones and networks are supported?" answer says iPhone/landline are in development and not available to new customers');
 const homeLandlineLines = homeVisible.split('\n').filter((l) => /landline/i.test(l)).map((l) => l.trim()).filter(Boolean);
 check(homeLandlineLines.length > 0 && homeLandlineLines.every((l) => /in development|^Landline$|not available to new customers/i.test(l)), `homepage: EVERY visible mention of landline says in development / not available (${homeLandlineLines.length} mentions)`);
@@ -142,17 +144,20 @@ for (const f of guideFiles) {
   if (!cta) continue;
   ctaGuides++;
   const text = cta.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  check(/Android/.test(text) && /coming soon/i.test(text), `guide ${f}: its Home Call Guard block says Android is available and landline/iPhone are coming soon`);
+  // 2026-09-28: marketing pages say "in development" (matching the homepage), not
+  // "coming soon" — landline is on hold, so no near-term promise. /go, upload.html
+  // and the app still use "Coming soon" (label decision pending with the owner).
+  check(/Android/.test(text) && /in development/i.test(text) && !/coming soon/i.test(text), `guide ${f}: its Home Call Guard block says Android is available and landline/iPhone are in development`);
   check(!/no app/i.test(g.replace(/<style[\s\S]*?<\/style>/g, '')), `guide ${f}: no "no app needed/required" claim`);
 }
 check(ctaGuides === 12, 'all 12 guides that promote Home Call Guard were checked');
 for (const f of ['stop-scam-calls-on-a-landline-uk.html', 'protect-an-elderly-persons-landline.html']) {
   const g = readFileSync(path.join(guidesDir, f), 'utf8');
   const cta = (g.match(/<div class="hcg-cta">[\s\S]*?<\/div>/) || [''])[0];
-  check(!/href="\/register\.html"/.test(cta) && /<span class="hcg-cta-secondary">Landline support is coming soon<\/span>/.test(cta), `landline guide ${f}: no sign-up link — the call to action is the text "Landline support is coming soon"`);
+  check(!/href="\/register\.html"/.test(cta) && /<span class="hcg-cta-secondary">Landline support is in development<\/span>/.test(cta), `landline guide ${f}: no sign-up link — the call to action is the text "Landline support is in development"`);
 }
 const support = visible(read('public', 'support.html'));
-check(!/BT, Sky|Virgin or TalkTalk/.test(support) && /Landline protection is coming soon and isn't available to new\s*customers yet\./.test(support.replace(/\n/g, ' ')), 'support page: no landline provider list; landline protection is coming soon and not available to new customers');
+check(!/BT, Sky|Virgin or TalkTalk/.test(support) && /Landline protection is in development and isn't available to new\s*customers yet\./.test(support.replace(/\n/g, ' ')), 'support page: no landline provider list; landline protection is in development and not available to new customers');
 
 // Static scan: no sentence anywhere on the public site affirmatively claims Home Call Guard works on a landline today.
 const AFFIRM = /(Home Call Guard|HCG)\s+(now\s+)?(protects|works (on|with)|supports)\s+(your\s+|a\s+)?(landline|home phone)|(protect|set up|sign up for)\s+(a|your)\s+landline\s+(now|today)|landline\s+(protection\s+)?is\s+(now\s+)?available/i;
@@ -160,7 +165,7 @@ const publicPages = [];
 (function walk(dir) { for (const n of readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, n.name); if (n.isDirectory()) walk(p); else if (p.endsWith('.html')) publicPages.push(p); } })(path.join(root, 'public'));
 publicPages.push(path.join(root, 'upload.html'));
 const affirmative = [];
-for (const p of publicPages) for (const line of visible(readFileSync(p, 'utf8')).split('\n')) if (AFFIRM.test(line) && !/not (yet )?available|isn't available|coming soon/i.test(line)) affirmative.push(`${path.relative(root, p)}: ${line.trim().slice(0, 100)}`);
+for (const p of publicPages) for (const line of visible(readFileSync(p, 'utf8')).split('\n')) if (AFFIRM.test(line) && !/not (yet )?available|isn't available|coming soon|in development/i.test(line)) affirmative.push(`${path.relative(root, p)}: ${line.trim().slice(0, 100)}`);
 check(affirmative.length === 0, `static scan (${publicPages.length} pages): no sentence affirmatively claims landline is available${affirmative.length ? ' — found: ' + affirmative.join(' | ') : ''}`);
 
 // ============================================================
