@@ -15,17 +15,24 @@
      detection. Search for APPROVED-BEHAVIOUR-COPY to find every such statement.
      PRICING: one price only - GBP 4.99 a month including VAT. No tiers, no minute
      allowance (the allowance/fair-use work is internal, not a public proposition).
-     STRUCTURE (customer journey): Hero (what it is, price, get it) -> Why it's different
-     (the problem: numbers can be changed or faked) -> How it protects you (three call
-     outcomes, each explained once) -> Someone you care about -> Setup -> Questions ->
-     Pricing / get protected (single decision point) -> Footer. The former separate
-     "final CTA" block was merged into Pricing so the download tiles appear twice (hero,
-     pricing), not three times.
+     STRUCTURE (2026-09-27 simplification - one job per section, nothing explained twice):
+       Hero      - what it is (scam call protection for your mobile), why it's different
+                   (numbers can be faked; it checks the conversation), price, get the app.
+       How it works - the three concrete call outcomes, as the Activity list shows them.
+       Setup     - the three one-time steps, in the app.
+       Questions - supported devices, limitation, privacy, one-phone-per-subscription,
+                   cancelling, help.
+       Pricing   - the single decision point: £4.99 incl. VAT + download.
+     Removed in this pass: the separate "Why it's different" section (its one idea now
+     lives in the hero lead) and "Protect yourself, or someone you care about" (implied
+     cover for other people; there is no family plan).
+     ONE SUBSCRIPTION = ONE PHONE: no "you and your family" / "someone you care about"
+     wording that could imply one £4.99 subscription protects several people. The FAQ
+     says so explicitly (Terms section 9: one line per subscription).
      QUALIFICATIONS: the "can't catch every scam" limitation is stated once, calmly, in
      the FAQ ("Will it stop every scam call?") and in the Terms - not in the sales
      sections.
-     AGE POSITIONING: no "elderly", "senior" or "vulnerable" wording anywhere on this
-     page - the "someone you care about" section is deliberately age-neutral.
+     AGE POSITIONING: no "elderly", "senior" or "vulnerable" wording anywhere on this page.
      SETUP TIME: no duration is claimed anywhere (no evidence for one).
      DEVICE AVAILABILITY: "In development" for iPhone and landline (tiles, FAQ) - a
      label only; see services/goLanding.js / services/providerPolicy.js for the actual
@@ -211,15 +218,6 @@
   .caption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 14px; }
 
   /* ---------- differentiator: "beyond blocking known numbers" ---------- */
-  .diff-grid { display: grid; gap: 16px; margin-top: 8px; align-items: stretch; }
-  .diff-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; display: flex; flex-direction: column; gap: 10px; }
-  .diff-panel .ico { width: 46px; height: 46px; border-radius: 13px; background: var(--green-soft); border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; color: var(--green); }
-  .diff-panel.plus .ico { color: var(--neutral); background: rgba(154, 168, 182, 0.10); }
-  .diff-panel .ico svg { width: 22px; height: 22px; }
-  .diff-panel p { color: var(--muted); font-size: 1rem; }
-  .diff-join { display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 1.6rem; font-weight: 800; }
-  @media (min-width: 900px) { .diff-grid { grid-template-columns: 1fr auto 1fr; gap: 20px; } .diff-join { padding: 0 4px; } }
-  @media (max-width: 899px) { .diff-join { transform: rotate(90deg); margin: -4px 0; } }
 
   /* ---------- how it works: three steps ---------- */
   .steps3 { display: grid; gap: 16px; list-style: none; counter-reset: s; }
@@ -238,15 +236,11 @@
   @media (min-width: 900px) { .steps3 { grid-template-columns: repeat(3, 1fr); } }
 
   /* ---------- split sections (text + phone) ---------- */
-  .split { display: grid; gap: 40px; align-items: center; }
-  .split .copy p { color: var(--muted); margin-top: 14px; }
   .ticks { list-style: none; margin-top: 20px; display: grid; gap: 12px; }
   .ticks li { padding-left: 32px; position: relative; }
   .ticks li::before { content: ""; position: absolute; left: 0; top: 6px; width: 20px; height: 20px; border-radius: 50%; background: var(--green-soft); border: 1px solid var(--green-deep); }
   .ticks li::after { content: ""; position: absolute; left: 6px; top: 11px; width: 8px; height: 4px; border-left: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(-45deg); }
   .ticks li strong { color: var(--text); }
-  .split .visual { display: flex; flex-direction: column; align-items: center; }
-  @media (min-width: 900px) { .split { grid-template-columns: 1fr 1fr; gap: 72px; } .split.flip .visual { order: -1; } }
 
   /* ---------- panels ---------- */
   .two { display: grid; gap: 18px; }
@@ -262,8 +256,7 @@
   .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
   .step .n { width: 40px; height: 40px; border-radius: 50%; background: var(--green-soft); border: 1px solid var(--green-deep); color: var(--green); font-weight: 800; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
   .step p { color: var(--muted); margin-top: 8px; font-size: 1.02rem; }
-  @media (min-width: 700px) { .steps { grid-template-columns: repeat(2, 1fr); } }
-  @media (min-width: 1000px) { .steps { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 760px) { .steps { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 699px) {
     .step { display: grid; grid-template-columns: 40px 1fr; column-gap: 16px; padding: 20px; }
     .step .n { grid-row: 1 / span 2; margin-bottom: 0; }
@@ -354,11 +347,11 @@
   <section class="hero">
     <div class="wrap grid">
       <div>
-        <p class="eyebrow">Scam call protection for UK phones</p>
-        <h1>Help protect you and your family from scam phone calls.</h1>
+        <h1>Scam call protection for your mobile phone.</h1>
 
-        <!-- APPROVED-BEHAVIOUR-COPY (shortened 2026-09-27; the spoofing explanation now lives only in "Why it's different") -->
-        <p class="lead">Home Call Guard looks for scam risk while you talk, and can end the call if it detects serious risk. The people you trust ring straight through.</p>
+        <!-- APPROVED-BEHAVIOUR-COPY (2026-09-27 simplification): the ONLY place the
+             "numbers can be faked / blocking isn't enough" differentiator is explained. -->
+        <p class="lead">Scammers can change or fake the number they call from, so blocking known numbers only goes so far. Home Call Guard checks your calls for signs of a scam as the conversation develops, and can end the call if the risk is serious.</p>
 
         <div class="hero-price-block">
           <p class="hero-price"><span>£4.99</span></p>
@@ -366,7 +359,7 @@
         </div>
         <p class="reassure-line">No contract &middot; Cancel any time &middot; Keep your number</p>
 
-        <p class="availability-line">Available now on Android. iPhone and landline are in development.</p>
+        <p class="availability-line">Available now for Android phones in the UK. iPhone and landline are in development.</p>
 
         <div class="routes hero-actions" id="get-started">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener">
@@ -394,44 +387,13 @@
     </div>
   </section>
 
-  <!-- ============ PROTECTION BEYOND BLOCKING KNOWN NUMBERS ============
-       Gives the differentiator its own moment, rather than leaving it only inside the
-       hero paragraph. Deliberately visual/concise (two panels + a joining "+", not a
-       paragraph): number-based blocking is presented as genuinely useful, not
-       disparaged — Home Call Guard is framed as an addition, not a replacement. No
-       claim of catching every scam. -->
-  <section class="band">
-    <div class="wrap">
-      <div class="section-head">
-        <p class="eyebrow">Why it's different</p>
-        <h2>Protection that goes beyond blocking known numbers.</h2>
-        <p>Scammers can easily change or fake the number they call from, so blocking known scam numbers only goes so far. What often gives a scam away is what the caller says and asks you to do.</p>
-      </div>
-      <div class="diff-grid">
-        <div class="diff-panel">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
-          <h3>Number-based blocking</h3>
-          <p>Checks the number that's calling against lists of known risks — useful, and worth keeping.</p>
-        </div>
-        <div class="diff-join" aria-hidden="true">+</div>
-        <div class="diff-panel">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.5 0-2.91-.32-4.15-.9L3 20l1.05-3.16C3.38 15.58 3 13.85 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg></div>
-          <h3>Home Call Guard</h3>
-          <p>Also looks for scam risk as the conversation itself develops — while you're talking, not just at the moment the phone rings.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- ============ HOW IT WORKS ============
-       Absorbs the previous "Activity" section and most of "Trusted contacts" — each
-       outcome (rings through / screened / stopped) was previously explained in up to
-       three places; it's now explained once, here, with the exact wording shown in the
-       app's own Activity list. -->
+       Single purpose: the three concrete outcomes of a call, with the exact wording the
+       app's Activity list shows. Doesn't re-explain the differentiator (hero) or setup. -->
   <section id="how-it-works">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">How it protects you</p>
+        <p class="eyebrow">How it works</p>
         <h2>What happens when your phone rings.</h2>
       </div>
       <ol class="steps3">
@@ -439,15 +401,15 @@
           <div class="n" aria-hidden="true">1</div>
           <p class="tag">A trusted contact calls</p>
           <h3>It rings straight through.</h3>
-          <p class="body">Calls from the people you've added to your trusted list aren't monitored. Add family, friends or anyone else any time, from the app or your online account.</p>
+          <p class="body">Calls from people on your trusted list aren't monitored.</p>
           <p class="outcome">Shown in Activity as<br><span class="chip">Rang straight through</span></p>
         </li>
         <li class="step3 unknown">
           <div class="n" aria-hidden="true">2</div>
           <p class="tag">Anyone else calls</p>
-          <h3>It connects as normal — and is monitored.</h3>
+          <h3>It rings as normal, and is checked while you talk.</h3>
           <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p class="body">Calls from numbers that aren't on your trusted list ring your phone as normal. While you talk, Home Call Guard monitors the conversation for signs of a scam.</p>
+          <p class="body">Calls from numbers that aren't on your trusted list ring your phone as normal. If nothing concerning is found, the call simply carries on.</p>
           <p class="outcome">Shown in Activity as<br><span class="chip green">Screened, no concerns</span></p>
         </li>
         <li class="step3 serious">
@@ -455,47 +417,24 @@
           <p class="tag">Serious scam risk is detected</p>
           <h3>Home Call Guard can end the call.</h3>
           <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p class="body">If the system detects serious scam risk during a call, it can end the call to help protect you.</p>
+          <p class="body">If the conversation shows serious signs of a scam, the call can be ended to help protect you.</p>
           <p class="outcome">Shown in Activity as<br><span class="chip amber">High risk — call stopped</span></p>
         </li>
       </ol>
     </div>
   </section>
 
-  <!-- ============ PROTECT YOURSELF OR SOMEONE YOU CARE ABOUT ============
-       Restored per Andrew's brief: age-neutral family/self framing — deliberately no
-       "elderly"/"senior"/"vulnerable" wording. Concise: one short paragraph, no
-       repeated feature list. Reuses the trusted-contacts screenshot, since adding
-       someone you care about as a trusted contact is the concrete action this section
-       points to. -->
-  <section class="band">
-    <div class="wrap split flip">
-      <div class="copy">
-        <p class="eyebrow">Peace of mind</p>
-        <h2>Protect yourself, or someone you care about.</h2>
-        <p>Use Home Call Guard for your own phone, or set it up for a parent, partner or anyone else you care about. Their number stays the same.</p>
-      </div>
-      <div class="visual">
-        <figure>
-          <div class="phone"><img src="/img/app-contacts.png" alt="The Trusted Contacts list in the Home Call Guard app" width="520" height="1125" loading="lazy"></div>
-          <figcaption class="caption">Trusted Contacts (example names)</figcaption>
-        </figure>
-      </div>
-    </div>
-  </section>
-
   <!-- ============ SETUP ============ -->
-  <section id="setup">
+  <section class="band" id="setup">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Getting started</p>
-        <h2>Simple, guided setup.</h2>
+        <h2>Set up once, in the app.</h2>
       </div>
       <ol class="steps">
-        <li class="step"><div class="n" aria-hidden="true">1</div><h3>Choose your phone</h3><p>Tell us which phone you're protecting. We check that your mobile network is one we currently support <strong>before you pay</strong>.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">1</div><h3>Get the app</h3><p>Download Home Call Guard from Google Play. We check that your mobile network is supported <strong>before you pay</strong>.</p></li>
         <li class="step"><div class="n" aria-hidden="true">2</div><h3>Add the people you trust</h3><p>Family, friends, your GP — sync them from your phone or add them one by one.</p></li>
-        <li class="step"><div class="n" aria-hidden="true">3</div><h3>Turn on call forwarding</h3><p>A one-time step: dial a short code so calls to your number come through Home Call Guard first. We show you exactly what to dial for your provider.</p></li>
-        <li class="step"><div class="n" aria-hidden="true">4</div><h3>You're set up</h3><p>Your calls now come through Home Call Guard, and each one appears in your Activity list so you can see how it was handled.</p></li>
+        <li class="step"><div class="n" aria-hidden="true">3</div><h3>Turn on call forwarding</h3><p>A one-time step: dial a short code so calls to your number come through Home Call Guard first. The app shows you exactly what to dial.</p></li>
       </ol>
     </div>
   </section>
@@ -516,7 +455,7 @@
           <p>Home Call Guard is available now for Android phones, on many UK mobile networks — we check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is in development.">iPhone and landline support are in development and aren't available to new customers yet.</span></p></details>
         <details><summary>Will it stop every scam call?</summary>
           <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p>No service can promise that, so it's still sensible to be careful with any unexpected call that asks for money, bank details or passwords. Home Call Guard adds another layer of protection by looking for scam risk during the conversation itself, and you can see how every call was handled in your Activity list.</p></details>
+          <p>No service can promise that, so it's still sensible to be careful with any unexpected call that asks for money, bank details or passwords.</p></details>
         <!-- PRIVACY-COPY (2026-09-27): evidence-based, deliberately not absolute. Verified in the
              repository: no call recording is configured anywhere (no <Record>/record options); the
              calls table keeps only outcome data and signal-category IDs, never the caller's words
@@ -526,12 +465,12 @@
              the provider's own retention is governed by its terms. -->
         <details><summary>Are my calls recorded?</summary>
           <p>No, Home Call Guard doesn't record your calls. When someone who isn't on your trusted list calls, the conversation is transcribed automatically while it happens, using a third-party service, so it can be checked for signs of a scam. We don't keep that transcript with your account — we keep a short record of each call, such as the time, the number and how it was handled. See our <a href="/privacy.html">Privacy Policy</a> for details.</p></details>
-        <details><summary>Can I keep my phone number?</summary>
-          <p>Yes. Your number stays exactly as it is, and the people you trust call it just as they do now.</p></details>
+        <details><summary>Does one subscription cover more than one phone?</summary>
+          <p>No. Each £4.99 subscription protects one phone number. To protect another phone, it needs its own subscription.</p></details>
         <details><summary>Can I cancel at any time?</summary>
           <p>Yes. There's no long-term contract. Cancelling stops future payments, and your protection continues until the end of the period you've already paid for. See our <a href="/terms.html">Terms and Conditions</a> for full details.</p></details>
         <details><summary>Who can I contact for help?</summary>
-          <p>Visit our <a href="/support.html">support page</a> or email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> and we'll be glad to help — including if you're setting this up for someone else.</p></details>
+          <p>Visit our <a href="/support.html">support page</a> or email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> and we'll be glad to help.</p></details>
       </div>
       <p class="faq-foot">Not sure what a scam call sounds like? Our plain-English guides explain the most common phone scams. <a href="/guides/">Read the scam advice guides →</a></p>
     </div>
@@ -550,10 +489,9 @@
         <h3>Home Call Guard</h3>
         <p class="price">£4.99 <small>a month, including VAT</small></p>
         <ul class="ticks">
-          <li>The people you trust ring straight through</li>
-          <li>Calls from other numbers monitored while you talk</li>
-          <li>Your Activity list — see how every call was handled</li>
-          <li>Keep your number · No contract · Cancel any time</li>
+          <li>Protection for one mobile number</li>
+          <li>See how every call was handled in your Activity list</li>
+          <li>No contract — cancel any time</li>
         </ul>
         <div class="routes">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>

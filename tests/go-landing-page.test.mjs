@@ -270,7 +270,9 @@ check(!/ttclid|fbclid|a@b\.c|email=/.test(withStray) && withStray.includes('id="
 check(renderGoPage(goSource, { iosComingSoon: false, appStoreUrl: REAL_LOOKING, utm: { utmSource: 'tiktok' } }).includes('href="/?utm_source=tiktok"'), 'going live for Apple does not disturb the Learn more UTM forwarding');
 
 // ---- 7. Content: only what was asked for; claim cleanup ----
-check(goSource.includes('Home Call <span>Guard</span>') && goSource.includes('Another layer of protection for you and your family.') && goSource.includes('Protect yourself and the people you care about from scam calls.'), 'shows the Home Call Guard name and the two approved messages');
+// 2026-09-27: messages changed from "you and your family" / "the people you care
+// about" — one £4.99 subscription protects one phone, and there is no family plan.
+check(goSource.includes('Home Call <span>Guard</span>') && goSource.includes('Scam call protection for your mobile phone.') && goSource.includes('Checks your calls for signs of a scam as the conversation develops.') && !/your family|people you care about/i.test(goSource), 'shows the Home Call Guard name and the two approved messages — no wording implying cover for a whole family');
 check(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(goSource), 'no emoji');
 check((goSource.match(/<script/g) || []).length === 1 && !/src=["']?[^>]*\.js/.test(goSource), 'exactly one inline script (the waiting-list submit handler) and no external script files');
 check(!/(src|href)="https?:\/\/(?!play\.google\.com\/store\/apps\/details\?id=co\.uk\.homecallguard\.app")/.test(goSource.replace(/<meta[^>]*>/g, '')), 'no third-party requests: the only absolute link is the Play listing (og:image is a meta tag, not fetched by the page)');

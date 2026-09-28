@@ -96,6 +96,17 @@ for (const phrase of [
 }
 check(!/class="final"/.test(home), 'homepage: the separate final-CTA block is merged into Pricing (download tiles not repeated a third time)');
 
+// ---------- 3b. one subscription = one phone (no family-plan implication) ----------
+// There is no family plan: nothing on the homepage or /go (including metadata)
+// may suggest one £4.99 subscription protects several people.
+const FAMILY = /you and your family|your family from|whole family|family plan|family package|loved ones|someone you care about|the people you care about|everyone in your (home|household)/i;
+const go = read('public', 'go.html');
+// strip() drops HTML comments (the maintainers' notes) but keeps tag attributes, so
+// meta descriptions / og: tags are still checked.
+check(!FAMILY.test(strip(home)) && !FAMILY.test(strip(go)), 'homepage and /go (incl. metadata): no wording implying one subscription covers a family or other people');
+check(/Does one subscription cover more than one phone\?/.test(faq) && /one phone number/.test(visible(faq)), 'FAQ: states plainly that each subscription protects one phone number');
+check(/<h1>[^<]*your mobile phone[^<]*<\/h1>/.test(home), 'hero headline is singular and product-specific (your mobile phone)');
+
 // ---------- 4. no technical / provider language on marketing pages ----------
 const TECH = /\b(Twilio|Media Streams?|Voice SDK|WebSockets?|LLMs?|OpenAI|Deepgram|Anthropic|Supabase|Stripe|carrier routing|AI-powered)\b/;
 const marketing = [path.join(root, 'public', 'index.html'), path.join(root, 'public', 'go.html'), path.join(root, 'public', 'support.html'),
