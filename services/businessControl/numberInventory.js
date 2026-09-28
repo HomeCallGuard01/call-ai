@@ -53,7 +53,7 @@ const RECOMMENDATIONS = {
   quarantined_awaiting_confirmation: 'Confirm with the customer that carrier forwarding is off, then record it with the existing confirm-deactivation action.',
   quarantine_release_overdue: 'The provider release has not happened 48h after confirmation — check release logs / recorded error.',
   marked_released_still_at_provider: 'HCG recorded this number as released but Twilio still bills it — check whether the SID lookup failed (see release-failure design).',
-  staging_or_dev: 'Staging/development number billed on the production account. Decide: move to a staging sub-account or release through the lifecycle.',
+  staging_or_dev: 'Bought by a staging/local server: it has no Twilio credentials of its own, so it falls back to the production account (see docs/admin/STAGING_NUMBERS_ON_PRODUCTION_TWILIO.md). Its household is in the staging database, and staging test subscriptions never lapse, so nothing ever releases it. Decide: move to a staging sub-account or release deliberately — never from here.',
   orphan: 'Check recent inbound calls to this number before doing anything — forwarding may still point here. Never release without investigation.',
   missing_at_provider: 'The customer may be forwarding to a number HCG no longer holds — contact the customer and reprovision through the normal flow.',
   voice_url_mismatch: 'Calls to this customer\'s number are not sent to production — check the number\'s voice URL in Twilio.',

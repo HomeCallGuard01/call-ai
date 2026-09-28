@@ -1,9 +1,48 @@
 <!--
-STATUS (2026-09-27, v2): branch feature/admin-control-centre-v2 (pushed, no PR, not deployed).
-Builds on PR #48 + fix/admin-business-tab-statements. Strictly observational (GET only), no migration.
+STATUS (2026-09-28, v3): branch feature/admin-control-centre-v2 (pushed, no PR, not deployed).
+v3 = the five-tab consolidation + payment history. Strictly observational (GET only), no migration.
 See also: RECONCILIATION_CONSOLIDATION_PLAN.md, ACQUISITION_READINESS_REVIEW.md,
-DASHBOARD_FINANCIAL_STATEMENT_AUDIT.md (full branch), TWILIO_RELEASE_FAILURE_RECORDING_DESIGN.md (full branch).
+STAGING_NUMBERS_ON_PRODUCTION_TWILIO.md.
 -->
+
+## v3 (2026-09-28): five tabs
+
+The nine tabs (Overview, Business, Customers, Subscriptions, Reconciliation, Finance, Marketing, Operations, System Health) are now five. No endpoint changed; the former tabs are sections.
+
+| Tab | Sections | Question it answers |
+|---|---|---|
+| **Overview** | Needs your attention · checks (Customers & revenue → Protection → Numbers & cost) · definitions | What needs me today? |
+| **Customers** | health table (Genuine / Unclassified / Test badge and filter on every row) · Memberships & payment history | Who are my customers, which are real, are they protected? |
+| **Numbers** | lifecycle reconciliation · Twilio number inventory | Does every number match its subscription, and what am I paying for? |
+| **Money** | Finance · Marketing · website funnel | Is HCG profitable, and what brings customers? |
+| **Operations** | call activity & failures · System Health · admin tools · activity · launch readiness | Are calls working, is the system healthy, what can I do? |
+
+**Removed** (duplicates or misleading figures):
+- The Business tab's revenue, cost and two profitability blocks. Finance supersedes them, with provenance on every line.
+- Both entitlement × list-price MRR figures. MRR now comes only from Stripe, for genuine customers.
+- The raw "All accounts" block, whose "Active paid customers" contradicted Overview.
+- "Protection rate".
+- The Ops subscription/number status breakdowns.
+- The stale "known gaps" list.
+- The acquisition "Top sources" table. It duplicated Marketing and rendered `utm_source` unescaped.
+
+### Reconciling "0 genuine paying customers" with the Stripe evidence
+
+"Genuine paying customers" = classified `genuine_customer` **and** a *current* paid entitlement. A real payer could vanish from every figure in two ways:
+
+1. **They paid and then cancelled.** Recorded evidence (27 Sep): production household `87fdd35a` paid by Stripe on 6 Sep and cancelled on 9 Sep. "0 paying now" is then correct, but nothing said "1 former paying customer".
+2. **They were never classified.**
+   - An unclassified account counts as neither genuine nor test, and was only visible while it still had access.
+   - In live mode, the Stripe module moved its payments into a bucket (`otherNonGenuine`) that no screen showed.
+
+v3 closes both gaps:
+- **Payment history** is shown: paying now vs former paying vs ever paid.
+- A new Overview check, **"Paid at some point, not classified"** (amber), lists every account with a recorded paid membership that has no classification.
+- The MRR card reports **UNATTRIBUTED** live Stripe subscriptions and payments: customers who are unclassified or belong to no household.
+
+Caveat: a paid entitlement can come from a Stripe **test** or Apple **sandbox** purchase. Payment history therefore means "a paid membership was recorded", not "money was received". Only the live-mode Stripe figures prove money.
+
+**Not verified this session:** whether `87fdd35a` is classified, and the live Stripe totals. The production read was declined by the session's permission policy, and this environment's Stripe key is test-mode. Opening the deployed Overview answers both.
 
 > **CORRECTION (2026-09-27, later):** the "Stripe £39.92 gross (ACTUAL)" figure in §6 below came from the local environment's Stripe **test-mode** key, not production revenue. v2 detects Stripe's mode and never shows test-mode figures as revenue (MRR/revenue go grey: "Stripe TEST mode").
 
