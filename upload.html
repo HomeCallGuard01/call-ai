@@ -1236,7 +1236,7 @@
         <label class="option-card">
           <input type="radio" name="carrierDeviceType" id="carrierDeviceLandline" value="landline">
           <span class="option-card-icon"><img src="/landline-device-mark.png" alt="" width="26" height="26"></span>
-          <span class="option-card-label" id="carrierLandlineLabel">Landline — Coming soon</span>
+          <span class="option-card-label" id="carrierLandlineLabel">Landline — In development</span>
           <span class="option-card-check" aria-hidden="true">&#10003;</span>
         </label>
         <!-- IOS_COMING_SOON (2026-09-19, services/featureFlags.js): the
@@ -1288,9 +1288,9 @@
            supported-provider gate below are deliberately kept for when the
            flag is turned off. -->
       <div id="landlineComingSoonMessage" hidden>
-        <h3 class="field-hint-heading">Home Call Guard for landlines is coming soon</h3>
-        <p>We're not selling landline protection just yet, so we can't take a subscription for a landline today.</p>
-        <p>Home Call Guard is available for Android phones now. If you'd like to hear when landline protection is ready, email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a>.</p>
+        <h3 class="field-hint-heading">Home Call Guard for landlines is in development</h3>
+        <p>We're not selling landline protection, so we can't take a subscription for a landline today.</p>
+        <p>Home Call Guard is available for Android phones now. If you'd like to hear if landline protection becomes available, email <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a>.</p>
         <p class="field-hint">Protecting an Android phone instead? <button type="button" class="link-button" id="landlineComingSoonChooseAnother">Choose a different option</button></p>
       </div>
 
@@ -2438,7 +2438,7 @@
       // hand-edited selection — see landlineSelectableForActivation.
       if (deviceType === "landline" && !landlineSelectableForActivation()) {
         if (callForwardingErrorEl) {
-          callForwardingErrorEl.textContent = "Landline protection is coming soon and isn't available yet. Please choose another option.";
+          callForwardingErrorEl.textContent = "Landline protection is in development and isn't available yet. Please choose another option.";
           callForwardingErrorEl.hidden = false;
         }
         return;
@@ -3799,7 +3799,7 @@
   // if Landline is the selected card, in which controls are visible.
   function applyLandlineAvailabilityToUi() {
     if (carrierLandlineLabelEl) {
-      carrierLandlineLabelEl.textContent = landlineComingSoon ? "Landline — Coming soon" : "Landline";
+      carrierLandlineLabelEl.textContent = landlineComingSoon ? "Landline — In development" : "Landline";
     }
     const landlineSelected = !!(carrierDeviceLandlineEl && carrierDeviceLandlineEl.checked);
     if (landlineComingSoonMessageEl) landlineComingSoonMessageEl.hidden = !(landlineComingSoon && landlineSelected);
@@ -3909,7 +3909,7 @@
               termsConsentErrorEl.textContent = result.customerState === "ios_coming_soon"
                 ? "Home Call Guard for iPhone is coming soon and isn't available to new customers yet."
                 : result.reason === "landline_coming_soon"
-                ? "Home Call Guard for landlines is coming soon and isn't available to new customers yet."
+                ? "Home Call Guard for landlines is in development and isn't available to new customers yet."
                 : result.customerState === "landline_provider_unsupported"
                 ? "We don't currently have confirmed setup instructions for your landline provider. Please go back and join the waiting list."
                 : result.customerState === "needs_confirmation"

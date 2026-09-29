@@ -42,8 +42,12 @@ function check(condition, message) {
 // 1. upload.html — web onboarding
 // ============================================================
 const html = read('upload.html');
-check(/<span class="option-card-label" id="carrierLandlineLabel">Landline — Coming soon<\/span>/.test(html), 'upload.html: the Landline device card reads "Landline — Coming soon"');
-check(html.includes('id="landlineComingSoonMessage"') && html.includes('Home Call Guard for landlines is coming soon') && html.includes("we can't take a subscription for a landline today"), 'upload.html: a "Landline is coming soon" panel exists and says landline cannot be bought today');
+// 2026-09-29: customer-facing LANDLINE label is "In development" everywhere (not part
+// of the sales proposition; no near-term date). Internal names (landlineComingSoon,
+// reason "landline_coming_soon", LANDLINE_COMING_SOON) are unchanged.
+check(/<span class="option-card-label" id="carrierLandlineLabel">Landline — In development<\/span>/.test(html) && html.includes('landlineComingSoon ? "Landline — In development" : "Landline"'), 'upload.html: the Landline device card reads "Landline — In development" (static markup and the JS-applied label)');
+check(!/landline[^"<]{0,40}coming soon|coming soon[^"<]{0,10}landline/i.test(html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ')) && !/"[^"]*[Ll]andline[^"]*coming soon[^"]*"/.test(html.replace(/\/\/.*$/gm, '')), 'upload.html: no customer-visible "landline … coming soon" text remains (markup or JS strings)');
+check(html.includes('id="landlineComingSoonMessage"') && html.includes('Home Call Guard for landlines is in development') && html.includes("we can't take a subscription for a landline today") && !/just yet/.test(html), 'upload.html: a "Landline is in development" panel exists (no "just yet" near-term implication) and says landline cannot be bought today');
 check(/let landlineComingSoon = true;/.test(html) && html.indexOf('let landlineComingSoon = true;') < html.indexOf('function landlineSelectableForActivation'), 'upload.html: the state DEFAULTS to Coming soon (fail closed) and is declared before anything reads it');
 
 // -- the launch-flags fetch: the ONLY way landline can open --
@@ -127,7 +131,7 @@ const landlineTiles = [...strip(home).matchAll(/<(\w+)[^>]*data-landline-soon[^>
 // 2026-09-28: the pricing card is a single Google Play action, so the tile now
 // appears once (hero device choice). Same protective intent: never a link.
 check(landlineTiles.length === 1 && landlineTiles.every((m) => m[1] === 'div'), 'homepage: Landline appears as 1 non-clickable "In development" tile — a <div>, not a link');
-check(/Which phones and networks are supported\?[\s\S]{0,600}>iPhone and landline support are in development and aren't available to new customers yet/.test(home), 'homepage FAQ: the consolidated "Which phones and networks are supported?" answer says iPhone/landline are in development and not available to new customers');
+check(/Which phones and networks are supported\?[\s\S]{0,600}>iPhone is coming soon and landline support is in development; neither is available to new customers yet/.test(home), 'homepage FAQ: the consolidated "Which phones and networks are supported?" answer says iPhone is coming soon, landline is in development, neither available to new customers');
 const homeLandlineLines = homeVisible.split('\n').filter((l) => /landline/i.test(l)).map((l) => l.trim()).filter(Boolean);
 check(homeLandlineLines.length > 0 && homeLandlineLines.every((l) => /in development|^Landline$|not available to new customers/i.test(l)), `homepage: EVERY visible mention of landline says in development / not available (${homeLandlineLines.length} mentions)`);
 check(!/Can I use Home Call Guard on my landline\?/.test(home), 'homepage: the old standalone "Can I use Home Call Guard on my landline?" FAQ is gone (consolidated into "Which phones and networks are supported?")');
@@ -147,7 +151,7 @@ for (const f of guideFiles) {
   // 2026-09-28: marketing pages say "in development" (matching the homepage), not
   // "coming soon" — landline is on hold, so no near-term promise. /go, upload.html
   // and the app still use "Coming soon" (label decision pending with the owner).
-  check(/Android/.test(text) && /in development/i.test(text) && !/coming soon/i.test(text), `guide ${f}: its Home Call Guard block says Android is available and landline/iPhone are in development`);
+  check(/Android/.test(text) && /landline support is in development/i.test(text) && !/landline[^.;]{0,30}coming soon/i.test(text), `guide ${f}: its Home Call Guard block says Android is available and landline support is in development (never "coming soon")`);
   check(!/no app/i.test(g.replace(/<style[\s\S]*?<\/style>/g, '')), `guide ${f}: no "no app needed/required" claim`);
 }
 check(ctaGuides === 12, 'all 12 guides that promote Home Call Guard were checked');

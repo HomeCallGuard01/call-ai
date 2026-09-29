@@ -24,7 +24,7 @@
                    detailed version, with concrete examples), limitation, privacy,
                    one-phone-per-subscription, cancelling, help.
        Pricing   - the single decision point: £4.99 incl. VAT + Google Play. Since
-                   2026-09-28 the App Store / Landline "In development" tiles appear only
+                   2026-09-28 the App Store / Landline availability tiles appear only
                    in the hero (device choice), not again here.
      Removed in this pass: the separate "Why it's different" section (its one idea now
      lives in the hero lead) and "Protect yourself, or someone you care about" (implied
@@ -37,8 +37,10 @@
      sections.
      AGE POSITIONING: no "elderly", "senior" or "vulnerable" wording anywhere on this page.
      SETUP TIME: no duration is claimed anywhere (no evidence for one).
-     DEVICE AVAILABILITY: "In development" for iPhone and landline (tiles, FAQ) - a
-     label only; see services/goLanding.js / services/providerPolicy.js for the actual
+     DEVICE AVAILABILITY (2026-09-29): iPhone = "Coming soon" (the app exists and its
+     release is well advanced, but no App Review status is claimed); landline = "In
+     development" (not part of the sales proposition; no near-term date implied). Labels
+     only; see services/goLanding.js / services/providerPolicy.js for the actual
      availability logic. Landline is a non-clickable tile; nothing here claims or
      implies it's available. The server independently refuses landline checkout
      (LANDLINE_COMING_SOON) - see docs/launch/LANDLINE_COMING_SOON_LAUNCH_FLAG.md.
@@ -362,7 +364,7 @@
         </div>
         <p class="reassure-line">No contract &middot; Cancel any time &middot; Keep your number</p>
 
-        <p class="availability-line">Available now for Android phones in the UK. iPhone and landline are in development.</p>
+        <p class="availability-line">Available now for Android phones in the UK. iPhone is coming soon; landline is in development.</p>
 
         <div class="routes hero-actions" id="get-started">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener">
@@ -372,7 +374,7 @@
                page is given a genuine App Store URL AND /api/v1/launch-flags reports
                iosComingSoon:false. No Apple URL is invented here. -->
           <div class="route disabled" data-app-store>
-            <small>In development</small><strong>App Store</strong>
+            <small>Coming soon</small><strong>App Store</strong>
           </div>
           <p class="route-note" data-ios-notify hidden>Have an iPhone? <a href="#ios-waiting-list">Tell me when it's ready</a></p>
           <div class="route disabled" data-landline-soon>
@@ -455,7 +457,7 @@
       </div>
       <div class="faq">
         <details><summary>Which phones and networks are supported?</summary>
-          <p>Home Call Guard is available now for Android phones, on many UK mobile networks — we check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is in development.">iPhone and landline support are in development and aren't available to new customers yet.</span></p></details>
+          <p>Home Call Guard is available now for Android phones, on many UK mobile networks — we check your network before you pay, so you'll know before you subscribe. <span data-ios-soon data-ios-live="iPhone is now available on the App Store. Landline protection is in development.">iPhone is coming soon and landline support is in development; neither is available to new customers yet.</span></p></details>
         <!-- APPROVED-BEHAVIOUR-COPY (2026-09-28): examples map to real monitor signals in
              services/liveMonitoring (payment_or_transfer_request / financial_redirection,
              credential_or_otp_request, remote_access_request). Number blocking is framed as
@@ -504,7 +506,7 @@
         </ul>
         <div class="routes">
           <a class="route" href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app" rel="noopener"><small>Get it on</small><strong>Google Play</strong></a>
-          <div class="route disabled" data-app-store><small>In development</small><strong>App Store</strong></div>
+          <div class="route disabled" data-app-store><small>Coming soon</small><strong>App Store</strong></div>
           <p class="route-note" data-ios-notify hidden>Have an iPhone? <a href="#ios-waiting-list">Tell me when it's ready</a></p>
         </div>
       </div>
@@ -515,7 +517,7 @@
   <section id="ios-waiting-list" data-ios-notify hidden>
     <div class="wrap">
       <div class="notify">
-        <h3>Home Call Guard for iPhone is in development</h3>
+        <h3>Home Call Guard for iPhone is coming soon</h3>
         <p>It isn't available yet. Leave your email and we'll let you know as soon as it is.</p>
         <form id="homepageWaitingListForm" novalidate>
           <label for="homepageWaitingListEmail">Email address</label>

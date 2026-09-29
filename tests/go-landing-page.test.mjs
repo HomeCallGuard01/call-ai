@@ -115,12 +115,12 @@ check(renderGoPage(goSource, { iosComingSoon: false, appStoreUrl: 'https://apps.
 
 // ---- 3. Landline: Coming soon, no purchase / onboarding route ----
 const landlineBlock = cardBlock(goSource, 'landline');
-check(landlineBlock.includes('<strong>Landline</strong>') && landlineBlock.includes('<span class="badge">Coming soon</span>'), 'Landline card is visible and reads "Landline — Coming soon"');
+check(landlineBlock.includes('<strong>Landline</strong>') && landlineBlock.includes('<span class="badge">In development</span>'), 'Landline card is visible and reads "Landline — In development" (2026-09-29: no near-term date implied)');
 check(!landlineBlock.includes('Available now') && !/Protect a landline|Set up Home Call Guard|Get started|Get protected|Subscribe|Sign up/i.test(landlineBlock), 'the Landline card has no "available"/"set up"/"protect"/"subscribe" call to action');
 check(!/<a[\s>]/.test(landlineBlock) && !/href=|action=/.test(landlineBlock), 'the Landline card has no link, href or form action at all — nothing to navigate to');
 check(landlineBlock.includes('data-reason="landline_coming_soon"') && landlineBlock.includes('data-device="landline"') && landlineBlock.includes('type="email"'), 'Landline joins the waiting list with its OWN reason (landline_coming_soon, deviceType landline) — never the iPhone reason');
 check(!landlineBlock.includes('ios_coming_soon'), 'Landline interest cannot be recorded as iPhone interest (iPhone data stays uncorrupted)');
-check(landlineBlock.includes("Landline support is coming soon.") && !/works with|every landline|no app|without an app|phone company|provider|forward|divert/i.test(landlineBlock), 'Landline wording is only "coming soon" — no unverified claim about how it works or which landlines it will support');
+check(landlineBlock.includes("Landline support is in development.") && !/coming soon/i.test(visibleText(landlineBlock)) && !/works with|every landline|no app|without an app|phone company|provider|forward|divert/i.test(landlineBlock), 'Landline wording is only "in development" — no unverified claim about how it works or which landlines it will support');
 const allHrefs = [...withoutComments(goSource).matchAll(/<a\b[^>]*\bhref="([^"]*)"/g)].map((m) => m[1]);
 check(JSON.stringify(allHrefs) === JSON.stringify([PLAY, '/', '/privacy', '/terms.html']), `the ONLY <a> links on the page are Google Play, the homepage, Privacy and Terms (found: ${allHrefs.join(', ')})`);
 check(!/\/register|\/dashboard|\/login|\/subscribe|\/billing|\/checkout|\/onboarding|\/confirm|\/activate|\/upload/i.test(VISIBLE.replace(/data-[a-z-]+="[^"]*"/g, '')), 'no reference to registration, login, dashboard, billing, checkout, subscribe or onboarding routes anywhere in the page');
