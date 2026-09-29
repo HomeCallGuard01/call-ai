@@ -59,4 +59,24 @@ router.get("/admin/api/business-control/marketing", requireAuth, requireAdmin, a
   sendResult(res, await getCampaignPerformance(new Date()));
 });
 
+// Monthly due-diligence snapshot (read-only; aggregates only, no personal
+// data — refused if any slips in). ?month=YYYY-MM&format=json|md
+router.get("/admin/api/business-control/snapshot", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { getDueDiligenceSnapshot } = require("../services/businessControl/dueDiligenceSnapshot");
+    const result = await getDueDiligenceSnapshot({ month: req.query.month, now: new Date() });
+    if (!result.available) return res.status(result.status || 503).json({ error: "unavailable", reason: result.reason });
+    const name = `hcg-operational-snapshot-${result.snapshot.period}`;
+    if (req.query.format === "md") {
+      res.set("Content-Disposition", `attachment; filename="${name}.md"`);
+      return res.type("text/markdown").send(result.markdown);
+    }
+    if (req.query.download === "1") res.set("Content-Disposition", `attachment; filename="${name}.json"`);
+    res.json(result.snapshot);
+  } catch (err) {
+    console.error("BUSINESS CONTROL SNAPSHOT ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 module.exports = router;

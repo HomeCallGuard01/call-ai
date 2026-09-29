@@ -1344,6 +1344,12 @@ function renderOperationsTab(data) {
     '</div>';
   html += '</div>';
 
+  html += '<div class="section"><div class="section-header"><h2>Due-diligence snapshot</h2></div><div class="card">' +
+    '<p class="sub">Monthly operational snapshot: aggregates only (no emails, numbers or ids), definitions included. Customers and numbers are as of the moment you download; calls are for the chosen month. Keep each month\'s file — nothing is archived automatically yet.</p>' +
+    '<div class="quick-action-row"><input type="month" id="ddMonth" value="' + new Date().toISOString().slice(0, 7) + '">' +
+    '<a class="action-button" id="ddJson" href="#" onclick="this.href=\'/admin/api/business-control/snapshot?download=1&month=\' + document.getElementById(\'ddMonth\').value">Download JSON</a> ' +
+    '<a class="action-button" id="ddMd" href="#" onclick="this.href=\'/admin/api/business-control/snapshot?format=md&month=\' + document.getElementById(\'ddMonth\').value">Download summary (.md)</a></div></div></div>';
+
   html += '<div class="section"><div class="section-header"><h2>Launch readiness</h2></div><div class="card">' + renderLaunchReadinessHtml(data.launchReadiness) + '</div></div>';
 
   html += '<div class="section"><div class="section-header"><h2>Recent activity</h2></div><div class="subcards">';
