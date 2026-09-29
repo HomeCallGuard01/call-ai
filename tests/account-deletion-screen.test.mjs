@@ -129,7 +129,7 @@ check(
 );
 
 check(
-  screenSource.includes('import { resetVoiceRegistrationState } from "../../../lib/voiceClient"'),
+  /import \{ resetVoiceRegistrationState(, unregisterForIncomingCalls)? \} from "\.\.\/\.\.\/\.\.\/lib\/voiceClient"/.test(screenSource),
   'resetVoiceRegistrationState is imported from lib/voiceClient, the same real function account/index.tsx uses — not a local stub'
 );
 

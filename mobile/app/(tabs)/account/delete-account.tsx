@@ -25,7 +25,7 @@ import { Banner } from "../../../components/Banner";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/AuthContext";
 import { deleteAccount, fetchDashboard, ApiError } from "../../../lib/api";
-import { resetVoiceRegistrationState } from "../../../lib/voiceClient";
+import { resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../../lib/voiceClient";
 import { clearSetupCompletedAt } from "../../../lib/setupCompletionStorage";
 import { colors, spacing, typography } from "../../../lib/theme";
 
@@ -84,6 +84,9 @@ export default function DeleteAccount() {
       // session; AuthContext's existing onAuthStateChange(SIGNED_OUT)
       // listener handles navigating away — this screen never navigates
       // itself.
+      // 2026-09-29: unregister this device's push binding (bounded,
+      // best-effort, never throws) before local cleanup.
+      await unregisterForIncomingCalls();
       resetVoiceRegistrationState();
       clearSetupCompletedAt();
       await supabase.auth.signOut();

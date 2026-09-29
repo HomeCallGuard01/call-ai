@@ -35,7 +35,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
 import { deriveLoadOutcome, computeHomeProtectionState, hasProvenActivation } from "../../lib/homeStatus";
 import { classifyLoadFailure, type LoadFailureReason } from "../../lib/loadFailure";
-import { resetVoiceRegistrationState } from "../../lib/voiceClient";
+import { resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../lib/voiceClient";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import { loadSetupCompletedAt, clearSetupCompletedAt } from "../../lib/setupCompletionStorage";
 import type { DashboardActivityItem, DashboardResponse } from "../../lib/types";
@@ -257,11 +257,15 @@ export default function Home() {
   // signOutAndResetVoiceRegistration) — a stale "already registered" flag
   // must never survive into whatever session comes next after signing
   // back in.
+  // 2026-09-29: unregister the push binding first (bounded; the retained
+  // registration token works even though the HCG session has expired).
   function handleSessionExpired() {
-    resetVoiceRegistrationState();
-    clearSetupCompletedAt();
-    supabase.auth.signOut().finally(() => {
-      router.replace("/(auth)/login");
+    unregisterForIncomingCalls().finally(() => {
+      resetVoiceRegistrationState();
+      clearSetupCompletedAt();
+      supabase.auth.signOut().finally(() => {
+        router.replace("/(auth)/login");
+      });
     });
   }
 

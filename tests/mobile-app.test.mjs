@@ -1234,8 +1234,8 @@ function check(condition, message) {
   );
 
   check(
-    accountScreenSource.includes('import { resetVoiceRegistrationState } from "../../../lib/voiceClient"'),
-    'account/index.tsx imports resetVoiceRegistrationState'
+    /import \{ resetVoiceRegistrationState(, unregisterForIncomingCalls)? \} from "\.\.\/\.\.\/\.\.\/lib\/voiceClient"/.test(accountScreenSource),
+    'account/index.tsx imports resetVoiceRegistrationState (and, since 2026-09-29, unregisterForIncomingCalls)'
   );
 
   const signOutFnIndex = accountScreenSource.indexOf('function signOutAndResetVoiceRegistration()');

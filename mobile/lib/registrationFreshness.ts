@@ -17,3 +17,26 @@ export function isRegistrationOverdue(
   const refreshAfterMs = Math.max(ttlSeconds - refreshMarginSeconds, 30) * 1000;
   return nowMs - lastRegisteredAtMs >= refreshAfterMs;
 }
+
+// True unless we positively know this invite is addressed to a different
+// Voice identity than the one this app registered (2026-09-29). Twilio
+// reports the callee as "client:<identity>" or "<identity>". Unknown on
+// either side → true: a cold-start invite (the push woke the app before
+// it re-registered) must never be rejected for lack of local state.
+export function isInviteForIdentity(inviteTo: string | null | undefined, registeredIdentity: string | null | undefined): boolean {
+  if (!inviteTo || !registeredIdentity) return true;
+  const to = inviteTo.startsWith("client:") ? inviteTo.slice("client:".length) : inviteTo;
+  return to === registeredIdentity;
+}
+
+// Resolves with the promise's value, or rejects after `ms` — used to bound
+// best-effort work (unregistering on sign-out) so it can never hang the UI.
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}

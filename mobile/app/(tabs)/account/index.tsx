@@ -9,7 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/AuthContext";
 import { fetchDashboard, NotEntitledError } from "../../../lib/api";
-import { resetVoiceRegistrationState } from "../../../lib/voiceClient";
+import { resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../../lib/voiceClient";
 import { hasProvenActivation } from "../../../lib/homeStatus";
 import { clearSetupCompletedAt } from "../../../lib/setupCompletionStorage";
 import type { MembershipStatus } from "../../../lib/types";
@@ -95,10 +95,18 @@ export default function Account() {
   // touches local module state, not the session), but doing it first
   // means a slow/failed sign-out network call can never leave this step
   // skipped.
+  //
+  // 2026-09-29: unregisters this device's Twilio push binding first
+  // (bounded, best-effort — see unregisterForIncomingCalls), otherwise
+  // this household's protected calls keep ringing on this phone after
+  // sign-out, including after someone else signs in here. The local
+  // reset + sign-out always run afterwards, whatever the outcome.
   function signOutAndResetVoiceRegistration() {
-    resetVoiceRegistrationState();
-    clearSetupCompletedAt();
-    supabase.auth.signOut();
+    unregisterForIncomingCalls().finally(() => {
+      resetVoiceRegistrationState();
+      clearSetupCompletedAt();
+      supabase.auth.signOut();
+    });
   }
 
   function handleLogout() {

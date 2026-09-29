@@ -45,7 +45,7 @@ answered before the Dial:
 | Caller hangs up while ringing | Dial cancelled | `canceled` / no action | app outcome `cancelled` | problem | neutral |
 | FCM token expired/rotated | push to dead token | `no-answer` | **52103 NotRegistered** (Monitor alert) | invisible | UNREACHABLE after 1 |
 | App uninstalled | uninstall invalidates the token | `no-answer` | 52103 NotRegistered | invisible | UNREACHABLE after 1 |
-| App logged out | `resetVoiceRegistrationState` never unregisters with Twilio, so the binding stays live | likely still rings (unverified) | — | — | — (see decisions) |
+| App logged out / account switched | sign-out never unregistered with Twilio, so the old household's binding stayed live on the phone's token | the old household's calls could ring on this phone, caller number shown (unverified on a device) | — | invisible | **fixed (mobile, Build 20)**: bounded unregister before every sign-out, and wrong-household invites rejected |
 | Force-stopped / background-restricted | FCM accepts; Android does not deliver to stopped apps | `no-answer` | nothing | invisible | soft ×3 → SUSPECT; hard ×2 → UNREACHABLE once the app is known to report invites |
 | DB says registered, Twilio binding gone | no push attempted | `no-answer` (instant) | often nothing | invisible | as above |
 | Phone offline | push not delivered in time | `no-answer` | nothing | invisible | as above |
@@ -145,6 +145,15 @@ Mode `off` is byte-identical to today's response (tested).
   `voice.register()` re-reads the current push token, so this repairs
   tokens rotated in the background. There is no polling: at most one
   register per refresh period, and only on foreground.
+- **Implemented (mobile, Build 20): unregister on sign-out.** Home
+  session-expired, Account → Log out, and Delete account now call
+  `unregisterForIncomingCalls()` before local reset and sign-out. It tries
+  the retained registration token, then a fresh one, bounded to 4 s, and
+  never blocks sign-out. The CallInvite handler also rejects an invite
+  addressed to a different household identity, but only when both
+  identities are known, so cold-start invites are never rejected. A
+  rejected invite shows as `busy` (neutral) in the other household's
+  health; the unregister fix is what removes the cause.
 - **Not implemented.** Background re-registration from `onNewToken` would
   need a native SDK patch plus an authenticated backend call from native
   code. It is disproportionate before evidence that foreground healing is
