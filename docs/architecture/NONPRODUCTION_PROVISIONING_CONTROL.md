@@ -64,3 +64,24 @@ No provider or account configuration has been changed.
 - the production-process alert.
 
 Full suite: 106 files, 3,815 passed, 9 failed. The 9 failures are the same Android manifest checks that fail on main in this environment.
+
+## Addendum (2026-09-29): releases, lifecycle jobs, client identity (`fix/nonprod-telephony-mutation-guard`)
+
+The purchase guard above left three ways for non-production to act on production telephony. All three are closed on this branch (stacked on this one, unmerged).
+
+| Gap | Fix |
+|---|---|
+| The confirmed-quarantine release job (real `.remove()`) runs on a timer in **any** server. Staging, holding the production credentials through the `.env` fallthrough, would remove numbers on the production account. | `decideTelephonyMutation` is checked in `releaseQuarantinedTwilioNumber` **before** any provider call. A blocked row is not marked released. Production processes that fail the signature raise `twilio_release_blocked_by_guard`. |
+| A laptop running `npm start` on the default `.env` (localhost + **production database** + production Twilio) runs the production lifecycle jobs: it quarantines production households and releases confirmed numbers from localhost. | `decideLifecycleJobs` gates the job startup in `server.js`. A mixed or unknown environment never starts them. `NUMBER_LIFECYCLE_JOBS=disabled` stops them anywhere. |
+| The guard keyed on `"client" in deps`. Passing the real client, including `{ client: undefined }` (which a default parameter turns into the real client, a shape existing tests use while loading the real `.env`), skipped it. | The guard keys on the client's **identity** (`client === twilioRestClient`). |
+
+**Fail closed:** an environment that can't be identified (`SUPABASE_URL` missing or unrecognisable) never buys, changes or releases a number, whatever mode or account it declares.
+
+`tests/telephony-environment-isolation.test.mjs` (43 checks) covers:
+- the three real configurations (production, laptop default `.env`, staging fallthrough);
+- every refusal path;
+- the real client, with invalid credentials and a stubbed transport (zero provider requests);
+- the `server.js` wiring;
+- a pin on the number of `.remove()` call sites.
+
+**Deployment prerequisite (unchanged):** confirm production's `APP_URL` host and `SUPABASE_URL` project before deploying. Otherwise production refuses purchases and releases, and raises critical alerts. The lifecycle-jobs log line shows `NUMBER LIFECYCLE JOBS: enabled (production: …)` at boot.

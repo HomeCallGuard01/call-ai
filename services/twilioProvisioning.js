@@ -12,7 +12,7 @@ const {
   markTwilioNumberQuarantineReleased,
 } = require("../database/twilioQuarantine");
 const { sendCriticalAlert } = require("./alerting");
-const { decideNumberPurchase, fakeNumber } = require("./telephony/provisioningGuard");
+const { decideNumberPurchase, decideTelephonyMutation, fakeNumber } = require("./telephony/provisioningGuard");
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
@@ -110,7 +110,9 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
   // calls this without injecting a client; tests that inject a fake client
   // opt in with deps.enforceGuard. A blocked purchase is recorded as a
   // failure (so the existing attempt limit stops retries), never silently.
-  if (!("client" in deps) || deps.enforceGuard) {
+  // Keyed on the client's IDENTITY, not on whether one was passed: a
+  // caller that passes the real client explicitly is guarded too.
+  if (!("client" in deps) || (client && client === twilioRestClient) || deps.enforceGuard) {
     let decision = guard(guardEnv);
     if (decision.action === "purchase" && decision.environment === "nonproduction" && client) {
       const owned = await client.incomingPhoneNumbers.list().catch(() => null);
@@ -333,10 +335,34 @@ async function releaseQuarantinedTwilioNumber(quarantineRow, deps = {}) {
     client = twilioRestClient,
     findSid = findTwilioIncomingNumberSid,
     markReleased = markTwilioNumberQuarantineReleased,
+    mutationGuard = decideTelephonyMutation,
+    guardEnv = process.env,
+    sendAlert = sendCriticalAlert,
   } = deps;
 
   if (!quarantineRow || !quarantineRow.deactivation_confirmed || quarantineRow.released_at) {
     return { released: false };
+  }
+
+  // Environment guard (services/telephony/provisioningGuard.js): only a
+  // process with the production signature — or a declared, dedicated
+  // non-production provider account — may remove a real number. A staging
+  // or local server holding the production credentials (the 2026-09
+  // .env fallthrough) is refused BEFORE any provider call, and the row is
+  // NOT marked released, so nothing is recorded that did not happen.
+  // Guards the real client (same rule as the purchase guard); tests
+  // injecting a fake client opt in with deps.enforceGuard.
+  if (client && (client === twilioRestClient || deps.enforceGuard)) {
+    const decision = mutationGuard(guardEnv, { operation: "release" });
+    if (decision.action !== "allow") {
+      console.warn("TWILIO NUMBER RELEASE BLOCKED BY ENVIRONMENT GUARD:", quarantineRow.id, decision.reason);
+      if (guardEnv.NODE_ENV === "production") {
+        sendAlert("twilio_release_blocked_by_guard", `Number release blocked in a production process: ${decision.reason}`, {
+          quarantineId: quarantineRow.id,
+        }).catch(() => {});
+      }
+      return { released: false, blocked: true, error: decision.reason };
+    }
   }
 
   try {
