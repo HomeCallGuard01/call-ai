@@ -253,9 +253,9 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   const routeSrc = readFileSync(path.join(__dirname, '..', 'routes', 'adminBusinessControl.js'), 'utf8');
   const decls = [...routeSrc.matchAll(/router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]\s*,([^\n]+)/g)];
   const anyRouterCall = [...routeSrc.matchAll(/router\.([a-zA-Z]+)\s*\(/g)].map((m) => m[1]);
-  check(anyRouterCall.length === 5 && anyRouterCall.every((m) => m === 'get'), 'the router registers nothing but five GET handlers (any quote style, no router.use/all/post)');
-  check(decls.length === 5 && decls.every((d) => d[1] === 'get'), 'exactly five routes, all GET — no write endpoint exists');
-  check(decls.map((d) => d[2]).join() === '/admin/api/business-control/overview,/admin/api/business-control/subscriptions,/admin/api/business-control/reconciliation,/admin/api/business-control/finance,/admin/api/business-control/marketing', 'routes: overview, subscriptions, reconciliation, finance, marketing');
+  check(anyRouterCall.length === 6 && anyRouterCall.every((m) => m === 'get'), 'the router registers nothing but six GET handlers (any quote style, no router.use/all/post)');
+  check(decls.length === 6 && decls.every((d) => d[1] === 'get'), 'exactly six routes, all GET — no write endpoint exists');
+  check(decls.map((d) => d[2]).join() === '/admin/api/business-control/overview,/admin/api/business-control/subscriptions,/admin/api/business-control/reconciliation,/admin/api/business-control/finance,/admin/api/business-control/marketing,/admin/api/business-control/snapshot', 'routes: overview, subscriptions, reconciliation, finance, marketing, snapshot (2026-09-29)');
   check(decls.every((d) => d[3].includes('requireAuth') && d[3].includes('requireAdmin')), 'every route requires an authenticated admin');
   check(!/recordAdminAction|express\.json\(\)/.test(routeSrc), 'no request bodies are parsed and no admin actions recorded (nothing to act on)');
 
