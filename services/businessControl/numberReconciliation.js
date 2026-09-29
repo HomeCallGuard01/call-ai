@@ -19,47 +19,35 @@
 // release job should have run. That anomaly is labelled as inferred.
 'use strict';
 
-const { isEntitlementCurrentlyActive, parseTimestampMs } = require('../adminOnboardingStatus');
+const { parseTimestampMs } = require('../adminOnboardingStatus');
 
-const HOUR_MS = 60 * 60 * 1000;
-// server.js runs both release jobs every 24h from process start, so a
-// correctly-working job may legitimately lag a due date by up to 24h.
-// Anything later than 48h is treated as overdue.
-const RELEASE_JOB_GRACE_MS = 48 * HOUR_MS;
-// Provisioning normally completes within seconds of an entitlement
-// starting; an hour without a number is worth a look, not an alarm.
-const PROVISIONING_WATCH_MS = 1 * HOUR_MS;
+// All lifecycle rules (entitlement predicates mirroring migration 047,
+// grace periods, the anomaly catalogue) come from the ONE canonical
+// module, services/numberLifecycle/state.js. This file only adds
+// presentation (the lifecycle chain, a "paying customer" split) and
+// provider-side checks. It must never define its own rule — see
+// tests/number-lifecycle-state.test.mjs (single-source check).
+const lifecycle = require('../numberLifecycle/state');
+
+const HOUR_MS = lifecycle.HOUR_MS;
+// Kept for existing importers; the value is the canonical one.
+const RELEASE_JOB_GRACE_MS = lifecycle.GRACE.releaseOverdueMs;
+const PROVISIONING_WATCH_MS = lifecycle.GRACE.provisioningWatchMs;
 
 const SEVERITY = { ACTION: 'action', WATCH: 'watch' };
 
+// Canonical catalogue (critical → action in this two-level view), plus the
+// dashboard-only presentation/provider codes.
 const ANOMALIES = {
   PAID_WITHOUT_NUMBER: { severity: SEVERITY.ACTION, label: 'Paying customer without an HCG number' },
-  ENTITLED_WITHOUT_NUMBER: { severity: SEVERITY.ACTION, label: 'Entitled household without an HCG number' },
-  ENTITLED_PENDING_RELEASE: { severity: SEVERITY.ACTION, label: 'Entitled (or about to be) household whose number is scheduled for release' },
-  NUMBER_RETAINED_NO_ENTITLEMENT: { severity: SEVERITY.ACTION, label: 'No entitlement, number retained, no release scheduled' },
-  RELEASE_OVERDUE: { severity: SEVERITY.ACTION, label: 'Number still held after its scheduled release' },
-  QUARANTINE_AWAITING_CONFIRMATION: { severity: SEVERITY.ACTION, label: 'Quarantined number awaiting deactivation confirmation' },
-  QUARANTINE_RELEASE_OVERDUE: { severity: SEVERITY.ACTION, label: 'Confirmed quarantine not released (possible provider release failure — inferred)' },
-  QUARANTINED_NUMBER_OF_ENTITLED_HOUSEHOLD: { severity: SEVERITY.ACTION, label: 'Number quarantined while the household is entitled — do not confirm deactivation' },
+  ...Object.fromEntries(Object.entries(lifecycle.ANOMALIES).map(([code, a]) => [code, { severity: a.severity === 'watch' ? SEVERITY.WATCH : SEVERITY.ACTION, label: a.label }])),
   PROVIDER_NUMBER_UNACCOUNTED: { severity: SEVERITY.ACTION, label: 'Number on the provider account not held by any household or open quarantine' },
   NUMBER_MISSING_AT_PROVIDER: { severity: SEVERITY.ACTION, label: 'Household number not found on the provider account' },
-  PROVISIONING_IN_PROGRESS: { severity: SEVERITY.WATCH, label: 'Number provisioning in progress' },
-  VOICE_SDK_NEVER_REGISTERED: { severity: SEVERITY.WATCH, label: 'App (Voice SDK) never registered' },
-  DELIVERY_NEVER_CONFIRMED: { severity: SEVERITY.WATCH, label: 'Call delivery never confirmed' },
 };
 
-// An entitlement that has not started yet: status 'scheduled', or
-// 'active' with a future starts_at. Same definition as migration 047's
-// household_has_upcoming_entitlement (fix/number-lifecycle-entitlement-
-// guard) and PR #47's reconciliation: a household about to become
-// entitled legitimately keeps its number, and scheduling its release is
-// exactly the incident 047 guards against.
+// Canonical (migration 047) — re-exported for existing importers.
 function isUpcomingEntitlement(entitlement, now) {
-  if (!entitlement) return false;
-  if (entitlement.status === 'scheduled') return true;
-  if (entitlement.status !== 'active') return false;
-  const startsMs = parseTimestampMs(entitlement.starts_at);
-  return startsMs !== null && startsMs > now.getTime();
+  return lifecycle.isUpcomingEntitlement(entitlement, now);
 }
 
 function anomaly(code, detail) {
@@ -88,62 +76,19 @@ function buildLifecycleChain({ household, currentEntitlement, latestEntitlement,
   ];
 }
 
-// Pure — every anomaly for one household.
+// Pure — every anomaly for one household: the canonical derivation, with
+// one presentation split (a PAYING customer without a number is labelled
+// as such). No rule of its own.
 function detectHouseholdAnomalies({ household, entitlements, quarantineRows }, now) {
-  const nowMs = now.getTime();
-  const current = (entitlements || []).find((e) => isEntitlementCurrentlyActive(e, now)) || null;
-  const upcoming = current ? null : (entitlements || []).find((e) => isUpcomingEntitlement(e, now)) || null;
-  const hasNumber = !!household.twilio_number;
-  const pendingReleaseMs = parseTimestampMs(household.twilio_number_pending_release_at);
-  const found = [];
-
-  if (current) {
-    const startedMs = parseTimestampMs(current.starts_at);
-    const sinceStart = startedMs === null ? Infinity : nowMs - startedMs;
-    if (!hasNumber) {
-      if (household.twilio_provisioning_status !== 'failed' && sinceStart < PROVISIONING_WATCH_MS) {
-        found.push(anomaly('PROVISIONING_IN_PROGRESS'));
-      } else if (PAID_TYPES.has(current.entitlement_type)) {
-        found.push(anomaly('PAID_WITHOUT_NUMBER', household.twilio_provisioning_status === 'failed' ? 'Provisioning failed' : null));
-      } else {
-        found.push(anomaly('ENTITLED_WITHOUT_NUMBER', household.twilio_provisioning_status === 'failed' ? 'Provisioning failed' : null));
-      }
+  const derived = lifecycle.deriveHouseholdLifecycle({ household, entitlements, quarantineRows }, now);
+  const paying = derived.currentEntitlement && PAID_TYPES.has(derived.currentEntitlement.entitlement_type);
+  const found = derived.anomalies.map((x) => {
+    if (paying && (x.code === 'ENTITLED_WITHOUT_NUMBER' || x.code === 'PROVISIONING_FAILED')) {
+      return anomaly('PAID_WITHOUT_NUMBER', x.code === 'PROVISIONING_FAILED' ? 'Provisioning failed' : x.detail);
     }
-    if (pendingReleaseMs !== null) {
-      found.push(anomaly('ENTITLED_PENDING_RELEASE', `Release scheduled for ${new Date(pendingReleaseMs).toISOString()}`));
-    }
-    if (hasNumber && !household.voice_client_registered_at) found.push(anomaly('VOICE_SDK_NEVER_REGISTERED'));
-    if (hasNumber && !household.delivery_verified_at) found.push(anomaly('DELIVERY_NEVER_CONFIRMED'));
-  } else if (upcoming) {
-    // About to be entitled: keeping (or not yet having) a number is
-    // expected; a scheduled release is not.
-    if (pendingReleaseMs !== null) {
-      found.push(anomaly('ENTITLED_PENDING_RELEASE', `Upcoming entitlement from ${upcoming.starts_at || 'a scheduled date'}; release scheduled for ${new Date(pendingReleaseMs).toISOString()}`));
-    }
-  } else if (hasNumber) {
-    if (pendingReleaseMs === null) {
-      found.push(anomaly('NUMBER_RETAINED_NO_ENTITLEMENT'));
-    } else if (nowMs - pendingReleaseMs > RELEASE_JOB_GRACE_MS) {
-      found.push(anomaly('RELEASE_OVERDUE', `Was due ${new Date(pendingReleaseMs).toISOString()}`));
-    }
-  }
-
-  for (const q of quarantineRows || []) {
-    if (q.released_at) continue;
-    if (current || upcoming) {
-      found.push(anomaly('QUARANTINED_NUMBER_OF_ENTITLED_HOUSEHOLD', `Quarantined ${q.quarantined_at || 'at unknown time'}; the household is ${current ? 'currently' : 'about to be'} entitled`));
-    }
-    if (!q.deactivation_confirmed) {
-      found.push(anomaly('QUARANTINE_AWAITING_CONFIRMATION', `Quarantined ${q.quarantined_at || 'at unknown time'} (${q.release_reason || 'reason not recorded'})`));
-    } else {
-      const confirmedMs = parseTimestampMs(q.deactivation_confirmed_at);
-      if (confirmedMs !== null && nowMs - confirmedMs > RELEASE_JOB_GRACE_MS) {
-        found.push(anomaly('QUARANTINE_RELEASE_OVERDUE', `Confirmed ${q.deactivation_confirmed_at}; release failures are only logged, check server logs`));
-      }
-    }
-  }
-
-  return { anomalies: found, currentEntitlement: current, upcomingEntitlement: upcoming };
+    return anomaly(x.code, x.detail);
+  });
+  return { anomalies: found, currentEntitlement: derived.currentEntitlement, upcomingEntitlement: derived.upcomingEntitlement, lifecycle: derived };
 }
 
 function normaliseNumber(n) {
@@ -223,7 +168,7 @@ function computeNumberReconciliation({ households, entitlements, subscriptions, 
       householdId: q.household_id || null,
       email: null,
       hcgNumber: q.twilio_number || null,
-      status: anomalies.some((a) => a.severity === SEVERITY.ACTION) ? 'action_required' : 'ok',
+      status: anomalies.some((a) => a.severity === SEVERITY.ACTION) ? 'action_required' : anomalies.length ? 'watch' : 'ok',
       anomalies,
       chain: [],
       numberOnly: true,

@@ -48,6 +48,7 @@
 
 const { isEntitlementCurrentlyActive, parseTimestampMs } = require('../adminOnboardingStatus');
 const { computeProtectionStatus } = require('../callRouting');
+const lifecycle = require('../numberLifecycle/state');
 
 const ANONYMISED_EMAIL_SUFFIX = '@deleted.homecallguard.internal';
 const PAID_TYPES = new Set(['paid_subscription']);
@@ -80,12 +81,9 @@ function latestBy(rows, field) {
   return latest;
 }
 
+// Canonical (migration 047): services/numberLifecycle/state.js.
 function isUpcomingEntitlement(entitlement, now) {
-  if (!entitlement) return false;
-  if (entitlement.status === 'scheduled') return true;
-  if (entitlement.status !== 'active') return false;
-  const startsMs = parseTimestampMs(entitlement.starts_at);
-  return startsMs !== null && startsMs > now.getTime();
+  return lifecycle.isUpcomingEntitlement(entitlement, now);
 }
 
 function accessOf(entitlement) {

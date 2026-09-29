@@ -85,16 +85,19 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   check(codes(h('p1', { twilio_number: null }), [ent('p1', 'paid_subscription', 2 * DAY)]).includes('PAID_WITHOUT_NUMBER'), 'active paid customer without a number');
   check(codes(h('e1', { twilio_number: null }), [ent('e1', 'complimentary', 2 * DAY)]).includes('ENTITLED_WITHOUT_NUMBER'), 'entitlement without a number');
   check(codes(h('e2', { twilio_number: null, twilio_provisioning_status: 'pending' }), [ent('e2', 'complimentary', 10 * 60 * 1000)]).join() === 'PROVISIONING_IN_PROGRESS', 'number missing 10 minutes after entitlement → watch "provisioning in progress", not action');
-  check(codes(h('e3', { twilio_number: null, twilio_provisioning_status: 'failed' }), [ent('e3', 'complimentary', 10 * 60 * 1000)]).includes('ENTITLED_WITHOUT_NUMBER'), 'provisioning failed is action immediately');
+  check(codes(h('e3', { twilio_number: null, twilio_provisioning_status: 'failed' }), [ent('e3', 'complimentary', 10 * 60 * 1000)]).join() === 'PROVISIONING_FAILED', 'provisioning failed is its own action immediately (canonical PROVISIONING_FAILED)');
+  check(codes(h('e4', { twilio_number: null, twilio_provisioning_status: 'failed' }), [ent('e4', 'paid_subscription', 10 * 60 * 1000)]).join() === 'PAID_WITHOUT_NUMBER', 'a PAYING customer whose provisioning failed keeps the dashboard\'s "paying customer without a number" label');
   check(codes(h('r1', { twilio_number_pending_release_at: ago(-5 * DAY) }), [ent('r1', 'paid_subscription', 30 * DAY)]).includes('ENTITLED_PENDING_RELEASE'), 'entitled household whose number is pending release');
   check(codes(h('n1'), []).includes('NUMBER_RETAINED_NO_ENTITLEMENT'), 'no entitlement but number retained with no release scheduled');
   check(codes(h('n2', { twilio_number_pending_release_at: ago(-2 * DAY) }), []).length === 0, 'no entitlement, release scheduled in the future → normal lifecycle, no anomaly');
-  check(codes(h('n3', { twilio_number_pending_release_at: ago(47 * HOUR) }), []).length === 0, 'release 47h past due → within the daily-job grace, no anomaly');
+  // Canonical: overdue after one 24h release-job interval (the sweep's value; was 48h here).
+  check(codes(h('n3', { twilio_number_pending_release_at: ago(23 * HOUR) }), []).length === 0, 'release 23h past due → within one daily-job interval, no anomaly');
+  check(codes(h('n4', { twilio_number_pending_release_at: ago(25 * HOUR) }), []).join() === 'RELEASE_OVERDUE', 'release 25h past due → overdue (same threshold the backend sweep alerts on)');
   check(codes(h('n4', { twilio_number_pending_release_at: ago(49 * HOUR) }), []).includes('RELEASE_OVERDUE'), 'release 49h past due → cancelled customer still retaining number');
   check(codes(h('v1', { voice_client_registered_at: null }), [ent('v1', 'complimentary', 5 * DAY)]).includes('VOICE_SDK_NEVER_REGISTERED'), 'Voice SDK never registered');
   check(codes(h('v2', { delivery_verified_at: null }), [ent('v2', 'complimentary', 5 * DAY)]).includes('DELIVERY_NEVER_CONFIRMED'), 'delivery never confirmed');
   check(codes(h('q1', { twilio_number: null }), [], [{ household_id: 'q1', twilio_number: '+447700900111', deactivation_confirmed: false, quarantined_at: ago(3 * DAY), released_at: null, release_reason: 'subscription_grace_expired' }]).includes('QUARANTINE_AWAITING_CONFIRMATION'), 'quarantined number awaiting deactivation confirmation');
-  check(codes(h('q2', { twilio_number: null }), [], [{ household_id: 'q2', deactivation_confirmed: true, deactivation_confirmed_at: ago(3 * DAY), released_at: null }]).includes('QUARANTINE_RELEASE_OVERDUE'), 'confirmed quarantine unreleased 3 days later → inferred provider release failure');
+  check(codes(h('q2', { twilio_number: null }), [], [{ household_id: 'q2', deactivation_confirmed: true, deactivation_confirmed_at: ago(3 * DAY), released_at: null }]).includes('QUARANTINE_RELEASE_STUCK'), 'confirmed quarantine unreleased 3 days later → inferred provider release failure');
   check(codes(h('q3', { twilio_number: null }), [], [{ household_id: 'q3', deactivation_confirmed: true, deactivation_confirmed_at: ago(3 * DAY), released_at: ago(2 * DAY) }]).length === 0, 'released quarantine → no anomaly');
   check(codes(h('q4', { twilio_number: null }), [ent('q4', 'complimentary', 2 * DAY)], [{ household_id: 'q4', deactivation_confirmed: false, quarantined_at: ago(3 * DAY), released_at: null }]).includes('QUARANTINED_NUMBER_OF_ENTITLED_HOUSEHOLD'), 'entitled household whose number is quarantined → flagged (do not confirm deactivation)');
   // Upcoming entitlements (047 / PR #47 definition).
@@ -109,7 +112,9 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
     subscriptions: [],
     quarantineRows: [{ household_id: null, twilio_number: '+447700900555', deactivation_confirmed: false, quarantined_at: ago(DAY), released_at: null }],
   }, NOW);
-  check(report.overall === 'ACTION_REQUIRED' && report.actionCount === 2 && report.watchCount === 1 && report.okCount === 1, 'overall ACTION REQUIRED with action / watch / ok counts');
+  // n1 (number retained) is action; v2 (delivery never confirmed) and the
+  // 1-day-old unconfirmed quarantine are watch (45/90-day policy); ok1 ok.
+  check(report.overall === 'ACTION_REQUIRED' && report.actionCount === 1 && report.watchCount === 2 && report.okCount === 1 && report.rows.find((r) => r.hcgNumber === '+447700900555').status === 'watch', `overall ACTION REQUIRED with action / watch / ok counts (got ${report.overall} ${report.actionCount}/${report.watchCount}/${report.okCount}; ${report.rows.map((r) => (r.householdId || r.hcgNumber) + ':' + r.status + ':' + r.anomalies.map((a) => a.code).join('+')).join(' ')})`);
   check(report.rows[0].status === 'action_required' && report.rows[report.rows.length - 1].status === 'ok', 'rows sorted action → watch → ok');
   check(!report.rows.some((r) => r.householdId === 'x9'), 'households with no entitlement, number or quarantine are not listed (nothing to reconcile)');
   check(report.rows.some((r) => r.numberOnly && r.hcgNumber === '+447700900555'), 'a quarantine with no household (deleted account) is still reconciled as a number-level row');

@@ -1,0 +1,20 @@
+{
+  "description": "Migration 047's release-eligibility truth table as data. Every engine that decides or reports number lifecycle (dashboard, admin API #47, sweep #49, Finance number-cost report) must produce blocksRelease exactly as listed. `now` is fixed. Spec: household_is_currently_entitled = status 'active' AND starts_at <= now AND (ends_at IS NULL OR ends_at > now); household_has_upcoming_entitlement = (status 'scheduled' OR (status 'active' AND starts_at > now)) AND (ends_at IS NULL OR ends_at > now); household_blocks_number_release = either.",
+  "now": "2026-09-29T12:00:00.000Z",
+  "cases": [
+    { "name": "active, open-ended", "entitlements": [{ "status": "active", "starts_at": "2026-09-01T00:00:00Z", "ends_at": null }], "expected": { "current": true, "upcoming": false, "blocksRelease": true } },
+    { "name": "active, ends in future", "entitlements": [{ "status": "active", "starts_at": "2026-09-01T00:00:00Z", "ends_at": "2026-10-07T00:00:00Z" }], "expected": { "current": true, "upcoming": false, "blocksRelease": true } },
+    { "name": "active but ends_at passed (stale status)", "entitlements": [{ "status": "active", "starts_at": "2026-08-01T00:00:00Z", "ends_at": "2026-09-20T00:00:00Z" }], "expected": { "current": false, "upcoming": false, "blocksRelease": false } },
+    { "name": "active, ends exactly now", "entitlements": [{ "status": "active", "starts_at": "2026-08-01T00:00:00Z", "ends_at": "2026-09-29T12:00:00.000Z" }], "expected": { "current": false, "upcoming": false, "blocksRelease": false } },
+    { "name": "active, starts in future", "entitlements": [{ "status": "active", "starts_at": "2026-10-01T00:00:00Z", "ends_at": null }], "expected": { "current": false, "upcoming": true, "blocksRelease": true } },
+    { "name": "active, starts exactly now", "entitlements": [{ "status": "active", "starts_at": "2026-09-29T12:00:00.000Z", "ends_at": null }], "expected": { "current": true, "upcoming": false, "blocksRelease": true } },
+    { "name": "active, no starts_at", "entitlements": [{ "status": "active", "starts_at": null, "ends_at": null }], "expected": { "current": false, "upcoming": false, "blocksRelease": false } },
+    { "name": "scheduled, open-ended", "entitlements": [{ "status": "scheduled", "starts_at": "2026-10-05T00:00:00Z", "ends_at": null }], "expected": { "current": false, "upcoming": true, "blocksRelease": true } },
+    { "name": "scheduled but ends_at already passed", "entitlements": [{ "status": "scheduled", "starts_at": "2026-09-01T00:00:00Z", "ends_at": "2026-09-15T00:00:00Z" }], "expected": { "current": false, "upcoming": false, "blocksRelease": false } },
+    { "name": "scheduled with start in the past, not ended", "entitlements": [{ "status": "scheduled", "starts_at": "2026-09-01T00:00:00Z", "ends_at": null }], "expected": { "current": false, "upcoming": true, "blocksRelease": true } },
+    { "name": "expired", "entitlements": [{ "status": "expired", "starts_at": "2026-08-01T00:00:00Z", "ends_at": "2026-09-01T00:00:00Z" }], "expected": { "current": false, "upcoming": false, "blocksRelease": false } },
+    { "name": "revoked", "entitlements": [{ "status": "revoked", "starts_at": "2026-08-01T00:00:00Z", "ends_at": null }], "expected": { "current": false, "upcoming": false, "blocksRelease": false } },
+    { "name": "revoked + scheduled", "entitlements": [{ "status": "revoked", "starts_at": "2026-08-01T00:00:00Z", "ends_at": null }, { "status": "scheduled", "starts_at": "2026-10-01T00:00:00Z", "ends_at": null }], "expected": { "current": false, "upcoming": true, "blocksRelease": true } },
+    { "name": "no entitlements", "entitlements": [], "expected": { "current": false, "upcoming": false, "blocksRelease": false } }
+  ]
+}

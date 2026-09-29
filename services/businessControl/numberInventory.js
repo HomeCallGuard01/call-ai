@@ -26,7 +26,9 @@ const { classifyHouseholdForBusiness } = require('./definitions');
 const { parseTimestampMs } = require('../adminOnboardingStatus');
 
 const HOUR_MS = 3600 * 1000;
-const RELEASE_JOB_GRACE_MS = 48 * HOUR_MS;
+// Canonical grace periods (services/numberLifecycle/state.js).
+const { GRACE } = require('../numberLifecycle/state');
+const RELEASE_JOB_GRACE_MS = GRACE.releaseOverdueMs;
 
 const SEVERITY_ORDER = { red: 0, amber: 1, info: 2 };
 
@@ -169,7 +171,7 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
       if (!open.deactivation_confirmed) {
         state = 'quarantined_awaiting_confirmation';
         reason = `Quarantined ${String(open.quarantined_at || '').slice(0, 10)} (${open.release_reason || 'reason not recorded'})`;
-      } else if (confirmedMs !== null && nowMs - confirmedMs > RELEASE_JOB_GRACE_MS) {
+      } else if ((confirmedMs ?? parseTimestampMs(open.quarantined_at)) !== null && nowMs - (confirmedMs ?? parseTimestampMs(open.quarantined_at)) > GRACE.quarantineReleaseStuckMs) {
         state = 'quarantine_release_overdue';
         reason = `Deactivation confirmed ${String(open.deactivation_confirmed_at).slice(0, 10)}; still not released`;
       } else {

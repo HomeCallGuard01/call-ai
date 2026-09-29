@@ -19,7 +19,7 @@ const { buildNumberInventory, deriveRentalPerNumber, resolveProductionHosts } = 
 const { detectHouseholdAnomalies } = require('./numberReconciliation');
 const { parseTimestampMs } = require('../adminOnboardingStatus');
 
-const HOUR_MS = 3600 * 1000;
+const { GRACE, HOUR_MS } = require('../numberLifecycle/state');
 
 function card(id, label, value, status, rule, extra = {}) {
   return { id, label, value, status, rule, sub: null, items: [], ...extra };
@@ -148,13 +148,13 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
   const lapsedHolding = live.filter((b) => b.holdsNumber && b.membership !== 'current' && b.membership !== 'upcoming');
   const lapsedDetail = lapsedHolding.map((b) => {
     const pendingMs = parseTimestampMs(b.household.twilio_number_pending_release_at);
-    const kind = pendingMs === null ? 'outside_lifecycle' : nowMs - pendingMs > 48 * HOUR_MS ? 'release_overdue' : 'grace_period';
+    const kind = pendingMs === null ? 'outside_lifecycle' : nowMs - pendingMs > GRACE.releaseOverdueMs ? 'release_overdue' : 'grace_period';
     return { b, kind, pendingMs };
   });
   const lapsedBad = lapsedDetail.filter((x) => x.kind !== 'grace_period');
   cards.push(card('lapsed_retaining_number', 'Cancelled / expired households still holding a number', lapsedHolding.length,
     lapsedBad.length ? 'red' : lapsedHolding.length ? 'amber' : 'green',
-    'Red when a lapsed household holds a number with no release scheduled, or its release is overdue (>48h); amber when all are within their scheduled grace period.',
+    'Red when a lapsed household holds a number with no release scheduled, or its release is overdue (more than one 24h release-job interval past due); amber when all are within their scheduled grace period.',
     { sub: `${lapsedDetail.filter((x) => x.kind === 'grace_period').length} in grace period · ${lapsedDetail.filter((x) => x.kind === 'outside_lifecycle').length} no release scheduled · ${lapsedDetail.filter((x) => x.kind === 'release_overdue').length} release overdue`,
       items: lapsedDetail.map((x) => ref(x.b, `${x.b.membership} · ${x.kind.replace(/_/g, ' ')}${x.pendingMs !== null ? ' ' + new Date(x.pendingMs).toISOString().slice(0, 10) : ''}`)) }));
 
@@ -173,10 +173,13 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
   const pendingRelease = live.filter((b) => b.holdsNumber && b.household.twilio_number_pending_release_at);
   const openQ = (quarantineRows || []).filter((q) => !q.released_at);
   const awaiting = openQ.filter((q) => !q.deactivation_confirmed);
-  const confirmedOverdue = openQ.filter((q) => q.deactivation_confirmed && (parseTimestampMs(q.deactivation_confirmed_at) || nowMs) < nowMs - 48 * HOUR_MS);
+  const confirmedOverdue = openQ.filter((q) => {
+    const basisMs = parseTimestampMs(q.deactivation_confirmed_at) ?? parseTimestampMs(q.quarantined_at);
+    return q.deactivation_confirmed && basisMs !== null && nowMs - basisMs > GRACE.quarantineReleaseStuckMs;
+  });
   cards.push(card('pending_release_quarantine', 'Numbers pending release / in quarantine', pendingRelease.length + openQ.length,
     confirmedOverdue.length ? 'red' : awaiting.length ? 'amber' : pendingRelease.length ? 'info' : 'green',
-    'Amber when a quarantined number is waiting for your deactivation confirmation; red when a confirmed quarantine has not been released after 48h.',
+    'Amber when a quarantined number is waiting for your deactivation confirmation; red when a confirmed quarantine has not been released 48h after confirmation.',
     { sub: `${pendingRelease.length} release scheduled · ${awaiting.length} awaiting your confirmation · ${openQ.length - awaiting.length} confirmed`,
       items: [...pendingRelease.map((b) => ref(b, `release ${String(b.household.twilio_number_pending_release_at).slice(0, 10)}`)), ...openQ.map((q) => ({ number: q.twilio_number, detail: q.deactivation_confirmed ? 'confirmed, awaiting release' : 'awaiting deactivation confirmation' }))] }));
 

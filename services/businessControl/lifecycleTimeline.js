@@ -17,7 +17,9 @@ const { classifyHouseholdForBusiness } = require('./definitions');
 const { parseTimestampMs } = require('../adminOnboardingStatus');
 
 const HOUR_MS = 3600 * 1000;
-const JOB_GRACE_MS = 48 * HOUR_MS;
+// Canonical grace periods (services/numberLifecycle/state.js).
+const { GRACE } = require('../numberLifecycle/state');
+const JOB_GRACE_MS = GRACE.releaseOverdueMs;
 
 function step(key, label, state, at, note) {
   return { key, label, state, at: at || null, note: note || null };
@@ -77,14 +79,15 @@ function buildLifecycleTimeline({ household, entitlements, subscriptions, classi
       steps.push(step('quarantined', 'Quarantined', 'done', q.quarantined_at, q.release_reason));
       const confirmedMs = parseTimestampMs(q.deactivation_confirmed_at);
       steps.push(step('confirmed', 'Deactivation confirmed', q.deactivation_confirmed ? 'done' : 'pending', q.deactivation_confirmed_at, q.deactivation_confirmed ? (q.deactivation_confirmed_method || 'Confirmed') : 'Waiting for your confirmation that carrier forwarding is off'));
-      const releaseOverdue = q.deactivation_confirmed && !q.released_at && confirmedMs !== null && nowMs - confirmedMs > JOB_GRACE_MS;
-      steps.push(step('released', 'Released (HCG record)', q.released_at ? 'done' : releaseOverdue ? 'broken' : 'pending', q.released_at, q.released_at ? 'Recorded released' : releaseOverdue ? 'Confirmed over 48h ago, not released' : null));
+      const stuckBasisMs = confirmedMs ?? parseTimestampMs(q.quarantined_at);
+      const releaseOverdue = q.deactivation_confirmed && !q.released_at && stuckBasisMs !== null && nowMs - stuckBasisMs > GRACE.quarantineReleaseStuckMs;
+      steps.push(step('released', 'Released (HCG record)', q.released_at ? 'done' : releaseOverdue ? 'broken' : 'pending', q.released_at, q.released_at ? 'Recorded released' : releaseOverdue ? `Confirmed over ${GRACE.quarantineReleaseStuckMs / HOUR_MS}h ago, not released` : null));
       const gone = onProvider === null ? null : !onProvider;
       steps.push(step('gone_from_provider', 'Gone from Twilio', gone === null ? 'pending' : gone ? 'done' : q.released_at ? 'broken' : 'pending', null,
         gone === null ? 'Provider inventory not checked' : gone ? 'Not on the provider account' : q.released_at ? 'Recorded released but still billed by Twilio' : 'Still on the provider account'));
     } else if (holds && pendingMs !== null) {
       const overdue = nowMs - pendingMs > JOB_GRACE_MS;
-      steps.push(step('quarantined', 'Quarantined', overdue ? 'broken' : 'pending', null, overdue ? 'Release date passed over 48h ago; number not yet quarantined' : 'Waiting for the release date'));
+      steps.push(step('quarantined', 'Quarantined', overdue ? 'broken' : 'pending', null, overdue ? `Release date passed over ${JOB_GRACE_MS / HOUR_MS}h ago; number not yet quarantined` : 'Waiting for the release date'));
     }
   }
 
