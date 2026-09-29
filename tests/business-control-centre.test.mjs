@@ -10,6 +10,10 @@
 // Run with: node tests/business-control-centre.test.mjs
 
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const require = createRequire(import.meta.url);
 
@@ -102,7 +106,7 @@ const protectedFields = { activation_verified_at: ago(DAY), voice_client_registe
 // ============================================================
 // 3. Twilio number inventory (numberInventory.js)
 // ============================================================
-const { buildNumberInventory, voiceHostEvidence, resolveProductionHosts, deriveRentalPerNumber } = require('../services/businessControl/numberInventory.js');
+const { buildNumberInventory, voiceHostEvidence, resolveProductionHosts, deriveRentalPerNumber, maskNumber } = require('../services/businessControl/numberInventory.js');
 const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.co.uk' });
 {
   check(prodHosts.has('www.homecallguard.co.uk') && prodHosts.has('homecallguard.co.uk'), 'production hosts: APP_URL host and its www/apex twin');
@@ -151,19 +155,19 @@ const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.c
   const inv = buildNumberInventory({ providerNumbers: provider, households, entitlementsByHousehold: ents, subscriptionsByHousehold: subs, classificationMap: classes, quarantineRows: quarantine, productionHosts: prodHosts, rental: { perNumber: 0.87, currency: 'GBP', basis: 'test', provenance: 'ACTUAL' }, releaseRecordingAvailable: true }, NOW);
   const byNum = Object.fromEntries(inv.rows.map((r) => [r.number, r]));
   check(inv.providerNumberCount === 10, 'every provider number is listed');
-  check(byNum['+447000000001'].state === 'in_service' && byNum['+447000000001'].severity === 'info' && /paid access/.test(byNum['+447000000001'].whyExpected), 'genuine paying customer\'s number: in service, and says why');
-  check(byNum['+447000000002'].state === 'outside_lifecycle' && byNum['+447000000002'].severity === 'red', 'cancelled customer still holding a number with no release scheduled → red');
-  check(byNum['+447000000003'].state === 'grace_period' && byNum['+447000000003'].severity === 'info', 'lapsed household within its scheduled grace period → expected, not flagged');
-  check(byNum['+447000000004'].state === 'release_overdue' && byNum['+447000000004'].severity === 'red', 'release more than 48h overdue → red');
-  check(byNum['+447000000005'].state === 'retained_internal' && byNum['+447000000005'].flags.some((f) => f.code === 'voice_url_mismatch'), 'a production household\'s number pointing at a dev tunnel is flagged (calls would not reach production)');
-  check(byNum['+447000000006'].state === 'quarantined_awaiting_confirmation' && byNum['+447000000006'].severity === 'amber', 'quarantined, awaiting your confirmation → amber');
+  check(byNum[maskNumber('+447000000001')].state === 'in_service' && byNum[maskNumber('+447000000001')].severity === 'info' && /paid access/.test(byNum[maskNumber('+447000000001')].whyExpected), 'genuine paying customer\'s number: in service, and says why');
+  check(byNum[maskNumber('+447000000002')].state === 'outside_lifecycle' && byNum[maskNumber('+447000000002')].severity === 'red', 'cancelled customer still holding a number with no release scheduled → red');
+  check(byNum[maskNumber('+447000000003')].state === 'grace_period' && byNum[maskNumber('+447000000003')].severity === 'info', 'lapsed household within its scheduled grace period → expected, not flagged');
+  check(byNum[maskNumber('+447000000004')].state === 'release_overdue' && byNum[maskNumber('+447000000004')].severity === 'red', 'release more than 48h overdue → red');
+  check(byNum[maskNumber('+447000000005')].state === 'retained_internal' && byNum[maskNumber('+447000000005')].flags.some((f) => f.code === 'voice_url_mismatch'), 'a production household\'s number pointing at a dev tunnel is flagged (calls would not reach production)');
+  check(byNum[maskNumber('+447000000006')].state === 'quarantined_awaiting_confirmation' && byNum[maskNumber('+447000000006')].severity === 'amber', 'quarantined, awaiting your confirmation → amber');
   const entitledQ = buildNumberInventory({ providerNumbers: [{ phoneNumber: '+447000000050', voiceUrl: V }], households: [{ id: 'hQ', email: 'q@x', twilio_number: null }], entitlementsByHousehold: new Map([['hQ', [ent('complimentary', 5 * DAY)]]]), classificationMap: new Map(), quarantineRows: [{ household_id: 'hQ', twilio_number: '+447000000050', deactivation_confirmed: false, quarantined_at: ago(3 * DAY), released_at: null }], productionHosts: prodHosts, rental: null, releaseRecordingAvailable: false }, NOW);
   check(entitledQ.rows[0].severity === 'red' && entitledQ.rows[0].flags.some((f) => f.code === 'quarantined_from_entitled') && /Do NOT confirm deactivation/.test(entitledQ.rows[0].recommendations.join(' ')), 'a quarantined number whose household is entitled again → red, "do not confirm deactivation" (Finance CRITICAL case)');
-  check(byNum['+447000000007'].state === 'marked_released_still_at_provider' && byNum['+447000000007'].severity === 'red', 'recorded as released but Twilio still lists it → red');
-  check(byNum['+447000000008'].state === 'staging_or_dev' && byNum['+447000000008'].severity === 'amber', 'unlinked number on a dev tunnel → staging/dev (amber)');
-  check(byNum['+447000000009'].state === 'orphan' && byNum['+447000000009'].severity === 'red' && /Check recent inbound calls/.test(byNum['+447000000009'].recommendations[0]), 'unlinked number with no dev evidence → orphan (red) with "investigate before release" advice');
-  check(byNum['+447000000099'].state === 'missing_at_provider' && byNum['+447000000099'].severity === 'red', 'household number not on the provider account → red');
-  check(byNum['+447000000011'].flags.some((f) => f.code === 'release_failed_recorded' && /3 time/.test(f.label)), 'a recorded release failure (P0 columns) is shown with its attempt count and error');
+  check(byNum[maskNumber('+447000000007')].state === 'marked_released_still_at_provider' && byNum[maskNumber('+447000000007')].severity === 'red', 'recorded as released but Twilio still lists it → red');
+  check(byNum[maskNumber('+447000000008')].state === 'staging_or_dev' && byNum[maskNumber('+447000000008')].severity === 'amber', 'unlinked number on a dev tunnel → staging/dev (amber)');
+  check(byNum[maskNumber('+447000000009')].state === 'orphan' && byNum[maskNumber('+447000000009')].severity === 'red' && /Check recent inbound calls/.test(byNum[maskNumber('+447000000009')].recommendations[0]), 'unlinked number with no dev evidence → orphan (red) with "investigate before release" advice');
+  check(byNum[maskNumber('+447000000099')].state === 'missing_at_provider' && byNum[maskNumber('+447000000099')].severity === 'red', 'household number not on the provider account → red');
+  check(byNum[maskNumber('+447000000011')].flags.some((f) => f.code === 'release_failed_recorded' && /3 time/.test(f.label)), 'a recorded release failure (P0 columns) is shown with its attempt count and error');
   check(inv.rows.every((r) => r.state === 'missing_at_provider' || r.monthlyRental === 0.87), 'each provider number shows its monthly rental');
   check(inv.monthlyRental.allNumbers === 8.7, 'total rental = 10 × £0.87');
   check(inv.rows[0].severity === 'red', 'rows sorted red first');
@@ -326,6 +330,68 @@ const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.c
     stripeRevenue: { available: true, mode: 'live', mrr: { ...mrr, genuineExVat: { GBP: 4.16 } }, collectedThisMonth: col }, releaseRecordingAvailable: true }, NOW);
   const mrrCard = overviewLive.cards.find((c) => c.id === 'mrr');
   check(mrrCard.status === 'amber' && /UNATTRIBUTED: 2 subscription\(s\)/.test(mrrCard.sub) && /1 payment\(s\) £4\.99 this month/.test(mrrCard.sub), 'overview MRR card: amber, and states the unattributed live subscriptions and payments');
+}
+
+// ============================================================
+// 8. Number categories, masking, cost-leak summary (2026-09-29)
+// Shaped like the 27 Sep production inventory: 19 numbers — genuine
+// customer, cancelled customer in grace, reviewers, internal tests,
+// an unclassified holder, 7 staging (dev tunnel), 2 quarantined, 1 orphan.
+// ============================================================
+{
+  const { buildNumberInventory, maskNumber, categoriseInventoryRow, CATEGORIES } = require('../services/businessControl/numberInventory.js');
+  const V = 'https://www.homecallguard.co.uk/voice';
+  const DEV = 'https://ferret-example.ngrok-free.dev/voice';
+  const n = (i) => `+4470000001${String(i).padStart(2, '0')}`;
+  const hh = [
+    { id: 'gen', email: 'g@x', twilio_number: n(1) },
+    { id: 'can', email: 'c@x', twilio_number: n(2), twilio_number_pending_release_at: new Date(NOW.getTime() + 10 * DAY).toISOString() },
+    { id: 'rev1', email: 'r1@x', twilio_number: n(3) },
+    { id: 'rev2', email: 'r2@x', twilio_number: n(4) },
+    { id: 'tst1', email: 't1@x', twilio_number: n(5) },
+    { id: 'tst2', email: 't2@x', twilio_number: n(6) },
+    { id: 'qa', email: 'qa@x', twilio_number: n(7) },
+    { id: 'unc', email: 'u@x', twilio_number: n(8) },
+    { id: 'due', email: 'd@x', twilio_number: n(9), twilio_number_pending_release_at: ago(3 * DAY) },
+  ];
+  const entsBy = new Map([
+    ['gen', [ent('paid_subscription', 20 * DAY)]],
+    ['can', [ent('paid_subscription', 40 * DAY, { status: 'revoked', updated_at: ago(20 * DAY) })]],
+    ['rev1', [ent('complimentary', 20 * DAY)]], ['rev2', [ent('complimentary', 20 * DAY)]],
+    ['tst1', [ent('complimentary', 20 * DAY)]], ['tst2', [ent('complimentary', 20 * DAY)]],
+    ['qa', []], ['unc', [ent('complimentary', 5 * DAY)]], ['due', []],
+  ]);
+  const cls = new Map([['gen', 'genuine_customer'], ['can', 'genuine_customer'], ['rev1', 'reviewer'], ['rev2', 'reviewer'], ['tst1', 'internal_test'], ['tst2', 'internal_test'], ['qa', 'qa_automation'], ['due', 'genuine_customer']]);
+  const provider = [
+    ...hh.map((h, i) => ({ phoneNumber: h.twilio_number, sid: `PN${i}`, voiceUrl: V, dateCreated: ago(60 * DAY) })),
+    ...[10, 11, 12, 13, 14, 15, 16].map((i) => ({ phoneNumber: n(i), sid: `PNstg${i}`, voiceUrl: DEV, dateCreated: ago(40 * DAY) })),
+    { phoneNumber: n(17), sid: 'PNq1', voiceUrl: V }, { phoneNumber: n(18), sid: 'PNq2', voiceUrl: V },
+    { phoneNumber: n(19), sid: 'PNorphan', voiceUrl: null },
+  ];
+  const quarantine = [
+    { household_id: null, twilio_number: n(17), deactivation_confirmed: false, quarantined_at: ago(20 * DAY), released_at: null, release_reason: 'account_deletion' },
+    { household_id: null, twilio_number: n(18), deactivation_confirmed: false, quarantined_at: ago(6 * DAY), released_at: null, release_reason: 'subscription_grace_expired' },
+  ];
+  const inv = buildNumberInventory({ providerNumbers: provider, households: hh, entitlementsByHousehold: entsBy, subscriptionsByHousehold: new Map(), classificationMap: cls, quarantineRows: quarantine, productionHosts: prodHosts,
+    rental: { perNumber: 0.86917, currency: 'GBP', basis: 't', provenance: 'ACTUAL' }, releaseRecordingAvailable: false,
+    lastCallByHousehold: new Map([['gen', ago(2 * HOUR)], ['can', ago(25 * DAY)]]) }, NOW);
+  const cat = Object.fromEntries(inv.byCategory.map((c) => [c.category, c]));
+  check(inv.providerNumberCount === 19 && inv.byCategory.reduce((sum, c) => sum + c.count, 0) === 19, 'every billed number lands in exactly one category (19/19)');
+  check(cat.customer_active.count === 1 && cat.customer_cancelled_grace.count === 1 && cat.reviewer.count === 2 && cat.internal_test.count === 3 && cat.staging.count === 7 && cat.pending_release.count === 3 && cat.orphan.count === 1 && cat.unknown.count === 1 && cat.other.count === 0,
+    'categories: 1 active customer · 1 cancelled in grace · 2 reviewer · 3 internal test (test+QA) · 7 staging · 3 pending release (1 overdue + 2 quarantined) · 1 orphan · 1 unknown (unclassified holder — never guessed)');
+  check(cat.staging.monthlyCost === 6.08 && cat.orphan.monthlyCost === 0.87, 'category rental: staging £6.08/month (7 × £0.869), orphan £0.87');
+  check(inv.needsReview.count === 14 && inv.needsReview.monthlyCost === 12.17, 'needs review: 14 numbers ≈ £12.17/month (staging, orphan, pending release, internal test) — reviewer/customer/unknown not counted as avoidable');
+  check(inv.rows.every((r) => r.number === null || /^\+44 •••• ••\d{4}$/.test(r.number)) && !JSON.stringify(inv).includes('+447000000'), 'no full number anywhere in the inventory output — masked to the last four digits');
+  check(inv.rows.filter((r) => r.state !== 'missing_at_provider').every((r) => r.sid), 'every billed row carries the provider SID for lookup');
+  const row = (sid) => inv.rows.find((r) => r.sid === sid);
+  check(row('PN0').lastInboundCall.at === ago(2 * HOUR) && row('PN1').lastInboundCall.at === ago(25 * DAY) && /no call recorded/.test(row('PN6').lastInboundCall.source), 'last inbound call from HCG\'s records per household; "no call recorded" when none');
+  check(row('PNstg10').lastInboundCall.at === null && /provider call log/.test(row('PNstg10').lastInboundCall.source) && /provider call log/.test(row('PNorphan').lastInboundCall.source), 'staging/orphan numbers: last call is "not in HCG records — check the provider call log", never "never"');
+  check(row('PN1').pendingReleaseAt && row('PNq1').quarantinedAt && row('PN0').createdAt, 'pending-release date, quarantine date and acquisition date exposed where they exist');
+  check(inv.rows.every((r) => r.recommendations.length > 0), 'every number has a recommended investigation/next step');
+  check(categoriseInventoryRow({ state: 'in_service', owner: null }) === 'unknown' && categoriseInventoryRow({ state: 'in_service', owner: { accountClass: 'deleted' } }) === 'other', 'insufficient evidence → unknown / other, never a customer');
+  check(maskNumber('+447700900123') === '+44 •••• ••0123' && maskNumber('123') === '••••' && maskNumber(null) === null, 'maskNumber');
+  check(Object.keys(CATEGORIES).join() === 'customer_active,customer_cancelled_grace,pending_release,internal_test,staging,reviewer,orphan,unknown,other', 'the category set');
+  check(!/\.(remove|update|create)\(/.test(readFileSync(path.join(__dirname, '..', 'services', 'businessControl', 'numberInventory.js'), 'utf8')), 'the inventory module has no provider write call');
 }
 
 console.log('');

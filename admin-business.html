@@ -1723,12 +1723,29 @@ function timelineHtml(timeline) {
 function inventoryHtml(inv, reason) {
   if (!inv) return '<div class="gaps">Twilio number inventory unavailable: ' + escapeHtml(reason || 'unknown') + '</div>';
   const r = inv.monthlyRental;
-  let html = '<p class="sub">' + fmtNum(inv.providerNumberCount) + ' number(s) on the provider account · rental ' + (r.perNumber !== null ? escapeHtml(r.currency + ' ' + Number(r.perNumber).toFixed(4) + '/number/month (' + r.basis + ')') : 'not available') + ' · on flagged numbers ≈ ' + escapeHtml(r.flaggedNumbers !== null ? r.currency + ' ' + Number(r.flaggedNumbers).toFixed(2) + '/month' : '—') + '</p>';
-  html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Number</th><th>Household</th><th>Why HCG holds it</th><th>Lifecycle state</th><th>Environment</th><th>Rental/month</th><th>Anomaly &amp; next step</th></tr></thead><tbody>';
+  const money = (v) => (v === null || v === undefined ? 'Not connected' : escapeHtml((r.currency || 'GBP') === 'GBP' ? '£' + Number(v).toFixed(2) : r.currency + ' ' + Number(v).toFixed(2)));
+  let html = '<p class="sub">' + fmtNum(inv.providerNumberCount) + ' number(s) on the provider account · ' + (r.perNumber !== null ? money(r.allNumbers) + '/month (' + escapeHtml(r.basis) + ')' : 'rental Not connected') + '</p>';
+  if (inv.needsReview) {
+    html += '<div class="readiness-banner ' + (inv.needsReview.count ? 'ready_with_open_items' : 'ready') + '">' +
+      (inv.needsReview.count ? 'Possibly unnecessary: ' + fmtNum(inv.needsReview.count) + ' number(s) ≈ ' + money(inv.needsReview.monthlyCost) + '/month' : 'No numbers flagged as possibly unnecessary') +
+      '</div><p class="sub">' + escapeHtml(inv.needsReview.note) + '</p>';
+  }
+  if (inv.byCategory) {
+    html += '<table style="margin:10px 0 18px;"><tr><th>Category</th><th class="num">Numbers</th><th class="num">£/month</th><th>What to do</th></tr>' +
+      inv.byCategory.filter((c) => c.count > 0).map((c) => '<tr><td>' + escapeHtml(c.label) + '</td><td class="num">' + fmtNum(c.count) + '</td><td class="num">' + money(c.monthlyCost) + '</td><td class="cell-wrap">' + escapeHtml(c.action) + '</td></tr>').join('') + '</table>';
+  }
+  html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Number</th><th>Category</th><th>Household</th><th>Environment</th><th>Acquired</th><th>Last inbound call</th><th>Lifecycle</th><th class="num">£/month</th><th>Flag &amp; next step</th></tr></thead><tbody>';
   for (const row of inv.rows) {
-    const owner = row.owner ? escapeHtml(row.owner.email || row.owner.householdId) + (row.owner.accountClass ? '<div class="customer-sub">' + escapeHtml(row.owner.accountClass + ' · ' + (row.owner.membership || '')) + '</div>' : '') : '<span class="text-muted">none</span>';
-    const flags = row.flags.length ? row.flags.map((f) => '<div class="' + (f.severity === 'red' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(f.label) + '</div>').join('') + row.recommendations.map((t) => '<div class="customer-sub">→ ' + escapeHtml(t) + '</div>').join('') : '<span class="text-muted">—</span>';
-    html += '<tr class="inv-' + escapeHtml(row.severity) + '"><td>' + escapeHtml(row.number) + '</td><td class="cell-wrap">' + owner + '</td><td class="cell-wrap">' + escapeHtml(row.whyExpected) + '</td><td>' + escapeHtml(row.stateLabel) + '</td><td>' + escapeHtml((row.environment || '—').replace(/_/g, ' ')) + (row.voiceHost ? '<div class="customer-sub">' + escapeHtml(row.voiceHost) + '</div>' : '') + '</td><td class="num">' + escapeHtml(row.monthlyRental !== null ? Number(row.monthlyRental).toFixed(2) : '—') + '</td><td class="cell-wrap">' + flags + '</td></tr>';
+    const owner = row.owner ? escapeHtml(row.owner.email || row.owner.householdId) + (row.owner.accountClass ? '<div class="customer-sub">' + escapeHtml(row.owner.accountClass + ' · ' + (row.owner.membership || '') + (row.owner.access && row.owner.access !== 'none' ? ' · ' + row.owner.access : '')) + '</div>' : '') : '<span class="text-muted">none</span>';
+    const flags = (row.flags.length ? row.flags.map((f) => '<div class="' + (f.severity === 'red' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(f.label) + '</div>').join('') : '') + row.recommendations.map((t) => '<div class="customer-sub">→ ' + escapeHtml(t) + '</div>').join('');
+    const call = row.lastInboundCall || {};
+    const lifecycle = escapeHtml(row.stateLabel) + (row.pendingReleaseAt ? '<div class="customer-sub">release ' + escapeHtml(String(row.pendingReleaseAt).slice(0, 10)) + '</div>' : '') + (row.quarantinedAt ? '<div class="customer-sub">quarantined ' + escapeHtml(String(row.quarantinedAt).slice(0, 10)) + '</div>' : '');
+    html += '<tr class="inv-' + escapeHtml(row.severity) + '"><td>' + escapeHtml(row.number || '—') + (row.sid ? '<div class="customer-sub">…' + escapeHtml(String(row.sid).slice(-6)) + '</div>' : '') + '</td>' +
+      '<td>' + escapeHtml(row.categoryLabel || '—') + '</td><td class="cell-wrap">' + owner + '</td>' +
+      '<td>' + escapeHtml((row.environment || '—').replace(/_/g, ' ')) + (row.voiceHost ? '<div class="customer-sub">' + escapeHtml(row.voiceHost) + '</div>' : '') + '</td>' +
+      '<td>' + escapeHtml(row.createdAt ? String(row.createdAt).slice(0, 10) : '—') + '</td>' +
+      '<td class="cell-wrap">' + (call.at ? escapeHtml(fmtDateTime(call.at)) : '<span class="text-muted">' + escapeHtml(call.source || '—') + '</span>') + '</td>' +
+      '<td class="cell-wrap">' + lifecycle + '</td><td class="num">' + escapeHtml(row.monthlyRental !== null ? Number(row.monthlyRental).toFixed(2) : '—') + '</td><td class="cell-wrap">' + flags + '</td></tr>';
   }
   html += '</tbody></table></div>';
   return html;
@@ -1737,9 +1754,12 @@ function inventoryHtml(inv, reason) {
 async function renderReconciliationTab(force) {
   const [d, overview] = await Promise.all([fetchBusinessControl('reconciliation'), fetchOverviewOnce(force).catch(() => null)]);
   const banner = reconciliationBanner(d.overall, d.actionCount, d.watchCount);
-  let html = '<div class="section">' + sectionHeader('Subscription → entitlement → number lifecycle', d.generatedAt, 'reconciliation');
+  let html = '<div class="section">' + sectionHeader('Numbers — cost and lifecycle', d.generatedAt, 'reconciliation');
+  html += '<p class="sub">Read-only. Nothing here schedules, quarantines or releases a number; lifecycle rules are the canonical ones the release job uses (services/numberLifecycle/state.js).</p>';
+  html += '<h3 style="margin-top:14px;">What HCG pays for — every number on the provider account</h3>';
+  html += inventoryHtml(overview && overview.inventory, overview ? overview.inventoryReason : 'overview unavailable');
+  html += '<h3 style="margin-top:26px;">Household lifecycle</h3>';
   html += '<div class="readiness-banner ' + banner.className + '">' + escapeHtml(banner.text) + '</div>';
-  html += '<p class="sub">Read-only. Nothing here schedules, quarantines or releases a number; lifecycle enforcement belongs to the number-lifecycle workstream.</p>';
   if (!d.rows.length) {
     html += '<div class="empty-state">No households with an entitlement, number or quarantine.</div>';
   } else {
@@ -1752,8 +1772,7 @@ async function renderReconciliationTab(force) {
     }
     html += '</tbody></table></div>';
   }
-  html += '<h3 style="margin-top:26px;">Twilio number inventory</h3>';
-  html += inventoryHtml(overview && overview.inventory, overview ? overview.inventoryReason : 'overview unavailable');
+
   html += '<ul class="sub" style="margin-top:12px;">' + d.notes.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>';
   html += '</div>';
   document.getElementById('reconciliation').innerHTML = html;

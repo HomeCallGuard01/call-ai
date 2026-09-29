@@ -204,6 +204,9 @@ function computeNumberReconciliation({ households, entitlements, subscriptions, 
   const watchCount = rows.filter((r) => r.status === 'watch').length;
   const order = { action_required: 0, watch: 1, ok: 2 };
   rows.sort((a, b) => order[a.status] - order[b.status]);
+  // The full number never leaves the server (numberInventory.maskNumber).
+  const { maskNumber } = require('./numberInventory');
+  for (const r of rows) r.hcgNumber = r.hcgNumber ? maskNumber(r.hcgNumber) : null;
 
   return {
     overall: actionCount > 0 ? 'ACTION_REQUIRED' : watchCount > 0 ? 'WATCH' : 'OK',

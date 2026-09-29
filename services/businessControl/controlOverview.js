@@ -15,7 +15,7 @@
 'use strict';
 
 const { classifyHouseholdForBusiness } = require('./definitions');
-const { buildNumberInventory, deriveRentalPerNumber, resolveProductionHosts } = require('./numberInventory');
+const { buildNumberInventory, deriveRentalPerNumber, resolveProductionHosts, maskNumber } = require('./numberInventory');
 const { detectHouseholdAnomalies } = require('./numberReconciliation');
 const { parseTimestampMs } = require('../adminOnboardingStatus');
 
@@ -181,7 +181,7 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
     confirmedOverdue.length ? 'red' : awaiting.length ? 'amber' : pendingRelease.length ? 'info' : 'green',
     'Amber when a quarantined number is waiting for your deactivation confirmation; red when a confirmed quarantine has not been released 48h after confirmation.',
     { sub: `${pendingRelease.length} release scheduled · ${awaiting.length} awaiting your confirmation · ${openQ.length - awaiting.length} confirmed`,
-      items: [...pendingRelease.map((b) => ref(b, `release ${String(b.household.twilio_number_pending_release_at).slice(0, 10)}`)), ...openQ.map((q) => ({ number: q.twilio_number, detail: q.deactivation_confirmed ? 'confirmed, awaiting release' : 'awaiting deactivation confirmation' }))] }));
+      items: [...pendingRelease.map((b) => ref(b, `release ${String(b.household.twilio_number_pending_release_at).slice(0, 10)}`)), ...openQ.map((q) => ({ number: maskNumber(q.twilio_number), detail: q.deactivation_confirmed ? 'confirmed, awaiting release' : 'awaiting deactivation confirmation' }))] }));
 
   // 12. Failed releases / unresolved lifecycle anomalies
   const anomalyRows = live
@@ -263,12 +263,19 @@ async function getControlOverview(now = new Date()) {
   const twilio = resolveTwilio();
   if (twilio) {
     try {
-      const [numbers, lastMonth] = await Promise.all([
+      const [numbers, lastMonth, callsRes] = await Promise.all([
         twilio.incomingPhoneNumbers.list({ limit: 1000 }),
         twilio.usage.records.lastMonth.list({ limit: 1000 }),
+        supabaseAdmin.from('calls').select('household_id, created_at').order('created_at', { ascending: false }).limit(5000),
       ]);
+      let lastCallByHousehold = null;
+      if (!callsRes.error) {
+        lastCallByHousehold = new Map();
+        for (const c of callsRes.data || []) if (c.household_id && !lastCallByHousehold.has(c.household_id)) lastCallByHousehold.set(c.household_id, c.created_at);
+      }
       inventory = buildNumberInventory({
-        providerNumbers: numbers.map((n) => ({ phoneNumber: n.phoneNumber, voiceUrl: n.voiceUrl, dateCreated: n.dateCreated })),
+        providerNumbers: numbers.map((n) => ({ phoneNumber: n.phoneNumber, sid: n.sid, voiceUrl: n.voiceUrl, dateCreated: n.dateCreated })),
+        lastCallByHousehold,
         households,
         entitlementsByHousehold,
         subscriptionsByHousehold,

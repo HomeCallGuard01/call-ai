@@ -114,10 +114,10 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   }, NOW);
   // n1 (number retained) is action; v2 (delivery never confirmed) and the
   // 1-day-old unconfirmed quarantine are watch (45/90-day policy); ok1 ok.
-  check(report.overall === 'ACTION_REQUIRED' && report.actionCount === 1 && report.watchCount === 2 && report.okCount === 1 && report.rows.find((r) => r.hcgNumber === '+447700900555').status === 'watch', `overall ACTION REQUIRED with action / watch / ok counts (got ${report.overall} ${report.actionCount}/${report.watchCount}/${report.okCount}; ${report.rows.map((r) => (r.householdId || r.hcgNumber) + ':' + r.status + ':' + r.anomalies.map((a) => a.code).join('+')).join(' ')})`);
+  check(report.overall === 'ACTION_REQUIRED' && report.actionCount === 1 && report.watchCount === 2 && report.okCount === 1 && report.rows.find((r) => r.hcgNumber === '+44 •••• ••0555').status === 'watch', `overall ACTION REQUIRED with action / watch / ok counts (got ${report.overall} ${report.actionCount}/${report.watchCount}/${report.okCount}; ${report.rows.map((r) => (r.householdId || r.hcgNumber) + ':' + r.status + ':' + r.anomalies.map((a) => a.code).join('+')).join(' ')})`);
   check(report.rows[0].status === 'action_required' && report.rows[report.rows.length - 1].status === 'ok', 'rows sorted action → watch → ok');
   check(!report.rows.some((r) => r.householdId === 'x9'), 'households with no entitlement, number or quarantine are not listed (nothing to reconcile)');
-  check(report.rows.some((r) => r.numberOnly && r.hcgNumber === '+447700900555'), 'a quarantine with no household (deleted account) is still reconciled as a number-level row');
+  check(report.rows.some((r) => r.numberOnly && r.hcgNumber === '+44 •••• ••0555'), 'a quarantine with no household (deleted account) is still reconciled as a number-level row');
   check(report.anomalyCounts.NUMBER_RETAINED_NO_ENTITLEMENT === 1 && report.anomalyCounts.QUARANTINE_AWAITING_CONFIRMATION === 1, 'anomaly counts');
   const chain = report.rows.find((r) => r.householdId === 'ok1').chain.map((s) => s.key).join('→');
   check(chain === 'subscription→entitlement→number→app→delivery→protected→cancellation→quarantine→released', 'lifecycle chain stages in order');
@@ -140,7 +140,7 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   }, NOW);
   check(inv.providerInventory.available && inv.providerInventory.providerCount === 3, 'provider inventory compared when the number list is available');
   const orphan = inv.rows.find((r) => r.providerOnly);
-  check(orphan && orphan.hcgNumber === '+447700900009' && orphan.anomalies[0].code === 'PROVIDER_NUMBER_UNACCOUNTED', 'a provider number held by no household or open quarantine is flagged (formatting differences normalised)');
+  check(orphan && orphan.hcgNumber === '+44 •••• ••0009' && orphan.anomalies[0].code === 'PROVIDER_NUMBER_UNACCOUNTED', 'a provider number held by no household or open quarantine is flagged (formatting differences normalised)');
   check(!inv.rows.some((r) => r.providerOnly && r.hcgNumber === '+447700900003'), 'a number in an open quarantine is accounted for, not flagged as orphaned');
   check(inv.rows.find((r) => r.householdId === 'gone').anomalies.some((a) => a.code === 'NUMBER_MISSING_AT_PROVIDER'), 'a household number missing from the provider account is flagged');
   check(!inv.rows.find((r) => r.householdId === 'ok1').anomalies.some((a) => a.code === 'NUMBER_MISSING_AT_PROVIDER'), 'a household number present at the provider is fine');
@@ -386,7 +386,7 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   check(ui.describeAudienceBadges(rows[0]).map((b) => b.label).join() === 'Genuine' && ui.describeAudienceBadges(rows[1]).map((b) => b.label).join() === 'Genuine,Paid before' && ui.describeAudienceBadges(rows[2])[0].label === 'Unclassified' && ui.describeAudienceBadges(rows[3])[0].label === 'Reviewer', 'customers: badges — Genuine / Unclassified / Reviewer, plus "Paid before" for a former payer');
   const groups = ui.groupOverviewCards([{ id: 'mrr' }, { id: 'protected' }, { id: 'provider_numbers' }, { id: 'new_future_card' }]);
   check(groups.map((g) => g.title).join('|') === 'Customers & revenue|Protection|Numbers & cost|Other checks', 'overview cards grouped customers → protection → numbers; an unknown card is never dropped');
-  check(elements.reconciliation.innerHTML.includes('First broken step') && elements.reconciliation.innerHTML.includes('Twilio number inventory'), 'reconciliation shows the first broken lifecycle step and the number inventory');
+  check(elements.reconciliation.innerHTML.includes('First broken step') && elements.reconciliation.innerHTML.includes('What HCG pays for'), 'reconciliation shows the first broken lifecycle step and the number inventory');
   check(elements.marketing.innerHTML.includes('By channel') && elements.marketing.innerHTML.includes('Self-reported'), 'marketing shows the channel comparison and keeps self-report separate');
   check(!/method\s*:|'POST'|"POST"/.test(tabs), 'the business-control tabs only ever issue GET requests');
 }

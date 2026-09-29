@@ -63,6 +63,50 @@ const RECOMMENDATIONS = {
   quarantined_from_entitled: 'Do NOT confirm deactivation — this customer is entitled again and may still forward to this number. Resolve through the lifecycle (P0) before any release.',
 };
 
+// The eight categories every provider number falls into (2026-09-29).
+// Precedence: provider/lifecycle evidence first (staging, orphan, pending
+// release, other), then the holder's explicit classification, then — for
+// genuine customers only — membership. An unclassified holder is UNKNOWN:
+// evidence is insufficient to call it a customer or a test account.
+const CATEGORIES = {
+  customer_active: { label: 'Customer — active', avoidable: false, action: 'None — in service for a genuine customer.' },
+  customer_cancelled_grace: { label: 'Customer — cancelled / grace period', avoidable: false, action: 'Normal while a release is scheduled; if none is scheduled, confirm the membership ended and let the lifecycle schedule it.' },
+  pending_release: { label: 'Pending release', avoidable: true, action: 'In the release lifecycle (release due, or quarantined). Follow the quarantine confirmation process; never release from the dashboard.' },
+  internal_test: { label: 'Internal test', avoidable: true, action: 'Check the test still needs a live number; give the test account an end date so the lifecycle releases it.' },
+  staging: { label: 'Staging / development', avoidable: true, action: 'Billed on the production account by a staging/local server. Move to a staging sub-account or release deliberately after checking inbound calls.' },
+  reviewer: { label: 'Reviewer', avoidable: false, action: 'Keep while App Review / external review needs it; set an end date on the reviewer entitlement.' },
+  orphan: { label: 'Orphan / unknown', avoidable: true, action: 'No household in HCG. Check the provider call log for recent inbound calls before doing anything.' },
+  unknown: { label: 'Unknown (unclassified holder)', avoidable: false, action: 'Classify the account (Customers) before deciding anything about its number.' },
+  other: { label: 'Other', avoidable: true, action: 'Record and provider disagree — see the row\'s flag.' },
+};
+const CATEGORY_ORDER = Object.keys(CATEGORIES);
+const TEST_CLASSES = new Set(['internal_test', 'admin', 'qa_automation']);
+
+// Pure.
+function categoriseInventoryRow(row) {
+  if (row.state === 'staging_or_dev') return 'staging';
+  if (row.state === 'orphan') return 'orphan';
+  if (['release_overdue', 'quarantined_awaiting_confirmation', 'quarantined_releasing', 'quarantine_release_overdue'].includes(row.state)) return 'pending_release';
+  if (row.state === 'marked_released_still_at_provider' || row.state === 'missing_at_provider') return 'other';
+  const owner = row.owner;
+  if (!owner || !owner.accountClass) return 'unknown';
+  if (owner.accountClass === 'reviewer') return 'reviewer';
+  if (TEST_CLASSES.has(owner.accountClass)) return 'internal_test';
+  if (owner.accountClass === 'unclassified') return 'unknown';
+  if (owner.accountClass === 'genuine') return owner.membership === 'current' || owner.membership === 'upcoming' ? 'customer_active' : 'customer_cancelled_grace';
+  return 'other';
+}
+
+// "+447700900123" → "+44 •••• ••0123". HCG's numbers are its own provider
+// resources, but they are also what customers forward to; the dashboard
+// never needs more than the last four digits (the SID finds it in Twilio).
+function maskNumber(n) {
+  const digits = typeof n === 'string' ? n.replace(/[^0-9+]/g, '') : '';
+  if (digits.length < 6) return digits ? '••••' : null;
+  const cc = digits.startsWith('+44') ? '+44' : digits.startsWith('+') ? digits.slice(0, 2) : '';
+  return `${cc} •••• ••${digits.slice(-4)}`.trim();
+}
+
 function normaliseNumber(n) {
   return typeof n === 'string' ? n.replace(/[^0-9+]/g, '') : null;
 }
@@ -100,7 +144,7 @@ function resolveProductionHosts(env = process.env) {
 }
 
 // Pure.
-function buildNumberInventory({ providerNumbers, households, entitlementsByHousehold, subscriptionsByHousehold, classificationMap, quarantineRows, productionHosts, rental, releaseRecordingAvailable }, now) {
+function buildNumberInventory({ providerNumbers, households, entitlementsByHousehold, subscriptionsByHousehold, classificationMap, quarantineRows, productionHosts, rental, releaseRecordingAvailable, lastCallByHousehold = null }, now) {
   const nowMs = now.getTime();
   const byNumber = new Map();
   for (const h of households || []) if (h.twilio_number) byNumber.set(normaliseNumber(h.twilio_number), h);
@@ -192,9 +236,14 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
     const flags = [...extraFlags];
     if (STATES[state].severity !== 'info') flags.unshift({ code: state, severity: STATES[state].severity, label: STATES[state].label });
     const severity = flags.reduce((worst, f) => (SEVERITY_ORDER[f.severity] < SEVERITY_ORDER[worst] ? f.severity : worst), 'info');
+    const householdForCalls = owner ? owner.householdId : null;
     rows.push({
       number,
+      sid: p.sid || null,
       createdAt: p.dateCreated || null,
+      pendingReleaseAt: holder ? holder.twilio_number_pending_release_at || null : null,
+      quarantinedAt: open ? open.quarantined_at || null : null,
+      lastInboundCall: describeLastCall(householdForCalls, lastCallByHousehold),
       environment: evidence.environment,
       voiceHost: evidence.host,
       owner,
@@ -212,7 +261,11 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
     if (onProvider.has(number)) continue;
     rows.push({
       number,
+      sid: null,
       createdAt: null,
+      pendingReleaseAt: h.twilio_number_pending_release_at || null,
+      quarantinedAt: null,
+      lastInboundCall: describeLastCall(h.id, lastCallByHousehold),
       environment: null,
       voiceHost: null,
       owner: { householdId: h.id, email: h.email || null },
@@ -228,13 +281,34 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
 
   rows.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || String(a.number).localeCompare(String(b.number)));
 
+  // Categories + masking. The full number never leaves this function.
+  for (const r of rows) {
+    r.category = categoriseInventoryRow(r);
+    r.categoryLabel = CATEGORIES[r.category].label;
+    if (!r.recommendations.length) r.recommendations = [CATEGORIES[r.category].action];
+    r.number = maskNumber(r.number);
+  }
+
   const byState = {};
   for (const r of rows) byState[r.state] = (byState[r.state] || 0) + 1;
   const flagged = rows.filter((r) => r.severity !== 'info' && r.state !== 'missing_at_provider');
   const cost = (list) => (perNumber === null ? null : Math.round(list.length * perNumber * 100) / 100);
 
+  // Per-category count and rental. "Needs review" = categories that are
+  // plausibly unnecessary spend, plus any red-flagged number elsewhere.
+  // Only numbers the provider bills are costed.
+  const billed = rows.filter((r) => r.state !== 'missing_at_provider');
+  const byCategory = CATEGORY_ORDER.map((key) => {
+    const list = billed.filter((r) => r.category === key);
+    return { category: key, label: CATEGORIES[key].label, count: list.length, monthlyCost: cost(list), action: CATEGORIES[key].action };
+  });
+  const review = billed.filter((r) => CATEGORIES[r.category].avoidable || r.severity === 'red');
+
   return {
     providerNumberCount: onProvider.size,
+    byCategory,
+    needsReview: { count: review.length, monthlyCost: cost(review), note: 'Numbers that may be unnecessary spend. Verify each (inbound calls, owner) before any release; nothing here releases anything.' },
+    categoryDefinitions: CATEGORIES,
     byState,
     stateDefinitions: STATES,
     monthlyRental: {
@@ -250,6 +324,17 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
       : 'not recorded yet — P0 lifecycle-sweep migration not applied; failures are only inferred',
     rows,
   };
+}
+
+// Last inbound call to the HCG number's household, from HCG's own calls
+// table (calls record the household, not the dialled number). Numbers
+// with no production household have no HCG record: the provider call log
+// is the only source, and the row says so rather than "never".
+function describeLastCall(householdId, lastCallByHousehold) {
+  if (!householdId) return { at: null, source: 'not in HCG records — check the provider call log' };
+  if (!lastCallByHousehold) return { at: null, source: 'call history not loaded' };
+  const at = lastCallByHousehold.get(householdId) || null;
+  return { at, source: at ? 'HCG call record (household)' : 'no call recorded for this household' };
 }
 
 // Rental per number from Twilio's own last complete month: total
@@ -271,4 +356,4 @@ function deriveRentalPerNumber(usageRecords) {
   };
 }
 
-module.exports = { STATES, RECOMMENDATIONS, voiceHostEvidence, resolveProductionHosts, buildNumberInventory, deriveRentalPerNumber, normaliseNumber };
+module.exports = { STATES, RECOMMENDATIONS, CATEGORIES, categoriseInventoryRow, maskNumber, describeLastCall, voiceHostEvidence, resolveProductionHosts, buildNumberInventory, deriveRentalPerNumber, normaliseNumber };
