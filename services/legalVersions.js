@@ -6,7 +6,7 @@
 // terms_acceptances (migration 039) at the moment of acceptance, so a
 // later version bump never rewrites what an earlier customer actually
 // agreed to.
-const TERMS_VERSION = "2026-09-13";
+const TERMS_VERSION = "2026-09-29"; // 2026-09-29: mobile-only factual corrections (sections 2, 5, 6, 9)
 const PRIVACY_VERSION = "2026-09-13";
 
 module.exports = { TERMS_VERSION, PRIVACY_VERSION };

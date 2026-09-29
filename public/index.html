@@ -413,8 +413,10 @@
           <div class="n" aria-hidden="true">2</div>
           <p class="tag">Anyone else calls</p>
           <h3>It rings as normal, and is checked while you talk.</h3>
-          <!-- APPROVED-BEHAVIOUR-COPY -->
-          <p class="body">Calls from numbers that aren't on your trusted list ring your phone as normal. If nothing concerning is found, the call simply carries on.</p>
+          <!-- APPROVED-BEHAVIOUR-COPY (2026-09-29: the announcement is real — server.js /voice
+               plays "This number is monitored and protected by Home Call Guard." before
+               dialling, whenever the call will be monitored) -->
+          <p class="body">The caller first hears a short message that your number is protected by Home Call Guard, then your phone rings as normal. If nothing concerning is found, the call simply carries on.</p>
           <p class="outcome">Shown in Activity as<br><span class="chip green">Screened, no concerns</span></p>
         </li>
         <li class="step3 serious">

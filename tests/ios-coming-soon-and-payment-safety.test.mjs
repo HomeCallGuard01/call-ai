@@ -320,7 +320,10 @@ check(
 check(
   uploadHtmlSource.includes('id="iosComingSoonMessage"') &&
     uploadHtmlSource.includes('Home Call Guard for iPhone is coming soon') &&
-    uploadHtmlSource.includes("We're waiting for final approval of our iPhone app. Home Call Guard isn't currently available for new iPhone customers.") &&
+    // 2026-09-29: no App Review status claim ("waiting for final approval") — the
+    // page can't verify it; iPhone stays a cautious "Coming soon".
+    uploadHtmlSource.includes("Home Call Guard for iPhone isn't available to new customers yet.") &&
+    !uploadHtmlSource.includes('waiting for final approval') &&
     uploadHtmlSource.includes('Join the waiting list and we\'ll let you know as soon as it\'s available.'),
   'upload.html has the exact required coming-soon copy'
 );
