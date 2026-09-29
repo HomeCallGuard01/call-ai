@@ -162,6 +162,7 @@
   .card.bc-warn { border-color: #f59e0b; }
   .classification-form { display: grid; gap: 8px; max-width: 560px; margin: 8px 0 12px; }
   .classification-panel { margin-top: 10px; border-top: 1px solid #1e293b; padding-top: 6px; }
+  .release-review { display: grid; gap: 8px; padding: 8px 0; }
   .filter-sep { width: 1px; align-self: stretch; background: #334155; margin: 0 4px; }
   .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .att-body { display: grid; gap: 2px; }
@@ -1890,7 +1891,81 @@ function timelineHtml(timeline) {
     (timeline.firstBroken !== null ? '<div class="text-bad customer-sub">First broken step: ' + escapeHtml(timeline.steps[timeline.firstBroken].label) + ' — ' + escapeHtml(timeline.steps[timeline.firstBroken].note || '') + '</div>' : '');
 }
 
-function inventoryHtml(inv, reason) {
+// Safe number-release review — PROTOTYPE, NOT WIRED (2026-09-29).
+// The server decides blockers (services/numberLifecycle/releaseReadiness.js);
+// this panel shows the evidence, re-checks the page's age, and collects the
+// confirmations a future release would require. The final button is
+// always disabled: nothing here can release a number.
+let openReleaseReviewSid = null;
+
+function releaseReviewBlockers(review, generatedAt, nowMs) {
+  const blockers = (review && review.blockers ? review.blockers.slice() : []);
+  const gen = generatedAt ? new Date(generatedAt).getTime() : NaN;
+  if (!Number.isFinite(gen) || nowMs - gen > 10 * 60 * 1000) {
+    if (!blockers.some((b) => b.code === 'STALE_VIEW')) blockers.push({ code: 'STALE_VIEW', text: 'This view is more than 10 minutes old. Reload before reviewing a release.' });
+  }
+  return blockers;
+}
+
+function releaseChecklistStatus(review, answers) {
+  if (!review || !review.confirmations || !review.confirmations.length) return { ok: false, message: 'Blocked — resolve every blocker first.' };
+  for (const c of review.confirmations) {
+    if (c.id === 'typed_last4' && String(answers.typed_last4 || '').trim() !== c.expect) return { ok: false, message: 'The typed digits do not match this number.' };
+    if (c.id === 'reason' && String(answers.reason || '').trim().length < 10) return { ok: false, message: 'Give a reason (at least 10 characters).' };
+    if ((c.id === 'forwarding_removed' || c.id === 'calls_checked') && answers[c.id] !== true) return { ok: false, message: 'Every confirmation must be ticked.' };
+  }
+  return { ok: true, message: 'All checks complete. Release is NOT wired in this prototype — nothing will happen.' };
+}
+
+function renderReleaseReviewHtml(row, generatedAt, nowMs) {
+  const review = row.releaseReview || { blockers: [], confirmations: [], evidence: {} };
+  const blockers = releaseReviewBlockers(review, generatedAt, nowMs);
+  const ev = review.evidence || {};
+  const fact = (k, v) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v === null || v === undefined || v === '' ? '—' : v) + '</td></tr>';
+  let html = '<div class="release-review"><div class="readiness-banner not_ready">PROTOTYPE — release is not wired. Nothing on this panel can release a number.</div>';
+  html += '<table class="fact-table">' + fact('Number', ev.number) + fact('Provider SID', ev.sid) + fact('Category', ev.category) + fact('Environment', ev.environment) +
+    fact('Household', ev.household) + fact('Classification', ev.classification) + fact('Membership / access', [ev.membership, ev.access].filter(Boolean).join(' · ')) +
+    fact('Membership ended', ev.membershipEndedAt ? String(ev.membershipEndedAt).slice(0, 10) : null) + fact('Grace period ends / release scheduled', ev.graceEndsAt ? String(ev.graceEndsAt).slice(0, 10) : 'not scheduled') +
+    fact('Quarantine', ev.quarantine ? (ev.quarantine.confirmed ? 'deactivation confirmed' : 'awaiting deactivation confirmation') + (ev.quarantine.reason ? ' (' + ev.quarantine.reason + ')' : '') : 'no') +
+    fact('Last inbound call', ev.lastInboundCall ? fmtDateTime(ev.lastInboundCall) : ev.lastInboundCallSource) + fact('Lifecycle state', ev.lifecycleState) + '</table>';
+  if (blockers.length) {
+    html += '<h4 class="text-bad">Blocked (' + blockers.length + ')</h4><ul>' + blockers.map((b) => '<li class="text-bad">' + escapeHtml(b.text) + '</li>').join('') + '</ul>';
+  } else {
+    html += '<h4>Confirmations a release would require</h4><div class="classification-form">' + review.confirmations.map((c) =>
+      c.id === 'typed_last4' ? '<label class="customer-sub">' + escapeHtml(c.text) + ' <input type="text" id="rr_typed_last4" maxlength="4" inputmode="numeric"></label>'
+      : c.id === 'reason' ? '<label class="customer-sub">' + escapeHtml(c.text) + ' <input type="text" id="rr_reason" maxlength="300"></label>'
+      : '<label class="customer-sub"><input type="checkbox" id="rr_' + escapeHtml(c.id) + '"> ' + escapeHtml(c.text) + '</label>').join('') + '</div>';
+  }
+  html += '<button type="button" class="action-button" disabled title="Not wired — prototype">Release number (not available)</button> <span class="customer-sub" id="rrStatus">' + escapeHtml(blockers.length ? 'Blocked — resolve every blocker first.' : 'Complete every confirmation.') + '</span></div>';
+  return html;
+}
+
+function toggleReleaseReview(sid) {
+  openReleaseReviewSid = openReleaseReviewSid === sid ? null : sid;
+  businessControlLoaded.reconciliation = false;
+  loadBusinessControlTab('reconciliation');
+}
+
+function wireReleaseReview(row, generatedAt) {
+  const status = document.getElementById('rrStatus');
+  if (!status || !row || !row.releaseReview || !row.releaseReview.confirmations.length) return;
+  const read = () => ({
+    typed_last4: (document.getElementById('rr_typed_last4') || {}).value,
+    reason: (document.getElementById('rr_reason') || {}).value,
+    forwarding_removed: !!(document.getElementById('rr_forwarding_removed') || {}).checked,
+    calls_checked: !!(document.getElementById('rr_calls_checked') || {}).checked,
+  });
+  const update = () => {
+    if (releaseReviewBlockers(row.releaseReview, generatedAt, Date.now()).length) { status.textContent = 'Blocked — this view is stale; reload.'; return; }
+    status.textContent = releaseChecklistStatus(row.releaseReview, read()).message;
+  };
+  for (const id of ['rr_typed_last4', 'rr_reason', 'rr_forwarding_removed', 'rr_calls_checked']) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', update);
+  }
+}
+
+function inventoryHtml(inv, reason, generatedAt) {
   if (!inv) return '<div class="gaps">Twilio number inventory unavailable: ' + escapeHtml(reason || 'unknown') + '</div>';
   const r = inv.monthlyRental;
   const money = (v) => (v === null || v === undefined ? 'Not connected' : escapeHtml((r.currency || 'GBP') === 'GBP' ? '£' + Number(v).toFixed(2) : r.currency + ' ' + Number(v).toFixed(2)));
@@ -1904,7 +1979,7 @@ function inventoryHtml(inv, reason) {
     html += '<table style="margin:10px 0 18px;"><tr><th>Category</th><th class="num">Numbers</th><th class="num">£/month</th><th>What to do</th></tr>' +
       inv.byCategory.filter((c) => c.count > 0).map((c) => '<tr><td>' + escapeHtml(c.label) + '</td><td class="num">' + fmtNum(c.count) + '</td><td class="num">' + money(c.monthlyCost) + '</td><td class="cell-wrap">' + escapeHtml(c.action) + '</td></tr>').join('') + '</table>';
   }
-  html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Number</th><th>Category</th><th>Household</th><th>Environment</th><th>Acquired</th><th>Last inbound call</th><th>Lifecycle</th><th class="num">£/month</th><th>Flag &amp; next step</th></tr></thead><tbody>';
+  html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Number</th><th>Category</th><th>Household</th><th>Environment</th><th>Acquired</th><th>Last inbound call</th><th>Lifecycle</th><th class="num">£/month</th><th>Flag &amp; next step</th><th></th></tr></thead><tbody>';
   for (const row of inv.rows) {
     const owner = row.owner ? escapeHtml(row.owner.email || row.owner.householdId) + (row.owner.accountClass ? '<div class="customer-sub">' + escapeHtml(row.owner.accountClass + ' · ' + (row.owner.membership || '') + (row.owner.access && row.owner.access !== 'none' ? ' · ' + row.owner.access : '')) + '</div>' : '') : '<span class="text-muted">none</span>';
     const flags = (row.flags.length ? row.flags.map((f) => '<div class="' + (f.severity === 'red' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(f.label) + '</div>').join('') : '') + row.recommendations.map((t) => '<div class="customer-sub">→ ' + escapeHtml(t) + '</div>').join('');
@@ -1915,7 +1990,9 @@ function inventoryHtml(inv, reason) {
       '<td>' + escapeHtml((row.environment || '—').replace(/_/g, ' ')) + (row.voiceHost ? '<div class="customer-sub">' + escapeHtml(row.voiceHost) + '</div>' : '') + '</td>' +
       '<td>' + escapeHtml(row.createdAt ? String(row.createdAt).slice(0, 10) : '—') + '</td>' +
       '<td class="cell-wrap">' + (call.at ? escapeHtml(fmtDateTime(call.at)) : '<span class="text-muted">' + escapeHtml(call.source || '—') + '</span>') + '</td>' +
-      '<td class="cell-wrap">' + lifecycle + '</td><td class="num">' + escapeHtml(row.monthlyRental !== null ? Number(row.monthlyRental).toFixed(2) : '—') + '</td><td class="cell-wrap">' + flags + '</td></tr>';
+      '<td class="cell-wrap">' + lifecycle + '</td><td class="num">' + escapeHtml(row.monthlyRental !== null ? Number(row.monthlyRental).toFixed(2) : '—') + '</td><td class="cell-wrap">' + flags + '</td>' +
+      '<td>' + (row.sid ? '<button type="button" class="row-button" data-sid="' + escapeHtml(row.sid) + '" onclick="toggleReleaseReview(this.dataset.sid)">' + (openReleaseReviewSid === row.sid ? 'Close' : 'Review release…') + '</button>' : '') + '</td></tr>';
+    if (row.sid && openReleaseReviewSid === row.sid) html += '<tr class="detail-row"><td colspan="10">' + renderReleaseReviewHtml(row, generatedAt, Date.now()) + '</td></tr>';
   }
   html += '</tbody></table></div>';
   return html;
@@ -1927,7 +2004,7 @@ async function renderReconciliationTab(force) {
   let html = '<div class="section">' + sectionHeader('Numbers — cost and lifecycle', d.generatedAt, 'reconciliation');
   html += '<p class="sub">Read-only. Nothing here schedules, quarantines or releases a number; lifecycle rules are the canonical ones the release job uses (services/numberLifecycle/state.js).</p>';
   html += '<h3 style="margin-top:14px;">What HCG pays for — every number on the provider account</h3>';
-  html += inventoryHtml(overview && overview.inventory, overview ? overview.inventoryReason : 'overview unavailable');
+  html += inventoryHtml(overview && overview.inventory, overview ? overview.inventoryReason : 'overview unavailable', overview ? overview.generatedAt : null);
   html += '<h3 style="margin-top:26px;">Household lifecycle</h3>';
   html += '<div class="readiness-banner ' + banner.className + '">' + escapeHtml(banner.text) + '</div>';
   if (!d.rows.length) {
@@ -1946,6 +2023,7 @@ async function renderReconciliationTab(force) {
   html += '<ul class="sub" style="margin-top:12px;">' + d.notes.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>';
   html += '</div>';
   document.getElementById('reconciliation').innerHTML = html;
+  if (openReleaseReviewSid && overview && overview.inventory) wireReleaseReview(overview.inventory.rows.find((r) => r.sid === openReleaseReviewSid), overview.generatedAt);
 }
 
 // ---------- Finance ----------

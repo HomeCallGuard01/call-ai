@@ -27,7 +27,9 @@ const { parseTimestampMs } = require('../adminOnboardingStatus');
 
 const HOUR_MS = 3600 * 1000;
 // Canonical grace periods (services/numberLifecycle/state.js).
-const { GRACE } = require('../numberLifecycle/state');
+const lifecycleState = require('../numberLifecycle/state');
+const { evaluateReleaseReadiness } = require('../numberLifecycle/releaseReadiness');
+const { GRACE } = lifecycleState;
 const RELEASE_JOB_GRACE_MS = GRACE.releaseOverdueMs;
 
 const SEVERITY_ORDER = { red: 0, amber: 1, info: 2 };
@@ -174,6 +176,7 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
     let state;
     let reason;
     let owner = null;
+    let lifecycle = null;
 
     if (holder) {
       const biz = classifyHouseholdForBusiness({
@@ -182,7 +185,9 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
         subscriptions: (subscriptionsByHousehold && subscriptionsByHousehold.get(holder.id)) || [],
         classification: classificationMap.get(holder.id),
       }, now);
-      owner = { householdId: holder.id, email: holder.email || null, accountClass: biz.accountClass, membership: biz.membership, access: biz.access, protection: biz.protection };
+      owner = { householdId: holder.id, email: holder.email || null, accountClass: biz.accountClass, membership: biz.membership, access: biz.access, protection: biz.protection, membershipEndedAt: biz.membershipEndedAt || null };
+      const canonical = lifecycleState.deriveHouseholdLifecycle({ household: holder, entitlements: entitlementsByHousehold.get(holder.id) || [], quarantineRows: quarantines.filter((q) => q.household_id === holder.id) }, now);
+      lifecycle = { membership: canonical.membership, blocksRelease: canonical.blocksRelease, releaseEligibleNow: canonical.releaseEligibleNow, numberState: canonical.numberState };
       const pendingMs = parseTimestampMs(holder.twilio_number_pending_release_at);
       if (biz.membership === 'current') {
         state = biz.isGenuine || biz.accountClass === 'unclassified' ? 'in_service' : 'retained_internal';
@@ -209,7 +214,9 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
       const fromHousehold = open.household_id ? (households || []).find((h) => h.id === open.household_id) : null;
       if (fromHousehold) {
         const fromBiz = classifyHouseholdForBusiness({ household: fromHousehold, entitlements: entitlementsByHousehold.get(fromHousehold.id) || [], subscriptions: (subscriptionsByHousehold && subscriptionsByHousehold.get(fromHousehold.id)) || [], classification: classificationMap.get(fromHousehold.id) }, now);
-        owner = { householdId: fromHousehold.id, email: fromHousehold.email || null, accountClass: fromBiz.accountClass, membership: fromBiz.membership, access: fromBiz.access, protection: fromBiz.protection };
+        owner = { householdId: fromHousehold.id, email: fromHousehold.email || null, accountClass: fromBiz.accountClass, membership: fromBiz.membership, access: fromBiz.access, protection: fromBiz.protection, membershipEndedAt: fromBiz.membershipEndedAt || null };
+        const canonical = lifecycleState.deriveHouseholdLifecycle({ household: fromHousehold, entitlements: entitlementsByHousehold.get(fromHousehold.id) || [], quarantineRows: [] }, now);
+        lifecycle = { membership: canonical.membership, blocksRelease: canonical.blocksRelease, releaseEligibleNow: canonical.releaseEligibleNow, numberState: canonical.numberState };
         if (fromBiz.membership === 'current' || fromBiz.membership === 'upcoming') {
           extraFlags.push({ code: 'quarantined_from_entitled', severity: 'red', label: STATES.quarantined_from_entitled.label });
         }
@@ -245,6 +252,8 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
       createdAt: p.dateCreated || null,
       pendingReleaseAt: holder ? holder.twilio_number_pending_release_at || null : null,
       quarantinedAt: open ? open.quarantined_at || null : null,
+      quarantine: open ? { confirmed: !!open.deactivation_confirmed, reason: open.release_reason || null, quarantinedAt: open.quarantined_at || null } : null,
+      lifecycle,
       lastInboundCall: describeLastCall(householdForCalls, lastCallByHousehold),
       environment: evidence.environment,
       voiceHost: evidence.host,
@@ -267,6 +276,8 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
       createdAt: null,
       pendingReleaseAt: h.twilio_number_pending_release_at || null,
       quarantinedAt: null,
+      quarantine: null,
+      lifecycle: null,
       lastInboundCall: describeLastCall(h.id, lastCallByHousehold),
       environment: null,
       voiceHost: null,
@@ -289,6 +300,8 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
     r.categoryLabel = CATEGORIES[r.category].label;
     if (!r.recommendations.length) r.recommendations = [CATEGORIES[r.category].action];
     r.number = maskNumber(r.number);
+    // Safe-release review — PROTOTYPE, not wired (numberLifecycle/releaseReadiness.js).
+    r.releaseReview = evaluateReleaseReadiness(r, { now, generatedAt: now.toISOString() });
   }
 
   const byState = {};
