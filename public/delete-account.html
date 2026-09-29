@@ -304,8 +304,17 @@
 
       <section>
         <h2>How to request deletion</h2>
+        <!-- 2026-09-29: in-app deletion exists (mobile/app/(tabs)/account/delete-account.tsx
+             -> DELETE /api/v1/me/account -> services/accountDeletion.js, which cancels a
+             Stripe subscription, releases the number, runs anonymize_inactive_household
+             (migration 029: deletes contacts + calls) and deletes the login). -->
         <p>
-          To delete your account, email us at
+          <strong>In the app:</strong> open Home Call Guard, go to <strong>Account</strong> and
+          choose <strong>Delete Account</strong>. This deletes your account straight away, and
+          cancels your Home Call Guard subscription first if you have one.
+        </p>
+        <p>
+          <strong>By email:</strong> alternatively, email us at
           <a href="mailto:support@homecallguard.co.uk">support@homecallguard.co.uk</a> from the email
           address associated with your Home Call Guard account, and let us know that you want your
           Home Call Guard account and associated personal data deleted.

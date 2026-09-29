@@ -62,5 +62,12 @@ for (const f of [['public', 'index.html'], ['public', 'go.html'], ['upload.html'
 }
 check(!/Is my home phone number changing/.test(read('upload.html')), 'upload.html dashboard FAQ: no "home phone number" (mobile product)');
 
+// ---------- 5. delete-account page documents the in-app route (Google Play requirement) ----------
+const del = visible(read('public', 'delete-account.html'));
+const acct = read('mobile', 'app', '(tabs)', 'account', 'index.tsx');
+check(/In the app: open Home Call Guard, go to Account and choose Delete Account/.test(del) && acct.includes('label="Delete Account"'), 'delete-account page: describes the in-app route, using the app\'s real "Delete Account" label');
+check(/By email:/.test(del) && /30 days/.test(del), 'delete-account page: the email route and its 30-day commitment are unchanged');
+check(read('services', 'accountDeletion.js').includes('anonymizeHousehold(household.id') && read('supabase', 'migrations', '029_anonymize_household_deletes_contacts_and_calls.sql').includes('delete from public.contacts where household_id = p_household_id;'), 'in-app deletion runs the anonymise RPC, which (migration 029) deletes trusted contacts — matching the page\'s promise');
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
