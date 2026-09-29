@@ -841,6 +841,29 @@ app.post("/voice", async (req, res) => {
 // pre-call screening permanently.
 
 app.post("/process", async (req, res) => {
+  // 2026-09-29: this route is unreachable for real calls (above) but was
+  // still publicly POSTable with no authentication — anyone could send an
+  // arbitrary SpeechResult with To=<a customer's Twilio number>, which
+  // (a) spent OpenAI credit on a gpt-4o-mini classification and (b) wrote
+  // a fabricated call row into that customer's Activity list. Now refused
+  // unless the request carries a valid Twilio signature — checked BEFORE
+  // any household lookup, AI call or logCall. Genuine Twilio requests are
+  // unaffected, so the rollback path (re-adding <Gather action="/process">)
+  // still works — but before relying on it, confirm genuine signatures
+  // validate in production (the /voice "ACTIVATION VERIFIED AUTO-STAMP
+  // SKIPPED" log line must be absent for real calls). Nothing from the
+  // request body is logged here.
+  const genuineTwilioRequest = isGenuineTwilioRequest({
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    signature: req.get("X-Twilio-Signature"),
+    url: buildWebhookUrl(APP_URL, req.originalUrl),
+    params: req.body,
+  });
+  if (!genuineTwilioRequest) {
+    console.error("PROCESS REJECTED: request to legacy /process without a valid Twilio signature");
+    return res.status(403).type("text/plain").send("Forbidden");
+  }
+
   const twiml = new VoiceResponse();
   const processingStart = Date.now();
 
