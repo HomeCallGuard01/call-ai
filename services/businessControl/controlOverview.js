@@ -303,9 +303,14 @@ async function getControlOverview(now = new Date()) {
   }
   const stripeRevenue = await getGenuineStripeRevenue({ stripe: resolveStripe(), genuineByCustomer, classByCustomer, vatRate: resolveVatRate(), now });
 
+  // Spend-safety summary for "Needs your attention" (full detail on Money).
+  const { loadFinancialSafety } = require('./financialSafetyAdapter');
+  const safety = await loadFinancialSafety({ now });
+
   return {
     available: true,
     generatedAt: now.toISOString(),
+    financialSafety: { state: safety.state, level: safety.level, asOf: safety.asOf, ageHours: safety.ageHours, reason: safety.reason, warnings: safety.warnings.filter((w) => w.severity !== 'info') },
     ...computeControlOverview({ households, entitlementsByHousehold, subscriptionsByHousehold, classificationMap: classification.map, quarantineRows: qRes.data || [], inventory, stripeRevenue, releaseRecordingAvailable }, now),
     inventory,
     inventoryReason,

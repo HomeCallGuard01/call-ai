@@ -1,0 +1,359 @@
+{
+ "generatedFrom": "feature/provider-neutral-billing-ledger@7ad12c9 services/finance/spendMonitor.js runSpendMonitor()",
+ "generatedAt": "2026-09-29T12:00:00.000Z",
+ "fresh": {
+  "ok": true,
+  "asOf": "2026-09-29T12:00:00.000Z",
+  "alerts": [
+   {
+    "code": "HOUSEHOLD_MONTH_MINUTES",
+    "severity": "WARNING",
+    "value": 408,
+    "threshold": 250,
+    "detail": "call minutes this month",
+    "subject": "aaaaaaaa-0000-4000-8000-000000000001"
+   },
+   {
+    "code": "HOUSEHOLD_PROJECTED_LOSS",
+    "severity": "WARNING",
+    "value": 4.115991,
+    "threshold": 3.534583,
+    "detail": "projected cost £4.12 exceeds after-fees revenue £3.53 (store15); internal fair-use review only",
+    "subject": "aaaaaaaa-0000-4000-8000-000000000001"
+   }
+  ],
+  "protection": {
+   "level": 1,
+   "name": "WATCH",
+   "computedLevel": 1,
+   "state": {
+    "level": 1,
+    "lowerRuns": 0
+   },
+   "thresholds": {
+    "emergencyDailyGbp": 25,
+    "emergencyMonthGbp": 250
+   },
+   "reasons": [],
+   "actions": [
+    {
+     "id": "review_dashboard",
+     "kind": "notify",
+     "affectsCustomers": false,
+     "description": "Review WARNING items on the admin dashboard",
+     "status": "do_now"
+    }
+   ],
+   "blocksCallDelivery": false
+  },
+  "metrics": {
+   "asOf": "2026-09-29T12:00:00.000Z",
+   "month": "2026-09",
+   "currency": "GBP",
+   "protectionLevel": "WATCH",
+   "company": {
+    "todaySpendGbp": 0.25,
+    "monthToDateGbp": 6.84,
+    "householdAttributedGbp": 5.97,
+    "unallocatedGbp": 0.87,
+    "unknownItems": 1,
+    "unconverted": {},
+    "entitledHouseholds": 2,
+    "householdsWithCost": 2,
+    "projectedLossMakingHouseholds": 1
+   },
+   "households": [
+    {
+     "householdId": "aaaaaaaa-0000-4000-8000-000000000001",
+     "monthToDateGbp": 3.95,
+     "projectedMonthGbp": 4.12,
+     "projectedContributionGbp": -0.58,
+     "trustedMinutes": 408,
+     "unknownMinutes": 0,
+     "monitoredMinutes": 0,
+     "unmonitoredUnknownMinutes": 0,
+     "costGbp": {
+      "number_rental": 0.86917,
+      "inbound_trusted": 3.08448,
+      "inbound_unknown": 0,
+      "inbound_unclassified": 0,
+      "app_leg": 0,
+      "outbound_voice": 0,
+      "media_stream": 0,
+      "tts": 0,
+      "sms": 0,
+      "transcription": 0,
+      "other": 0
+     },
+     "quality": {
+      "actual": 3.0844800000000006,
+      "allocated": 0.86917,
+      "estimated": 0,
+      "manual": 0,
+      "unknownItems": 0,
+      "unconverted": {}
+     },
+     "peakConcurrentInbound": 2,
+     "longestCallMinutes": 12
+    },
+    {
+     "householdId": "bbbbbbbb-0000-4000-8000-000000000002",
+     "monthToDateGbp": 2.02,
+     "projectedMonthGbp": 2.08,
+     "projectedContributionGbp": 1.46,
+     "trustedMinutes": 0,
+     "unknownMinutes": 68,
+     "monitoredMinutes": 68,
+     "unmonitoredUnknownMinutes": 0,
+     "costGbp": {
+      "number_rental": 0.86917,
+      "inbound_trusted": 0,
+      "inbound_unknown": 0.51408,
+      "inbound_unclassified": 0,
+      "app_leg": 0,
+      "outbound_voice": 0,
+      "media_stream": 0.226372,
+      "tts": 0,
+      "sms": 0,
+      "transcription": 0.408,
+      "other": 0
+     },
+     "quality": {
+      "actual": 0.5140799999999999,
+      "allocated": 1.095542,
+      "estimated": 0.4080000000000001,
+      "manual": 0,
+      "unknownItems": 1,
+      "unconverted": {}
+     },
+     "peakConcurrentInbound": 1,
+     "longestCallMinutes": 4
+    }
+   ]
+  }
+ },
+ "stale": {
+  "ok": true,
+  "asOf": "2026-09-29T12:00:00.000Z",
+  "alerts": [
+   {
+    "code": "COST_DATA_STALE",
+    "severity": "CRITICAL",
+    "value": 51,
+    "threshold": 30,
+    "detail": "newest ledger data is 51h old: spend since then is unobserved"
+   },
+   {
+    "code": "HOUSEHOLD_MONTH_MINUTES",
+    "severity": "WARNING",
+    "value": 408,
+    "threshold": 250,
+    "detail": "call minutes this month",
+    "subject": "aaaaaaaa-0000-4000-8000-000000000001"
+   },
+   {
+    "code": "HOUSEHOLD_PROJECTED_LOSS",
+    "severity": "WARNING",
+    "value": 4.115991,
+    "threshold": 3.534583,
+    "detail": "projected cost £4.12 exceeds after-fees revenue £3.53 (store15); internal fair-use review only",
+    "subject": "aaaaaaaa-0000-4000-8000-000000000001"
+   }
+  ],
+  "protection": {
+   "level": 2,
+   "name": "ALERT",
+   "computedLevel": 2,
+   "state": {
+    "level": 2,
+    "lowerRuns": 0
+   },
+   "thresholds": {
+    "emergencyDailyGbp": 25,
+    "emergencyMonthGbp": 250
+   },
+   "reasons": [
+    "cost data unobserved (missing/stale): treated as ALERT, never as zero spend",
+    "COST_DATA_STALE: newest ledger data is 51h old: spend since then is unobserved"
+   ],
+   "actions": [
+    {
+     "id": "review_dashboard",
+     "kind": "notify",
+     "affectsCustomers": false,
+     "description": "Review WARNING items on the admin dashboard",
+     "status": "do_now"
+    },
+    {
+     "id": "page_operator",
+     "kind": "notify",
+     "affectsCustomers": false,
+     "description": "Send a CRITICAL alert to the operator (existing sendCriticalAlert)",
+     "status": "do_now"
+    },
+    {
+     "id": "check_provider_console",
+     "kind": "manual",
+     "affectsCustomers": false,
+     "description": "Compare with the provider console usage (Twilio Usage → Today) to confirm the spend is real",
+     "status": "do_now"
+    },
+    {
+     "id": "fix_ingestion",
+     "kind": "manual",
+     "affectsCustomers": false,
+     "description": "Cost data is missing/stale: restore ledger ingestion before trusting any total",
+     "status": "do_now"
+    }
+   ],
+   "blocksCallDelivery": false
+  },
+  "metrics": {
+   "asOf": "2026-09-29T12:00:00.000Z",
+   "month": "2026-09",
+   "currency": "GBP",
+   "protectionLevel": "ALERT",
+   "company": {
+    "todaySpendGbp": 0.25,
+    "monthToDateGbp": 6.84,
+    "householdAttributedGbp": 5.97,
+    "unallocatedGbp": 0.87,
+    "unknownItems": 1,
+    "unconverted": {},
+    "entitledHouseholds": 2,
+    "householdsWithCost": 2,
+    "projectedLossMakingHouseholds": 1
+   },
+   "households": [
+    {
+     "householdId": "aaaaaaaa-0000-4000-8000-000000000001",
+     "monthToDateGbp": 3.95,
+     "projectedMonthGbp": 4.12,
+     "projectedContributionGbp": -0.58,
+     "trustedMinutes": 408,
+     "unknownMinutes": 0,
+     "monitoredMinutes": 0,
+     "unmonitoredUnknownMinutes": 0,
+     "costGbp": {
+      "number_rental": 0.86917,
+      "inbound_trusted": 3.08448,
+      "inbound_unknown": 0,
+      "inbound_unclassified": 0,
+      "app_leg": 0,
+      "outbound_voice": 0,
+      "media_stream": 0,
+      "tts": 0,
+      "sms": 0,
+      "transcription": 0,
+      "other": 0
+     },
+     "quality": {
+      "actual": 3.0844800000000006,
+      "allocated": 0.86917,
+      "estimated": 0,
+      "manual": 0,
+      "unknownItems": 0,
+      "unconverted": {}
+     },
+     "peakConcurrentInbound": 2,
+     "longestCallMinutes": 12
+    },
+    {
+     "householdId": "bbbbbbbb-0000-4000-8000-000000000002",
+     "monthToDateGbp": 2.02,
+     "projectedMonthGbp": 2.08,
+     "projectedContributionGbp": 1.46,
+     "trustedMinutes": 0,
+     "unknownMinutes": 68,
+     "monitoredMinutes": 68,
+     "unmonitoredUnknownMinutes": 0,
+     "costGbp": {
+      "number_rental": 0.86917,
+      "inbound_trusted": 0,
+      "inbound_unknown": 0.51408,
+      "inbound_unclassified": 0,
+      "app_leg": 0,
+      "outbound_voice": 0,
+      "media_stream": 0.226372,
+      "tts": 0,
+      "sms": 0,
+      "transcription": 0.408,
+      "other": 0
+     },
+     "quality": {
+      "actual": 0.5140799999999999,
+      "allocated": 1.095542,
+      "estimated": 0.4080000000000001,
+      "manual": 0,
+      "unknownItems": 1,
+      "unconverted": {}
+     },
+     "peakConcurrentInbound": 1,
+     "longestCallMinutes": 4
+    }
+   ]
+  }
+ },
+ "failed": {
+  "ok": false,
+  "asOf": "2026-09-29T12:00:00.000Z",
+  "alerts": [
+   {
+    "code": "MONITOR_LOAD_FAILED",
+    "severity": "CRITICAL",
+    "value": null,
+    "threshold": null,
+    "detail": "could not load ledger data: connection refused"
+   }
+  ],
+  "protection": {
+   "level": 2,
+   "name": "ALERT",
+   "computedLevel": 2,
+   "state": {
+    "level": 2,
+    "lowerRuns": 0
+   },
+   "thresholds": {
+    "emergencyDailyGbp": 25,
+    "emergencyMonthGbp": 250
+   },
+   "reasons": [
+    "cost data unobserved (missing/stale): treated as ALERT, never as zero spend",
+    "MONITOR_LOAD_FAILED: could not load ledger data: connection refused"
+   ],
+   "actions": [
+    {
+     "id": "review_dashboard",
+     "kind": "notify",
+     "affectsCustomers": false,
+     "description": "Review WARNING items on the admin dashboard",
+     "status": "do_now"
+    },
+    {
+     "id": "page_operator",
+     "kind": "notify",
+     "affectsCustomers": false,
+     "description": "Send a CRITICAL alert to the operator (existing sendCriticalAlert)",
+     "status": "do_now"
+    },
+    {
+     "id": "check_provider_console",
+     "kind": "manual",
+     "affectsCustomers": false,
+     "description": "Compare with the provider console usage (Twilio Usage → Today) to confirm the spend is real",
+     "status": "do_now"
+    },
+    {
+     "id": "fix_ingestion",
+     "kind": "manual",
+     "affectsCustomers": false,
+     "description": "Cost data is missing/stale: restore ledger ingestion before trusting any total",
+     "status": "do_now"
+    }
+   ],
+   "blocksCallDelivery": false
+  },
+  "metrics": null
+ }
+}

@@ -114,10 +114,15 @@ async function getFinancialOverview(now = new Date(), env = process.env) {
     },
   });
 
+  // Spend safety (Pricing Safety's layer; NOT CONNECTED until shipped).
+  const { loadFinancialSafety } = require('./financialSafetyAdapter');
+  const safety = await loadFinancialSafety({ now });
+
   return {
     available: true,
     generatedAt: now.toISOString(),
     ...pnl,
+    safety,
     stripeMode: stripeRevenue.available ? stripeRevenue.mode : 'unavailable',
     fixedCostSettings: resolveFixedCostSettings(env, now).map((f) => ({ supplier: f.supplier, label: f.label, amountVar: f.amountVar, asOfVar: f.asOfVar, configured: f.configured, valueGbp: f.valueGbp, asOf: f.asOf, stale: f.stale, howToFind: f.howToFind })),
     connections: {
@@ -130,6 +135,7 @@ async function getFinancialOverview(now = new Date(), env = process.env) {
       resend: 'no billing integration — monthly setting',
       appStore: 'App Store Connect reports not connected',
       advertising: 'no spend source yet',
+      spendMonitor: safety.state === 'not_connected' ? 'not connected — ' + safety.reason : `${safety.state} (as of ${safety.asOf || 'unknown'})`,
     },
   };
 }

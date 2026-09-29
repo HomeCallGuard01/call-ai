@@ -1872,6 +1872,52 @@ async function renderReconciliationTab(force) {
 // ---------- Finance ----------
 const FINANCE_SECTION_TITLES = { revenue: 'Revenue', direct: 'Direct costs', overhead: 'Infrastructure &amp; other', marketing: 'Marketing (shown separately)' };
 
+// Spend safety (Pricing Safety's layer, adapted by
+// services/businessControl/financialSafetyAdapter.js). Missing, failed or
+// stale data is stated, never shown as £0; recommended actions are
+// displayed only — nothing here runs them.
+const SAFETY_LEVEL_CLASS = { NORMAL: 'ready', WATCH: 'ready_with_open_items', ALERT: 'not_ready', EMERGENCY: 'not_ready' };
+
+function safetyMoney(v) {
+  return v === null || v === undefined ? provenanceBadge('NOT_CONNECTED') : escapeHtml(formatGbpOrMissing(v));
+}
+
+function renderSafetyHtml(safety) {
+  if (!safety) return '';
+  let html = '<h3>Spend safety</h3>';
+  if (safety.state === 'not_connected' || safety.state === 'load_failed') {
+    html += '<div class="readiness-banner ' + (safety.state === 'load_failed' ? 'not_ready' : 'ready_with_open_items') + '">' + (safety.state === 'load_failed' ? 'Cost data could not be loaded — spend is unobserved, not zero' : 'Not connected') + '</div>';
+    html += '<p class="sub">' + escapeHtml(safety.reason || '') + ' MRR, spend by component, trusted / monitored call cost, household outliers, projected month-end and the WATCH / ALERT / EMERGENCY level appear here once it is.</p>';
+    return html;
+  }
+  const levelClass = SAFETY_LEVEL_CLASS[safety.level] || 'not_ready';
+  html += '<div class="readiness-banner ' + (safety.state === 'stale' ? 'not_ready' : levelClass) + '">Level: ' + escapeHtml(safety.level || 'unknown') + (safety.state === 'stale' ? ' · STALE DATA' : '') + ' · as of ' + escapeHtml(fmtDateTime(safety.asOf)) + (safety.ageHours !== null ? ' (' + escapeHtml(String(safety.ageHours)) + 'h ago)' : '') + '</div>';
+  if (safety.warnings && safety.warnings.length) html += '<ul class="sub">' + safety.warnings.map((w) => '<li class="' + (w.severity === 'critical' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(w.text) + '</li>').join('') + '</ul>';
+  if (safety.levelReasons && safety.levelReasons.length) html += '<details><summary>Why this level</summary><ul class="sub">' + safety.levelReasons.map((r) => '<li>' + escapeHtml(r) + '</li>').join('') + '</ul></details>';
+  const c = safety.company || {};
+  html += '<div class="cards">' +
+    bcCard('Telephony spend today', safetyMoney(c.todaySpendGbp), 'ledger, all quality levels') +
+    bcCard('Month to date', safetyMoney(c.monthToDateGbp), c.unknownItems ? escapeHtml(c.unknownItems + ' item(s) not yet priced — not £0') : 'all items priced') +
+    bcCard('Projected month-end', safetyMoney(c.projectedMonthEndGbp), escapeHtml(c.projectionBasis || '')) +
+    bcCard('Unallocated', safetyMoney(c.unallocatedGbp), 'no household (never spread across customers)') +
+    bcCard('Trusted-call cost', safetyMoney(safety.split && safety.split.trustedCallCostGbp), 'inbound leg of known-contact calls + app leg') +
+    bcCard('Monitored-call cost', safetyMoney(safety.split && safety.split.monitoredCallCostGbp), 'unknown-caller leg + streams + AI + TTS') +
+    bcCard('Number rental (households)', safetyMoney(safety.split && safety.split.numberRentalGbp), 'unattributed rental is in Unallocated') +
+    bcCard('Loss-making households (projected)', c.projectedLossMakingHouseholds === null || c.projectedLossMakingHouseholds === undefined ? provenanceBadge('NOT_CONNECTED') : fmtNum(c.projectedLossMakingHouseholds), 'internal fair-use review only') +
+    '</div>';
+  if (safety.components && safety.components.length) {
+    html += '<table class="pnl-table" style="margin-top:12px;"><tr><th>Component (month to date)</th><th>Amount</th></tr>' + safety.components.map((x) => '<tr><td>' + escapeHtml(x.label) + '</td><td>' + safetyMoney(x.amountGbp) + '</td></tr>').join('') + '</table>';
+  }
+  if (safety.outliers && safety.outliers.length) {
+    html += '<h3 style="margin-top:14px;">Highest-cost households (projected)</h3><table><tr><th>Household</th><th>Month to date</th><th>Projected month</th><th>Projected contribution</th><th>Trusted / monitored min</th></tr>' +
+      safety.outliers.map((o) => '<tr><td>' + escapeHtml(o.householdRef) + '…</td><td>' + safetyMoney(o.monthToDateGbp) + '</td><td>' + safetyMoney(o.projectedMonthGbp) + '</td><td class="' + (o.lossMaking ? 'text-bad' : '') + '">' + safetyMoney(o.projectedContributionGbp) + '</td><td>' + escapeHtml((o.trustedMinutes ?? '—') + ' / ' + (o.monitoredMinutes ?? '—')) + '</td></tr>').join('') + '</table>';
+  }
+  if (safety.actions && safety.actions.length) {
+    html += '<h3 style="margin-top:14px;">Recommended actions (not executed)</h3><ul class="sub">' + safety.actions.map((a) => '<li>' + escapeHtml(a.label) + ' — <em>' + escapeHtml(String(a.status || '').replace(/_/g, ' ')) + '</em></li>').join('') + '</ul>';
+  }
+  return html;
+}
+
 async function renderFinanceTab() {
   const d = await fetchBusinessControl('finance');
   const t = d.totals;
@@ -1879,6 +1925,8 @@ async function renderFinanceTab() {
   let html = '<div class="section">' + sectionHeader('Finance — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
   html += '<p class="sub" style="margin-bottom:6px;">Source: ' + escapeHtml(d.connections.source) + ' · Stripe: ' + escapeHtml(d.stripeMode) + '</p>';
   html += '<p class="sub" style="margin-bottom:14px;">' + provenanceBadge('ACTUAL') + ' supplier-reported ' + provenanceBadge('ALLOCATED') + ' supplier total apportioned ' + provenanceBadge('ESTIMATED') + ' calculated ' + provenanceBadge('MANUAL') + ' entered by you ' + provenanceBadge('NOT_CONNECTED') + ' no source (never £0). A total missing any line is shown as <em>known part only</em> or not at all.</p>';
+  html += renderSafetyHtml(d.safety);
+  html += '<h3 style="margin-top:22px;">Profit &amp; loss</h3>';
   const headline = [
     ['Revenue ex VAT (genuine)', t.revenueExVat], ['Total operating cost', t.totalOperatingCost], ['Gross contribution', t.grossContribution], ['Operating contribution', t.operatingContribution], ['Marketing', t.marketing],
   ];
