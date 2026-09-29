@@ -88,6 +88,21 @@ const GUIDANCE = {
   },
   // All 5 steps done — nothing to show; the caller should treat this as
   // "no outstanding guidance needed", not render this row at all.
+  // 2026-09-29 (P0 call-delivery resilience) — driven by real call
+  // evidence (services/deliveryHealth.js), never by elapsed time alone.
+  // Deliberately plain: no FCM/Twilio/push-token language. Neither tells
+  // the customer to turn off call forwarding — whether to recommend that
+  // is an open product decision (docs/launch/CALL_DELIVERY_RESILIENCE.md).
+  calls_not_reaching_app: {
+    key: 'calls_not_reaching_app',
+    message:
+      "Protected calls can't currently reach this phone. Open the Home Call Guard app to reconnect it. If this message stays, please contact support.",
+  },
+  delivery_needs_attention: {
+    key: 'delivery_needs_attention',
+    message:
+      "Some recent calls may not have reached this phone. Open the Home Call Guard app to make sure it's connected.",
+  },
   none: null,
 };
 
@@ -98,10 +113,13 @@ const GUIDANCE = {
  *
  * @param {object} household - same shape computeProtectionStatus expects
  * @param {Date} now
+ * @param {object|null} [deliveryHealth] - optional computeDeliveryHealth
+ *   result (services/deliveryHealth.js); omitted → previous behaviour
  * @returns {{ steps: Array<{key: string, label: string, done: boolean}>, guidance: object|null }}
  */
-function buildCustomerProtectionSteps(household, now) {
-  const protectionStatus = computeProtectionStatus(household, now);
+function buildCustomerProtectionSteps(household, now, deliveryHealth = null) {
+  const protectionStatus = computeProtectionStatus(household, now, deliveryHealth);
+  const healthState = deliveryHealth ? deliveryHealth.state : null;
   const numberActive = hasProvisionedNumber(household);
   // Mirrors adminOnboardingStatus.js's own "Forwarding confirmed" done
   // condition exactly (forwardingVerified OR endToEndDeliveryVerified) —
@@ -124,6 +142,10 @@ function buildCustomerProtectionSteps(household, now) {
     guidance = GUIDANCE.number_pending;
   } else if (!forwardingDetected) {
     guidance = GUIDANCE.forwarding_not_detected;
+  } else if (healthState === 'UNREACHABLE' && protectionStatus.endToEndDeliveryVerified) {
+    // Real calls have shown the app can't currently receive them — a
+    // stronger, more honest claim than the generic "reconnecting".
+    guidance = GUIDANCE.calls_not_reaching_app;
   } else if (!protectionStatus.deliveryReady) {
     // Forwarding works; app isn't reachable. Distinguish first-time setup
     // from a reconnect using the same historical-evidence signal the
@@ -131,6 +153,10 @@ function buildCustomerProtectionSteps(household, now) {
     guidance = protectionStatus.endToEndDeliveryVerified ? GUIDANCE.reconnecting : GUIDANCE.app_not_ready;
   } else if (!protectionStatus.endToEndDeliveryVerified) {
     guidance = GUIDANCE.confirming_delivery;
+  } else if (healthState === 'SUSPECT') {
+    // All five steps are done, but recent real calls failed. Steps stay
+    // as they are (not conclusive); the customer still gets a nudge.
+    guidance = GUIDANCE.delivery_needs_attention;
   }
   // else: all 5 steps done — guidance stays null, nothing to show.
 

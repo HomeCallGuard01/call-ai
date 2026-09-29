@@ -148,9 +148,22 @@ function decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachabl
 // /call-delivery-failed alerting the next time a call is actually
 // attempted — reconciling exactly how "reconnect_needed" should behave
 // on Home/Account is a separate follow-up, not addressed by this fix.
-function computeProtectionStatus(household, now) {
+//
+// deliveryHealth (optional, 2026-09-29 — the "separate follow-up" above):
+// the result of services/deliveryHealth.js's computeDeliveryHealth for
+// this household. When it is UNREACHABLE — conclusive evidence from real
+// calls that the app cannot currently receive them (e.g. the push
+// provider reported the device token dead, household f06bc964, 24–26 Sep
+// 2026) — deliveryReady and therefore fullyProtected become false, so no
+// surface keeps claiming "Protection Active" for a phone HCG knows it
+// cannot reach. SUSPECT deliberately does NOT change these booleans (not
+// conclusive); it is surfaced as guidance instead. Callers that do not
+// pass it get exactly the previous behaviour. Display only — routing
+// (decideCallDeliveryPlan) never reads this.
+function computeProtectionStatus(household, now, deliveryHealth = null) {
   const forwardingVerified = !!(household && household.activation_verified_at);
-  const deliveryReady = hasVoiceClientRegistrationHistory(household && household.voice_client_registered_at);
+  const knownUnreachable = !!(deliveryHealth && deliveryHealth.state === "UNREACHABLE");
+  const deliveryReady = hasVoiceClientRegistrationHistory(household && household.voice_client_registered_at) && !knownUnreachable;
   const endToEndDeliveryVerified = !!(household && household.delivery_verified_at);
   const fullyProtected = endToEndDeliveryVerified && deliveryReady;
 

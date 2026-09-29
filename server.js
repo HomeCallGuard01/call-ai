@@ -60,6 +60,15 @@ const {
 const { attachMediaStreamServer } = require("./services/liveMonitoring/mediaStreamServer");
 const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/transcribeChunk");
 const { twilioRestClient } = require("./services/twilioClient");
+const { evaluateAfterDeliveryOutcome, startPushFailurePolling } = require("./services/deliveryHealthMonitor");
+const { getHouseholdDeliveryHealth } = require("./database/deliveryEvidence");
+const {
+  MODES: FALLBACK_MODES,
+  VOICEMAIL_COMPLETE_PATH,
+  resolveFallbackMode,
+  buildDeliveryFailedResponse,
+} = require("./services/callDeliveryFallback");
+const CALL_DELIVERY_FALLBACK_MODE = resolveFallbackMode();
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
@@ -1005,11 +1014,25 @@ app.post("/call-delivery-failed", (req, res) => {
   // rather than inventing a number. Fire-and-forget, exactly like every
   // other calls-table write in this file — never allowed to affect the
   // TwiML response already being built below.
+  // Delivery-health evaluation (2026-09-29, P0 call-delivery resilience)
+  // is chained AFTER the outcome is written so it sees this attempt:
+  // stores Twilio's DialCallSid (the client leg — the key for push-
+  // failure evidence and the app's own invite reports) and alerts
+  // internally only when the household's health degrades. Fire-and-
+  // forget and fail-open like the write it follows; never affects the
+  // TwiML below. See services/deliveryHealthMonitor.js.
   recordApprovedCallDeliveryOutcome(
     req.body.CallSid,
     dialCallStatus,
     Number(req.body.DialCallDuration) || 0
-  ).catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
+  )
+    .then(() => evaluateAfterDeliveryOutcome({
+      supabase: supabaseAdmin,
+      callSid: req.body.CallSid,
+      dialCallSid: req.body.DialCallSid,
+      alert: sendCriticalAlert,
+    }))
+    .catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
 
   if (dialCallStatus !== "completed") {
     console.error("CALL DELIVERY FAILED: household's Voice SDK Client did not answer", {
@@ -1021,15 +1044,32 @@ app.post("/call-delivery-failed", (req, res) => {
       `An approved call could not be delivered — Client did not answer (${dialCallStatus})`,
       { dialCallStatus, callSid: req.body.CallSid }
     ).catch(() => {});
-    twiml.say(
-      { voice: "Polly.Amy", language: "en-GB" },
-      "We're sorry, this call cannot be connected right now. Please try again later."
-    );
   }
 
-  twiml.hangup();
+  // Caller-facing response (2026-09-29): services/callDeliveryFallback.js.
+  // Mode "off" (always, in production) is byte-identical to the previous
+  // inline Say + Hangup — see tests/call-delivery-fallback.test.mjs.
+  buildDeliveryFailedResponse(twiml, { dialCallStatus, mode: CALL_DELIVERY_FALLBACK_MODE });
   return res.type("text/xml").send(twiml.toString());
 });
+
+// Voicemail fallback PROTOTYPE completion (2026-09-29) — registered only
+// when resolveFallbackMode() selects the prototype, which it never does
+// with NODE_ENV=production. Logs recording metadata only (no URL, no
+// caller number) and ends the call. No storage, no customer delivery:
+// those are open product decisions (docs/launch/CALL_DELIVERY_RESILIENCE.md).
+if (CALL_DELIVERY_FALLBACK_MODE === FALLBACK_MODES.VOICEMAIL_PROTOTYPE) {
+  app.post(VOICEMAIL_COMPLETE_PATH, (req, res) => {
+    console.error("VOICEMAIL PROTOTYPE: message recorded", {
+      callSid: req.body.CallSid,
+      recordingSid: req.body.RecordingSid,
+      recordingDuration: req.body.RecordingDuration,
+    });
+    const twiml = new VoiceResponse();
+    twiml.hangup();
+    return res.type("text/xml").send(twiml.toString());
+  });
+}
 
 // CALL STATUS (two-number households only)
 //
@@ -1105,7 +1145,14 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
   // callRouting.js) is the one field the UI must use for that claim now;
   // activationVerifiedAt itself is left exactly as-is for whatever else
   // already reasonably depends on its original, narrower meaning.
-  const protection = computeProtectionStatus(req.household, new Date());
+  // Delivery health (2026-09-29) — same evidence-based input the mobile
+  // dashboard uses, so web and app never disagree about "protected". A
+  // read failure falls back to the previous behaviour.
+  const deliveryHealth = await getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household: req.household }).catch(err => {
+    console.error("DELIVERY HEALTH READ FAILED:", err.message);
+    return null;
+  });
+  const protection = computeProtectionStatus(req.household, new Date(), deliveryHealth);
 
   res.json({
     // req.household already carries this — requireAuth's
@@ -2363,6 +2410,12 @@ async function runQuarantinedNumberReleaseCheck() {
     sendCriticalAlert("twilio_quarantine_release_scheduler_failed", `Twilio quarantine release check failed: ${err.message}`, {}).catch(() => {});
   }
 }
+
+// Push-failure ingestion (2026-09-29) — OFF unless
+// DELIVERY_PUSH_FAILURE_POLLING=on. Read-only against Twilio Monitor
+// alerts; writes only calls.push_failure (migration 055). See
+// services/deliveryHealthMonitor.js for cadence and rationale.
+startPushFailurePolling({ supabase: supabaseAdmin, twilioClient: twilioRestClient, alert: sendCriticalAlert });
 
 setTimeout(() => {
   runTwilioNumberReleaseCheck();

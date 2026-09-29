@@ -15,7 +15,9 @@ require("dotenv").config();
 
 const twilio = require("twilio");
 const { supabaseAdmin } = require("../services/supabaseClients");
-const { classifyIncomingCallHealth, maskNumber } = require("../services/incomingCallTriage");
+const { classifyIncomingCallHealth, answerTriageQuestions, maskNumber } = require("../services/incomingCallTriage");
+const { computeDeliveryHealth, attemptFromCallRow } = require("../services/deliveryHealth");
+const { getRecentDeliveryAttempts, hasVerifiedInviteReporting } = require("../database/deliveryEvidence");
 
 function parseArgs(argv) {
   const ids = [];
@@ -67,11 +69,45 @@ async function triageHousehold(client, idOrPrefix, since) {
     alerts: alerts.map(a => ({ alert_text: a.alertText })),
   });
 
+  // DB-side evidence (read-only): recent delivery attempts, whether this
+  // household's app has ever reported a CallInvite, registration history.
+  const [dbAttempts, inviteReportingVerified, registrations] = await Promise.all([
+    getRecentDeliveryAttempts({ supabase: supabaseAdmin, householdId: household.id }),
+    hasVerifiedInviteReporting({ supabase: supabaseAdmin, householdId: household.id }),
+    supabaseAdmin
+      .from("voice_client_registration_events")
+      .select("registered_at, app_platform, app_version, app_build_version")
+      .eq("household_id", household.id)
+      .order("registered_at", { ascending: false })
+      .limit(5)
+      .then(r => r.data || []),
+  ]);
+  // Push failures live in Twilio Monitor until migration 055 + the
+  // push-failure poller are live; fold the Twilio-side evidence in so the
+  // health shown here is what the model concludes with full evidence.
+  const pushByParent = new Map(result.attempts.filter(a => a.pushFailure).map(a => [a.callSid, a.pushFailure]));
+  const health = computeDeliveryHealth({
+    attempts: dbAttempts.map(row => ({
+      ...attemptFromCallRow(row),
+      pushFailure: row.push_failure || pushByParent.get(row.call_sid) || null,
+    })),
+    lastRegisteredAt: household.voice_client_registered_at,
+    inviteReportingVerified,
+  });
+  const lastAttempt = result.attempts[result.attempts.length - 1];
+  const latestDbAttempt = lastAttempt ? dbAttempts.find(r => r.call_sid === lastAttempt.callSid) || null : null;
+  const answers = answerTriageQuestions({ triage: result, health, latestDbAttempt });
+
   console.log(`\n== household ${household.id.slice(0, 8)} — HCG number ${maskNumber(household.twilio_number)}`);
   console.log(`   status=${household.status} provisioning=${household.twilio_provisioning_status} pending_release=${household.twilio_number_pending_release_at || "-"}`);
   console.log(`   voice_client_registered_at=${household.voice_client_registered_at || "-"} delivery_verified_at=${household.delivery_verified_at || "-"} carrier=${household.carrier_provider_key || "-"}`);
   console.log(`   VERDICT: ${result.verdict}`);
   for (const finding of result.findings) console.log(`   - ${finding}`);
+  console.log(`   DELIVERY HEALTH: ${health.state} (consecutive failures ${health.consecutiveFailures}: hard ${health.hardFailures}, soft ${health.softFailures}; last success ${health.lastSuccessAt || "-"}; invite reporting ${inviteReportingVerified ? "verified" : "unverified"})`);
+  for (const reason of health.reasons) console.log(`   - ${reason}`);
+  console.log(`   Reached HCG: ${answers.reachedHcg} | App delivery attempted: ${answers.appDeliveryAttempted} | Push failed: ${answers.pushFailed} | Phone rang: ${answers.clientRang} | Answered: ${answers.answered}`);
+  console.log(`   Registrations (latest 5): ${registrations.map(r => `${r.registered_at.slice(0, 16)} ${r.app_platform || "?"} ${r.app_version || "?"}/${r.app_build_version || "?"}`).join("; ") || "none recorded"}`);
+  for (const step of answers.nextSteps) console.log(`   NEXT: ${step}`);
   for (const a of result.attempts) {
     console.log(`     ${a.at} from ${a.from} parent=${a.parentStatus} client=${a.clientLegStatus || "-"}${a.pushFailure ? " push=" + a.pushFailure : ""}`);
   }

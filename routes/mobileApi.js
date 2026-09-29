@@ -39,6 +39,7 @@ const {
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
+const { getHouseholdDeliveryHealth } = require("../database/deliveryEvidence");
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
@@ -531,12 +532,19 @@ router.post("/api/v1/me/bootstrap", async (req, res) => {
 // contract (APP_VISUAL_SPECIFICATION.md) rather than inventing a new one.
 router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (req, res) => {
   try {
-    const [callsToday, recentCalls, contacts, subscription, mostRecentDialOutcome] = await Promise.all([
+    const [callsToday, recentCalls, contacts, subscription, mostRecentDialOutcome, deliveryHealth] = await Promise.all([
       getCallsToday(req.household.id),
       getRecentCalls(req.household.id, 30),
       getContacts(req.household.id),
       getSubscriptionByHouseholdId(req.household.id),
       getMostRecentDialOutcome(req.household.id),
+      // Delivery health from real call evidence (2026-09-29,
+      // services/deliveryHealth.js). Never fails the dashboard: a read
+      // error yields null and the previous behaviour.
+      getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household: req.household }).catch(err => {
+        console.error("DELIVERY HEALTH READ FAILED:", err.message);
+        return null;
+      }),
     ]);
 
     // Same membership-status derivation as /dashboard-data (server.js) —
@@ -566,7 +574,7 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // fullyProtected now, shared with the web dashboard's GET
     // /dashboard-data — the app must use fullyProtected for any
     // "You're protected" claim, not activationVerifiedAt alone.
-    const protectionStatus = computeProtectionStatus(req.household, new Date());
+    const protectionStatus = computeProtectionStatus(req.household, new Date(), deliveryHealth);
     // 5-step customer-facing protection checklist (2026-09-27) — a pure
     // presentation layer over the exact same protectionStatus computed
     // just above (plus hasProvisionedNumber for step 1); see
@@ -574,7 +582,7 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // introduces zero new verification logic. Additive: existing
     // deliveryReady/endToEndDeliveryVerified/fullyProtected fields below
     // are completely unchanged.
-    const customerProtectionSteps = buildCustomerProtectionSteps(req.household, new Date());
+    const customerProtectionSteps = buildCustomerProtectionSteps(req.household, new Date(), deliveryHealth);
     // Diagnostic instrumentation (2026-09-24) — see services/callRouting.js's
     // hasRecentDeliveryProblem and migration 044's own comment. A real,
     // observed delivery failure more recent than the last confirmed
@@ -608,6 +616,19 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         guidance: customerProtectionSteps.guidance,
         recentDeliveryProblem,
         lastConfirmedProtectedAt,
+        // Additive (2026-09-29). status is the customer-facing summary —
+        // "active" | "needs_attention" | "unavailable" — and never
+        // exposes provider terms. Existing app builds ignore it; they
+        // already react to fullyProtected/deliveryReady above, which an
+        // UNREACHABLE health now makes false (→ "reconnect_needed").
+        deliveryHealth: deliveryHealth
+          ? {
+              status: deliveryHealth.customerStatus,
+              needsAttention: deliveryHealth.needsAttention,
+              lastSuccessAt: deliveryHealth.lastSuccessAt,
+              lastFailureAt: deliveryHealth.lastFailureAt,
+            }
+          : null,
         // Server-authoritative Mobile/Landline (households.device_type,
         // migration 040) — parity with web's /dashboard-data. Lets the
         // app prefer this over any client-remembered device category for

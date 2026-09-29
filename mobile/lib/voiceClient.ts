@@ -13,6 +13,7 @@ import { Voice, CallInvite, Call, AudioDevice } from "@twilio/voice-react-native
 import { Platform, AppState } from "react-native";
 import * as Application from "expo-application";
 import { fetchVoiceToken, reportVoiceRegistered, reportCallInviteReceived, reportCallInviteOutcome } from "./api";
+import { isRegistrationOverdue } from "./registrationFreshness";
 
 // Diagnostic instrumentation (2026-09-24, migration 045) — read once at
 // module load, not per-call: these are static facts about the installed
@@ -54,6 +55,12 @@ const voice = new Voice();
 
 let activeCall: Call | null = null;
 let registered = false;
+// Wall-clock time of the last successful voice.register() and the TTL it
+// was issued with (2026-09-29, P0 call-delivery resilience) — lets the
+// foreground check below decide "overdue" from the clock rather than
+// trusting that the refresh timer ran while the app was backgrounded.
+let lastRegisteredAtMs = 0;
+let lastRegistrationTtlSeconds = 0;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Establishes the native PKPushRegistry + delegate as early as possible in
@@ -328,6 +335,8 @@ async function performRegistration(accessToken?: string): Promise<void> {
     throw err;
   }
   registered = true;
+  lastRegisteredAtMs = Date.now();
+  lastRegistrationTtlSeconds = ttlSeconds;
 
   // Reports real, successful Voice SDK registration back to the backend
   // (migration 035, 2026-09-07) — the server-side signal services/
@@ -373,8 +382,22 @@ initializePushKitEarly();
 // silently sit unrefreshed through a long background period. Cheap no-op
 // when already registered and well within TTL (registerForIncomingCalls
 // only does real work when `registered` is false).
+//
+// 2026-09-29: also re-register when the last successful registration is
+// older than the scheduled refresh point, even if `registered` is still
+// true. voice.register() re-reads the device's CURRENT push token, so
+// this is also what repairs a token the OS rotated while the app was in
+// the background (the Twilio SDK's Android onNewToken only logs — it
+// never re-registers — which is how a household ends up with a dead
+// binding and Twilio error 52103 'NotRegistered'). Costs one token fetch
+// + one register per foreground at most once per refresh period; no
+// polling, no background work.
 AppState.addEventListener("change", (state) => {
-  if (state === "active" && !registered) {
+  if (state !== "active") return;
+  if (registered && isRegistrationOverdue(Date.now(), lastRegisteredAtMs, lastRegistrationTtlSeconds, REFRESH_MARGIN_SECONDS)) {
+    registered = false;
+  }
+  if (!registered) {
     registerForIncomingCalls().catch((err) => {
       console.error("VOICE REGISTRATION ON FOREGROUND FAILED:", err);
     });
@@ -506,6 +529,8 @@ export function getActiveCall(): Call | null {
 // registration on the SDK/Twilio side.
 export function resetVoiceRegistrationState(): void {
   registered = false;
+  lastRegisteredAtMs = 0;
+  lastRegistrationTtlSeconds = 0;
   if (refreshTimer) {
     clearTimeout(refreshTimer);
     refreshTimer = null;

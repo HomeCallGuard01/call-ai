@@ -5,6 +5,8 @@
 // database/billing.js. Logic is unchanged from the original inline
 // functions, only relocated.
 const { supabaseAdmin } = require("../services/supabaseClients");
+const { twilioRestClient } = require("../services/twilioClient");
+const { recordInviteReceived, recordInviteOutcome } = require("./deliveryEvidence");
 
 async function getCallsToday(householdId) {
   if (!supabaseAdmin) return [];
@@ -214,31 +216,30 @@ async function getMostRecentDialOutcome(householdId) {
 // this is diagnostics-only, reported fire-and-forget from the client
 // (mobile/lib/voiceClient.ts), and must never surface as a customer-
 // visible error either there or here.
+// 2026-09-29 fix: the app reports the CHILD (client-leg) CallSid —
+// CallInvite.getCallSid() in mobile/lib/voiceClient.ts — but
+// calls.call_sid is the PARENT inbound SID, so the original
+// .eq("call_sid", callSid) update matched zero rows for every report
+// since migration 045 shipped (zero production rows carried
+// client_invite_received_at, including calls that connected). Both
+// functions now resolve child → parent for this household first; see
+// database/deliveryEvidence.js's resolveHouseholdCallSid. Still scoped to
+// householdId, still fail-open.
 async function recordClientCallInviteReceived(callSid, householdId) {
   if (!supabaseAdmin) return;
-
-  const { error } = await supabaseAdmin
-    .from("calls")
-    .update({ client_invite_received_at: new Date().toISOString() })
-    .eq("call_sid", callSid)
-    .eq("household_id", householdId);
-
-  if (error) {
-    console.error("SUPABASE CLIENT INVITE RECEIVED WRITE ERROR:", error);
+  try {
+    await recordInviteReceived({ supabase: supabaseAdmin, twilioClient: twilioRestClient, callSid, householdId });
+  } catch (err) {
+    console.error("CLIENT INVITE RECEIVED RECORD FAILED:", err.message);
   }
 }
 
 async function recordClientCallOutcome(callSid, householdId, outcome) {
   if (!supabaseAdmin) return;
-
-  const { error } = await supabaseAdmin
-    .from("calls")
-    .update({ client_outcome: outcome })
-    .eq("call_sid", callSid)
-    .eq("household_id", householdId);
-
-  if (error) {
-    console.error("SUPABASE CLIENT CALL OUTCOME WRITE ERROR:", error);
+  try {
+    await recordInviteOutcome({ supabase: supabaseAdmin, twilioClient: twilioRestClient, callSid, householdId, outcome });
+  } catch (err) {
+    console.error("CLIENT CALL OUTCOME RECORD FAILED:", err.message);
   }
 }
 

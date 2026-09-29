@@ -153,7 +153,64 @@ function classifyIncomingCallHealth({ household, inventoryNumber, calls = [], al
   return { verdict: "delivery_failing", findings, attempts };
 }
 
+// Operator-facing answers (2026-09-29). Combines the Twilio-side verdict
+// above with the DB-side delivery health (services/deliveryHealth.js)
+// and per-call app evidence. Every answer is "yes" | "no" | "unknown" —
+// never a guess presented as a fact.
+//   triage: classifyIncomingCallHealth result
+//   health: computeDeliveryHealth result (or null)
+//   latestDbAttempt: most recent calls row with dial_call_status (or null)
+function answerTriageQuestions({ triage, health = null, latestDbAttempt = null }) {
+  const attempts = (triage && triage.attempts) || [];
+  const last = attempts[attempts.length - 1] || null;
+  const yn = v => (v === true ? "yes" : v === false ? "no" : "unknown");
+
+  const reachedHcg = triage && triage.verdict === "number_not_owned" ? false : attempts.length > 0 ? true : false;
+  const appDeliveryAttempted = last ? Boolean(last.clientLegStatus) : null;
+  // "no" only when the device itself confirmed the invite arrived; the
+  // mere absence of a push-failure alert is not proof the push worked.
+  const clientRang = latestDbAttempt && latestDbAttempt.client_invite_received_at ? true : null;
+  const hasPushFailure = Boolean((last && last.pushFailure) || (latestDbAttempt && latestDbAttempt.push_failure));
+  const pushFailed = !appDeliveryAttempted ? null : hasPushFailure ? true : clientRang ? false : null;
+  const answered = last && last.clientLegStatus ? last.clientLegStatus === "completed" : null;
+
+  const nextSteps = [];
+  switch (triage && triage.verdict) {
+    case "number_not_owned":
+      nextSteps.push("The HCG number is no longer in the Twilio account. Ask the customer to dial *#21# and cancel the divert (##21#) — calls cannot reach HCG.");
+      break;
+    case "webhook_not_production":
+      nextSteps.push("The HCG number's voice webhook is not production. Check whether this is a staging number that a real handset is diverting to.");
+      break;
+    case "no_traffic_in_window":
+      nextSteps.push("Nothing reached HCG. Ask the customer to dial *#21# to confirm the divert target matches the HCG number; check PAYG credit on the mobile line.");
+      break;
+    case "delivery_failing":
+      nextSteps.push("Calls reach HCG but not the app. Ask the customer to open the app (re-registers the push token), then place one test call.");
+      if (attempts.some(a => a.pushFailure)) nextSteps.push("Push provider rejected the device token: reinstall/reopen is required; re-registration alone was not sufficient on 2026-09-26 — confirm with a real call.");
+      nextSteps.push("If the app will not reconnect, the customer should turn off call forwarding (##21#) until it does, so callers are not dropped.");
+      break;
+    case "reaching_hcg":
+      nextSteps.push("Calls arrive but none were put through to the app — check screening decisions and entitlement for this household.");
+      break;
+    default:
+      break;
+  }
+  if (health && health.state === "UNREGISTERED") nextSteps.push("The app has never registered for calls on this household — setup is incomplete.");
+
+  return {
+    reachedHcg: yn(reachedHcg),
+    appDeliveryAttempted: yn(appDeliveryAttempted),
+    pushFailed: yn(pushFailed),
+    clientRang: yn(clientRang),
+    answered: yn(answered),
+    registrationState: health ? health.state : "unknown",
+    nextSteps,
+  };
+}
+
 module.exports = {
+  answerTriageQuestions,
   classifyIncomingCallHealth,
   isProductionVoiceUrl,
   maskNumber,
