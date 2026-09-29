@@ -9,7 +9,7 @@
 // used an address indistinguishable in pattern from a genuine customer's.
 'use strict';
 
-const KNOWN_CLASSIFICATIONS = ['genuine_customer', 'internal_test', 'admin', 'reviewer', 'qa_automation'];
+const KNOWN_CLASSIFICATIONS = ['genuine_customer', 'internal_test', 'admin', 'reviewer', 'qa_automation', 'other_non_customer'];
 const UNCLASSIFIED = 'unclassified';
 
 // Lazily resolved — same reasoning as every other file in this

@@ -160,6 +160,8 @@
   .filter-chip { background: #111a2e; color: #cbd5e1; border: 1px solid #334155; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-family: inherit; cursor: pointer; }
   .filter-chip:hover { border-color: #64748b; }
   .card.bc-warn { border-color: #f59e0b; }
+  .classification-form { display: grid; gap: 8px; max-width: 560px; margin: 8px 0 12px; }
+  .classification-panel { margin-top: 10px; border-top: 1px solid #1e293b; padding-top: 6px; }
   .filter-sep { width: 1px; align-self: stretch; background: #334155; margin: 0 4px; }
   .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .attention-list li { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-radius: 8px; background: #111a2e; border-left: 4px solid #334155; }
@@ -976,8 +978,9 @@ async function loadCustomerDetail(householdId) {
     const el = document.getElementById('customerDetail');
     if (!el) return;
     if (!res.ok) { el.innerHTML = '<div class="error">Failed to load (' + res.status + ')</div>'; return; }
-    el.innerHTML = renderCustomerDetailHtml(await res.json());
+    el.innerHTML = renderCustomerDetailHtml(await res.json()) + '<div id="classificationPanel" class="classification-panel"><div class="empty-state">Loading classification…</div></div>';
     wireCustomerDetailActions(householdId);
+    loadClassificationPanel(householdId);
   } catch (err) {
     const el = document.getElementById('customerDetail');
     if (el) el.innerHTML = '<div class="error">Failed to load: ' + escapeHtml(err.message) + '</div>';
@@ -1075,6 +1078,94 @@ function renderCustomerDetailHtml(detail) {
   return html;
 }
 // TEST-EXTRACT-END: renderCustomerDetailHtml
+
+// ============================================================
+// ACCOUNT CLASSIFICATION (2026-09-29) — reporting label only. Saving
+// needs a reason and an explicit acknowledgement, sends the value the
+// admin was looking at (a stale edit is refused server-side), and has no
+// effect on access, billing, calls or numbers. History is append-only
+// (migration 055); without 055 the form is disabled, never written
+// without an audit record.
+// ============================================================
+// TEST-EXTRACT-START: classificationPanel
+const CLASSIFICATION_CHOICES = [
+  ['genuine_customer', 'Genuine customer'],
+  ['internal_test', 'Internal test'],
+  ['reviewer', 'Reviewer'],
+  ['other_non_customer', 'Other non-customer'],
+];
+const CLASSIFICATION_LABELS = { genuine_customer: 'Genuine customer', internal_test: 'Internal test', reviewer: 'Reviewer', other_non_customer: 'Other non-customer', admin: 'Admin', qa_automation: 'QA automation', unclassified: 'Unclassified' };
+
+function validateClassificationForm({ current, next, note, acknowledged }) {
+  if (!CLASSIFICATION_CHOICES.some((c) => c[0] === next)) return { ok: false, message: 'Choose a classification.' };
+  if (next === current) return { ok: false, message: 'That is already the classification.' };
+  if (!note || note.trim().length < 3) return { ok: false, message: 'Give a reason (at least 3 characters).' };
+  if (!acknowledged) return { ok: false, message: 'Confirm that this changes reporting only.' };
+  return { ok: true, message: '' };
+}
+
+function renderClassificationPanelHtml(data) {
+  const label = (v) => escapeHtml(CLASSIFICATION_LABELS[v] || v || '—');
+  let html = '<h3 style="margin-top:18px;">Classification</h3>';
+  html += '<p>Current: <strong>' + label(data.current) + '</strong>' + (data.currentNote ? ' <span class="customer-sub">— ' + escapeHtml(data.currentNote) + '</span>' : '') + '</p>';
+  if (data.writable) {
+    html += '<div class="classification-form">' +
+      '<select id="clsNext">' + '<option value="">Change to…</option>' + CLASSIFICATION_CHOICES.filter((c) => c[0] !== data.current).map((c) => '<option value="' + c[0] + '">' + c[1] + '</option>').join('') + '</select>' +
+      '<input type="text" id="clsNote" maxlength="500" placeholder="Reason (required) — e.g. paid by Stripe 6 Sep, real person">' +
+      '<label class="customer-sub"><input type="checkbox" id="clsAck"> This changes reporting only — no effect on access, billing, calls or numbers.</label>' +
+      '<button type="button" class="action-button" id="clsSave" data-current="' + escapeHtml(data.current) + '">Save classification</button>' +
+      '<div class="quick-action-result" id="clsResult"></div></div>';
+  } else {
+    html += '<p class="customer-sub">' + escapeHtml(data.reason || 'Changes are disabled.') + '</p>';
+  }
+  if (data.history && data.history.length) {
+    html += '<table class="fact-table"><tr><th>When</th><th>Change</th><th>Who</th><th>Reason</th></tr>' + data.history.map((e) =>
+      '<tr><td>' + escapeHtml(fmtDateTime(e.created_at)) + '</td><td>' + (e.source === 'baseline' ? 'baseline: ' : label(e.previous_classification || 'unclassified') + ' → ') + label(e.new_classification) + '</td><td>' + escapeHtml(e.changed_by_email || '—') + '</td><td>' + escapeHtml(e.note) + '</td></tr>').join('') + '</table>';
+  } else if (data.history) {
+    html += '<p class="customer-sub">No classification history yet.</p>';
+  }
+  return html;
+}
+// TEST-EXTRACT-END: classificationPanel
+
+async function loadClassificationPanel(householdId) {
+  const el = document.getElementById('classificationPanel');
+  if (!el) return;
+  try {
+    const res = await fetch('/admin/api/households/' + encodeURIComponent(householdId) + '/classification', { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { el.innerHTML = '<div class="error">Classification unavailable: ' + escapeHtml(data.reason || res.status) + '</div>'; return; }
+    el.innerHTML = renderClassificationPanelHtml(data);
+    const save = document.getElementById('clsSave');
+    if (!save) return;
+    save.addEventListener('click', async () => {
+      const out = document.getElementById('clsResult');
+      const form = { current: save.dataset.current, next: document.getElementById('clsNext').value, note: document.getElementById('clsNote').value, acknowledged: document.getElementById('clsAck').checked };
+      const v = validateClassificationForm(form);
+      if (!v.ok) { out.textContent = v.message; return; }
+      save.disabled = true;
+      out.textContent = 'Saving…';
+      try {
+        const r = await fetch('/admin/api/households/' + encodeURIComponent(householdId) + '/classification', {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ classification: form.next, note: form.note, expectedPrevious: form.current }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { out.textContent = body.reason || ('Failed (' + r.status + ')'); save.disabled = false; return; }
+        out.textContent = 'Saved.';
+        loadCustomerMonitor();
+        for (const k of Object.keys(businessControlLoaded)) businessControlLoaded[k] = false;
+        businessControlCache.overview = null;
+        loadClassificationPanel(householdId);
+      } catch (err) {
+        out.textContent = 'Request failed — see console.';
+        save.disabled = false;
+      }
+    });
+  } catch (err) {
+    el.innerHTML = '<div class="error">Classification unavailable: ' + escapeHtml(err.message) + '</div>';
+  }
+}
 
 function wireCustomerDetailActions(householdId) {
   const resultEl = document.getElementById('detailActionResult');

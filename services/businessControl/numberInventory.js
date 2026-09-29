@@ -81,6 +81,8 @@ const CATEGORIES = {
 };
 const CATEGORY_ORDER = Object.keys(CATEGORIES);
 const TEST_CLASSES = new Set(['internal_test', 'admin', 'qa_automation']);
+// other_non_customer (migration 055) holders fall to OTHER: not a customer,
+// not a known test account.
 
 // Pure.
 function categoriseInventoryRow(row) {

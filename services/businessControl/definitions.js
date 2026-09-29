@@ -54,7 +54,7 @@ const ANONYMISED_EMAIL_SUFFIX = '@deleted.homecallguard.internal';
 const PAID_TYPES = new Set(['paid_subscription']);
 const COMPLIMENTARY_TYPES = new Set(['complimentary', 'staff', 'partner', 'promotion', 'founding_offer']);
 const TRIAL_TYPES = new Set(['free_trial']);
-const NON_GENUINE_CLASSES = new Set(['internal_test', 'reviewer', 'admin', 'qa_automation']);
+const NON_GENUINE_CLASSES = new Set(['internal_test', 'reviewer', 'admin', 'qa_automation', 'other_non_customer']);
 
 const GLOSSARY = [
   ['Account / household', 'Any registered household. Neutral: not necessarily a customer.'],

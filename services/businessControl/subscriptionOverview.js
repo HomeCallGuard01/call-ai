@@ -23,7 +23,7 @@ const ANONYMISED_EMAIL_SUFFIX = '@deleted.homecallguard.internal';
 const PAID_TYPES = new Set(['paid_subscription']);
 const COMPLIMENTARY_TYPES = new Set(['complimentary', 'staff', 'partner', 'promotion', 'founding_offer']);
 const TRIAL_TYPES = new Set(['free_trial']);
-const NON_GENUINE_CLASSIFICATIONS = ['internal_test', 'admin', 'reviewer', 'qa_automation'];
+const NON_GENUINE_CLASSIFICATIONS = ['internal_test', 'admin', 'reviewer', 'qa_automation', 'other_non_customer'];
 
 // Stripe statuses where the customer is still being billed / in dunning.
 const STRIPE_LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid']);
@@ -72,7 +72,7 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
     cancelledSubscriptions: { total: 0, genuine: 0 },
     complimentary: 0,
     trial: 0,
-    nonGenuineAccounts: { internal_test: 0, admin: 0, reviewer: 0, qa_automation: 0 },
+    nonGenuineAccounts: { internal_test: 0, admin: 0, reviewer: 0, qa_automation: 0, other_non_customer: 0 },
     nonGenuineWithActiveAccess: 0,
     unclassifiedWithActiveAccess: 0,
     newGenuinePayingLast7d: 0,
