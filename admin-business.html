@@ -164,6 +164,7 @@
   .classification-panel { margin-top: 10px; border-top: 1px solid #1e293b; padding-top: 6px; }
   .filter-sep { width: 1px; align-self: stretch; background: #334155; margin: 0 4px; }
   .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .att-body { display: grid; gap: 2px; }
   .attention-list li { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-radius: 8px; background: #111a2e; border-left: 4px solid #334155; }
   .attention-list li.att-red { border-left-color: #ef4444; }
   .attention-list li.att-amber { border-left-color: #f59e0b; }
@@ -1696,30 +1697,109 @@ function groupOverviewCards(cards) {
   return groups.filter((g) => g.cards.length);
 }
 
-// "Needs your attention": every red/amber item from every source, in
-// one list — Overview checks, customers needing attention, and system
-// components not confirmed healthy. Each line links to where it is
-// explained. Pure: takes the three cached payloads (any may be null).
+// "Needs your attention" (2026-09-29): actionable exceptions only,
+// grouped by topic and de-duplicated by household, each with WHAT / WHO /
+// WHEN / WHY / NEXT. Pure: takes the cached payloads (any may be null).
+// Deliberately excluded: "entitled but not protected" (new customers
+// setting up — Customers raises it only once overdue), info counts, and
+// green/grey cards (grey feeds the single data-freshness item).
+const ATTENTION_TOPICS = {
+  delivery: { title: 'Calls not reaching customers', why: 'A customer who believes they are protected may be missing calls.', next: 'Open the customer: check the latest call\'s Twilio and phone outcome and whether the app is registered; contact them if the app was offline.', tab: 'customers' },
+  voice_sdk: { title: 'App not registered for calls', why: 'Calls forwarded to HCG cannot ring the customer\'s phone.', next: 'Ask the customer to open the app (it re-registers) and check the app version.', tab: 'customers' },
+  provisioning: { title: 'Entitled households without a working HCG number', why: 'The customer cannot forward calls anywhere.', next: 'Retry provisioning (Operations → Admin tools, household ID); check the recorded error.', tab: 'customers' },
+  setup_overdue: { title: 'Setup overdue', why: 'Paying for protection that is not active yet.', next: 'Contact the customer to finish forwarding setup; check network/device are recorded.', tab: 'customers' },
+  number_lifecycle: { title: 'Number lifecycle anomalies', why: 'A number may be released from someone who still needs it, or kept (and billed) for someone who does not.', next: 'Open Numbers and follow each row\'s next step. Nothing is released from the dashboard.', tab: 'numbers' },
+  numbers_cost: { title: 'Numbers billed with no customer behind them', why: 'Recurring rental for staging, orphan or unmapped numbers.', next: 'Open Numbers: check each number\'s inbound calls and environment before any decision.', tab: 'numbers' },
+  classification: { title: 'Accounts that need classifying', why: 'Unclassified accounts are in no customer or revenue figure — a real payer can be invisible.', next: 'Customers → View → Classification (reason required; no effect on access or billing).', tab: 'customers' },
+  payments: { title: 'Payments not attributed', why: 'Revenue figures exclude these until they are.', next: 'Open Money; classify the paying account, or note App Store revenue is not connected.', tab: 'money' },
+  finance: { title: 'Spend safety', why: 'Provider spend is above normal, or cannot be observed.', next: 'Open Money: read the level reasons and check the provider console. Recommended actions are listed; none are executed.', tab: 'money' },
+  system: { title: 'System components not confirmed healthy', why: 'Calls, payments or alerts may be failing silently.', next: 'Operations → System health: each component states its evidence.', tab: 'operations' },
+  other_checks: { title: 'Other checks flagged', why: 'A dashboard check found something outside its normal state.', next: 'Open the Overview card for its rule and the affected items.', tab: 'overview' },
+  data_freshness: { title: 'Some checks could not run', why: 'Missing data is not the same as zero or "fine".', next: 'Treat these figures as unknown until their source is connected or refreshed.', tab: 'overview' },
+};
+const CARD_TOPIC = {
+  entitled_missing_number: 'provisioning', lifecycle_anomalies: 'number_lifecycle', lapsed_retaining_number: 'number_lifecycle',
+  pending_release_quarantine: 'number_lifecycle', unmapped_numbers: 'numbers_cost', paid_unclassified: 'classification',
+  non_paying_access: 'classification', mrr: 'payments',
+};
+const ATTENTION_SEVERITY_RANK = { red: 0, amber: 1 };
+
+function customerTopic(row) {
+  const reason = String(row.healthReason || '');
+  if (row.lastDelivery && row.lastDelivery.failure) return 'delivery';
+  if (/deliver/i.test(reason)) return 'delivery';
+  if (/app|voice sdk|registered/i.test(reason)) return 'voice_sdk';
+  if (/provision|hcg number|number problem/i.test(reason)) return 'provisioning';
+  return 'setup_overdue';
+}
+
 function buildAttentionItems(overview, customers, business) {
-  const items = [];
-  const CARD_TAB = { genuine_paying: 'customers', paid_unclassified: 'customers', non_paying_access: 'customers', mrr: 'money', protected: 'customers', entitled_not_protected: 'customers', entitled_missing_number: 'numbers' };
+  const groups = new Map();
+  const add = (topic, severity, { detail = null, who = [], when = null } = {}) => {
+    if (!ATTENTION_TOPICS[topic]) return;
+    const g = groups.get(topic) || { topic, ...ATTENTION_TOPICS[topic], severity, details: [], who: new Map(), when: null };
+    if (ATTENTION_SEVERITY_RANK[severity] < ATTENTION_SEVERITY_RANK[g.severity]) g.severity = severity;
+    if (detail && !g.details.includes(detail)) g.details.push(detail);
+    for (const w of who) {
+      const key = w.householdId || w.number || w.email;
+      if (!key) continue;
+      const prev = g.who.get(key);
+      g.who.set(key, { label: w.email || w.number || String(w.householdId).slice(0, 8), detail: prev && prev.detail && w.detail && prev.detail !== w.detail ? prev.detail + '; ' + w.detail : (prev && prev.detail) || w.detail || null });
+    }
+    if (when && (!g.when || when > g.when)) g.when = when;
+    groups.set(topic, g);
+  };
+
   if (overview && overview.cards) {
     for (const c of overview.cards) {
+      if (c.status === 'grey') { add('data_freshness', 'amber', { detail: c.label + ': ' + c.value }); continue; }
       if (c.status !== 'red' && c.status !== 'amber') continue;
-      items.push({ severity: c.status, text: c.label + ': ' + c.value, tab: CARD_TAB[c.id] || 'numbers' });
+      if (c.id === 'entitled_not_protected') continue; // normal setup; Customers raises it once overdue
+      // A new check without a topic is never dropped silently.
+      const topic = CARD_TOPIC[c.id] || 'other_checks';
+      // Only the unclassified part of "non-paying access" is actionable.
+      const items = c.id === 'non_paying_access' ? (c.items || []).filter((i) => /unclassified/.test(i.detail || '')) : (c.items || []);
+      if (c.id === 'non_paying_access' && !items.length) continue;
+      add(topic, c.status, { detail: c.label + ': ' + (c.id === 'non_paying_access' ? items.length + ' unclassified with access' : c.value), who: items });
     }
   }
+  if (overview && overview.financialSafety) {
+    const f = overview.financialSafety;
+    if (f.state === 'stale' || f.state === 'load_failed') add('finance', 'red', { detail: f.state === 'stale' ? 'Cost data is stale — spend since then is unobserved' : 'Cost data could not be loaded', when: f.asOf });
+    if (f.level === 'EMERGENCY' || f.level === 'ALERT') add('finance', 'red', { detail: 'Level ' + f.level, when: f.asOf });
+    else if (f.level === 'WATCH') add('finance', 'amber', { detail: 'Level WATCH', when: f.asOf });
+    for (const w of f.warnings || []) if (w.severity === 'critical') add('finance', 'red', { detail: w.text, when: f.asOf });
+  }
   if (customers && customers.rows) {
-    const n = customers.rows.filter((r) => !r.deletedAccount && r.health === 'needs_attention').length;
-    if (n) items.push({ severity: 'red', text: n + ' customer' + (n === 1 ? '' : 's') + ' need attention (delivery, setup overdue or number problem)', tab: 'customers' });
+    for (const r of customers.rows) {
+      if (r.deletedAccount || r.health !== 'needs_attention') continue;
+      const when = (r.lastDelivery && r.lastDelivery.at) || (r.latestCall && r.latestCall.at) || null;
+      add(customerTopic(r), 'red', { who: [{ householdId: r.householdId, email: r.email, detail: r.healthReason }], when });
+    }
   }
   if (business && business.systemHealth) {
     for (const [name, comp] of Object.entries(business.systemHealth.components || {})) {
-      if (comp.status === 'RED') items.push({ severity: 'red', text: 'System: ' + name + ' — ' + comp.reason, tab: 'operations' });
-      else if (comp.status === 'AMBER') items.push({ severity: 'amber', text: 'System: ' + name + ' — ' + comp.reason, tab: 'operations' });
+      if (comp.status === 'RED') add('system', 'red', { detail: name + ' — ' + comp.reason, when: business.generatedAt });
+      else if (comp.status === 'AMBER') add('system', 'amber', { detail: name + ' — ' + comp.reason, when: business.generatedAt });
     }
   }
-  return items.sort((x, y) => (x.severity === y.severity ? 0 : x.severity === 'red' ? -1 : 1));
+
+  return [...groups.values()]
+    .map((g) => ({ topic: g.topic, severity: g.severity, what: g.title, details: g.details, who: [...g.who.values()], affected: g.who.size, when: g.when, why: g.why, next: g.next, tab: g.tab }))
+    .sort((x, y) => ATTENTION_SEVERITY_RANK[x.severity] - ATTENTION_SEVERITY_RANK[y.severity] || y.affected - x.affected);
+}
+
+function renderAttentionItemHtml(it) {
+  const whoList = it.who.slice(0, 3).map((w) => escapeHtml(w.label)).join(', ') + (it.who.length > 3 ? ' +' + (it.who.length - 3) + ' more' : '');
+  let html = '<li class="att-' + escapeHtml(it.severity) + '"><div class="att-body">' +
+    '<div class="att-what">' + statusBadge(it.severity) + ' <strong>' + escapeHtml(it.what) + '</strong>' + (it.affected ? ' <span class="customer-sub">(' + it.affected + ')</span>' : '') + '</div>';
+  if (it.details.length) html += '<div class="customer-sub">' + it.details.slice(0, 3).map(escapeHtml).join(' · ') + (it.details.length > 3 ? ' · +' + (it.details.length - 3) : '') + '</div>';
+  if (it.who.length) html += '<div class="customer-sub">Affects: ' + whoList + '</div>';
+  if (it.when) html += '<div class="customer-sub">Latest: ' + escapeHtml(fmtDateTime(it.when)) + '</div>';
+  html += '<div class="customer-sub">Why it matters: ' + escapeHtml(it.why) + '</div>';
+  html += '<div class="customer-sub">Next: ' + escapeHtml(it.next) + ' <a href="#' + escapeHtml(it.tab) + '" onclick="switchTab(\'' + escapeHtml(it.tab) + '\');return false;">open</a></div>';
+  if (it.who.length > 3) html += '<details><summary class="customer-sub">All affected</summary><ul class="sub">' + it.who.map((w) => '<li>' + escapeHtml(w.label) + (w.detail ? ' — ' + escapeHtml(w.detail) : '') + '</li>').join('') + '</ul></details>';
+  return html + '</div></li>';
 }
 
 function renderAttentionStrip() {
@@ -1733,10 +1813,9 @@ function renderAttentionStrip() {
   let html = '<div class="section"><div class="section-header"><h2>Needs your attention' + (items.length ? ' (' + items.length + ')' : '') + '</h2></div>';
   if (!items.length) {
     const base = businessControlCache.overview ? overallBanner(businessControlCache.overview).text : 'Nothing found yet';
-    const greyNote = businessControlCache.overview && businessControlCache.overview.incomplete ? ' · ' + businessControlCache.overview.counts.grey + ' check(s) could not run (grey)' : '';
-    html += '<div class="readiness-banner ready">' + escapeHtml(base + greyNote) + (pending.length ? ' · still loading ' + escapeHtml(pending.join(', ')) : '') + '</div>';
+    html += '<div class="readiness-banner ready">' + escapeHtml(base) + (pending.length ? ' · still loading ' + escapeHtml(pending.join(', ')) : '') + '</div>';
   } else {
-    html += '<ul class="attention-list">' + items.map((it) => '<li class="att-' + escapeHtml(it.severity) + '">' + statusBadge(it.severity) + ' <span>' + escapeHtml(it.text) + '</span> <a href="#' + escapeHtml(it.tab) + '" onclick="switchTab(\'' + escapeHtml(it.tab) + '\');return false;">open</a></li>').join('') + '</ul>';
+    html += '<ul class="attention-list">' + items.map(renderAttentionItemHtml).join('') + '</ul>';
     if (pending.length) html += '<p class="sub">Still loading: ' + escapeHtml(pending.join(', ')) + '</p>';
   }
   html += '</div>';

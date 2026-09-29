@@ -363,14 +363,45 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   check(elements.overviewBody.innerHTML.includes('control-rule') && elements.overviewBody.innerHTML.includes('Definitions used on every tab'), 'overview shows each card\'s rule and the definitions');
   check(elements.attention.innerHTML.includes('Needs your attention (1)') && elements.attention.innerHTML.includes('att-red'), 'overview leads with a "Needs your attention" list built from the red/amber checks');
 
-  // Attention list: every source, red first, each linked to its tab.
-  const att = ui.buildAttentionItems(
-    { cards: [{ id: 'mrr', label: 'MRR', value: '£0', status: 'amber' }, { id: 'unmapped_numbers', label: 'Unmapped', value: 8, status: 'red' }, { id: 'protected', label: 'Protected', value: 3, status: 'info' }] },
-    { rows: [{ health: 'needs_attention' }, { health: 'needs_attention', deletedAccount: true }, { health: 'healthy' }] },
-    { systemHealth: { components: { stripe: { status: 'GREEN', reason: 'ok' }, twilio: { status: 'AMBER', reason: 'configured, not confirmed' } } } });
-  check(att.length === 4 && att[0].severity === 'red' && att.filter((a) => a.severity === 'red').length === 2, 'attention: red/amber checks + customers needing attention (deleted excluded) + non-green system components; info/green ignored; red first');
-  check(att.find((a) => /Unmapped/.test(a.text)).tab === 'numbers' && att.find((a) => /MRR/.test(a.text)).tab === 'money' && att.find((a) => /customer/.test(a.text)).tab === 'customers' && att.find((a) => /System/.test(a.text)).tab === 'operations', 'attention: each item links to the tab that explains it');
+  // Attention: grouped by topic, de-duplicated, WHAT/WHO/WHEN/WHY/NEXT.
+  const overviewPayload = {
+    cards: [
+      { id: 'entitled_missing_number', label: 'Entitled households missing a number', value: 1, status: 'red', items: [{ householdId: 'h-prov', email: 'prov@x', detail: 'provisioning failed' }] },
+      { id: 'lifecycle_anomalies', label: 'Lifecycle anomalies', value: 2, status: 'red', items: [{ householdId: 'h-lapsed', email: 'lapsed@x', detail: 'No entitlement, number retained' }, { householdId: 'h-prov', email: 'prov@x', detail: 'Entitled without number' }] },
+      { id: 'lapsed_retaining_number', label: 'Lapsed households holding a number', value: 1, status: 'red', items: [{ householdId: 'h-lapsed', email: 'lapsed@x', detail: 'outside lifecycle' }] },
+      { id: 'unmapped_numbers', label: 'Unmapped numbers', value: 8, status: 'red', items: [{ number: '+44 •••• ••0010', detail: 'dev' }] },
+      { id: 'paid_unclassified', label: 'Paid at some point, not classified', value: 1, status: 'amber', items: [{ householdId: 'h-payer', email: 'payer@x', detail: 'former paying' }] },
+      { id: 'non_paying_access', label: 'Complimentary/test access', value: 3, status: 'amber', items: [{ householdId: 'h-rev', email: 'rev@x', detail: 'reviewer · complimentary' }, { householdId: 'h-unc', email: 'unc@x', detail: 'unclassified · complimentary' }] },
+      { id: 'entitled_not_protected', label: 'Entitled but NOT protected', value: 2, status: 'amber', items: [{ householdId: 'h-new', email: 'new@x' }] },
+      { id: 'mrr', label: 'MRR', value: 'Stripe TEST mode', status: 'grey', items: [] },
+      { id: 'protected', label: 'Protected', value: 3, status: 'info', items: [] },
+    ],
+    financialSafety: { state: 'stale', level: 'ALERT', asOf: '2026-09-28T09:00:00Z', warnings: [{ severity: 'critical', text: 'newest ledger data is 40h old' }] },
+  };
+  const customersPayload = { rows: [
+    { householdId: 'h-del', email: 'del@x', health: 'needs_attention', healthReason: 'A call could not be delivered since the last successful one', lastDelivery: { at: '2026-09-29T08:00:00Z', failure: 'no answer from app' } },
+    { householdId: 'h-app', email: 'app@x', health: 'needs_attention', healthReason: 'Calls reaching HCG but no registered app' },
+    { householdId: 'h-prov', email: 'prov@x', health: 'needs_attention', healthReason: 'HCG number provisioning failed' },
+    { householdId: 'h-gone', email: 'gone@x', health: 'needs_attention', healthReason: 'x', deletedAccount: true },
+    { householdId: 'h-ok', email: 'ok@x', health: 'healthy' },
+  ] };
+  const businessPayload = { generatedAt: '2026-09-29T11:00:00Z', systemHealth: { components: { stripe: { status: 'GREEN', reason: 'ok' }, twilio: { status: 'AMBER', reason: 'configured, not confirmed' } } } };
+  const att = ui.buildAttentionItems(overviewPayload, customersPayload, businessPayload);
+  const topic = (t) => att.find((x) => x.topic === t);
+  check(att.every((x) => x.what && x.why && x.next && x.tab && Array.isArray(x.who)), 'attention: every item says WHAT, WHO, WHY and NEXT, and links to a tab');
+  check(topic('provisioning').affected === 1 && topic('provisioning').who[0].label === 'prov@x', 'attention: the same household from the Overview card and from Customers is ONE affected entry, not two');
+  check(topic('number_lifecycle').affected === 2 && topic('number_lifecycle').details.length === 2, 'attention: two lifecycle cards merge into one "number lifecycle" item, households de-duplicated (lapsed@x once)');
+  check(topic('classification').affected === 2 && topic('classification').who.map((w) => w.label).sort().join() === 'payer@x,unc@x', 'attention: classification = paid-but-unclassified + unclassified-with-access; reviewers (already classified) excluded');
+  check(!att.some((x) => x.who.some((w) => w.label === 'new@x')), 'attention: "entitled but not protected" (normal setup) is NOT in the list — no wall of warnings');
+  check(topic('delivery').who[0].label === 'del@x' && topic('delivery').when === '2026-09-29T08:00:00Z' && topic('voice_sdk').who[0].label === 'app@x', 'attention: customer problems split by cause (delivery vs app registration), with WHEN from the evidence');
+  check(!att.some((x) => x.who.some((w) => w.label === 'del@x' && x.topic !== 'delivery')) && !att.some((x) => x.who.some((w) => w.label === 'gone@x')), 'attention: each customer appears under one cause; deleted accounts excluded');
+  check(topic('finance').severity === 'red' && topic('finance').details.some((d) => /stale/.test(d)) && topic('finance').when === '2026-09-28T09:00:00Z', 'attention: stale / ALERT financial data is one red "spend safety" item');
+  check(topic('data_freshness') && /MRR/.test(topic('data_freshness').details[0]), 'attention: checks that could not run become one data-freshness item (missing ≠ fine)');
+  check(topic('system').severity === 'amber' && topic('system').details.length === 1, 'attention: only non-green system components');
+  check(att.length === 9 && att.findIndex((x) => x.severity === 'amber') > att.findIndex((x) => x.severity === 'red') && att.filter((x) => x.severity === 'red').every((x, i, arr) => i === 0 || arr[i - 1].affected >= x.affected), 'attention: 9 grouped items from 13 raw signals, red first, then by number affected');
   check(ui.buildAttentionItems(null, null, null).length === 0, 'attention: nothing loaded yet → empty, no crash');
+  check(ui.buildAttentionItems({ cards: [{ id: 'some_future_check', label: 'New check', value: 1, status: 'red', items: [] }] }, null, null)[0].topic === 'other_checks', 'attention: a check with no topic yet is shown under "other checks", never dropped');
+  check(!/method\s*:|'POST'|\.remove\(|release\(/.test(ui.buildAttentionItems.toString()), 'attention: builds text only — no action, request or release');
   // Customers: every row says what kind of account it is.
   const rows = [
     { householdId: 'g', classification: 'genuine_customer', account: { kind: 'paying' }, everPaid: true, health: 'healthy' },
