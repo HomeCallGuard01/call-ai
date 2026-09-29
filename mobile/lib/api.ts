@@ -6,6 +6,7 @@
 import { Platform } from "react-native";
 import { supabase } from "./supabase";
 import { resolveAuthToken } from "./resolveAuthToken";
+import { getInstallAttribution } from "./installReferrer";
 import type {
   RegisterResponse,
   ResendConfirmationResponse,
@@ -158,11 +159,17 @@ export async function bootstrapHousehold(accessToken: string, refreshToken: stri
 // services/mobileRegistration.js) using the service-role admin client
 // this mobile client must never hold. See lib/registrationOutcome.ts for
 // what the app does with the returned status.
+//
+// Install attribution (2026-09-29 prototype): on Android, the UTM fields
+// from Google Play's install referrer (lib/installReferrer.ts — utm_source/
+// utm_medium/utm_campaign only) ride along so the server can record which
+// campaign produced the sign-up. Absent/failed -> sent without them.
 export async function registerAccount(email: string, password: string): Promise<RegisterResponse> {
+  const attribution = await getInstallAttribution().catch(() => null);
   const response = await fetch(`${API_BASE_URL}/api/v1/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(attribution ?? {}) }),
   });
   return parseJsonOrThrow<RegisterResponse>(response);
 }

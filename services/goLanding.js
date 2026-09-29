@@ -27,6 +27,8 @@
 // here ever invents or defaults an Apple URL.
 'use strict';
 
+const { PLAY_LISTING_URL, buildPlayListingUrl } = require('./playInstallReferrer');
+
 const START = '<!--APP_STORE_BUTTON_START-->';
 const END = '<!--APP_STORE_BUTTON_END-->';
 const LANDLINE_START = '<!--LANDLINE_BUTTON_START-->';
@@ -98,11 +100,21 @@ function liveLandlineButton(q) {
   );
 }
 
+// Install attribution (2026-09-29 prototype, services/playInstallReferrer.js):
+// when this visit carried UTMs, the Android card's Play link gets Google
+// Play's own `referrer` parameter (safe UTM fields only), so the installed
+// app can report which campaign it came from. No UTMs -> link unchanged.
+const ANDROID_PLAY_LINK = 'id="android" href="' + PLAY_LISTING_URL + '"';
+
 function renderGoPage(template, { iosComingSoon, appStoreUrl, utm, landlineComingSoon }) {
   let html = template;
   const q = utmQuery(utm);
   if (q && html.includes(LEARN_MORE_LINK)) {
     html = html.replace(LEARN_MORE_LINK, 'id="learnMore" href="/' + q + '"');
+  }
+  const playUrl = buildPlayListingUrl(utm);
+  if (playUrl !== PLAY_LISTING_URL && html.includes(ANDROID_PLAY_LINK)) {
+    html = html.replace(ANDROID_PLAY_LINK, 'id="android" href="' + playUrl.replace(/&/g, '&amp;') + '"');
   }
   // Landline: live ONLY when the flag is strictly the boolean false.
   if (landlineComingSoon === false) {

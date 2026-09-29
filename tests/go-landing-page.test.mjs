@@ -261,7 +261,10 @@ check(renderGoPage(goSource, { iosComingSoon: true, utm: {} }) === goSource && r
 const withUtm = renderGoPage(goSource, { iosComingSoon: true, utm: { utmSource: 'tiktok', utmMedium: 'bio', utmCampaign: 'launch' } });
 check(withUtm.includes('id="learnMore" href="/?utm_source=tiktok&amp;utm_medium=bio&amp;utm_campaign=launch"'), 'UTM parameters are forwarded onto the "Learn more" homepage link, so a social visitor who reads the homepage and registers later is still attributed to the source');
 const utmHrefs = [...withoutComments(withUtm).matchAll(/<a\b[^>]*\bhref="([^"]*)"/g)].map((m) => m[1]);
-check(utmHrefs.length === 4 && utmHrefs[0] === PLAY && utmHrefs[2] === '/privacy' && utmHrefs[3] === '/terms.html' && !utmHrefs.some((h) => /register|dashboard|login/.test(h)), 'with UTMs, only the Learn more link changes — Google Play, Privacy and Terms are untouched and no registration/login link appears');
+// 2026-09-29 install-referrer prototype: with UTMs the Play link now also carries
+// Google Play's own `referrer` (UTM fields only) — see
+// tests/play-install-referrer-attribution.test.mjs for the full contract.
+check(utmHrefs.length === 4 && utmHrefs[0] === PLAY + '&amp;referrer=' + encodeURIComponent('utm_source=tiktok&utm_medium=bio&utm_campaign=launch') && utmHrefs[2] === '/privacy' && utmHrefs[3] === '/terms.html' && !utmHrefs.some((h) => /register|dashboard|login/.test(h)), 'with UTMs, only the Learn more link and the Play referrer change — Privacy and Terms are untouched and no registration/login link appears');
 const hostile = renderGoPage(goSource, { iosComingSoon: true, utm: { utmSource: '"><script>alert(1)</script>', utmMedium: 'a&b', utmCampaign: "x'y" } });
 const hostileLearn = (hostile.match(/<a[^>]*id="learnMore"[^>]*>/) || [''])[0];
 check(hostileLearn === '<a class="learn" id="learnMore" href="/?utm_source=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E&amp;utm_medium=a%26b&amp;utm_campaign=x\'y">' && (hostile.match(/<script>/g) || []).length === 1, 'hostile UTM values are percent-encoded on the Learn more link: still one well-formed <a>, and no markup or extra script is injected');

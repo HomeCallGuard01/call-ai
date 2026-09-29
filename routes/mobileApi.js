@@ -38,6 +38,8 @@ const {
 } = require("../database/households");
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
+const { parseUtmParams, recordAcquisitionEvent } = require("../services/acquisitionAnalytics");
+const { safeValue } = require("../services/playInstallReferrer");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
@@ -436,6 +438,21 @@ router.post("/api/v1/register", async (req, res) => {
     return res.status(400).json({ error: "invalid_input", message: "email and password are required" });
   }
 
+  // Acquisition analytics (2026-09-29 install-referrer prototype): the app
+  // sends only utm_source/utm_medium/utm_campaign, parsed from Google Play's
+  // install referrer (mobile/lib/installReferrer.ts). Same events and same
+  // fire-and-forget rule as web POST /register in server.js — never awaited,
+  // never affects the registration outcome. Values outside the safe alphabet
+  // are dropped (services/playInstallReferrer.js). No household exists yet,
+  // so these stay unlinked counts, exactly like the web funnel.
+  const rawUtm = parseUtmParams(req.body);
+  const installUtm = {
+    utmSource: safeValue(rawUtm.utmSource),
+    utmMedium: safeValue(rawUtm.utmMedium),
+    utmCampaign: safeValue(rawUtm.utmCampaign),
+  };
+  recordAcquisitionEvent("registration_submitted", { path: "/api/v1/register", ...installUtm, referrerHost: null }).catch(() => {});
+
   try {
     const result = await handleRegisterRequest({
       email,
@@ -447,6 +464,11 @@ router.post("/api/v1/register", async (req, res) => {
 
     if (result.status === "error") {
       return res.status(400).json({ error: "failed" });
+    }
+
+    // A genuinely new account (the same point web /register records it).
+    if (result.status === "pending_confirmation" && result.user) {
+      recordAcquisitionEvent("registration_completed", { path: "/api/v1/register", ...installUtm, referrerHost: null }).catch(() => {});
     }
 
     res.json({ status: result.status });
