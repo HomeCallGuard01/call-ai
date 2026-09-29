@@ -559,6 +559,29 @@
   //    this page no longer links to web registration (the acquisition route is
   //    Google Play), so it had nothing to act on. Attribution beyond the landing
   //    visit (Play install -> app sign-up) is NOT captured today.
+  //    Install attribution (2026-09-29): the Google Play links carry Play's own
+  //    `referrer` parameter with ONLY utm_source/utm_medium/utm_campaign (this
+  //    visit's own UTMs, else website/homepage). Play Console's acquisition
+  //    reports read it, and an app build with the install-referrer prototype
+  //    (branch feature/play-install-referrer-attribution) reports it at sign-up.
+  //    No identifiers, no cookie, no storage. Same safe alphabet as
+  //    services/playInstallReferrer.js; unsafe values are dropped.
+  var PLAY_URL = "https://play.google.com/store/apps/details?id=co.uk.homecallguard.app";
+  var SAFE_UTM = /^[A-Za-z0-9._-]{1,100}$/;
+  try {
+    var qs = new URLSearchParams(window.location.search);
+    var utm = [
+      ["utm_source", qs.get("utm_source") || "website"],
+      ["utm_medium", qs.get("utm_medium") || "homepage"],
+      ["utm_campaign", qs.get("utm_campaign")]
+    ].filter(function (p) { return p[1] && SAFE_UTM.test(p[1]); });
+    if (utm.length > 0) {
+      var referrer = utm.map(function (p) { return p[0] + "=" + p[1]; }).join("&");
+      document.querySelectorAll("a[href]").forEach(function (link) {
+        if (link.getAttribute("href") === PLAY_URL) link.href = PLAY_URL + "&referrer=" + encodeURIComponent(referrer);
+      });
+    }
+  } catch (e) { /* attribution is optional: links stay the plain listing URL */ }
 
   var yearEl = document.getElementById("currentYear");
   if (yearEl) yearEl.textContent = new Date().getFullYear();

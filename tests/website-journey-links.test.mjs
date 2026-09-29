@@ -20,6 +20,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pub = path.join(root, 'public');
@@ -118,6 +119,29 @@ check(/req\.method !== "GET" && req\.method !== "HEAD"/.test(handler) && /req\.a
 const homeText = noComments(home).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 check(!/doesn't store call audio or a transcript/.test(homeText), 'homepage: no absolute "doesn\'t store call audio or a transcript" claim');
 check(/doesn't record your calls/.test(homeText) && /third-party service/.test(homeText), 'homepage FAQ: says calls aren\'t recorded and discloses third-party transcription');
+
+// ---------- homepage Play links: install-referrer attribution (2026-09-29) ----------
+// Executes the homepage's own snippet against fake links: only UTM fields
+// are ever added to Google Play's `referrer`, defaults to website/homepage,
+// and unsafe values are dropped.
+{
+  const homeSrc = readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+  const PLAY_URL = 'https://play.google.com/store/apps/details?id=co.uk.homecallguard.app';
+  const snippet = homeSrc.slice(homeSrc.indexOf('  var PLAY_URL = '), homeSrc.indexOf('/* attribution is optional: links stay the plain listing URL */ }') + 66);
+  const run = (search) => {
+    const mk = (href) => ({ href, getAttribute: () => href });
+    const links = [mk(PLAY_URL), mk(PLAY_URL), mk('/terms.html')];
+    vm.runInNewContext(snippet, { window: { location: { search } }, URLSearchParams, encodeURIComponent,
+      document: { querySelectorAll: (sel) => (sel === 'a[href]' ? links : []) } });
+    if (links[2].href !== '/terms.html') return ['non-Play link was modified'];
+    return links.slice(0, 2).map((l) => l.href);
+  };
+  const ref = (r) => `${PLAY_URL}&referrer=${encodeURIComponent(r)}`;
+  check(snippet.length > 200 && run('').every((h) => h === ref('utm_source=website&utm_medium=homepage')), 'homepage Play links: no UTMs -> referrer utm_source=website&utm_medium=homepage');
+  check(run('?utm_source=tiktok&utm_medium=bio&utm_campaign=launch&gclid=XYZ&email=a@b.c').every((h) => h === ref('utm_source=tiktok&utm_medium=bio&utm_campaign=launch')), "homepage Play links: the visit's own UTMs are carried; click IDs and other parameters never are");
+  check(run('?utm_source=%22%3E%3Cscript%3E&utm_campaign=ok').every((h) => h === ref('utm_medium=homepage&utm_campaign=ok')), 'homepage Play links: an unsafe UTM value is dropped, not encoded into the link');
+  check(homeSrc.split(`href="${PLAY_URL}"`).length - 1 === 2, 'homepage: the static Play links stay the plain listing URL in the HTML (hero + pricing); the referrer is added at runtime only');
+}
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
