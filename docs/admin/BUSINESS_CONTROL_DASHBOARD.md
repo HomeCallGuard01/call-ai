@@ -1,9 +1,23 @@
 <!--
-STATUS (2026-09-28, v3): branch feature/admin-control-centre-v2 (pushed, no PR, not deployed).
+STATUS (2026-09-29, v4): branch feature/admin-control-centre-v2 (pushed, no PR, not deployed). Draft migration 055 NOT applied.
 v3 = the five-tab consolidation + payment history. Strictly observational (GET only), no migration.
 See also: RECONCILIATION_CONSOLIDATION_PLAN.md, ACQUISITION_READINESS_REVIEW.md,
 STAGING_NUMBERS_ON_PRODUCTION_TWILIO.md.
 -->
+
+## v4 (2026-09-29): operations depth, same five tabs
+
+| Area | What changed | Where |
+|---|---|---|
+| Numbers | Every provider number is in one of nine categories: customer active, customer cancelled/grace, pending release, internal test, staging, reviewer, orphan, unknown, other. Each row has a masked number and SID, household and class, environment, acquisition date, last inbound call (or "check the provider call log"), release/quarantine dates, rental and next step. A per-category cost table and a "possibly unnecessary £/month" figure lead the tab. | `numberInventory.js` |
+| Lifecycle | One canonical definition mirrors migration 047 and is used by every dashboard module. The parity fixture is shared with #47 and #49. | `services/numberLifecycle/state.js`, `RECONCILIATION_CONSOLIDATION_PLAN.md` |
+| Classification | Customers → View → Classification: genuine / internal test / reviewer / other non-customer, with a required reason, stale-edit protection and append-only history. **Needs draft migration 055 (NOT applied).** Without 055, changes are refused, never written unaudited. | `accountClassificationChanges.js`, `055_account_classification_history.sql` |
+| Money | "Spend safety" is driven by Pricing Safety's spend monitor through one adapter. It shows **Not connected** until Finance ships `latestSpendMonitorResult.js`. | `MONEY_TAB_INTEGRATION_CONTRACT.md` |
+| Needs your attention | Signals are grouped into topics and de-duplicated by household. Each item gives WHAT / WHO / WHEN / WHY / NEXT. Setup noise is excluded; unknown checks are never dropped. | `admin-business.html` |
+| Release | "Review release…" per number is a **prototype, not wired**. Every uncertainty is a blocker; the confirmations are typed digits, forwarding removed, call log checked and a reason. The final button is permanently disabled. | `numberLifecycle/releaseReadiness.js` |
+| Due diligence | A monthly snapshot (JSON with schema 1.0, plus a Markdown summary) under Operations. Aggregates only; refused if it would contain personal data. | `dueDiligenceSnapshot.js` |
+
+Related branch: `fix/nonprod-telephony-mutation-guard` (on top of `feature/nonprod-provisioning-guard`). Non-production can never release production numbers or run production lifecycle jobs.
 
 ## v3 (2026-09-28): five tabs
 

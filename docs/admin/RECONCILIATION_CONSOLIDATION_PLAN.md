@@ -1,4 +1,16 @@
 <!--
+STATUS UPDATE (2026-09-29): Step 2's shared module now EXISTS on the dashboard branch —
+services/numberLifecycle/state.js (canonical 047 predicates, one GRACE table, the union
+anomaly catalogue below, fail-closed AMBIGUOUS state). The dashboard consumes it; #47/#49
+have not been changed. Parity (tests/fixtures/number-lifecycle-parity.json, 14 cases, run
+against each branch's real code): sweep #49 14/14, admin API #47 14/14, dashboard BEFORE
+13/14 (it ignored ends_at on upcoming entitlements) → 14/14 now.
+Grace decisions taken (P0 to confirm): release overdue after 24h (the sweep's value, was 48h
+on the dashboard); confirmed-quarantine stuck 48h from confirmation (falls back to
+quarantined_at); unconfirmed quarantine watch → action at 45 days. Remaining for P0: move
+the module to its branch, point #47/#49 at it, and adopt "classification never filters
+anomalies" in #47. tests/number-lifecycle-state.test.mjs runs #47/#49 parity automatically
+once they merge.
 STATUS (2026-09-27): plan only. Nothing in P0's or Finance's branches was
 modified. Evidence is from a read-only run of all four engines against the
 same production data on 2026-09-27.
