@@ -12,6 +12,7 @@ Code: `services/callDeliveryEvents.js`. Storage: migration **060** `call_deliver
 | `household_identified` / `household_not_found` | server | `/voice` | — |
 | `caller_classified` | server | `/voice` | `classification`: known_contact / unknown / withheld |
 | `routing_decision` | server | after the (unchanged) dial | `mode`, `monitoring`, `entitled`, `endpointRegistered`, `registrationAgeHours` |
+| `endpoint_health` | server | after routing (signed requests only) | `reachability` (unregistered / unreachable / degraded / presumed / confirmed), `deliveryHealth`, `deviceReady`, `registrationAgeDays` |
 | `push_requested` | server | client-only plan | `timeoutSeconds` |
 | `push_failed` | poller | Twilio Monitor alert ingest (52103 etc.) | `reason` e.g. `fcm:NotRegistered` |
 | `app_invite_received` | app | CallInvite | `platform`, `presented` |
@@ -33,6 +34,11 @@ Code: `services/callDeliveryEvents.js`. Storage: migration **060** `call_deliver
 - Retention: **90 days proposed, not enforced.** This is your decision.
 
 ## Safety
+
+- **Denial-of-wallet:**
+  - `/voice` and `/call-delivery-failed` don't enforce Twilio signatures, so server-side events are written to the database **only for validly signed requests**; forged requests produce log lines only, and no endpoint-health reads.
+  - App-reported events sit behind per-household rate limits (`middleware/householdRateLimit.js`).
+  - Bound: about 9 rows and 3 small reads per genuine inbound call.
 
 - Never on the call path: every server call is fire-and-forget, wrapped, and never awaited in a TwiML handler (tested).
 - `dialHouseholdOrFailClosed` and the monitoring gate are untouched. Routing telemetry recomputes the same pure decision separately.
