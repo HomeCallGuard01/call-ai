@@ -17,7 +17,7 @@
 - Based on `readiness/android-call-delivery` `9535f5d`.
 - Local only, not pushed.
 - Commits:
-  - `6d4b087` dynamic pricing
+  - `6d4b087` dynamic pricing (+ timeout fix, see git log)
   - `feeeb38` iPhone signup path in the iOS app
   - this document plus `TERMS_BILLING_DRAFT_2026-10-01.md`
 
@@ -67,7 +67,7 @@ Both of my commits keep Android behaviour identical except for where the price t
 - Android pricing still charges through Stripe, and still shows the amount when the server can read the Stripe Price.
 
 Proven by:
-- `npm test`: 4,197 pass, 0 fail;
+- `npm test`: 4,199 pass, 0 fail;
 - `tsc`: clean;
 - `expo export`: iOS and Android both OK.
 
