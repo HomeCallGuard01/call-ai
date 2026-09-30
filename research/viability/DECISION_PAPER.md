@@ -1,5 +1,8 @@
 # Home Call Guard: commercial and network viability decision paper
 
+> **Superseded in part (2026-10-01):** see `CATASTROPHIC_RISK_REVIEW.md`. The A4 figure (~£2.7/sub) omitted fixed operations and multi-region cost and is withdrawn. The financial-safety analysis there overrides §3 here.
+
+
 Research only, 2026-09-30. No production, code, forwarding or account changes were made.
 
 - Model: `research/viability/portfolio-model.js`; output in `MODEL_OUTPUT.md`.
