@@ -60,6 +60,18 @@ const {
 const { attachMediaStreamServer } = require("./services/liveMonitoring/mediaStreamServer");
 const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/transcribeChunk");
 const { twilioRestClient } = require("./services/twilioClient");
+// Financial safety (2026-09-30, migration 056) — Layer A monitored-minute
+// entitlement + Layer B hard business protection. See services/usage/ and
+// docs/finance/FINANCIAL_SAFETY_ARCHITECTURE.md.
+const financialSafetyDb = require("./database/financialSafety");
+const { requestMonitoring, MONITORING_STATUS } = require("./services/usage/monitoringGate");
+const { resolveSafetyConfig } = require("./services/usage/safetyConfig");
+const { createCallConcurrencyTracker } = require("./services/usage/callConcurrency");
+const { createCallAdmission } = require("./services/usage/callAdmission");
+const { createUsageMeter } = require("./services/usage/usageMeter");
+const { createSmsBudget } = require("./services/usage/smsBudget");
+const { createSafetyEventRecorder } = require("./services/usage/safetyEvents");
+const { getHouseholdAllowance } = require("./services/usage/householdAllowance");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
@@ -252,7 +264,11 @@ function normaliseNumber(number) {
 // proving landline loop safety, was found to carry no usable information
 // on any of 184 real inbound calls checked). Nothing in this function
 // currently has any landline-specific branch.
-function dialHouseholdOrFailClosed(twiml, household) {
+// dialOptions.timeLimit (seconds): the per-call maximum from financial
+// safety (Layer B). Twilio ends the dialled leg at the limit; /call-delivery-
+// failed then ends the call. Explicit so an account-level 24-hour-call
+// setting can never lengthen it.
+function dialHouseholdOrFailClosed(twiml, household, dialOptions = {}) {
   const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
   // 2026-09-13: renamed from isVoiceClientReachable — no longer a
   // time-windowed check. See services/callRouting.js's
@@ -284,7 +300,7 @@ function dialHouseholdOrFailClosed(twiml, household) {
     // production as of this release (git merge-base against the live
     // Railway deployment commit) — this was written and tested on
     // 2026-09-13 but never actually shipped.
-    const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk" });
+    const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk", ...(dialOptions.timeLimit ? { timeLimit: dialOptions.timeLimit } : {}) });
     dial.client(plan.clientIdentity);
     return;
   }
@@ -425,7 +441,7 @@ async function getRecentCalls(householdId, limit) {
   return data || [];
 }
 
-async function logCall({ callSid, number, status, result, aiModel, processingTimeMs, householdId }) {
+async function logCall({ callSid, number, status, result, aiModel, processingTimeMs, householdId, monitoringStatus = null }) {
   if (!supabaseAdmin) {
     console.error("SUPABASE CALL LOG ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
     return;
@@ -442,6 +458,7 @@ async function logCall({ callSid, number, status, result, aiModel, processingTim
         ai_model: aiModel,
         processing_time_ms: processingTimeMs,
         household_id: householdId,
+        monitoring_status: monitoringStatus,
       },
       { onConflict: "call_sid", ignoreDuplicates: true }
     );
@@ -512,6 +529,7 @@ async function recordMonitoringOutcome({
   terminationReason = null,
   monitoredDurationSeconds = null,
   monitoringLimitReached = false,
+  monitoringStopReason = null,
 }) {
   if (!supabaseAdmin) {
     console.error("SUPABASE MONITORING OUTCOME ERROR: SUPABASE_SERVICE_ROLE_KEY not configured");
@@ -530,6 +548,15 @@ async function recordMonitoringOutcome({
       monitored_duration_seconds: monitoredDurationSeconds,
       monitoring_limit_reached: monitoringLimitReached,
       ...(terminatedBySystem ? { duration_seconds: monitoredDurationSeconds } : {}),
+      // Financial safety (056): a call whose monitoring stopped part-way
+      // (allowance or a safety rule) is recorded as such, never presented
+      // as monitored throughout. The 30-min per-call cap is already
+      // recorded by monitoring_limit_reached.
+      ...(monitoringStopReason === "allowance_exhausted_mid_call"
+        ? { monitoring_status: MONITORING_STATUS.STOPPED_ALLOWANCE }
+        : monitoringStopReason && monitoringStopReason !== "per_call_limit" && monitoringStopReason !== "call_ended"
+          ? { monitoring_status: MONITORING_STATUS.STOPPED_SAFETY }
+          : {}),
     })
     .eq("call_sid", callSid);
 
@@ -618,6 +645,10 @@ async function recordApprovedCallDeliveryOutcome(callSid, dialCallStatus, durati
 
 function toClientCall(call) {
   return {
+    // Financial safety (056): whether HCG actually monitored this call —
+    // null for trusted calls and rows before 056; otherwise a
+    // services/usage/monitoringGate.js MONITORING_STATUS value.
+    monitoringStatus: call.monitoring_status || null,
     number: call.number,
     status: call.status,
     result: call.result,
@@ -634,6 +665,51 @@ function toClientCall(call) {
     // boolean derived from the same row, never new detection logic.
     terminatedBySystem: Boolean(call.terminated_by_system),
   };
+}
+
+// FINANCIAL SAFETY (2026-09-30) — one instance of each for the process.
+const recordFinancialSafetyIntervention = createSafetyEventRecorder({
+  recordSafetyEvent: financialSafetyDb.recordSafetyEvent,
+  sendAlert: sendCriticalAlert,
+});
+const baseSafetyConfig = resolveSafetyConfig();
+const callAdmission = createCallAdmission({
+  admitCallDb: financialSafetyDb.admitCall,
+  endCallDb: financialSafetyDb.endCall,
+  // In-memory fallback, used only if the database can't answer in time.
+  memory: createCallConcurrencyTracker({
+    maxCallsPerHousehold: baseSafetyConfig.maxCallsPerHousehold,
+    burstMaxAttempts: baseSafetyConfig.burstMaxAttempts,
+    burstWindowMs: baseSafetyConfig.burstWindowSeconds * 1000,
+    callerMaxAttempts: baseSafetyConfig.callerMaxAttempts,
+    callerWindowMs: baseSafetyConfig.callerWindowSeconds * 1000,
+    maxCallAgeMs: (baseSafetyConfig.maxCallMinutes + 5) * 60 * 1000,
+    verifyActive: twilioRestClient
+      ? async (callSid) => ["queued", "ringing", "in-progress"].includes((await twilioRestClient.calls(callSid).fetch()).status)
+      : null,
+  }),
+  recordIntervention: recordFinancialSafetyIntervention,
+  isHcgNumber: async (number) => Boolean(await getHouseholdByTwilioNumber(number)),
+  countEntitledHouseholds: () => financialSafetyDb.countActiveEntitledHouseholds(),
+});
+const usageMeter = createUsageMeter({
+  attachMonitoringStream: financialSafetyDb.attachMonitoringStream,
+  recordMonitoringProgress: financialSafetyDb.recordMonitoringProgress,
+  claimUsageNotification: financialSafetyDb.claimUsageNotification,
+  recordIntervention: recordFinancialSafetyIntervention,
+});
+const smsBudget = createSmsBudget({
+  client: twilioRestClient,
+  claimSmsSend: financialSafetyDb.claimSmsSend,
+  recordIntervention: recordFinancialSafetyIntervention,
+});
+
+// A /voice response with no <Dial> ends the call immediately: close its
+// admission session now (there will be no <Dial> action callback).
+function endAdmissionIfNoDial(twiml, callSid) {
+  if (!twiml.toString().includes("<Dial")) {
+    callAdmission.end({ callSid, source: "no_dial" }).catch(() => {});
+  }
 }
 
 // VOICE CALL ENTRY
@@ -668,8 +744,9 @@ app.post("/voice", async (req, res) => {
   // services/activationVerification.js's own comment for why this can
   // never be triggered by client activity alone (only ever called from
   // here, and now only when the signature genuinely validates).
+  let genuineTwilioRequest = false;
   if (household) {
-    const genuineTwilioRequest = isGenuineTwilioRequest({
+    genuineTwilioRequest = isGenuineTwilioRequest({
       authToken: process.env.TWILIO_AUTH_TOKEN,
       signature: req.get("X-Twilio-Signature"),
       url: buildWebhookUrl(APP_URL, req.originalUrl),
@@ -696,6 +773,35 @@ app.post("/voice", async (req, res) => {
     c => c.number && normaliseNumber(c.number) === callerNorm
   );
 
+  // FINANCIAL SAFETY — Layer B call admission, BEFORE any billable TwiML.
+  // A refused call gets <Reject> as the first verb (not billed). Never
+  // refused because of the monitored allowance — only simultaneous-call
+  // volume, bursts/loops/floods, £ exposure far beyond genuine single-line
+  // use, or the kill switch (services/usage/callAdmission.js). Refused
+  // attempts are recorded in telephony_call_attempts, not in the
+  // customer's call history.
+  const activeEntitlement = household ? await getActiveEntitlement(household.id) : null;
+  const stripeSubscription = activeEntitlement && activeEntitlement.source === "stripe"
+    ? await getSubscriptionByHouseholdId(household.id).catch(() => null)
+    : null;
+  const admission = await callAdmission.admit({
+    household,
+    callSid: req.body.CallSid,
+    from: caller,
+    to: req.body.To,
+    isKnown,
+    entitlement: activeEntitlement,
+    subscription: stripeSubscription,
+    signatureValid: genuineTwilioRequest,
+  });
+  if (!admission.allowed) {
+    console.error("CALL REFUSED BY FINANCIAL SAFETY:", household && household.id, admission.reason);
+    twiml.reject({ reason: "busy" });
+    const rejectXml = twiml.toString();
+    return res.type("text/xml").send(rejectXml);
+  }
+  const dialOptions = { timeLimit: admission.maxCallSeconds };
+
   if (isKnown) {
     console.log("Known contact → bypass AI");
 
@@ -713,8 +819,9 @@ app.post("/voice", async (req, res) => {
       console.error("CALL LOG SKIPPED: no household matches dialled number", req.body.To);
     }
 
-    dialHouseholdOrFailClosed(twiml, household);
+    dialHouseholdOrFailClosed(twiml, household, dialOptions);
 
+    endAdmissionIfNoDial(twiml, req.body.CallSid);
     return res.type("text/xml").send(twiml.toString());
   }
 
@@ -742,6 +849,24 @@ app.post("/voice", async (req, res) => {
   // result value, or a separate "screened" flag) would represent this
   // more precisely, but is a bigger change than this fix calls for —
   // flagged for a product/schema decision, not made implicitly here.
+  // Financial safety gate (Layer A allowance + Layer B monitoring
+  // ceilings), BEFORE any paid monitoring starts. Only for households whose
+  // entitlement allows paid monitoring at all (shouldStartPaidMonitoring,
+  // below). Can't be established → no monitoring; the call connects either way.
+  const monitoringDecision = household && shouldStartPaidMonitoring(household, activeEntitlement)
+    ? await requestMonitoring({
+      household,
+      callSid: req.body.CallSid,
+      entitlement: activeEntitlement,
+      subscription: stripeSubscription,
+      countable: genuineTwilioRequest || !baseSafetyConfig.admissionRequiresSignature,
+      deps: {
+        beginMonitoringSession: financialSafetyDb.beginMonitoringSession,
+        recordIntervention: recordFinancialSafetyIntervention,
+      },
+    })
+    : { monitor: false, reason: "no_active_entitlement", monitoringStatus: MONITORING_STATUS.NO_ENTITLEMENT };
+
   if (household) {
     logCall({
       callSid: req.body.CallSid,
@@ -751,7 +876,18 @@ app.post("/voice", async (req, res) => {
       aiModel: null,
       processingTimeMs: 0,
       householdId: household.id,
+      monitoringStatus: monitoringDecision.monitoringStatus,
     }).catch(err => console.error("CALL LOG FAILED:", err.message));
+
+    // Allowance warning points (75/90/100%), claimed once per period.
+    if (monitoringDecision.snapshot && monitoringDecision.plan && monitoringDecision.period) {
+      usageMeter.notify({
+        householdId: household.id,
+        periodStart: monitoringDecision.period.periodStart,
+        usedSeconds: Number(monitoringDecision.snapshot.periodSeconds) || 0,
+        allowanceSeconds: Number(monitoringDecision.snapshot.allowanceSeconds) || monitoringDecision.plan.allowanceSeconds,
+      }).catch(err => console.error("USAGE NOTIFICATION FAILED:", err.message));
+    }
 
     // Rapid-abuse instrumentation (cost-protection safeguard) — log/alert
     // only, exactly like logCall above: never blocks, delays, or
@@ -803,15 +939,15 @@ app.post("/voice", async (req, res) => {
   // screened. The announcement is honesty-gated alongside monitoring: it
   // must never tell a caller the number is "monitored and protected" when
   // no monitoring is actually about to happen.
-  const activeEntitlement = household ? await getActiveEntitlement(household.id) : null;
-
-  if (shouldStartPaidMonitoring(household, activeEntitlement)) {
+  if (monitoringDecision.monitor) {
     twiml.say(
       { voice: "Polly.Amy", language: "en-GB" },
       "This number is monitored and protected by Home Call Guard."
     );
 
     attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+  } else if (household && monitoringDecision.reason !== "no_active_entitlement") {
+    console.error("UNKNOWN CALL CONNECTING WITHOUT PAID MONITORING (financial safety):", household.id, monitoringDecision.reason);
   } else if (household) {
     // Expected, steady-state behaviour for a lapsed/cancelled/never-
     // subscribed household — not a fault, so no sendCriticalAlert (that's
@@ -824,9 +960,47 @@ app.post("/voice", async (req, res) => {
     );
   }
 
-  dialHouseholdOrFailClosed(twiml, household);
+  dialHouseholdOrFailClosed(twiml, household, dialOptions);
 
+  endAdmissionIfNoDial(twiml, req.body.CallSid);
   return res.type("text/xml").send(twiml.toString());
+});
+
+// PROVIDER USAGE ALERT (financial safety, 2026-09-30)
+//
+// Receiver for Twilio Usage Trigger callbacks (scripts/provider-usage-
+// triggers.js creates the triggers; nothing is created automatically).
+// A provider-side alarm that fires even if HCG's own counters are wrong.
+// Twilio signature REQUIRED — an unsigned request is refused, never
+// alerted on (this endpoint must not become an unauthenticated way to page
+// the operator). Alert only: Twilio triggers cannot cap spend.
+app.post("/webhooks/provider-usage-alert", (req, res) => {
+  const genuine = isGenuineTwilioRequest({
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    signature: req.get("X-Twilio-Signature"),
+    url: buildWebhookUrl(APP_URL, req.originalUrl),
+    params: req.body,
+  });
+  if (!genuine) {
+    console.error("PROVIDER USAGE ALERT REFUSED: Twilio signature did not validate");
+    return res.status(403).end();
+  }
+  const context = {
+    usageCategory: req.body.UsageCategory || null,
+    currentValue: req.body.CurrentValue || null,
+    triggerValue: req.body.TriggerValue || null,
+    triggerBy: req.body.TriggerBy || null,
+    recurring: req.body.Recurring || null,
+    friendlyName: req.body.FriendlyName || null,
+    usageTriggerSid: req.body.UsageTriggerSid || null,
+  };
+  recordFinancialSafetyIntervention({
+    level: "emergency",
+    rule: "provider_usage_trigger",
+    action: "provider-side spend alarm fired (alert only; the provider does not stop spending)",
+    details: context,
+  }).catch(() => {});
+  return res.status(204).end();
 });
 
 // PROCESS UNKNOWN CALL
@@ -997,6 +1171,10 @@ app.post("/call-delivery-failed", (req, res) => {
   const twiml = new VoiceResponse();
   const dialCallStatus = req.body.DialCallStatus;
 
+  // Financial safety: the <Dial> has ended (answered-and-finished, no
+  // answer, or the per-call timeLimit) — close the admission session.
+  callAdmission.end({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+
   // duration_seconds + delivery-verified capture (cost-protection
   // safeguard, and now the sole source of real end-to-end delivery
   // evidence) — DialCallDuration is only present once the leg actually
@@ -1047,6 +1225,9 @@ app.post("/call-delivery-failed", (req, res) => {
 app.post("/call-status", (req, res) => {
   const twiml = new VoiceResponse();
 
+  // Financial safety: the <Dial> has ended — close the admission session.
+  callAdmission.end({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+
   recordApprovedCallDeliveryOutcome(
     req.body.CallSid,
     req.body.DialCallStatus,
@@ -1066,6 +1247,13 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     getContacts(req.household.id),
     getSubscriptionByHouseholdId(req.household.id),
   ]);
+  // Monitored-minute allowance (056) — same object as /api/v1/me/dashboard; never throws.
+  const monitoringAllowance = await getHouseholdAllowance({
+    household: req.household,
+    entitlement: req.entitlement,
+    subscription: req.entitlement && req.entitlement.source === "stripe" ? subscription : null,
+    deps: financialSafetyDb,
+  });
 
   // Membership status is always derived here, server-side, from the real
   // subscriptions/entitlements rows the Stripe webhook itself wrote — never
@@ -1144,7 +1332,10 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // plus name + number — never household_id) for the "Trusted contacts"
     // section. Same query/data already fetched above for the count.
     contacts: contacts.map(c => ({ id: c.id, name: c.name, number: c.number })),
-    callsScreened: callsToday.filter(call => call.status === "Unknown").length,
+    // Only unknown calls HCG actually monitored count as screened (056):
+    // null = logged before monitoring_status existed (always monitored then).
+    callsScreened: callsToday.filter(call => call.status === "Unknown" && (call.monitoring_status == null || call.monitoring_status === "monitored")).length,
+    monitoringAllowance,
     suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
     trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
     recentCalls: recentCalls.map(toClientCall),
@@ -2386,6 +2577,12 @@ attachMediaStreamServer(httpServer, {
   twilioRestClient,
   redLineRedirectUrl: buildRedLineTerminateUrl(APP_URL),
   recordOutcome: recordMonitoringOutcome,
+  // Financial safety (056): every stream is metered and bounded, and only
+  // transcribed once attached to a reservation made by a signed /voice
+  // request (a forged "start" gets no reservation → no paid transcription).
+  usageMeter,
+  safetyConfig: baseSafetyConfig,
+  smsBudget,
   // Shadow-mode Twilio signature check only (see mediaStreamServer.js and
   // services/twilioWebhookAuth.js) — observes and logs, never rejects a
   // connection. Same APP_URL/TWILIO_AUTH_TOKEN already used for /voice.

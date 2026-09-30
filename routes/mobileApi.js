@@ -37,6 +37,8 @@ const {
   recordTermsAcceptance,
 } = require("../database/households");
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
+const { getHouseholdAllowance } = require("../services/usage/householdAllowance");
+const financialSafetyDb = require("../database/financialSafety");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
@@ -538,6 +540,16 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       getSubscriptionByHouseholdId(req.household.id),
       getMostRecentDialOutcome(req.household.id),
     ]);
+    // Monitored-minute allowance (056) for Build 20 — never throws; an
+    // unreadable allowance is state 'unavailable' with monitoringActive:
+    // null (services/usage/householdAllowance.js). Contract:
+    // docs/finance/BUILD20_MONITORING_ALLOWANCE_API.md.
+    const monitoringAllowance = await getHouseholdAllowance({
+      household: req.household,
+      entitlement: req.entitlement,
+      subscription: req.entitlement && req.entitlement.source === "stripe" ? subscription : null,
+      deps: financialSafetyDb,
+    });
 
     // Same membership-status derivation as /dashboard-data (server.js) —
     // always from the real subscriptions/entitlements rows the webhook
@@ -634,9 +646,14 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         billingSource: req.entitlement.source,
       },
       contacts: contacts.map(c => ({ id: c.id, name: c.name, number: c.number })),
+      // Monitored-minute allowance + whether new unknown calls are being
+      // monitored right now. The app must never show "monitoring unknown
+      // callers" unless monitoringAllowance.monitoringActive is true.
+      monitoringAllowance,
       activity: recentCalls.map(toClientCall),
       stats: {
-        callsScreened: callsToday.filter(call => call.status === "Unknown").length,
+        // Only unknown calls HCG actually monitored count as screened (056).
+        callsScreened: callsToday.filter(call => call.status === "Unknown" && (call.monitoring_status == null || call.monitoring_status === "monitored")).length,
         suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
         trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
       },

@@ -37,7 +37,7 @@ function check(condition, message) {
 // --- the fix itself ---
 
 check(
-  serverSource.includes('twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk" });'),
+  serverSource.includes('twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk", ...(dialOptions.timeLimit ? { timeLimit: dialOptions.timeLimit } : {}) });'),
   'the client-only <Dial> now sets ringTone: "uk", overriding Twilio\'s un-customised default ringback tone'
 );
 

@@ -244,6 +244,9 @@ async function recordClientCallOutcome(callSid, householdId, outcome) {
 
 function toClientCall(call) {
   return {
+    // Financial safety (056): whether HCG actually monitored this call —
+    // null for trusted calls and rows before 056.
+    monitoringStatus: call.monitoring_status || null,
     number: call.number,
     status: call.status,
     result: call.result,
