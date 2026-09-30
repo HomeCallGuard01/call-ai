@@ -1,5 +1,7 @@
 # Financial safety controls (provider-neutral)
 
+> **2026-09-30:** superseded as the top-level design by `FINANCIAL_SAFETY_ARCHITECTURE.md`. That design adds enforced Layer A (allowance) and Layer B (hard admission) controls on branch `feature/financial-safety-hard-limits`. This document still describes the ledger-side monitor those layers reuse.
+
 Status 2026-09-28: **built and tested locally; not wired, not scheduled, not deployed.** No customer-facing limit, price or term is changed or implied. The £4.99 price is unchanged.
 
 Commercial premise (Twilio Support, 2026-09): when a PSTN call reaches an HCG number, the incoming PSTN leg stays active and billable for the whole connected call, including when it is bridged to the app with `<Dial><Client>`. **Trusted calls are not free.** Every control below treats trusted minutes as real cost.
