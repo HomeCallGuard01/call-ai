@@ -65,7 +65,7 @@ check(describeStripePrice(price({ unit_amount: null })) === null && describeStri
   let fail = false;
   let t = 0;
   const stripe = { prices: { retrieve: async (id) => { calls.push(id); if (fail) throw new Error('down'); return price({ id, unit_amount: id === 'price_old' ? 1111 : 2222 }); } } };
-  const lookup = createStripePriceLookup({ stripe, ttlMs: 1000, now: () => t });
+  const lookup = createStripePriceLookup({ stripe, ttlMs: 1000, failureTtlMs: 100, now: () => t });
   const a = await lookup('price_new');
   const b = await lookup('price_new');
   check(a.amountLabel === '£22.22' && b === a && calls.length === 1, 'a successful Stripe read is cached per Price ID');
@@ -76,8 +76,15 @@ check(describeStripePrice(price({ unit_amount: null })) === null && describeStri
   t = 10000;
   check((await lookup('price_new')) === null, 'a Stripe error returns null (no amount), never a stale or default figure');
   fail = false;
-  check((await lookup('price_new')).amountLabel === '£22.22', 'a failure is not cached — the next request recovers');
+  const callsAfterFailure = calls.length;
+  check((await lookup('price_new')) === null && calls.length === callsAfterFailure, 'a failure is remembered briefly, so dashboards don\'t each wait on an unhealthy Stripe');
+  t = 10200;
+  check((await lookup('price_new')).amountLabel === '£22.22', 'after the short failure window the next request recovers');
   check((await createStripePriceLookup({ stripe: null })('price_x')) === null && (await lookup('')) === null, 'no Stripe client or no Price ID -> null');
+  const hanging = { prices: { retrieve: () => new Promise(() => {}) } };
+  const started = Date.now();
+  const slow = await createStripePriceLookup({ stripe: hanging, timeoutMs: 50 })('price_slow');
+  check(slow === null && Date.now() - started < 1000, 'a Stripe read that never answers gives up after the timeout (dashboards are never held up)');
   check((await getCurrentStripeOffer(lookup, 'price_old')).amountLabel === '£11.11', 'getCurrentStripeOffer describes the Price ID it is given (STRIPE_PRICE_ID in production)');
 }
 

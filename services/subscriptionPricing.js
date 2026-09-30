@@ -23,6 +23,12 @@
 // nothing falls back to a remembered figure.
 
 const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000;
+// The dashboards await this read, so a slow or unreachable Stripe must never
+// hold them up: the read gives up after a short timeout (showing no amount),
+// and a failure is remembered briefly so every dashboard load doesn't wait
+// again while Stripe is unhealthy.
+const DEFAULT_TIMEOUT_MS = 2500;
+const DEFAULT_FAILURE_TTL_MS = 60 * 1000;
 
 function formatGbpMinor(amountMinor) {
   if (!Number.isInteger(amountMinor) || amountMinor <= 0) return null;
@@ -59,29 +65,43 @@ function describeStripePrice(price) {
 // Cached Stripe Price reader. Successful reads are cached per Price ID
 // (Prices are immutable in Stripe, so a cached amount can't go stale; a
 // deploy that switches STRIPE_PRICE_ID simply reads a different ID).
-// Failures are not cached, so a transient Stripe error recovers on the
-// next request.
-function createStripePriceLookup({ stripe, ttlMs = DEFAULT_CACHE_TTL_MS, now = () => Date.now() } = {}) {
+// Failures (errors, timeouts, undescribable prices) are cached only for
+// failureTtlMs, so a transient Stripe problem recovers shortly after.
+function createStripePriceLookup({
+  stripe,
+  ttlMs = DEFAULT_CACHE_TTL_MS,
+  failureTtlMs = DEFAULT_FAILURE_TTL_MS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  now = () => Date.now(),
+} = {}) {
   const cache = new Map();
 
   return async function lookupStripePrice(priceId) {
     if (!stripe || typeof priceId !== "string" || !priceId) return null;
 
     const hit = cache.get(priceId);
-    if (hit && now() - hit.at < ttlMs) return hit.value;
+    if (hit && now() - hit.at < (hit.value ? ttlMs : failureTtlMs)) return hit.value;
 
+    let timer;
     try {
-      const price = await stripe.prices.retrieve(priceId);
+      const price = await Promise.race([
+        stripe.prices.retrieve(priceId),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
+        }),
+      ]);
       const value = describeStripePrice(price);
       if (!value) {
         console.error(`SUBSCRIPTION PRICING: Stripe price ${priceId} is not a VAT-inclusive monthly GBP price; not displayed`);
-        return null;
       }
       cache.set(priceId, { at: now(), value });
       return value;
     } catch (err) {
       console.error("SUBSCRIPTION PRICING: STRIPE PRICE FETCH ERROR:", err && err.message);
+      cache.set(priceId, { at: now(), value: null });
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   };
 }
