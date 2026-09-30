@@ -183,6 +183,10 @@ export interface ActivationInstructionsResponse {
   code: string | null;
   activationMethod: "mmi" | "native_settings";
   activationNote: string | null;
+  // The customer's HCG forwarding number, UK national format ("0...").
+  // Optional: absent from responses by backends older than 2026-09-26 —
+  // see lib/forwardingNumber.ts's resolveForwardingNumber fallback.
+  forwardingNumber?: string | null;
   cancelCode: string | null;
   cancelCodeMethod: "mmi" | "native_settings" | "unknown";
   cancelCodeConfidence: "high" | "medium" | null;

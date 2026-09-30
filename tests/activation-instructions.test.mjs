@@ -107,8 +107,9 @@ for (const deviceType of ['iphone', 'android']) {
   {
     const result = buildActivationInstructions({ twilioNumber: '+441234567890', deviceType, carrier: 'sky' });
     check(
-      result.cancelCode === '#61#',
-      `${deviceType}/sky (mobile): cancelCode is #61# — a different service code entirely from the landline #21#/##21# family`
+      result.cancelCode === null && result.cancelCodeMethod === 'native_settings' && /call forwarding settings/i.test(result.cancelCodeNote || '') &&
+        result.code === '**21*01234567890#' && result.activationMethod === 'mmi',
+      `${deviceType}/sky (mobile): #61# withdrawn (2026-09-26 — 61 is no-reply forwarding, HCG sets up unconditional 21); cancellation via phone Settings, no guessed code; activation still the dial code`
     );
   }
   {

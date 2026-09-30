@@ -1223,6 +1223,11 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, async (req,
       code: instructions.code,
       activationMethod: instructions.activationMethod,
       activationNote: instructions.activationNote,
+      // The customer's own HCG number, UK national format (2026-09-26) —
+      // the number to type into Phone Settings for a native_settings
+      // carrier (code is null there), and the same number the dial code
+      // embeds otherwise. Clients read this directly; no code parsing.
+      forwardingNumber: instructions.forwardingNumber,
       cancelCode: instructions.cancelCode,
       cancelCodeMethod: instructions.cancelCodeMethod,
       cancelCodeConfidence: instructions.cancelCodeConfidence,

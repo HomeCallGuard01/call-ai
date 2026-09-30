@@ -716,8 +716,10 @@ router.get("/api/v1/me/activation-device", requireAuthApi, requireEntitlement, a
 // welcome email, no SMS, nothing — see the conversation record this
 // endpoint was approved in). GET /api/v1/me/dashboard and the existing
 // web /dashboard-data route are both completely unchanged by this;
-// this route's response never includes a bare `twilioNumber` field —
-// only the fully-formed, ready-to-dial code and plain-language framing
+// this route's response never includes the raw E.164 `twilioNumber` —
+// only `forwardingNumber` (the same number in UK national format, which
+// the dial code already exposed; added 2026-09-26 so native-Settings
+// carriers can be shown it), the ready-to-dial code and plain-language framing
 // (services/activationInstructions.js generates it server-side so
 // per-provider formatting/caveats — Virgin's extra zero, Sky/Virgin's
 // preliminary 150 call — live in exactly one place, never duplicated in
@@ -789,6 +791,11 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
       code: instructions.code,
       activationMethod: instructions.activationMethod,
       activationNote: instructions.activationNote,
+      // The customer's own HCG number, UK national format (2026-09-26) —
+      // the number to type into Phone Settings for a native_settings
+      // carrier (code is null there), and the same number the dial code
+      // embeds otherwise. Clients read this directly; no code parsing.
+      forwardingNumber: instructions.forwardingNumber,
       cancelCode: instructions.cancelCode,
       cancelCodeMethod: instructions.cancelCodeMethod,
       cancelCodeConfidence: instructions.cancelCodeConfidence,

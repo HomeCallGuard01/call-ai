@@ -39,6 +39,9 @@ const PROVIDER_POLICY_VERSION = "2026-09-19-v4";
 // method: 'mmi' | 'native_settings' | null (null only when status is
 //   'incompatible' or 'unverified' — there is no method to describe)
 //
+// deactivationMethod (optional): 'native_settings' to send cancellation
+//   through phone Settings even though activation (method) uses a dial
+//   code — for a carrier whose cancel code can't be confirmed (Sky)
 // deactivationCode: the exact MMI code to remove forwarding, or null when
 //   not confirmed by any source found in the audit (never fabricated)
 // deactivationConfidence: 'high' | 'medium' | null
@@ -124,12 +127,22 @@ const PROVIDER_POLICY = {
     deactivationSource:
       "MMI reportedly broken network-wide (Three Community, multiply corroborated) — native Settings required for both activation and deactivation",
   },
+  // Deactivation corrected 2026-09-26: "#61#" (Sky Community forum,
+  // semi-official) was removed. In the standard GSM service codes (3GPP
+  // TS 22.030) 61 is call-forwarding-on-NO-REPLY, whereas HCG registers
+  // UNCONDITIONAL forwarding (service code 21, **21*<number>#) — so #61#
+  // would not cancel what HCG set up. No first-party Sky source confirms
+  // a code for that, so no other code is guessed here: cancellation goes
+  // through the phone's own call forwarding settings instead
+  // (deactivationMethod below). Activation (method) is unchanged.
   sky: {
     status: "provider_specific",
     method: "mmi",
-    deactivationCode: "#61#",
-    deactivationConfidence: "medium",
-    deactivationSource: "Sky Community forum (semi-official) — a different service code entirely, not 21",
+    deactivationMethod: "native_settings",
+    deactivationCode: null,
+    deactivationConfidence: null,
+    deactivationSource:
+      "#61# withdrawn 2026-09-26: 3GPP TS 22.030 service code 61 is no-reply forwarding, not the unconditional (21) forwarding HCG registers; no first-party Sky source for a code — Settings used instead",
   },
   smarty: {
     status: "provider_specific",
@@ -332,17 +345,24 @@ function evaluateProviderCompatibility(providerKey, tariffType) {
 // provider this policy doesn't have a confirmed code for); in every case
 // where a code isn't confirmed, `code` is null and `method` honestly
 // reflects what's known, rather than defaulting to any single MMI code.
+// Customer-facing Settings wording (2026-09-26). deactivationSource is a
+// source CITATION for traceability (e.g. Three's "MMI reportedly broken
+// network-wide (Three Community…)") and must not be shown to customers as
+// their instructions — these are what native-Settings customers see.
+const SETTINGS_ACTIVATION_NOTE =
+  "On Android: open the Phone app, tap the three-dot menu > Settings > Calls > Call forwarding, choose 'Always forward', enter your Home Call Guard number and tap Turn on. On iPhone: open Settings > Phone > Call Forwarding, turn it on and enter your Home Call Guard number.";
+const SETTINGS_DEACTIVATION_NOTE =
+  "To turn call forwarding off, open the same call forwarding settings (Android: Phone app > Settings > Calls > Call forwarding; iPhone: Settings > Phone > Call Forwarding) and turn off 'Always forward'.";
+
 function getMobileDeactivationInstructions(providerKey) {
   const policy = getProviderPolicy(providerKey);
 
-  if (policy.method === "native_settings") {
+  if (policy.method === "native_settings" || policy.deactivationMethod === "native_settings") {
     return {
       method: "native_settings",
       code: null,
       confidence: null,
-      note:
-        policy.deactivationSource ||
-        "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) — an MMI code is not reliable on this network.",
+      note: SETTINGS_DEACTIVATION_NOTE,
     };
   }
 
@@ -393,9 +413,7 @@ function getMobileActivationInstructions(providerKey) {
   if (policy.method === "native_settings") {
     return {
       method: "native_settings",
-      note:
-        policy.deactivationSource ||
-        "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) — an MMI code is not reliable on this network.",
+      note: SETTINGS_ACTIVATION_NOTE,
     };
   }
 
