@@ -1,10 +1,15 @@
 -- Close the "RLS Disabled in Public" / "Table publicly accessible"
 -- Supabase Security Advisor finding on public.terms_acceptances.
 --
--- STATUS: DRAFT — NOT APPLIED to staging (tigwgmayeuisrxjjykqd) or
--- production (psbzynxplxfbyrbdidmn). Number 057 is provisional (highest
--- number on any remote branch at drafting time was 056); renumber at merge
--- time if another migration claims it first.
+-- STATUS: APPLIED to staging (tigwgmayeuisrxjjykqd) 2026-09-30T17:56:24Z
+-- via `supabase db query --linked -f` and recorded with
+-- `supabase migration repair --status applied 057`; verified live (anon
+-- and authenticated denied all verbs, service_role RPC insert and
+-- household cascade intact, Security Advisor no longer reports
+-- rls_disabled_in_public). NOT applied to production
+-- (psbzynxplxfbyrbdidmn). Number 057 is provisional (highest number on
+-- any remote branch at drafting time was 056); renumber at merge time if
+-- another migration claims it first.
 --
 -- Root cause: migration 039 created this table without
 -- `enable row level security` and without any explicit revoke, relying on
