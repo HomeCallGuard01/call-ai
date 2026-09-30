@@ -17,6 +17,7 @@ const { evaluateSpend } = require('./spendGuard');
 const { detectAnomalies } = require('./spendAnomaly');
 const { assessProtection } = require('./companySpendProtection');
 const { accumulateHouseholdCosts, householdContribution } = require('./householdCosts');
+const { householdCostThresholds } = require('./pricingScenarios');
 
 // GBP daily totals per category from ledger entries (for spikes / new categories).
 function dailyTotalsFromEntries(entries, fx = {}) {
@@ -84,6 +85,7 @@ async function runSpendMonitor({ load, sendCriticalAlert = null, now = new Date(
   const anomalyAlerts = detectAnomalies({
     now, today, lastIngestedAt: data.lastIngestedAt, dailyTotals: daily, households: accumulation.households,
     legs: (data.legs || []).filter((l) => l.started_at && now - new Date(l.started_at) <= 48 * 3600000),
+    realtimeDailyGbp: data.realtimeDailyGbp || null,
   }, config.anomaly);
 
   // Internal-only loss-making flag (never shown to or enforced on a customer).
@@ -96,7 +98,19 @@ async function runSpendMonitor({ load, sendCriticalAlert = null, now = new Date(
     detail: `projected cost £${h.projectedMonthGbp.toFixed(2)} exceeds after-fees revenue £${h.contribution.afterFeesGbp.toFixed(2)} (${h.contribution.channel}); internal fair-use review only`, subject: h.householdId,
   }));
 
-  const alerts = [...guardAlerts, ...anomalyAlerts, ...lossAlerts].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'CRITICAL' ? -1 : 1));
+  // WATCH: below the target contribution margin (default 40%) but not yet
+  // loss-making — the margin-derived level, distinct from the loss (ALERT)
+  // and from the catastrophic hard ceilings enforced at call admission.
+  const targetMargin = config.targetMargin ?? 0.4;
+  const marginAlerts = perHousehold.filter((h) => !h.contribution.projectedLossMaking).flatMap((h) => {
+    const t = householdCostThresholds({ priceGbp: config.priceGbp || 4.99, channel: h.contribution.channel, targetMargin });
+    return h.projectedMonthGbp > t.watchAtCostGbp ? [{
+      code: 'HOUSEHOLD_BELOW_TARGET_MARGIN', severity: 'WARNING', value: h.projectedMonthGbp, threshold: Math.round(t.watchAtCostGbp * 100) / 100,
+      detail: `projected cost £${h.projectedMonthGbp.toFixed(2)} leaves less than a ${Math.round(targetMargin * 100)}% contribution margin (${h.contribution.channel}); watch only`, subject: h.householdId,
+    }] : [];
+  });
+
+  const alerts = [...guardAlerts, ...anomalyAlerts, ...lossAlerts, ...marginAlerts].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'CRITICAL' ? -1 : 1));
   const protection = assessProtection({ alerts, entitledHouseholds: data.entitledHouseholds, todaySpendGbp, monthToDateGbp, previous: state.protection }, config.protection);
   const sent = await notify(alerts, { sendCriticalAlert, sentKeys: state.sentKeys || [], today, protection });
 

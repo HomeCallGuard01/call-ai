@@ -218,6 +218,16 @@ async function main() {
   const rls = await db.query(`select relname from pg_class where relname in ('household_usage_periods','household_usage_days','platform_usage_hours','monitoring_sessions','telephony_call_sessions','telephony_call_attempts','usage_notifications','financial_safety_events','financial_safety_state') and not relrowsecurity`);
   check(rls.rows.length === 0, 'RLS is enabled on every 056 table');
 
+  // 13. Rollback removes exactly 056's objects; 056 re-applies cleanly afterwards.
+  await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '056_rollback_financial_safety_allowance_and_admission.sql'), 'utf8'));
+  const gone = await q1(`select to_regclass('public.telephony_call_sessions') t, to_regproc('public.admit_call') f,
+    (select count(*)::int from information_schema.columns where table_name = 'calls' and column_name = 'monitoring_status') c`);
+  const ledgerKept = await q1(`select to_regclass('public.financial_entries') t`);
+  check(gone.t === null && gone.f === null && gone.c === 0 && ledgerKept.t !== null, 'rollback drops 056 objects only (the 051 ledger is untouched)');
+  let reapplied = true;
+  try { await db.exec(await readFile(path.join(migrationsDir, '056_financial_safety_allowance_and_admission.sql'), 'utf8')); } catch { reapplied = false; }
+  check(reapplied, '056 re-applies cleanly after its rollback');
+
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   process.exitCode = failures === 0 ? 0 : 1;
 }

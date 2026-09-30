@@ -602,7 +602,7 @@ begin
   update public.monitoring_sessions set stream_sid = p_stream_sid, status = 'streaming', last_heartbeat_at = now()
    where call_sid = p_call_sid;
   return jsonb_build_object('ok', true, 'householdId', v.household_id, 'periodStart', v.period_start,
-    'allowanceSeconds', v.allowance_seconds, 'enforceAllowance', v.enforce_allowance,
+    'periodEnd', v.period_end, 'allowanceSeconds', v.allowance_seconds, 'enforceAllowance', v.enforce_allowance,
     'dailyCostLimitGbp', v.daily_cost_limit_gbp, 'periodCostLimitGbp', v.period_cost_limit_gbp,
     'countedSeconds', v.counted_seconds);
 end;

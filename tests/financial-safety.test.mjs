@@ -150,6 +150,19 @@ function inboundEntry(household, callId, at, seconds, extra = {}) {
     'a household at 10× the median with 6 simultaneous calls is flagged; ordinary households are not');
 }
 
+// Real-time safety estimates vs supplier ledger.
+{
+  const now = '2026-09-28T12:00:00Z';
+  const fresh = '2026-09-28T11:00:00Z';
+  const ledger = [{ date: '2026-09-27', category: 'inbound_voice', amount: 6, currency: 'GBP' }];
+  const under = detectAnomalies({ now, lastIngestedAt: fresh, dailyTotals: ledger, realtimeDailyGbp: { '2026-09-27': 3 } });
+  const fine = detectAnomalies({ now, lastIngestedAt: fresh, dailyTotals: ledger, realtimeDailyGbp: { '2026-09-27': 5.5 } });
+  check(codes(under).includes('SAFETY_ESTIMATE_UNDERCOUNT:CRITICAL') && !codes(fine).some((c) => c.startsWith('SAFETY_ESTIMATE')),
+    'real spend above the real-time safety estimate (+20% + £0.50) is CRITICAL: the hard limits would be counting too little');
+  const today = detectAnomalies({ now, lastIngestedAt: fresh, dailyTotals: [{ date: '2026-09-28', category: 'inbound_voice', amount: 6, currency: 'GBP' }], realtimeDailyGbp: { '2026-09-28': 1 } });
+  check(!codes(today).some((c) => c.startsWith('SAFETY_ESTIMATE')), 'an incomplete day (today) is never compared');
+}
+
 // ─── companySpendProtection ─────────────────────────────────────────────
 {
   const clean = assessProtection({ alerts: [], entitledHouseholds: 10, todaySpendGbp: 1, monthToDateGbp: 20 });
@@ -292,6 +305,7 @@ function inboundEntry(household, callId, at, seconds, extra = {}) {
         limit(n) { q.lim = n; return b.then ? b : b; },
         range(from, to) { seen.push([table, from, to]); return Promise.resolve({ data: tables[table].slice(from, to + 1), error: null }); },
         then(resolve) {
+          if (!tables[table]) return Promise.resolve({ data: null, error: new Error(`relation "${table}" does not exist`) }).then(resolve);
           let rows = tables[table].slice();
           if (q.ord && q.ord[1] && q.ord[1].ascending === false) rows.sort((x, y) => (x[q.ord[0]] < y[q.ord[0]] ? 1 : -1));
           return Promise.resolve({ data: rows.slice(0, q.lim || rows.length), error: null }).then(resolve);
@@ -304,6 +318,13 @@ function inboundEntry(household, callId, at, seconds, extra = {}) {
   check(data.legs.length === 5 && seen.filter(([t]) => t === 'telephony_call_legs').length === 3, 'legs are fetched in pages until exhausted (never truncated at one page)');
   check(data.entitledHouseholds === 2, 'entitled households are counted once each');
   check(data.lastIngestedAt === '2026-09-28T11:00:00Z', 'lastIngestedAt is the newest ledger write');
+  check(data.realtimeDailyGbp === null, 'before migration 056 exists, real-time estimates are absent (null), not zero');
+  tables.platform_usage_hours = [
+    { hour_start: '2026-09-27T10:00:00Z', monitoring_cost_gbp: '0.5', telephony_cost_gbp: '1.25', sms_cost_gbp: '0.04' },
+    { hour_start: '2026-09-27T11:00:00Z', monitoring_cost_gbp: '0', telephony_cost_gbp: '0.2', sms_cost_gbp: '0' },
+  ];
+  const withRt = await loadSpendMonitorData({ since: '2026-09-01T00:00:00Z', pageSize: 2 }, { admin });
+  check(Math.abs(withRt.realtimeDailyGbp['2026-09-27'] - 1.99) < 1e-9, 'real-time safety £ are summed per day from the 056 hourly counters');
   const failing = { from() { const b = { select: () => b, in: () => b, or: () => b, gte: () => b, eq: () => b, order: () => b, limit: () => Promise.resolve({ data: null, error: new Error('permission denied') }), range: () => Promise.resolve({ data: null, error: new Error('permission denied') }) }; return b; } };
   let threw = false;
   try { await loadSpendMonitorData({ since: '2026-09-01' }, { admin: failing }); } catch { threw = true; }

@@ -139,7 +139,21 @@ async function loadSpendMonitorData({ since, pageSize = 1000 }, deps = {}) {
     admin.from('financial_entries').select('updated_at').order('updated_at', { ascending: false }).limit(1),
   ]);
   if (newest.error) throw newest.error;
+  // Real-time safety counters (migration 056), for the estimate-vs-ledger
+  // check. Optional: absent before 056 is applied (null = not compared).
+  let realtimeDailyGbp = null;
+  const hours = await admin.from('platform_usage_hours')
+    .select('hour_start, monitoring_cost_gbp, telephony_cost_gbp, sms_cost_gbp')
+    .gte('hour_start', since);
+  if (!hours.error) {
+    realtimeDailyGbp = {};
+    for (const h of hours.data || []) {
+      const day = new Date(h.hour_start).toISOString().slice(0, 10);
+      realtimeDailyGbp[day] = (realtimeDailyGbp[day] || 0) + Number(h.monitoring_cost_gbp) + Number(h.telephony_cost_gbp) + Number(h.sms_cost_gbp);
+    }
+  }
   return {
+    realtimeDailyGbp,
     entries,
     legs,
     calls,

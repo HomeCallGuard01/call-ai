@@ -20,6 +20,11 @@ const DEFAULT_ANOMALY_THRESHOLDS = {
   burstWindowMinutes: 10,       // … within this window (loop or flood)
   concurrentWarning: 3,         // a single forwarded mobile line rarely carries > 2
   concurrentCritical: 5,
+  // Real-time safety estimates (migration 056 counters) vs supplier ledger,
+  // per completed day: ledger above estimate × (1 + tolerance) + floor means
+  // the hard limits are counting less money than is really being spent.
+  estimateUndercountTolerance: 0.2,
+  estimateUndercountFloorGbp: 0.5,
   // Categories whose first appearance breaks a cost assumption in the model.
   architectureBreakingCategories: ['app_leg', 'outbound_voice', 'channel_capacity', 'platform_fee'],
 };
@@ -40,6 +45,7 @@ function median(values) {
  * @param {string} [input.today]  YYYY-MM-DD being judged (defaults to now's UTC date)
  * @param {object[]} [input.households]  accumulateHouseholdCosts(...).households
  * @param {{ household_id: string, started_at: string, leg_type: string }[]} [input.legs]  recent legs for burst detection
+ * @param {Object<string, number>|null} [input.realtimeDailyGbp]  per-day £ from the real-time safety counters (056)
  */
 function detectAnomalies(input, overrides = {}) {
   const t = { ...DEFAULT_ANOMALY_THRESHOLDS, ...overrides };
@@ -126,6 +132,20 @@ function detectAnomalies(input, overrides = {}) {
     }
     if (best >= t.burstCalls) {
       push('CALL_BURST', 'CRITICAL', best, t.burstCalls, `${best} inbound calls within ${t.burstWindowMinutes} min (forwarding loop or call flood)`, id);
+    }
+  }
+
+  // 5. Real-time safety estimates vs the supplier ledger (completed days only).
+  if (input.realtimeDailyGbp) {
+    for (const [date, ledgerTotal] of byDay) {
+      if (date >= today) continue;
+      const est = input.realtimeDailyGbp[date];
+      if (est == null) continue;
+      const limit = est * (1 + t.estimateUndercountTolerance) + t.estimateUndercountFloorGbp;
+      if (ledgerTotal > limit) {
+        push('SAFETY_ESTIMATE_UNDERCOUNT', 'CRITICAL', round(ledgerTotal), round(limit),
+          `${date}: supplier-reconciled £${round(ledgerTotal)} vs real-time safety estimate £${round(est)} — the hard limits are counting less than real spend; update the SAFETY_COST_* rates`, date);
+      }
     }
   }
 
