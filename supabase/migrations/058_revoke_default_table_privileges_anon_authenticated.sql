@@ -1,8 +1,11 @@
 -- Stop future public-schema tables and sequences from implicitly granting
 -- anon/authenticated full privileges.
 --
--- STATUS: DRAFT — NOT APPLIED to staging (tigwgmayeuisrxjjykqd) or
--- production (psbzynxplxfbyrbdidmn). Awaiting explicit approval.
+-- STATUS: APPLIED to staging (tigwgmayeuisrxjjykqd) 2026-09-30T19:26:29Z
+-- via `supabase db query --linked -f` + `supabase migration repair --status
+-- applied 058`; verified live (scripts/verify-table-grants.js all-clear).
+-- NOT applied to production (psbzynxplxfbyrbdidmn) — awaiting Andrew's
+-- explicit approval; see docs/engineering/SUPABASE_SECURITY_REMEDIATION_2026-09-30.md.
 --
 -- Why: staging (created 2026-07-30) has Supabase's newer default ACL
 -- template. Read-only introspection on 2026-09-30 found, for objects that
@@ -36,10 +39,13 @@
 -- must reach needs an explicit GRANT (already this codebase's convention —
 -- see 006/007/008/011), plus RLS policies.
 --
--- Production: expected to be a no-op (its older default ACL does not grant
--- tables to anon — confirmed indirectly by a 42501 anon probe on
--- 2026-09-30), but safe and idempotent to run there to keep both projects
--- identical.
+-- Production (read-only catalog check 2026-09-30): its default ACL is
+--   tables    {postgres=arwdDxtm, anon=Dxtm, authenticated=Dxtm, service_role=Dxtm}
+--   sequences {postgres=rwU}
+-- so this is NOT a pure no-op there: it removes the default TRUNCATE/
+-- REFERENCES/TRIGGER/MAINTAIN that new tables currently hand anon and
+-- authenticated. Nothing uses those. Rollbacks are per-project
+-- (_rollbacks/058_*.sql and 058_*.production.sql).
 
 begin;
 

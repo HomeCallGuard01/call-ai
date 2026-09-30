@@ -58,6 +58,22 @@ $$;
 
 grant usage on schema public to anon, authenticated, service_role;
 
+-- Reproduce the most permissive real platform default ACL — staging's
+-- (project created 2026-07-30; read-only pg_default_acl snapshot
+-- 2026-09-30): everything postgres creates in public implicitly grants
+-- anon/authenticated/service_role ALL. Production's default is strictly
+-- narrower, so replaying the chain under this one is the worst case. Before
+-- this, the harness had no default ACL at all and could not reproduce the
+-- terms_acceptances exposure (039 + staging defaults); now every
+-- "anon/authenticated has no X" assertion below is tested against the grants
+-- a real Supabase project would actually hand out. 022/058/059 must undo it.
+alter default privileges for role postgres in schema public
+  grant all on tables to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  grant all on sequences to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  grant all on functions to anon, authenticated, service_role;
+
 -- Real Supabase grants service_role full access to the auth schema by
 -- platform default (it's how the service-role key can read/write
 -- auth.users at all) — this was never exercised before the SET LOCAL ROLE
@@ -1460,6 +1476,103 @@ async function main() {
     `select count(*)::int as n from public.terms_acceptances where household_id = $1`, [termsHouseholdId]
   );
   assert(termsLeft === 0, 'household delete still cascades to terms_acceptances after 057');
+
+  // --- migrations 058/059: least-privilege anon/authenticated table grants ---
+  //
+  // Runs under the staging-model default ACL set up in BOOTSTRAP_SQL, so a
+  // future table that forgets RLS, or a migration that re-grants broadly,
+  // fails here instead of shipping an anon-readable table.
+  console.log('\nChecking migrations 058/059 (anon/authenticated table grants)...\n');
+  await db.exec('reset role;');
+  const aclQuery = (roleFilter) => db.query(`
+    select c.relname, a.privilege_type
+    from pg_class c, aclexplode(c.relacl) a
+    where c.relnamespace = 'public'::regnamespace
+      and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+      and ${roleFilter}
+    order by 1, 2;
+  `);
+  const { rows: anonGrants } = await aclQuery(`(a.grantee = 0 or a.grantee = 'anon'::regrole)`);
+  assert(anonGrants.length === 0,
+    `anon/PUBLIC hold no privilege on any public relation (found: ${anonGrants.map((r) => `${r.relname}:${r.privilege_type}`).join(', ') || 'none'})`);
+
+  const AUTHENTICATED_TABLE_GRANTS = [
+    'contacts:DELETE', 'contacts:INSERT', 'contacts:SELECT', 'contacts:UPDATE',
+    'entitlements:SELECT', 'households:SELECT', 'subscriptions:SELECT', 'user_roles:SELECT',
+  ];
+  const { rows: authGrants } = await aclQuery(`a.grantee = 'authenticated'::regrole`);
+  const authFound = authGrants.map((r) => `${r.relname}:${r.privilege_type}`).sort();
+  assert(JSON.stringify(authFound) === JSON.stringify(AUTHENTICATED_TABLE_GRANTS),
+    `authenticated table-level grants are exactly the allowlist (found: ${authFound.join(', ')})`);
+
+  const { rows: authColumnGrants } = await db.query(`
+    select c.relname || '.' || att.attname || ':' || a.privilege_type as g
+    from pg_attribute att
+    join pg_class c on c.oid = att.attrelid, aclexplode(att.attacl) a
+    where c.relnamespace = 'public'::regnamespace and a.grantee = 'authenticated'::regrole
+    order by 1;
+  `);
+  assert(JSON.stringify(authColumnGrants.map((r) => r.g)) === JSON.stringify([
+    'households.auth_user_id:INSERT', 'households.auth_user_id:UPDATE',
+    'households.email:INSERT', 'households.email:UPDATE', 'households.status:INSERT',
+    'user_roles.auth_user_id:INSERT', 'user_roles.role:INSERT',
+  ]), `authenticated column-level grants are exactly what ensureHouseholdAndRole() writes (found: ${authColumnGrants.map((r) => r.g).join(', ')})`);
+
+  const { rows: badDefaults } = await db.query(`
+    select d.defaclobjtype, d.defaclacl::text as acl from pg_default_acl d
+    where d.defaclrole = 'postgres'::regrole and d.defaclnamespace = 'public'::regnamespace
+      and d.defaclacl::text ~ '(^|[{,])(anon|authenticated)=';
+  `);
+  assert(badDefaults.length === 0,
+    `public default ACL grants nothing to anon/authenticated (found: ${badDefaults.map((r) => `${r.defaclobjtype}=${r.acl}`).join('; ') || 'none'})`);
+
+  // Canary: a table created after every migration must start closed.
+  await db.exec(`create table public.zz_default_acl_canary (id int); create sequence public.zz_default_acl_canary_seq;`);
+  for (const role of ['anon', 'authenticated']) {
+    const { rows: [{ t, s }] } = await db.query(`
+      select has_table_privilege($1, 'public.zz_default_acl_canary', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE') as t,
+             has_sequence_privilege($1, 'public.zz_default_acl_canary_seq', 'USAGE,SELECT,UPDATE') as s`, [role]);
+    assert(!t && !s, `a newly created public table/sequence grants ${role} nothing by default`);
+  }
+  await db.exec(`drop table public.zz_default_acl_canary; drop sequence public.zz_default_acl_canary_seq;`);
+
+  // The only real authenticated write path — ensureHouseholdAndRole() —
+  // still works, while arbitrary households columns are refused.
+  const bootUser = '33333333-3333-4333-8333-333333333333';
+  const bootEmail = 'boot@example.com';
+  await db.query(`insert into auth.users (id, email) values ($1, $2)`, [bootUser, bootEmail]);
+  await asAuthUser(db, bootUser, bootEmail);
+  const { rows: claimRows } = await db.query(
+    `update public.households set auth_user_id = $1, email = $2 where auth_user_id is null returning id`, [bootUser, bootEmail]
+  );
+  assert(claimRows.length === 0, 'bootstrap: claim-default UPDATE (auth_user_id/email) is permitted and claims nothing');
+  let privilegedInsertError = null;
+  try {
+    await db.query(
+      `insert into public.households (auth_user_id, email, status, twilio_number) values ($1, $2, 'active', '+447000000001')`,
+      [bootUser, bootEmail]
+    );
+  } catch (err) {
+    privilegedInsertError = err;
+  }
+  assert(privilegedInsertError?.code === '42501', `authenticated cannot set households.twilio_number on insert (got: ${privilegedInsertError?.code ?? 'no error'})`);
+  await db.query(`insert into public.households (auth_user_id, email, status) values ($1, $2, 'active')`, [bootUser, bootEmail]);
+  await db.query(`insert into public.user_roles (auth_user_id, role) values ($1, 'household')`, [bootUser]);
+  const { rows: ownHouseholds } = await db.query(`select auth_user_id from public.households`);
+  assert(ownHouseholds.length === 1 && ownHouseholds[0].auth_user_id === bootUser,
+    'bootstrap: authenticated creates and sees only its own household');
+  const { rows: ownRoles } = await db.query(`select auth_user_id from public.user_roles`);
+  assert(ownRoles.length === 1 && ownRoles[0].auth_user_id === bootUser, 'bootstrap: authenticated creates and sees only its own role');
+
+  await db.exec(`reset role; set role anon;`);
+  let anonReadError = null;
+  try {
+    await db.query(`select 1 from public.households limit 1`);
+  } catch (err) {
+    anonReadError = err;
+  }
+  assert(anonReadError?.code === '42501', `anon is refused (42501) on households, not merely filtered by RLS (got: ${anonReadError?.code ?? 'no error'})`);
+  await db.exec('reset role;');
 
   await db.close();
 

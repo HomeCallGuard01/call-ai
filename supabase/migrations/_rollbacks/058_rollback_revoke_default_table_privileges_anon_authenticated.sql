@@ -1,4 +1,5 @@
--- Rollback for 058_revoke_default_table_privileges_anon_authenticated.sql.
+-- Rollback for 058_revoke_default_table_privileges_anon_authenticated.sql —
+-- STAGING (tigwgmayeuisrxjjykqd) ONLY; production has its own file.
 --
 -- WARNING: restores the unsafe staging default under which every new
 -- public table/sequence implicitly grants anon/authenticated full

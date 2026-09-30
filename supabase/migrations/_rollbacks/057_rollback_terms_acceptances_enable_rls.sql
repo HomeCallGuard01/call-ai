@@ -1,4 +1,5 @@
--- Rollback for 057_terms_acceptances_enable_rls.sql.
+-- Rollback for 057_terms_acceptances_enable_rls.sql — STAGING; production
+-- has its own file (057_*.production.sql).
 --
 -- WARNING: on any project with the newer Supabase default ACL (staging),
 -- this rollback RE-OPENS the anon read/insert/update/delete exposure if the
