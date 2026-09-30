@@ -184,7 +184,7 @@ async function ingestPushFailureAlerts({ supabase, twilioClient, since, alert, l
     }
     summary.recorded++;
 
-    // Timeline event (migration 058) — recorded once: recordPushFailure only
+    // Timeline event (migration 060) — recorded once: recordPushFailure only
     // returns a household the first time a given dial leg's failure is stored.
     await recordDeliveryEvent({
       event: DELIVERY_EVENTS.PUSH_FAILED,

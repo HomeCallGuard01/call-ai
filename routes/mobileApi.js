@@ -42,6 +42,14 @@ const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../servic
 const { getHouseholdDeliveryHealth } = require("../database/deliveryEvidence");
 const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("../services/callDeliveryEvents");
 const { parseDeviceReadiness } = require("../services/deviceReadiness");
+const { createHouseholdRateLimiter, LIMITS } = require("../middleware/householdRateLimit");
+
+// Per-household limits on app registration/telemetry routes (2026-09-30,
+// release readiness P5 — denial-of-wallet / Twilio REST amplification).
+const voiceTokenLimiter = createHouseholdRateLimiter({ name: "voice_token", ...LIMITS.voiceToken }).middleware;
+const voiceRegisteredLimiter = createHouseholdRateLimiter({ name: "voice_registered", ...LIMITS.voiceRegistered }).middleware;
+const callInviteReportLimiter = createHouseholdRateLimiter({ name: "call_invite_reports", ...LIMITS.callInviteReports }).middleware;
+const deviceReadinessLimiter = createHouseholdRateLimiter({ name: "device_readiness", ...LIMITS.deviceReadiness }).middleware;
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
@@ -925,7 +933,7 @@ router.post("/api/v1/household/phone-number", requireAuthApi, requireEntitlement
 // route in this file — never a partial/malformed token. Also fails
 // closed (400) if the caller's ?platform= query param is missing or
 // unrecognised — see resolvePushCredentialSid below.
-router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req, res) => {
+router.get("/api/v1/voice/token", requireAuthApi, voiceTokenLimiter, requireEntitlement, async (req, res) => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const apiKeySid = process.env.TWILIO_VOICE_API_KEY_SID;
   const apiKeySecret = process.env.TWILIO_VOICE_API_KEY_SECRET;
@@ -992,7 +1000,7 @@ router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req
 // it, or a request with no body at all, behaves exactly as before this
 // change — markHouseholdAppVersion is fire-and-forget and never affects
 // the response.
-router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, express.json(), async (req, res) => {
+router.post("/api/v1/voice/registered", requireAuthApi, voiceRegisteredLimiter, requireEntitlement, express.json(), async (req, res) => {
   try {
     const { appVersion, appBuildVersion, appPlatform, readiness } = req.body || {};
     // Registration-history observability (2026-09-27, migration 046) —
@@ -1030,13 +1038,13 @@ router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, expr
 // follow. No entitlement gate: a call invite can genuinely arrive in the
 // narrow window around an entitlement lapsing, and this is diagnostics-
 // only, never a capability grant.
-router.post("/api/v1/voice/call-invite-received", requireAuthApi, express.json(), async (req, res) => {
+router.post("/api/v1/voice/call-invite-received", requireAuthApi, callInviteReportLimiter, express.json(), async (req, res) => {
   const { callSid, presented, platform } = req.body || {};
   if (typeof callSid !== "string" || !callSid.trim()) {
     return res.status(400).json({ error: "invalid_input", message: "callSid is required" });
   }
   await recordClientCallInviteReceived(callSid.trim(), req.household.id);
-  // Timeline (migration 058): the app reports the client-leg SID.
+  // Timeline (migration 060): the app reports the client-leg SID.
   // `presented` (Build 20+) says the incoming-call UI could be shown, i.e.
   // the phone is ringing; older builds omit it.
   const base = { source: "app", householdId: req.household.id, clientCallSid: callSid.trim() };
@@ -1057,7 +1065,7 @@ const OUTCOME_EVENTS = {
   cancelled: DELIVERY_EVENTS.APP_INVITE_CANCELLED,
   connected: DELIVERY_EVENTS.APP_MEDIA_CONNECTED,
 };
-router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(), async (req, res) => {
+router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, callInviteReportLimiter, express.json(), async (req, res) => {
   const { callSid, outcome } = req.body || {};
   if (typeof callSid !== "string" || !callSid.trim() || !CALL_OUTCOME_VALUES.has(outcome)) {
     return res.status(400).json({
@@ -1088,7 +1096,7 @@ router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(),
 // unauthenticated /debug beacon pattern); household resolved from the token,
 // never the body. No entitlement gate, matching the invite-report routes:
 // diagnostics only. Enum-only payload; anything else is rejected.
-router.post("/api/v1/voice/device-readiness", requireAuthApi, express.json(), async (req, res) => {
+router.post("/api/v1/voice/device-readiness", requireAuthApi, deviceReadinessLimiter, express.json(), async (req, res) => {
   const body = req.body || {};
   const blocked = body.presentationBlocked === true;
   const parsed = parseDeviceReadiness(body.readiness, { trigger: blocked ? "sdk_error" : (body.trigger === "foreground" ? "foreground" : "registration") });

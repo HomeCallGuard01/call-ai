@@ -10,7 +10,7 @@ const { getHouseholdDeliveryHealth } = require("../database/deliveryEvidence");
 // GET /admin/api/households/:id/call-delivery-timeline?since=ISO
 //
 // Answers "why didn't the phone ring?" for one household: every recorded
-// stage of each recent call (migration 058, services/callDeliveryEvents.js),
+// stage of each recent call (migration 060, services/callDeliveryEvents.js),
 // a plain-English diagnosis naming the stage where delivery stopped, the
 // latest device-readiness reports and the household's delivery health.
 // Read-only. Content-free by construction (the table holds no caller

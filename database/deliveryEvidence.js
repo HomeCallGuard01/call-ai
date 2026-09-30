@@ -12,6 +12,7 @@
 
 const { computeDeliveryHealth, attemptFromCallRow } = require("../services/deliveryHealth");
 const { getHouseholdDeliveryEvents, summariseDeviceReadiness } = require("../services/callDeliveryEvents");
+const { assessEndpointReachability } = require("../services/endpointReachability");
 
 // How many recent delivery attempts are enough to evaluate health. The
 // run that matters ends at the most recent delivered call; 25 attempts
@@ -40,7 +41,31 @@ const ATTEMPT_COLUMNS =
 //      (never trust the parent SID alone — household scoping is the
 //      authorisation boundary for these app-reported writes).
 // Returns the parent call_sid, or null.
-async function resolveHouseholdCallSid({ supabase, twilioClient, callSid, householdId }) {
+// Negative cache (2026-09-30, release readiness P5): a SID that Twilio could
+// not map to one of this household's calls is not looked up again for 10
+// minutes, so repeated reports of an unknown SID (bug or abuse) can't turn
+// into repeated Twilio REST requests. Bounded size.
+const NEGATIVE_LOOKUP_TTL_MS = 10 * 60 * 1000;
+const NEGATIVE_LOOKUP_MAX = 10000;
+const negativeLookups = new Map(); // `${householdId}:${callSid}` -> expiresAt
+
+function isNegativelyCached(key, nowMs) {
+  const exp = negativeLookups.get(key);
+  if (exp === undefined) return false;
+  if (exp > nowMs) return true;
+  negativeLookups.delete(key);
+  return false;
+}
+
+function rememberNegative(key, nowMs) {
+  if (negativeLookups.size >= NEGATIVE_LOOKUP_MAX) {
+    const oldest = negativeLookups.keys().next().value;
+    negativeLookups.delete(oldest);
+  }
+  negativeLookups.set(key, nowMs + NEGATIVE_LOOKUP_TTL_MS);
+}
+
+async function resolveHouseholdCallSid({ supabase, twilioClient, callSid, householdId, nowMs = Date.now() }) {
   if (!supabase || !isValidCallSid(callSid) || !householdId) return null;
 
   const direct = await supabase
@@ -66,15 +91,21 @@ async function resolveHouseholdCallSid({ supabase, twilioClient, callSid, househ
   }
 
   if (!twilioClient) return null;
+  const negativeKey = `${householdId}:${callSid}`;
+  if (isNegativelyCached(negativeKey, nowMs)) return null;
   let parentCallSid = null;
   try {
     const child = await twilioClient.calls(callSid).fetch();
     parentCallSid = child && child.parentCallSid;
   } catch (err) {
     console.error("CALL SID RESOLUTION: Twilio lookup failed", { callSid, error: err.message });
+    rememberNegative(negativeKey, nowMs);
     return null;
   }
-  if (!parentCallSid) return null;
+  if (!parentCallSid) {
+    rememberNegative(negativeKey, nowMs);
+    return null;
+  }
 
   const parent = await supabase
     .from("calls")
@@ -83,7 +114,10 @@ async function resolveHouseholdCallSid({ supabase, twilioClient, callSid, househ
     .eq("call_sid", parentCallSid)
     .limit(1)
     .maybeSingle();
-  if (parent.error || !parent.data) return null;
+  if (parent.error || !parent.data) {
+    rememberNegative(negativeKey, nowMs);
+    return null;
+  }
 
   // Remember the pairing so later evidence (push-failure alerts, the
   // invite outcome) resolves without another Twilio round trip.
@@ -207,22 +241,39 @@ async function hasVerifiedInviteReporting({ supabase, householdId }) {
 // must carry id and voice_client_registered_at.
 async function getHouseholdDeliveryHealth({ supabase, household }) {
   if (!household) return null;
-  // Device readiness (migration 058) is optional evidence: until 058 is
+  // Device readiness (migration 060) is optional evidence: until 060 is
   // applied the read returns [] and health is computed exactly as before.
   const [rows, inviteReportingVerified, readinessEvents] = await Promise.all([
     getRecentDeliveryAttempts({ supabase, householdId: household.id }),
     hasVerifiedInviteReporting({ supabase, householdId: household.id }),
     getHouseholdDeliveryEvents({ supabase, householdId: household.id, limit: 20, events: ["device_readiness", "app_presentation_blocked"] }),
   ]);
-  return computeDeliveryHealth({
+  const deviceReadiness = summariseDeviceReadiness(readinessEvents);
+  const health = computeDeliveryHealth({
     attempts: rows.map(attemptFromCallRow),
     lastRegisteredAt: household.voice_client_registered_at || null,
     inviteReportingVerified,
-    deviceReadiness: summariseDeviceReadiness(readinessEvents),
+    deviceReadiness,
   });
+  // 2026-09-30: explicit current reachability (never "registered once =
+  // reachable") and the latest device readiness, for the dashboard, admin and
+  // the call trace. Additive fields; existing consumers read `state` as before.
+  const endpoint = assessEndpointReachability({ lastRegisteredAt: household.voice_client_registered_at || null, health });
+  return {
+    ...health,
+    reachability: endpoint.reachability,
+    reachabilityReasons: endpoint.reasons,
+    registrationAgeDays: endpoint.registrationAgeDays,
+    deviceReadiness,
+  };
+}
+
+function _resetNegativeLookupCache() {
+  negativeLookups.clear();
 }
 
 module.exports = {
+  _resetNegativeLookupCache,
   RECENT_ATTEMPT_LIMIT,
   isValidCallSid,
   resolveHouseholdCallSid,

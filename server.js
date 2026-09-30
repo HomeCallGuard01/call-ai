@@ -62,6 +62,7 @@ const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/tran
 const { twilioRestClient } = require("./services/twilioClient");
 const { evaluateAfterDeliveryOutcome, startPushFailurePolling } = require("./services/deliveryHealthMonitor");
 const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("./services/callDeliveryEvents");
+const { isVoiceSdkClientOriginated } = require("./services/voiceWebhookGuards");
 
 // Structured call-delivery telemetry (2026-09-30, release readiness P3) —
 // services/callDeliveryEvents.js. Fire-and-forget by construction: never
@@ -289,6 +290,35 @@ function recordRoutingTelemetry(household, { callSid, monitoring = false, entitl
   } catch (err) {
     console.error("ROUTING TELEMETRY FAILED:", err.message);
   }
+  recordEndpointHealthTelemetry(household, callSid);
+}
+
+// "App endpoint health" stage of the trace (2026-09-30): the household's
+// current reachability as HCG understood it when the call arrived. Off the
+// response path (three small reads, bounded by real inbound calls); never
+// affects routing.
+function recordEndpointHealthTelemetry(household, callSid) {
+  if (!household || !supabaseAdmin) return;
+  getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household })
+    .then(health => {
+      if (!health) return;
+      const readiness = health.deviceReadiness;
+      const deviceReady = !readiness ? "unknown"
+        : (readiness.microphone === "denied" || readiness.notifications === "denied") ? "not_ready"
+        : (readiness.microphone === "granted" || readiness.notifications === "granted") ? "ready" : "unknown";
+      deliveryEvent({
+        householdId: household.id,
+        callSid,
+        event: DELIVERY_EVENTS.ENDPOINT_HEALTH,
+        detail: {
+          reachability: health.reachability,
+          deliveryHealth: health.state,
+          deviceReady,
+          registrationAgeDays: health.registrationAgeDays === null ? undefined : health.registrationAgeDays,
+        },
+      });
+    })
+    .catch(err => console.error("ENDPOINT HEALTH TELEMETRY FAILED:", err.message));
 }
 
 // Shared by both /voice branches (known-contact bypass and, since the
@@ -709,6 +739,19 @@ function toClientCall(call) {
 // VOICE CALL ENTRY
 
 app.post("/voice", async (req, res) => {
+  // Security guard (2026-09-30, release readiness P5): /voice serves inbound
+  // PSTN calls only. A Voice SDK client (anyone holding an app access token)
+  // can place an outgoing call through the token's TwiML App; if that App's
+  // Voice URL ever points here, a forged `To` would trigger paid monitoring
+  // and ring another household. Rejected before any lookup, write or paid
+  // step; <Reject> is unbilled. See services/voiceWebhookGuards.js.
+  if (isVoiceSdkClientOriginated(req.body)) {
+    console.error("VOICE: rejected a Voice SDK client-originated request (not an inbound PSTN call)");
+    const rejectResponse = new VoiceResponse();
+    rejectResponse.reject();
+    return res.type("text/xml").send(rejectResponse.toString());
+  }
+
   const twiml = new VoiceResponse();
 
   const household = await getHouseholdByTwilioNumber(req.body.To);
@@ -919,6 +962,19 @@ app.post("/voice", async (req, res) => {
   });
 
   return res.type("text/xml").send(twiml.toString());
+});
+
+// VOICE SDK OUTGOING CALLS (2026-09-30, release readiness P5)
+//
+// The route the Voice SDK's TwiML App was configured with in August 2026
+// (HANDOVER_2026-08-15 §14) never reached main. The app never places
+// outgoing calls, so any request here is either a misconfiguration or abuse
+// of an app access token: reject it, unbilled, with no side effects.
+app.post("/voice-sdk-outbound-not-supported", (req, res) => {
+  console.error("VOICE SDK OUTGOING CALL ATTEMPT rejected");
+  const rejectResponse = new VoiceResponse();
+  rejectResponse.reject();
+  return res.type("text/xml").send(rejectResponse.toString());
 });
 
 // PROCESS UNKNOWN CALL

@@ -16,7 +16,7 @@ import { fetchVoiceToken, reportVoiceRegistered, reportCallInviteReceived, repor
 import { reportDeviceReadiness } from "./api";
 import { getCallReadiness } from "./callReadiness";
 import { canPresentCalls, readinessKey } from "./callReadinessModel";
-import { isRegistrationOverdue, isInviteForIdentity, withTimeout } from "./registrationFreshness";
+import { isRegistrationOverdue, isInviteForIdentity, withTimeout, hasDeviceTokenChanged } from "./registrationFreshness";
 
 // Diagnostic instrumentation (2026-09-24, migration 045) — read once at
 // module load, not per-call: these are static facts about the installed
@@ -76,6 +76,10 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 // Last device-readiness state sent to the backend (2026-09-30) — foreground
 // checks report only when it changes.
 let lastReportedReadinessKey: string | null = null;
+// The device push token (FCM on Android, PushKit on iOS) in use when the
+// last registration succeeded (2026-09-30). Never logged or sent anywhere:
+// only compared on foreground to detect a rotation (hasDeviceTokenChanged).
+let registeredDeviceToken: string | null = null;
 
 // Establishes the native PKPushRegistry + delegate as early as possible in
 // the app's lifecycle (2026-09-09) — triggered purely by importing this
@@ -351,6 +355,8 @@ async function performRegistration(accessToken?: string): Promise<void> {
     throw err;
   }
   registered = true;
+  // Bounded: a hung native call must never stall registration reporting.
+  registeredDeviceToken = await withTimeout(voice.getDeviceToken(), 2000).catch(() => null);
   lastRegisteredAtMs = Date.now();
   lastRegistrationTtlSeconds = ttlSeconds;
   lastRegistrationToken = registeredWith.token;
@@ -432,6 +438,20 @@ AppState.addEventListener("change", (state) => {
   }
   if (registered && isRegistrationOverdue(Date.now(), lastRegisteredAtMs, lastRegistrationTtlSeconds, REFRESH_MARGIN_SECONDS)) {
     registered = false;
+  }
+  // Push-token rotation (2026-09-30): if the OS rotated the device token
+  // while the app was away, the Twilio binding points at a dead token.
+  // Re-register now instead of waiting for the refresh point.
+  if (registered && registeredDeviceToken) {
+    voice.getDeviceToken()
+      .then((current) => {
+        if (registered && hasDeviceTokenChanged(registeredDeviceToken, current)) {
+          console.warn("VOICE DEBUG: device push token changed since registration, re-registering");
+          registered = false;
+          return registerForIncomingCalls();
+        }
+      })
+      .catch(() => {});
   }
   if (!registered) {
     registerForIncomingCalls().catch((err) => {
@@ -623,6 +643,7 @@ export function resetVoiceRegistrationState(): void {
   lastRegistrationToken = null;
   registeredIdentity = null;
   lastReportedReadinessKey = null;
+  registeredDeviceToken = null;
   if (refreshTimer) {
     clearTimeout(refreshTimer);
     refreshTimer = null;

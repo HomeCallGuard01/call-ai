@@ -40,3 +40,16 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     );
   });
 }
+
+// Device push-token rotation (2026-09-30, release readiness). The Twilio
+// SDK's Android onNewToken only logs, so a token the OS rotated leaves
+// Twilio's binding pointing at a dead token (52103) until the app registers
+// again. voiceClient.ts compares the token it registered with against the
+// current one on every foreground and re-registers at once if it changed.
+// Only a definite change counts: an unreadable token (null/empty) never
+// forces a re-registration on its own.
+export function hasDeviceTokenChanged(registeredToken: string | null | undefined, currentToken: string | null | undefined): boolean {
+  if (typeof registeredToken !== "string" || typeof currentToken !== "string") return false;
+  if (!registeredToken || !currentToken) return false;
+  return registeredToken !== currentToken;
+}

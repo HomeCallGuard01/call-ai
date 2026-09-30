@@ -20,7 +20,7 @@
 // Never on the critical path: recordDeliveryEvent never throws and never
 // awaits inside a TwiML handler (callers fire-and-forget). It always emits
 // one `HCG_CALL_DELIVERY {json}` log line; the database write happens only
-// when CALL_DELIVERY_EVENTS_DB=on (set only after migration 058 is applied),
+// when CALL_DELIVERY_EVENTS_DB=on (set only after migration 060 is applied),
 // so deploying this code before the migration changes nothing.
 
 const EVENTS = Object.freeze({
@@ -29,6 +29,7 @@ const EVENTS = Object.freeze({
   HOUSEHOLD_NOT_FOUND: 'household_not_found',
   CALLER_CLASSIFIED: 'caller_classified',
   ROUTING_DECISION: 'routing_decision',
+  ENDPOINT_HEALTH: 'endpoint_health',
   PUSH_REQUESTED: 'push_requested',
   PUSH_FAILED: 'push_failed',
   APP_INVITE_RECEIVED: 'app_invite_received',
@@ -72,6 +73,12 @@ const DETAIL_SCHEMA = {
     registrationAgeHours: smallInt(24 * 365 * 5),
     deliveryHealth: enumOf(['UNREGISTERED', 'UNKNOWN', 'HEALTHY', 'SUSPECT', 'UNREACHABLE']),
     deviceReady: enumOf(['ready', 'not_ready', 'unknown']),
+  },
+  endpoint_health: {
+    reachability: enumOf(['unregistered', 'unreachable', 'degraded', 'presumed', 'confirmed']),
+    deliveryHealth: enumOf(['UNREGISTERED', 'UNKNOWN', 'HEALTHY', 'SUSPECT', 'UNREACHABLE']),
+    deviceReady: enumOf(['ready', 'not_ready', 'unknown']),
+    registrationAgeDays: smallInt(3650),
   },
   push_requested: { timeoutSeconds: smallInt(600) },
   push_failed: { errorCode: shortToken, reason: shortToken },
@@ -154,7 +161,7 @@ async function recordDeliveryEvent(args, { supabase = null, env = process.env, l
       const { error } = await supabase.from('call_delivery_events').insert(row);
       if (error && !dbWriteWarned) {
         dbWriteWarned = true;
-        console.error('CALL DELIVERY EVENT WRITE ERROR (is migration 058 applied?):', error.message || error);
+        console.error('CALL DELIVERY EVENT WRITE ERROR (is migration 060 applied?):', error.message || error);
       }
     }
   } catch (err) {
@@ -218,7 +225,7 @@ function diagnoseCall(events) {
 
 const STAGE_ORDER = [
   EVENTS.INBOUND_RECEIVED, EVENTS.HOUSEHOLD_IDENTIFIED, EVENTS.HOUSEHOLD_NOT_FOUND, EVENTS.CALLER_CLASSIFIED,
-  EVENTS.ROUTING_DECISION, EVENTS.PUSH_REQUESTED, EVENTS.PUSH_FAILED, EVENTS.APP_INVITE_RECEIVED,
+  EVENTS.ROUTING_DECISION, EVENTS.ENDPOINT_HEALTH, EVENTS.PUSH_REQUESTED, EVENTS.PUSH_FAILED, EVENTS.APP_INVITE_RECEIVED,
   EVENTS.APP_RINGING, EVENTS.APP_PRESENTATION_BLOCKED, EVENTS.APP_ANSWERED, EVENTS.APP_DECLINED,
   EVENTS.APP_INVITE_CANCELLED, EVENTS.APP_MEDIA_CONNECTED, EVENTS.DIAL_OUTCOME, EVENTS.DELIVERED,
   EVENTS.DELIVERY_FAILED, EVENTS.FALLBACK_TRIGGERED,

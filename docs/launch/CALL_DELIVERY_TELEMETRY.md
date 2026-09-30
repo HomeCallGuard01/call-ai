@@ -2,7 +2,7 @@
 
 Goal: never again have a customer say "the phone didn't ring" and be unable to establish why.
 
-Code: `services/callDeliveryEvents.js`. Storage: migration **058** `call_delivery_events` (DRAFT, not applied). Admin read: `GET /admin/api/households/:id/call-delivery-timeline` (`routes/adminDeliveryTimeline.js`).
+Code: `services/callDeliveryEvents.js`. Storage: migration **060** `call_delivery_events` (DRAFT, not applied). Admin read: `GET /admin/api/households/:id/call-delivery-timeline` (`routes/adminDeliveryTimeline.js`).
 
 ## Events
 
@@ -38,7 +38,7 @@ Code: `services/callDeliveryEvents.js`. Storage: migration **058** `call_deliver
 - `dialHouseholdOrFailClosed` and the monitoring gate are untouched. Routing telemetry recomputes the same pure decision separately.
 - **Two-stage enable:**
   1. Deploying the code gives `HCG_CALL_DELIVERY {json}` log lines only.
-  2. After migration 058 is applied, set `CALL_DELIVERY_EVENTS_DB=on` for DB writes. A missing table logs one error and fails open.
+  2. After migration 060 is applied, set `CALL_DELIVERY_EVENTS_DB=on` for DB writes. A missing table logs one error and fails open.
 
 ## Diagnosis
 
@@ -68,7 +68,7 @@ On the Customers › household page, add a "Call delivery" panel:
 ## Rollout (each step needs your approval)
 
 1. Deploy the backend (logs only). This is independent of Build 20; old app builds are unaffected.
-2. Apply 058 on staging → `CALL_DELIVERY_EVENTS_DB=on` on staging → one test call → admin route shows the full timeline.
+2. Apply 060 on staging → `CALL_DELIVERY_EVENTS_DB=on` on staging → one test call → admin route shows the full timeline.
 3. The same on production.
 4. Build 20 adds the app-side events and readiness.
 5. Decide retention, and whether a UNREACHABLE readiness state should notify the customer.

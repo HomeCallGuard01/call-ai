@@ -1,4 +1,4 @@
--- Rollback for 058_call_delivery_events.sql. Drops only the telemetry
+-- Rollback for 060_call_delivery_events.sql. Drops only the telemetry
 -- table. Set CALL_DELIVERY_EVENTS_DB=off (or unset) first; the writes fail
 -- open, so running this first only produces one logged write error.
 

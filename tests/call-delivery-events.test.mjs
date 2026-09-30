@@ -59,7 +59,7 @@ const CHILD = 'CA' + 'b'.repeat(32);
   const supabase = { from: t => ({ insert: async row => { inserts.push([t, row]); return { error: null }; } }) };
   await ev.recordDeliveryEvent({ event: EVENTS.INBOUND_RECEIVED, householdId: HH, callSid: PARENT }, { supabase, env: {}, log: l => lines.push(l) });
   check(lines.length === 1 && lines[0].startsWith('HCG_CALL_DELIVERY {'), 'one grep-able log line per event');
-  check(inserts.length === 0, 'no DB write unless CALL_DELIVERY_EVENTS_DB=on (safe to deploy before migration 058)');
+  check(inserts.length === 0, 'no DB write unless CALL_DELIVERY_EVENTS_DB=on (safe to deploy before migration 060)');
   await ev.recordDeliveryEvent({ event: EVENTS.INBOUND_RECEIVED, householdId: HH, callSid: PARENT }, { supabase, env: { CALL_DELIVERY_EVENTS_DB: 'on' }, log: () => {} });
   check(inserts.length === 1 && inserts[0][0] === 'call_delivery_events', 'DB write to call_delivery_events when enabled');
   const throwing = { from: () => { throw new Error('boom'); } };
@@ -152,12 +152,12 @@ check(/if \(outcome !== "connected"\) \{\s*await recordClientCallOutcome/.test(m
 const monitor = readFileSync(path.join(__dirname, '..', 'services', 'deliveryHealthMonitor.js'), 'utf8');
 check(monitor.includes('event: DELIVERY_EVENTS.PUSH_FAILED') && monitor.includes('source: "poller"'), 'push-failure poller records push_failed');
 
-const migration = readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '058_call_delivery_events.sql'), 'utf8');
+const migration = readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '060_call_delivery_events.sql'), 'utf8');
 for (const name of Object.values(EVENTS)) {
-  check(migration.includes(`'${name}'`), `migration 058 event check allows ${name}`);
+  check(migration.includes(`'${name}'`), `migration 060 event check allows ${name}`);
 }
 const ddl = migration.split('\n').filter(l => !l.trim().startsWith('--')).join('\n');
-check(!/\b(from_number|caller_number|caller|transcript|summary|phone_number)\b/i.test(ddl), 'migration 058 DDL has no column for caller numbers or content');
+check(!/\b(from_number|caller_number|caller|transcript|summary|phone_number)\b/i.test(ddl), 'migration 060 DDL has no column for caller numbers or content');
 
 if (failures > 0) { console.error(`\n${failures} check(s) failed.`); process.exit(1); }
 console.log('\nAll checks passed.');
