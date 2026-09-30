@@ -39,6 +39,7 @@ const {
   STATES,
 } = require("./deliveryHealth");
 const { parsePushFailureAlert } = require("./incomingCallTriage");
+const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("./callDeliveryEvents");
 const {
   getRecentDeliveryAttempts,
   hasVerifiedInviteReporting,
@@ -182,6 +183,17 @@ async function ingestPushFailureAlerts({ supabase, twilioClient, since, alert, l
       continue;
     }
     summary.recorded++;
+
+    // Timeline event (migration 058) — recorded once: recordPushFailure only
+    // returns a household the first time a given dial leg's failure is stored.
+    await recordDeliveryEvent({
+      event: DELIVERY_EVENTS.PUSH_FAILED,
+      source: "poller",
+      householdId,
+      clientCallSid: parsed.callSid,
+      detail: { reason: failure },
+      now: at ? new Date(at) : new Date(),
+    }, { supabase });
 
     const deadToken = isDeadTokenFailure(failure);
     const payload = { householdId, dialCallSid: parsed.callSid, failure, at };

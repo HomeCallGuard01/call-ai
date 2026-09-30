@@ -1010,7 +1010,9 @@ function check(condition, message) {
   // existing unauthenticated /debug/voice-beacon pattern this same file
   // also has, left untouched).
   check(
-    voiceClientSource.includes('reportWithRetry(() => reportCallInviteReceived(callSid)).catch((err) => {'),
+    // 2026-09-30: the report now also carries platform + `presented`
+    // (device readiness, read first), still fire-and-forget with retry.
+    /reportWithRetry\(\(\) =>\s*reportCallInviteReceived\(callSid, \{ platform: Platform\.OS, presented: canPresentCalls\(readiness\) \}\)\s*\)\s*\)\s*\.catch\(\(err\) => \{/.test(voiceClientSource),
     'a CallInvite received event is reported fire-and-forget the moment one arrives — the closest available proxy for "the push notification was actually delivered"'
   );
   check(

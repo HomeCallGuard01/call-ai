@@ -143,7 +143,36 @@ function toMs(value) {
 
 // attempts: any order; each { at, dialCallStatus, clientInviteReceivedAt?,
 // clientOutcome?, pushFailure? }. Duplicates by callSid are collapsed.
-function computeDeliveryHealth({ attempts = [], lastRegisteredAt = null, inviteReportingVerified = false } = {}) {
+// Device readiness (2026-09-30, release readiness): a registered app can
+// still be unable to present a call. On Android the Twilio SDK drops an
+// incoming call before posting any notification or ringtone when the
+// microphone permission is off (Android 11+), and posts no answerable
+// notification when POST_NOTIFICATIONS is off (Android 13+) — error 31401,
+// Twilio just sees no-answer. The app reports its permission state
+// (device_readiness) and any 31401 (app_presentation_blocked); a report
+// newer than the last delivered call that shows the phone cannot ring is
+// UNREACHABLE without waiting for failures to accumulate. A later
+// delivered call always wins (it proves the phone can ring now).
+function deviceReadinessBlockReason(deviceReadiness, lastSuccessAt) {
+  if (!deviceReadiness) return null;
+  const successMs = toMs(lastSuccessAt);
+  const newerThanSuccess = at => Number.isFinite(toMs(at)) && (!Number.isFinite(successMs) || toMs(at) > successMs);
+  const reportMs = toMs(deviceReadiness.reportedAt);
+  const blockMs = toMs(deviceReadiness.presentationBlockedAt);
+  if (newerThanSuccess(deviceReadiness.reportedAt)) {
+    if (deviceReadiness.microphone === 'denied') return 'the phone cannot ring for calls: microphone permission is off for the app';
+    if (deviceReadiness.notifications === 'denied') return 'the phone cannot show incoming calls: notifications are off for the app';
+  }
+  // A 31401 is superseded only by a later report showing both granted.
+  if (newerThanSuccess(deviceReadiness.presentationBlockedAt)) {
+    const laterAllClear = Number.isFinite(reportMs) && reportMs > blockMs
+      && deviceReadiness.microphone !== 'denied' && deviceReadiness.notifications !== 'denied';
+    if (!laterAllClear) return 'the phone blocked an incoming call from ringing (missing permission)';
+  }
+  return null;
+}
+
+function computeDeliveryHealth({ attempts = [], lastRegisteredAt = null, inviteReportingVerified = false, deviceReadiness = null } = {}) {
   const seen = new Set();
   const ordered = attempts
     .filter(a => a && Number.isFinite(toMs(a.at)))
@@ -203,6 +232,10 @@ function computeDeliveryHealth({ attempts = [], lastRegisteredAt = null, inviteR
     softFailures: soft.length,
   };
 
+  const deviceBlock = deviceReadinessBlockReason(deviceReadiness, base.lastSuccessAt);
+  if (deviceBlock) {
+    return finish(result, STATES.UNREACHABLE, [deviceBlock]);
+  }
   if (deadTokenAfterRegistration) {
     return finish(result, STATES.UNREACHABLE, ['push provider reports the app\'s device token is no longer valid']);
   }
@@ -273,6 +306,7 @@ module.exports = {
   SOFT_FAILURE_SUSPECT_THRESHOLD,
   classifyDeliveryAttempt,
   computeDeliveryHealth,
+  deviceReadinessBlockReason,
   customerDeliveryStatus,
   isDeliveryHealthDegradation,
   isDeadTokenFailure,

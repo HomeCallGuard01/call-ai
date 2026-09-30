@@ -61,6 +61,23 @@ const { attachMediaStreamServer } = require("./services/liveMonitoring/mediaStre
 const { createOpenAiTranscribeClient } = require("./services/liveMonitoring/transcribeChunk");
 const { twilioRestClient } = require("./services/twilioClient");
 const { evaluateAfterDeliveryOutcome, startPushFailurePolling } = require("./services/deliveryHealthMonitor");
+const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("./services/callDeliveryEvents");
+
+// Structured call-delivery telemetry (2026-09-30, release readiness P3) —
+// services/callDeliveryEvents.js. Fire-and-forget by construction: never
+// awaited in a TwiML path, never throws, content-free (per-event allow-list;
+// no caller number, name or transcript can be recorded). DB write only
+// with CALL_DELIVERY_EVENTS_DB=on (after migration 058); always one
+// HCG_CALL_DELIVERY log line.
+function deliveryEvent(args) {
+  recordDeliveryEvent(args, { supabase: supabaseAdmin }).catch(() => {});
+}
+
+function classifyCallerPresentation(from) {
+  const value = typeof from === "string" ? from.trim() : "";
+  if (!value || /anonymous|restricted|unknown|private|unavailable/i.test(value)) return "withheld";
+  return /\d{5,}/.test(value.replace(/\D/g, "")) ? null : "withheld";
+}
 const { getHouseholdDeliveryHealth } = require("./database/deliveryEvidence");
 const {
   MODES: FALLBACK_MODES,
@@ -72,6 +89,7 @@ const CALL_DELIVERY_FALLBACK_MODE = resolveFallbackMode();
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
+const adminDeliveryTimelineRoutes = require("./routes/adminDeliveryTimeline");
 const mobileApiRoutes = require("./routes/mobileApi");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
@@ -184,6 +202,7 @@ app.use(express.static("public"));
 app.use(billingRoutes);
 app.use(adminRoutes);
 app.use(adminBusinessRoutes);
+app.use(adminDeliveryTimelineRoutes);
 app.use(mobileApiRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -228,6 +247,48 @@ const openai = new OpenAI({
 
 function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
+}
+
+// Routing telemetry (2026-09-30, release readiness P3). Called right after
+// dialHouseholdOrFailClosed at each /voice call site; recomputes the same
+// pure, side-effect-free decision (hasVoiceClientRegistrationHistory +
+// decideCallDeliveryPlan) purely to record it, so dialHouseholdOrFailClosed
+// itself stays byte-for-byte unchanged. Never affects TwiML or routing.
+function recordRoutingTelemetry(household, { callSid, monitoring = false, entitled } = {}) {
+  try {
+    const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
+    const voiceClientReachable = hasVoiceClientRegistrationHistory(household && household.voice_client_registered_at);
+    const plan = decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable });
+    const registeredMs = household && household.voice_client_registered_at
+      ? new Date(household.voice_client_registered_at).getTime() : NaN;
+    const base = { householdId: household && household.id, callSid };
+    deliveryEvent({
+      ...base,
+      event: DELIVERY_EVENTS.ROUTING_DECISION,
+      detail: {
+        mode: plan.mode,
+        monitoring: Boolean(monitoring),
+        entitled: entitled === undefined ? undefined : Boolean(entitled),
+        endpointRegistered: voiceClientReachable,
+        registrationAgeHours: Number.isFinite(registeredMs) ? Math.max(0, Math.floor((Date.now() - registeredMs) / 3600000)) : undefined,
+      },
+    });
+    const willDialClient = plan.mode === "client-only";
+    if (willDialClient) {
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.PUSH_REQUESTED, detail: { timeoutSeconds: 20 } });
+      return;
+    }
+    deliveryEvent({
+      ...base,
+      event: DELIVERY_EVENTS.DELIVERY_FAILED,
+      detail: { reason: plan.mode === "self-protecting-unreachable" ? "no_registered_endpoint" : "no_household" },
+    });
+    if (plan.mode === "self-protecting-unreachable") {
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.FALLBACK_TRIGGERED, detail: { type: "unavailable_message" } });
+    }
+  } catch (err) {
+    console.error("ROUTING TELEMETRY FAILED:", err.message);
+  }
 }
 
 // Shared by both /voice branches (known-contact bypass and, since the
@@ -656,6 +717,13 @@ app.post("/voice", async (req, res) => {
     console.error("CALL ROUTING ERROR: no household matches dialled number", req.body.To);
   }
 
+  deliveryEvent({ householdId: household && household.id, callSid: req.body.CallSid, event: DELIVERY_EVENTS.INBOUND_RECEIVED });
+  deliveryEvent({
+    householdId: household && household.id,
+    callSid: req.body.CallSid,
+    event: household ? DELIVERY_EVENTS.HOUSEHOLD_IDENTIFIED : DELIVERY_EVENTS.HOUSEHOLD_NOT_FOUND,
+  });
+
   // P0 Batch 1, component C: automatic activation_verified_at stamp —
   // corrected 2026-09-10 to close a real contradiction a review caught:
   // this was originally justified as safe because the request is
@@ -705,6 +773,15 @@ app.post("/voice", async (req, res) => {
     c => c.number && normaliseNumber(c.number) === callerNorm
   );
 
+  if (household) {
+    deliveryEvent({
+      householdId: household.id,
+      callSid: req.body.CallSid,
+      event: DELIVERY_EVENTS.CALLER_CLASSIFIED,
+      detail: { classification: isKnown ? "known_contact" : (classifyCallerPresentation(caller) || "unknown") },
+    });
+  }
+
   if (isKnown) {
     console.log("Known contact → bypass AI");
 
@@ -723,6 +800,7 @@ app.post("/voice", async (req, res) => {
     }
 
     dialHouseholdOrFailClosed(twiml, household);
+    recordRoutingTelemetry(household, { callSid: req.body.CallSid, monitoring: false });
 
     return res.type("text/xml").send(twiml.toString());
   }
@@ -834,6 +912,11 @@ app.post("/voice", async (req, res) => {
   }
 
   dialHouseholdOrFailClosed(twiml, household);
+  recordRoutingTelemetry(household, {
+    callSid: req.body.CallSid,
+    monitoring: shouldStartPaidMonitoring(household, activeEntitlement),
+    entitled: Boolean(activeEntitlement),
+  });
 
   return res.type("text/xml").send(twiml.toString());
 });
@@ -1033,6 +1116,28 @@ app.post("/call-delivery-failed", (req, res) => {
       alert: sendCriticalAlert,
     }))
     .catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
+
+  // Telemetry only (release readiness P3). Household resolved from the
+  // dialled HCG number off the response path; never affects the TwiML.
+  (async () => {
+    const hh = await getHouseholdByTwilioNumber(req.body.To).catch(() => null);
+    const base = { householdId: hh && hh.id, callSid: req.body.CallSid, clientCallSid: req.body.DialCallSid };
+    const durationSeconds = Number(req.body.DialCallDuration) || 0;
+    deliveryEvent({ ...base, event: DELIVERY_EVENTS.DIAL_OUTCOME, detail: { dialCallStatus, durationSeconds } });
+    if (dialCallStatus === "completed" || dialCallStatus === "answered") {
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.DELIVERED, detail: { durationSeconds } });
+    } else {
+      const reason = { "no-answer": "no_answer", busy: "busy", failed: "dial_failed", canceled: "caller_hung_up" }[dialCallStatus] || "unknown";
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.DELIVERY_FAILED, detail: { reason } });
+      if (dialCallStatus !== "canceled") {
+        deliveryEvent({
+          ...base,
+          event: DELIVERY_EVENTS.FALLBACK_TRIGGERED,
+          detail: { type: CALL_DELIVERY_FALLBACK_MODE === FALLBACK_MODES.VOICEMAIL_PROTOTYPE ? "voicemail_prototype" : "apology_message" },
+        });
+      }
+    }
+  })().catch(() => {});
 
   if (dialCallStatus !== "completed") {
     console.error("CALL DELIVERY FAILED: household's Voice SDK Client did not answer", {

@@ -13,6 +13,9 @@ import { Voice, CallInvite, Call, AudioDevice } from "@twilio/voice-react-native
 import { Platform, AppState } from "react-native";
 import * as Application from "expo-application";
 import { fetchVoiceToken, reportVoiceRegistered, reportCallInviteReceived, reportCallInviteOutcome } from "./api";
+import { reportDeviceReadiness } from "./api";
+import { getCallReadiness } from "./callReadiness";
+import { canPresentCalls, readinessKey } from "./callReadinessModel";
 import { isRegistrationOverdue, isInviteForIdentity, withTimeout } from "./registrationFreshness";
 
 // Diagnostic instrumentation (2026-09-24, migration 045) — read once at
@@ -70,6 +73,9 @@ let registeredIdentity: string | null = null;
 // Upper bound on the best-effort unregister step before sign-out.
 const UNREGISTER_TIMEOUT_MS = 4000;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+// Last device-readiness state sent to the backend (2026-09-30) — foreground
+// checks report only when it changes.
+let lastReportedReadinessKey: string | null = null;
 
 // Establishes the native PKPushRegistry + delegate as early as possible in
 // the app's lifecycle (2026-09-09) — triggered purely by importing this
@@ -359,10 +365,15 @@ async function performRegistration(accessToken?: string): Promise<void> {
   // already succeeded above) — the backend simply won't see this
   // household as reachable until the next successful report, exactly the
   // same fail-safe direction as every other gap this signal covers.
+  // Device readiness (2026-09-30): lets the backend tell "registered" apart
+  // from "registered but this phone cannot ring" (see lib/callReadinessModel.ts).
+  const readiness = await getCallReadiness().catch(() => null);
+  lastReportedReadinessKey = readinessKey(readiness);
   reportVoiceRegistered(accessToken, {
     appVersion: APP_VERSION,
     appBuildVersion: APP_BUILD_VERSION,
     appPlatform: Platform.OS,
+    readiness,
   }).catch((err) => {
     console.error("VOICE REGISTERED REPORT FAILED:", err);
   });
@@ -406,6 +417,19 @@ initializePushKitEarly();
 // polling, no background work.
 AppState.addEventListener("change", (state) => {
   if (state !== "active") return;
+  // Device readiness (2026-09-30): if the customer changed the microphone or
+  // notification permission while away, tell the backend once. Only after a
+  // registration exists (there is a signed-in household to report for).
+  if (lastRegistrationToken) {
+    getCallReadiness()
+      .then((readiness) => {
+        const key = readinessKey(readiness);
+        if (!readiness || key === lastReportedReadinessKey) return;
+        lastReportedReadinessKey = key;
+        return reportDeviceReadiness({ readiness, trigger: "foreground" });
+      })
+      .catch(() => {});
+  }
   if (registered && isRegistrationOverdue(Date.now(), lastRegisteredAtMs, lastRegistrationTtlSeconds, REFRESH_MARGIN_SECONDS)) {
     registered = false;
   }
@@ -479,9 +503,20 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // presentation or a genuine no-answer instead. Fire-and-forget, same
   // established pattern as reportVoiceRegistered — never blocks or
   // delays presenting the real incoming call.
-  reportWithRetry(() => reportCallInviteReceived(callSid)).catch((err) => {
-    console.error("CALL INVITE RECEIVED REPORT FAILED (after retry):", err);
-  });
+  // 2026-09-30: `presented` tells the backend the incoming-call UI could be
+  // shown (on Android this JS event fires only after the SDK has posted its
+  // notification and started the ringtone; a denied notification
+  // permission means that notification was suppressed).
+  getCallReadiness()
+    .catch(() => null)
+    .then((readiness) =>
+      reportWithRetry(() =>
+        reportCallInviteReceived(callSid, { platform: Platform.OS, presented: canPresentCalls(readiness) })
+      )
+    )
+    .catch((err) => {
+      console.error("CALL INVITE RECEIVED REPORT FAILED (after retry):", err);
+    });
   callInvite.on(CallInvite.Event.Rejected, () => {
     reportWithRetry(() => reportCallInviteOutcome(callSid, "rejected")).catch(() => {});
   });
@@ -503,8 +538,14 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // Android-only, matching selectSpeakerForRinging's own scoping and its
   // comment on why iOS's CallKit-owned audio routing must not be
   // touched here.
-  callInvite.on(CallInvite.Event.Accepted, () => {
+  callInvite.on(CallInvite.Event.Accepted, (acceptedCall: Call) => {
     reportWithRetry(() => reportCallInviteOutcome(callSid, "accepted")).catch(() => {});
+    // 2026-09-30: media is up on the device — the last stage of the
+    // delivery timeline (both platforms). Separate from the Android-only
+    // Earpiece switch below, which is untouched.
+    acceptedCall.on(Call.Event.Connected, () => {
+      reportWithRetry(() => reportCallInviteOutcome(callSid, "connected")).catch(() => {});
+    });
   });
   if (Platform.OS === "android") {
     callInvite.on(CallInvite.Event.Accepted, (call: Call) => {
@@ -524,8 +565,26 @@ voice.on(Voice.Event.Unregistered, () => {
   registered = false;
 });
 
-voice.on(Voice.Event.Error, (error) => {
+// Twilio SDK error 31401 "Missing permissions" (2026-09-30): on Android the
+// SDK raises this INSTEAD of presenting an incoming call when the microphone
+// permission is missing — the call is dropped with no notification or ring
+// and Twilio records no-answer. Report it (with the current permission
+// state) so the backend marks the household as unable to receive calls
+// instead of assuming the customer just didn't answer.
+const MISSING_PERMISSIONS_ERROR_CODE = 31401;
+voice.on(Voice.Event.Error, (error: any) => {
   console.error("VOICE SDK ERROR:", error);
+  if (error && Number(error.code) === MISSING_PERMISSIONS_ERROR_CODE && lastRegistrationToken) {
+    getCallReadiness()
+      .catch(() => null)
+      .then((readiness) => {
+        lastReportedReadinessKey = readinessKey(readiness);
+        return reportWithRetry(() =>
+          reportDeviceReadiness({ readiness, presentationBlocked: true, errorCode: String(MISSING_PERMISSIONS_ERROR_CODE) })
+        );
+      })
+      .catch(() => {});
+  }
 });
 
 export function getActiveCall(): Call | null {
@@ -563,6 +622,7 @@ export function resetVoiceRegistrationState(): void {
   lastRegistrationTtlSeconds = 0;
   lastRegistrationToken = null;
   registeredIdentity = null;
+  lastReportedReadinessKey = null;
   if (refreshTimer) {
     clearTimeout(refreshTimer);
     refreshTimer = null;

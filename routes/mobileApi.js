@@ -40,6 +40,8 @@ const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPo
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
 const { getHouseholdDeliveryHealth } = require("../database/deliveryEvidence");
+const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("../services/callDeliveryEvents");
+const { parseDeviceReadiness } = require("../services/deviceReadiness");
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
@@ -992,7 +994,7 @@ router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req
 // the response.
 router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, express.json(), async (req, res) => {
   try {
-    const { appVersion, appBuildVersion, appPlatform } = req.body || {};
+    const { appVersion, appBuildVersion, appPlatform, readiness } = req.body || {};
     // Registration-history observability (2026-09-27, migration 046) —
     // the same optional diagnostic fields already sent here are now also
     // passed through to the history-recording RPC, not just the separate
@@ -1000,6 +1002,17 @@ router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, expr
     const registeredAt = await markVoiceClientRegistered(req.household.id, { appPlatform, appVersion, appBuildVersion });
     if (appVersion || appBuildVersion || appPlatform) {
       markHouseholdAppVersion(req.household.id, appVersion, appBuildVersion, appPlatform).catch(() => {});
+    }
+    // Device readiness (2026-09-30, release readiness): optional, sent by
+    // builds from Build 20. Older builds omit it; nothing changes for them.
+    const parsedReadiness = parseDeviceReadiness(readiness, { trigger: "registration" });
+    if (parsedReadiness) {
+      recordDeliveryEvent({
+        event: DELIVERY_EVENTS.DEVICE_READINESS,
+        source: "app",
+        householdId: req.household.id,
+        detail: parsedReadiness,
+      }, { supabase: supabaseAdmin }).catch(() => {});
     }
     res.json({ ok: true, registeredAt });
   } catch (err) {
@@ -1018,15 +1031,32 @@ router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, expr
 // narrow window around an entitlement lapsing, and this is diagnostics-
 // only, never a capability grant.
 router.post("/api/v1/voice/call-invite-received", requireAuthApi, express.json(), async (req, res) => {
-  const { callSid } = req.body || {};
+  const { callSid, presented, platform } = req.body || {};
   if (typeof callSid !== "string" || !callSid.trim()) {
     return res.status(400).json({ error: "invalid_input", message: "callSid is required" });
   }
   await recordClientCallInviteReceived(callSid.trim(), req.household.id);
+  // Timeline (migration 058): the app reports the client-leg SID.
+  // `presented` (Build 20+) says the incoming-call UI could be shown, i.e.
+  // the phone is ringing; older builds omit it.
+  const base = { source: "app", householdId: req.household.id, clientCallSid: callSid.trim() };
+  recordDeliveryEvent({ ...base, event: DELIVERY_EVENTS.APP_INVITE_RECEIVED, detail: { platform, presented } }, { supabase: supabaseAdmin }).catch(() => {});
+  if (presented === true) {
+    recordDeliveryEvent({ ...base, event: DELIVERY_EVENTS.APP_RINGING, detail: { platform } }, { supabase: supabaseAdmin }).catch(() => {});
+  }
   res.json({ ok: true });
 });
 
-const CALL_OUTCOME_VALUES = new Set(["accepted", "rejected", "cancelled"]);
+// "connected" (2026-09-30): the app's Call Connected event — media is up on
+// the device. Recorded only as a timeline event; client_outcome keeps its
+// original three values so existing health logic is unchanged.
+const CALL_OUTCOME_VALUES = new Set(["accepted", "rejected", "cancelled", "connected"]);
+const OUTCOME_EVENTS = {
+  accepted: DELIVERY_EVENTS.APP_ANSWERED,
+  rejected: DELIVERY_EVENTS.APP_DECLINED,
+  cancelled: DELIVERY_EVENTS.APP_INVITE_CANCELLED,
+  connected: DELIVERY_EVENTS.APP_MEDIA_CONNECTED,
+};
 router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(), async (req, res) => {
   const { callSid, outcome } = req.body || {};
   if (typeof callSid !== "string" || !callSid.trim() || !CALL_OUTCOME_VALUES.has(outcome)) {
@@ -1035,7 +1065,49 @@ router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(),
       message: `callSid is required and outcome must be one of: ${[...CALL_OUTCOME_VALUES].join(", ")}`,
     });
   }
-  await recordClientCallOutcome(callSid.trim(), req.household.id, outcome);
+  if (outcome !== "connected") {
+    await recordClientCallOutcome(callSid.trim(), req.household.id, outcome);
+  }
+  recordDeliveryEvent({
+    event: OUTCOME_EVENTS[outcome],
+    source: "app",
+    householdId: req.household.id,
+    clientCallSid: callSid.trim(),
+    detail: { platform: req.body.platform },
+  }, { supabase: supabaseAdmin }).catch(() => {});
+  res.json({ ok: true });
+});
+
+// POST /api/v1/voice/device-readiness (2026-09-30, release readiness)
+//
+// The app reports whether this phone can actually present an incoming call:
+// microphone and notification permission state, and any Twilio SDK 31401
+// ("Missing permissions") error — which on Android means the SDK dropped an
+// incoming call before posting any notification or ringtone, so Twilio only
+// ever sees no-answer. Authenticated (requireAuthApi — never the
+// unauthenticated /debug beacon pattern); household resolved from the token,
+// never the body. No entitlement gate, matching the invite-report routes:
+// diagnostics only. Enum-only payload; anything else is rejected.
+router.post("/api/v1/voice/device-readiness", requireAuthApi, express.json(), async (req, res) => {
+  const body = req.body || {};
+  const blocked = body.presentationBlocked === true;
+  const parsed = parseDeviceReadiness(body.readiness, { trigger: blocked ? "sdk_error" : (body.trigger === "foreground" ? "foreground" : "registration") });
+  if (!parsed && !blocked) {
+    return res.status(400).json({ error: "invalid_input", message: "readiness or presentationBlocked is required" });
+  }
+  const base = { source: "app", householdId: req.household.id };
+  if (parsed) {
+    await recordDeliveryEvent({ ...base, event: DELIVERY_EVENTS.DEVICE_READINESS, detail: parsed }, { supabase: supabaseAdmin });
+  }
+  if (blocked) {
+    const cause = parsed && parsed.microphone === "denied" ? "microphone"
+      : parsed && parsed.notifications === "denied" ? "notifications" : "unknown";
+    await recordDeliveryEvent({
+      ...base,
+      event: DELIVERY_EVENTS.APP_PRESENTATION_BLOCKED,
+      detail: { platform: parsed ? parsed.platform : undefined, errorCode: String(body.errorCode || "31401"), cause },
+    }, { supabase: supabaseAdmin });
+  }
   res.json({ ok: true });
 });
 

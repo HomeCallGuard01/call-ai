@@ -11,6 +11,7 @@
 // See services/deliveryHealth.js for how the evidence is interpreted.
 
 const { computeDeliveryHealth, attemptFromCallRow } = require("../services/deliveryHealth");
+const { getHouseholdDeliveryEvents, summariseDeviceReadiness } = require("../services/callDeliveryEvents");
 
 // How many recent delivery attempts are enough to evaluate health. The
 // run that matters ends at the most recent delivered call; 25 attempts
@@ -206,14 +207,18 @@ async function hasVerifiedInviteReporting({ supabase, householdId }) {
 // must carry id and voice_client_registered_at.
 async function getHouseholdDeliveryHealth({ supabase, household }) {
   if (!household) return null;
-  const [rows, inviteReportingVerified] = await Promise.all([
+  // Device readiness (migration 058) is optional evidence: until 058 is
+  // applied the read returns [] and health is computed exactly as before.
+  const [rows, inviteReportingVerified, readinessEvents] = await Promise.all([
     getRecentDeliveryAttempts({ supabase, householdId: household.id }),
     hasVerifiedInviteReporting({ supabase, householdId: household.id }),
+    getHouseholdDeliveryEvents({ supabase, householdId: household.id, limit: 20, events: ["device_readiness", "app_presentation_blocked"] }),
   ]);
   return computeDeliveryHealth({
     attempts: rows.map(attemptFromCallRow),
     lastRegisteredAt: household.voice_client_registered_at || null,
     inviteReportingVerified,
+    deviceReadiness: summariseDeviceReadiness(readinessEvents),
   });
 }
 

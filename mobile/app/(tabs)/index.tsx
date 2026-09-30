@@ -26,6 +26,7 @@ import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
+import { CallReadinessBanner } from "../../components/CallReadinessBanner";
 import { BrandMark } from "../../components/BrandMark";
 import { OutcomeRow, type OutcomeTone } from "../../components/OutcomeRow";
 import { EmptyState } from "../../components/EmptyState";
@@ -422,6 +423,11 @@ export default function Home() {
         <BrandHeader />
 
         {isStale && <Banner variant="notice" message="You're offline — showing your last known status." />}
+
+        {/* 2026-09-30: this phone cannot ring for protected calls (a
+            microphone/notification permission is off) — shown above every
+            protection state because none of them is true while it lasts. */}
+        <CallReadinessBanner />
 
         {homeProtectionState === "setting_up" ? (
           <>
