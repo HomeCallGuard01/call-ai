@@ -116,6 +116,10 @@ const HH = { id: 'hh-1' };
   const loop = makeAdmission({ db: async (p) => { loopSeen.push(p.isLoop); return { allowed: false, reason: 'forwarding_loop' }; }, isHcgNumber: async (n) => n === '+441615700111' });
   const l = await loop.admission.admit({ household: HH, callSid: 'CAl', from: '+441615700111', to: '+441615700779', isKnown: false, signatureValid: true });
   check(loopSeen[0] === true && !l.allowed && l.reason === 'forwarding_loop', 'a call FROM an HCG number is flagged as a forwarding loop and refused');
+  const hung = makeAdmission({ db: async () => ({ allowed: true }), isHcgNumber: () => new Promise(() => {}) });
+  const t0 = Date.now();
+  const h = await hung.admission.admit({ household: HH, callSid: 'CAh', from: '+447700900321', to: '+441615700779', isKnown: false, signatureValid: true });
+  check(h.allowed && Date.now() - t0 < 1000, 'a hung loop lookup cannot delay call delivery (bounded by the check timeout)');
 }
 {
   // Fail-safe: database unavailable → memory limits, alerted; never unlimited, never blocking genuine calls.

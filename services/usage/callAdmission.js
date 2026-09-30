@@ -61,11 +61,13 @@ const normalise = (n) => String(n || '').replace(/[^\d]/g, '').replace(/^44/, '0
 
 // A call arriving FROM an HCG number (or from the dialled number itself) can
 // only be HCG's own traffic coming back round: a forwarding loop.
-async function isLoopCall({ from, to, isHcgNumber }) {
+// Bounded by timeoutMs: a slow lookup must never delay call delivery (on
+// timeout the call is treated as not-a-loop; the burst rule still applies).
+async function isLoopCall({ from, to, isHcgNumber, timeoutMs = 1500 }) {
   if (!from) return false;
   if (to && normalise(from) === normalise(to)) return true;
   if (typeof isHcgNumber !== 'function') return false;
-  try { return Boolean(await isHcgNumber(from)); } catch { return false; }
+  try { return Boolean(await withTimeout(Promise.resolve(isHcgNumber(from)), timeoutMs)); } catch { return false; }
 }
 
 function withTimeout(promise, ms) {
@@ -125,7 +127,7 @@ function createCallAdmission(deps) {
     }
 
     const key = callerKey(from, env.SAFETY_CALLER_KEY_SECRET);
-    const isLoop = await isLoopCall({ from, to, isHcgNumber: deps.isHcgNumber });
+    const isLoop = await isLoopCall({ from, to, isHcgNumber: deps.isHcgNumber, timeoutMs: config.budgetCheckTimeoutMs });
     const t = now();
     const period = resolveEntitlementPeriod({ entitlement, subscription, now: t });
 
