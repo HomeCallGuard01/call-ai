@@ -40,6 +40,18 @@ export function buildAndroidReadiness(apiLevel: number, micGranted: boolean | nu
   };
 }
 
+// iOS (2026-09-30): CallKit needs no notification permission. Microphone
+// state comes from expo-audio (lib/microphonePermission.ts); "undetermined"
+// is reported as "unknown" — never blocked — and prompted for separately.
+export function buildIosReadiness(osMajor: number | null, micStatus: "granted" | "denied" | "undetermined" | "unavailable"): DeviceCallReadiness {
+  return {
+    platform: "ios",
+    osVersion: Number.isInteger(osMajor) ? (osMajor as number) : undefined,
+    microphone: micStatus === "granted" ? "granted" : micStatus === "denied" ? "denied" : "unknown",
+    notifications: "not_required",
+  };
+}
+
 export function readinessProblem(r: DeviceCallReadiness | null | undefined): ReadinessProblem {
   if (!r) return null;
   if (r.microphone === "denied") return "microphone";
@@ -53,7 +65,11 @@ export function canPresentCalls(r: DeviceCallReadiness | null | undefined): bool
   return readinessProblem(r) === null;
 }
 
-export function readinessMessage(problem: ReadinessProblem): string | null {
+export function readinessMessage(problem: ReadinessProblem, platform: "android" | "ios" = "android"): string | null {
+  if (problem === "microphone" && platform === "ios") {
+    // On iPhone the call still rings (CallKit), but the caller can't hear you.
+    return "Protected calls will ring, but callers won't be able to hear you because Home Call Guard doesn't have microphone access. Turn on Microphone for Home Call Guard in Settings.";
+  }
   if (problem === "microphone") {
     return "Protected calls can't ring on this phone because Home Call Guard doesn't have microphone access. Turn on Microphone for Home Call Guard in Settings.";
   }
@@ -62,6 +78,11 @@ export function readinessMessage(problem: ReadinessProblem): string | null {
   }
   return null;
 }
+
+// Neutral explainer shown before the iOS system microphone prompt (App Review
+// 5.1.1(iv): explain, then a neutral "Continue" that always shows the prompt).
+export const IOS_MICROPHONE_EXPLAINER =
+  "Home Call Guard needs microphone access so you can talk on protected calls, the same as a normal phone call. Tap Continue and your iPhone will ask for permission.";
 
 // Stable key so a foreground check only reports when something changed.
 export function readinessKey(r: DeviceCallReadiness | null | undefined): string {

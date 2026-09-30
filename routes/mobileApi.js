@@ -178,8 +178,18 @@ router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (r
     });
   }
 
-  const normalisedProvider = deviceType === "iphone" ? null : provider;
-  const normalisedTariffType = deviceType === "mobile" && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
+  // iOS technical parity (2026-09-30): an iPhone household records its
+  // carrier exactly like an Android one when the app sends it (the iOS app's
+  // carrier step, once IOS_COMING_SOON is off). Previously "iphone" always
+  // stored provider=null, so with IOS_COMING_SOON=false checkout eligibility
+  // fell through to evaluateProviderCompatibility(null) = unverified, and an
+  // iPhone customer could never pay. The coming-soon waiting-list write
+  // (no provider) is unchanged, and the IOS_COMING_SOON block still applies
+  // first in evaluateHouseholdCheckoutEligibility.
+  const iphoneProvider = deviceType === "iphone" && typeof provider === "string" && provider.trim() ? provider : null;
+  const normalisedProvider = deviceType === "iphone" ? iphoneProvider : provider;
+  const carriesTariff = deviceType === "mobile" || (deviceType === "iphone" && iphoneProvider !== null);
+  const normalisedTariffType = carriesTariff && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
 
   try {
     await setHouseholdCarrierCompatibility(req.household.id, deviceType, normalisedProvider, normalisedTariffType);

@@ -206,14 +206,17 @@ export async function verifyConfirmationToken(tokenHash: string): Promise<Verify
 // once the customer has answered. Persists the raw selection server-side
 // on every call (see services/providerPolicy.js), so re-calling with a
 // corrected answer is always safe.
+// deviceType (2026-09-30, iOS parity): "iphone" records the carrier on an
+// iPhone household exactly as "mobile" does for Android.
 export async function checkCarrierCompatibility(
   provider: MobileCarrierKey,
   tariffType?: TariffType,
-  accessToken?: string
+  accessToken?: string,
+  deviceType: "mobile" | "iphone" = "mobile"
 ): Promise<CarrierCompatibilityResponse> {
   const response = await authorizedFetch(
     "/api/v1/onboarding/carrier-compatibility",
-    { method: "POST", body: JSON.stringify({ deviceType: "mobile", provider, tariffType }) },
+    { method: "POST", body: JSON.stringify({ deviceType, provider, tariffType }) },
     accessToken
   );
   return parseJsonOrThrow<CarrierCompatibilityResponse>(response);

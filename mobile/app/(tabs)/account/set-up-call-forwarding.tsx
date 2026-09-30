@@ -10,7 +10,7 @@
 // auto-advance-on-return — this is a reference/reminder screen for an
 // account that's already active, not the onboarding wizard.
 import { useCallback, useState } from "react";
-import { Text, View, ActivityIndicator, Linking, StyleSheet } from "react-native";
+import { Text, View, ActivityIndicator, Linking, StyleSheet, Platform } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Screen } from "../../../components/Screen";
 import { Banner } from "../../../components/Banner";
@@ -20,7 +20,7 @@ import { useAuth } from "../../../lib/AuthContext";
 import { loadActivationDevice } from "../../../lib/activationDeviceStorage";
 import { isLandlineComingSoon, useLandlineComingSoon } from "../../../lib/landlineFlag";
 import { LandlineComingSoon } from "../../../components/LandlineComingSoon";
-import { canAutoOpenDialer, buildDialerUrl } from "../../../lib/dialerLink";
+import { canAutoOpenDialer, buildDialerUrl, IOS_MANUAL_DIAL_HINT } from "../../../lib/dialerLink";
 import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../../lib/forwardingNumber";
 import type { ActivationInstructionsResponse } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
@@ -197,6 +197,7 @@ export default function SetUpCallForwarding() {
           )}
 
           {canAutoDial && <PrimaryButton label="Open Phone app" onPress={handleOpenPhone} />}
+          {canAutoDial && Platform.OS === "ios" && <Text style={styles.step}>{IOS_MANUAL_DIAL_HINT}</Text>}
         </>
       )}
     </Screen>

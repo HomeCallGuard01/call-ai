@@ -34,6 +34,13 @@ export function canAutoOpenDialer(deviceType: string): boolean {
 // as-is — matches the pattern Apple's own documented tel: examples for
 // feature/field-test codes use (e.g. *3001#12345#*, %23-encoded only at
 // each '#').
+// iOS (2026-09-30): Apple documents that the Phone app does not dial tel:
+// links containing * or #. Whether iOS then shows the code pre-filled is
+// unverified on a device, so the iOS screens always add this manual fallback
+// under the dial button (the code and Copy code are already on screen).
+export const IOS_MANUAL_DIAL_HINT =
+  "If your iPhone doesn't start the call, tap Copy code, open the Phone app's Keypad, paste the code and press Call.";
+
 export function buildDialerUrl(code: string): string {
   return `tel:${code.replace(/#/g, "%23")}`;
 }

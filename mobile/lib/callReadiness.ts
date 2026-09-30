@@ -7,8 +7,10 @@ import { Platform, PermissionsAndroid } from "react-native";
 import {
   ANDROID_NOTIFICATION_PERMISSION_API,
   buildAndroidReadiness,
+  buildIosReadiness,
   type DeviceCallReadiness,
 } from "./callReadinessModel";
+import { getIosMicrophoneStatus } from "./microphonePermission";
 
 async function check(permission: string): Promise<boolean | null> {
   try {
@@ -29,12 +31,7 @@ export async function getCallReadiness(): Promise<DeviceCallReadiness | null> {
   }
   if (Platform.OS === "ios") {
     const major = parseInt(String(Platform.Version), 10);
-    return {
-      platform: "ios",
-      osVersion: Number.isInteger(major) ? major : undefined,
-      microphone: "unknown",
-      notifications: "not_required",
-    };
+    return buildIosReadiness(Number.isInteger(major) ? major : null, await getIosMicrophoneStatus());
   }
   return null;
 }

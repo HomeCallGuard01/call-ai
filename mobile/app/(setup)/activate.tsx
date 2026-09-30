@@ -20,7 +20,7 @@
 //   phone, check now," and the code stays visible/copyable throughout
 //   since referencing it from a second device is genuinely unavoidable.
 import { useEffect, useRef, useState } from "react";
-import { Text, View, StyleSheet, ActivityIndicator, AppState, Linking, Pressable, Animated } from "react-native";
+import { Text, View, StyleSheet, ActivityIndicator, AppState, Linking, Pressable, Animated, Platform } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Screen } from "../../components/Screen";
@@ -29,7 +29,7 @@ import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
 import { fetchActivationInstructions, fetchDashboard, ApiError, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
-import { canAutoOpenDialer, buildDialerUrl } from "../../lib/dialerLink";
+import { canAutoOpenDialer, buildDialerUrl, IOS_MANUAL_DIAL_HINT } from "../../lib/dialerLink";
 import { saveActivationDevice, loadActivationDevice } from "../../lib/activationDeviceStorage";
 import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../lib/forwardingNumber";
 import {
@@ -454,6 +454,8 @@ export default function Activate() {
           message="We couldn't open your Phone app automatically. Copy the code above and dial it manually, then come back here."
         />
       )}
+
+      {canAutoDial && Platform.OS === "ios" && <Text style={styles.explanation}>{IOS_MANUAL_DIAL_HINT}</Text>}
 
       {!canAutoDial && (
         <View style={styles.steps}>

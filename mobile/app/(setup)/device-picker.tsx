@@ -27,7 +27,9 @@
 // alone would not survive the Subscribe → Confirmation → Contacts hops
 // in between.
 import { useEffect, useState } from "react";
-import { Text, View, Pressable, StyleSheet, ActivityIndicator, TextInput, Image } from "react-native";
+import { Text, View, Pressable, StyleSheet, ActivityIndicator, TextInput, Image, Platform } from "react-native";
+import { useIosComingSoon, refreshIosComingSoon } from "../../lib/iphoneFlag";
+import { carrierDeviceTypeFor, deviceOptionTypesFor, iphoneCardLabel, isIphoneOnboardingAvailable, type OnboardingDeviceType } from "../../lib/iphoneAvailability";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
@@ -121,6 +123,13 @@ type Step =
 
 export default function DevicePicker() {
   const { session } = useAuth();
+  // iOS technical parity (2026-09-30): the iOS app shows only the iPhone
+  // card (never Android — App Review 2.3.10), and the iPhone card becomes a
+  // real path only when the backend's IOS_COMING_SOON flag is off.
+  const iosComingSoon = useIosComingSoon();
+  const deviceOptions = DEVICE_OPTIONS
+    .filter(option => deviceOptionTypesFor(Platform.OS).includes(option.type as OnboardingDeviceType))
+    .map(option => (option.type === "iphone" ? { ...option, label: iphoneCardLabel(Platform.OS, iosComingSoon) } : option));
   // Complimentary/admin-account onboarding fix (2026-09-24): "confirm"
   // mode is reached only via resumeSetupAt's "confirm-device" target —
   // an already-protected household (real evidence: activation_verified_at
@@ -176,11 +185,24 @@ export default function DevicePicker() {
   // record won't yet reflect "iphone" — genuinely low-stakes, so the
   // step shows either way rather than stranding the customer on a
   // spinner for a non-critical write.
-  function selectDevice(type: DeviceType) {
+  // iOS technical parity (2026-09-30): decide from a fresh flag read (fail
+  // closed), not a possibly-stale render value — only the iOS app with
+  // IOS_COMING_SOON=false continues to the carrier step, exactly like
+  // Android. Otherwise the coming-soon step is unchanged.
+  async function selectIphone() {
+    const comingSoon = Platform.OS === "ios" ? await refreshIosComingSoon().catch(() => true) : true;
+    if (isIphoneOnboardingAvailable(Platform.OS, comingSoon)) {
+      setStep({ name: "carrier" });
+      return;
+    }
+    setStep({ name: "ios-coming-soon" });
+    setHouseholdIphone(session?.access_token).catch(() => {});
+  }
+
+  async function selectDevice(type: DeviceType) {
     setDeviceType(type);
     if (type === "iphone") {
-      setStep({ name: "ios-coming-soon" });
-      setHouseholdIphone(session?.access_token).catch(() => {});
+      await selectIphone();
       return;
     }
     setStep({ name: "carrier" });
@@ -257,7 +279,7 @@ export default function DevicePicker() {
     setStep({ name: "checking" });
     setError(null);
     try {
-      const result = await checkCarrierCompatibility(provider, tariffType, session?.access_token);
+      const result = await checkCarrierCompatibility(provider, tariffType, session?.access_token, carrierDeviceTypeFor(deviceType));
       if (result.reason === "tariff_type_required") {
         setStep({ name: "tariff", provider });
         return;
@@ -543,7 +565,7 @@ export default function DevicePicker() {
           : "Pick the phone whose calls you want screened."}
       </Text>
       <View style={styles.cards}>
-        {DEVICE_OPTIONS.map(({ type, label, icon, iconSource }) => (
+        {deviceOptions.map(({ type, label, icon, iconSource }) => (
           <Pressable
             key={type}
             onPress={() => selectDevice(type)}
