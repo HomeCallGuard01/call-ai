@@ -70,8 +70,21 @@ const { isVoiceSdkClientOriginated } = require("./services/voiceWebhookGuards");
 // no caller number, name or transcript can be recorded). DB write only
 // with CALL_DELIVERY_EVENTS_DB=on (after migration 058); always one
 // HCG_CALL_DELIVERY log line.
-function deliveryEvent(args) {
-  recordDeliveryEvent(args, { supabase: supabaseAdmin }).catch(() => {});
+//
+// persist=false (a request that is not validly Twilio-signed): log line only,
+// no database write — /voice and /call-delivery-failed don't enforce
+// signatures, so forged POSTs must not be able to grow this table for free.
+function deliveryEvent(args, { persist = true } = {}) {
+  recordDeliveryEvent(args, { supabase: persist ? supabaseAdmin : null }).catch(() => {});
+}
+
+function requestSignedByTwilio(req) {
+  return isGenuineTwilioRequest({
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    signature: req.get("X-Twilio-Signature"),
+    url: buildWebhookUrl(APP_URL, req.originalUrl),
+    params: req.body,
+  });
 }
 
 function classifyCallerPresentation(from) {
@@ -255,7 +268,8 @@ function normaliseNumber(number) {
 // pure, side-effect-free decision (hasVoiceClientRegistrationHistory +
 // decideCallDeliveryPlan) purely to record it, so dialHouseholdOrFailClosed
 // itself stays byte-for-byte unchanged. Never affects TwiML or routing.
-function recordRoutingTelemetry(household, { callSid, monitoring = false, entitled } = {}) {
+function recordRoutingTelemetry(household, { callSid, monitoring = false, entitled, signed = true } = {}) {
+  const persist = { persist: signed };
   try {
     const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
     const voiceClientReachable = hasVoiceClientRegistrationHistory(household && household.voice_client_registered_at);
@@ -273,24 +287,25 @@ function recordRoutingTelemetry(household, { callSid, monitoring = false, entitl
         endpointRegistered: voiceClientReachable,
         registrationAgeHours: Number.isFinite(registeredMs) ? Math.max(0, Math.floor((Date.now() - registeredMs) / 3600000)) : undefined,
       },
-    });
+    }, persist);
     const willDialClient = plan.mode === "client-only";
     if (willDialClient) {
-      deliveryEvent({ ...base, event: DELIVERY_EVENTS.PUSH_REQUESTED, detail: { timeoutSeconds: 20 } });
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.PUSH_REQUESTED, detail: { timeoutSeconds: 20 } }, persist);
       return;
     }
     deliveryEvent({
       ...base,
       event: DELIVERY_EVENTS.DELIVERY_FAILED,
       detail: { reason: plan.mode === "self-protecting-unreachable" ? "no_registered_endpoint" : "no_household" },
-    });
+    }, persist);
     if (plan.mode === "self-protecting-unreachable") {
-      deliveryEvent({ ...base, event: DELIVERY_EVENTS.FALLBACK_TRIGGERED, detail: { type: "unavailable_message" } });
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.FALLBACK_TRIGGERED, detail: { type: "unavailable_message" } }, persist);
     }
   } catch (err) {
     console.error("ROUTING TELEMETRY FAILED:", err.message);
   }
-  recordEndpointHealthTelemetry(household, callSid);
+  // Endpoint health costs database reads: only for genuine Twilio requests.
+  if (signed) recordEndpointHealthTelemetry(household, callSid);
 }
 
 // "App endpoint health" stage of the trace (2026-09-30): the household's
@@ -760,12 +775,19 @@ app.post("/voice", async (req, res) => {
     console.error("CALL ROUTING ERROR: no household matches dialled number", req.body.To);
   }
 
-  deliveryEvent({ householdId: household && household.id, callSid: req.body.CallSid, event: DELIVERY_EVENTS.INBOUND_RECEIVED });
+  const telemetrySigned = requestSignedByTwilio(req);
+  const telemetryPersist = { persist: telemetrySigned };
+  deliveryEvent({
+    householdId: household && household.id,
+    callSid: req.body.CallSid,
+    event: DELIVERY_EVENTS.INBOUND_RECEIVED,
+    detail: { signatureValid: telemetrySigned },
+  }, telemetryPersist);
   deliveryEvent({
     householdId: household && household.id,
     callSid: req.body.CallSid,
     event: household ? DELIVERY_EVENTS.HOUSEHOLD_IDENTIFIED : DELIVERY_EVENTS.HOUSEHOLD_NOT_FOUND,
-  });
+  }, telemetryPersist);
 
   // P0 Batch 1, component C: automatic activation_verified_at stamp —
   // corrected 2026-09-10 to close a real contradiction a review caught:
@@ -822,7 +844,7 @@ app.post("/voice", async (req, res) => {
       callSid: req.body.CallSid,
       event: DELIVERY_EVENTS.CALLER_CLASSIFIED,
       detail: { classification: isKnown ? "known_contact" : (classifyCallerPresentation(caller) || "unknown") },
-    });
+    }, telemetryPersist);
   }
 
   if (isKnown) {
@@ -843,7 +865,7 @@ app.post("/voice", async (req, res) => {
     }
 
     dialHouseholdOrFailClosed(twiml, household);
-    recordRoutingTelemetry(household, { callSid: req.body.CallSid, monitoring: false });
+    recordRoutingTelemetry(household, { callSid: req.body.CallSid, monitoring: false, signed: telemetrySigned });
 
     return res.type("text/xml").send(twiml.toString());
   }
@@ -959,6 +981,7 @@ app.post("/voice", async (req, res) => {
     callSid: req.body.CallSid,
     monitoring: shouldStartPaidMonitoring(household, activeEntitlement),
     entitled: Boolean(activeEntitlement),
+    signed: telemetrySigned,
   });
 
   return res.type("text/xml").send(twiml.toString());
@@ -1176,6 +1199,12 @@ app.post("/call-delivery-failed", (req, res) => {
   // Telemetry only (release readiness P3). Household resolved from the
   // dialled HCG number off the response path; never affects the TwiML.
   (async () => {
+    const persist = { persist: requestSignedByTwilio(req) };
+    if (!persist.persist) {
+      // Forged/unsigned: one log line, no household lookup, no DB write.
+      deliveryEvent({ callSid: req.body.CallSid, clientCallSid: req.body.DialCallSid, event: DELIVERY_EVENTS.DIAL_OUTCOME, detail: { dialCallStatus } }, persist);
+      return;
+    }
     const hh = await getHouseholdByTwilioNumber(req.body.To).catch(() => null);
     const base = { householdId: hh && hh.id, callSid: req.body.CallSid, clientCallSid: req.body.DialCallSid };
     const durationSeconds = Number(req.body.DialCallDuration) || 0;

@@ -134,7 +134,19 @@ check(/deliveryEvent\(\{[^}]*INBOUND_RECEIVED/.test(voiceHandler), '/voice recor
 check(voiceHandler.includes('CALLER_CLASSIFIED') && voiceHandler.includes('classifyCallerPresentation(caller)'), '/voice records the caller classification (never the number)');
 check(!/await\s+deliveryEvent|await\s+recordDeliveryEvent/.test(server), 'server.js never awaits telemetry on a request path');
 check(/dialHouseholdOrFailClosed\(twiml, household\);\s*recordRoutingTelemetry\(household, \{\s*callSid: req\.body\.CallSid,\s*monitoring: shouldStartPaidMonitoring\(household, activeEntitlement\)/.test(voiceHandler), 'unknown-caller path records routing telemetry right after the (unchanged) dial call');
-check(/dialHouseholdOrFailClosed\(twiml, household\);\s*recordRoutingTelemetry\(household, \{ callSid: req\.body\.CallSid, monitoring: false \}\)/.test(voiceHandler), 'known-contact path records routing telemetry (monitoring false)');
+check(/dialHouseholdOrFailClosed\(twiml, household\);\s*recordRoutingTelemetry\(household, \{ callSid: req\.body\.CallSid, monitoring: false, signed: telemetrySigned \}\)/.test(voiceHandler), 'known-contact path records routing telemetry (monitoring false)');
+// Denial-of-wallet: /voice and /call-delivery-failed don't enforce Twilio
+// signatures, so unsigned requests must never write telemetry rows.
+check(/function deliveryEvent\(args, \{ persist = true \} = \{\}\) \{\s*recordDeliveryEvent\(args, \{ supabase: persist \? supabaseAdmin : null \}\)/.test(server), 'deliveryEvent persists only when asked (log-only otherwise)');
+check(/const telemetrySigned = requestSignedByTwilio\(req\);/.test(voiceHandler), '/voice computes Twilio signature validity for telemetry');
+check((voiceHandler.match(/telemetryPersist\);/g) || []).length === 3, 'every /voice telemetry event is gated on the signature');
+check(/if \(signed\) recordEndpointHealthTelemetry\(household, callSid\);/.test(server), 'endpoint-health DB reads only for signed requests');
+const failedCb = server.slice(server.indexOf('app.post("/call-delivery-failed"'), server.indexOf('app.post("/call-delivery-failed"') + 4000);
+check(/if \(!persist\.persist\) \{[\s\S]*?return;\s*\}\s*const hh = await getHouseholdByTwilioNumber/.test(failedCb), 'unsigned Dial callbacks: no household lookup, no DB write');
+{
+  const rt = server.slice(server.indexOf('function recordRoutingTelemetry'), server.indexOf('function recordEndpointHealthTelemetry'));
+  check((rt.match(/, persist\);/g) || []).length === 4, 'all routing telemetry events carry the signature gate');
+}
 const dialFn = server.match(/function dialHouseholdOrFailClosed\(twiml, household\) \{[\s\S]*?\n\}\n/);
 check(Boolean(dialFn) && !/deliveryEvent|recordRoutingTelemetry|DELIVERY_EVENTS/.test(dialFn[0]), 'dialHouseholdOrFailClosed itself contains no telemetry (routing code untouched)');
 check(Boolean(dialFn) && dialFn[0].includes('const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk" });'), 'Dial TwiML unchanged (action, 20 s timeout, UK ringtone)');
