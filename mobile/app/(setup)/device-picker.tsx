@@ -27,7 +27,7 @@
 // alone would not survive the Subscribe → Confirmation → Contacts hops
 // in between.
 import { useEffect, useState } from "react";
-import { Text, View, Pressable, StyleSheet, ActivityIndicator, TextInput, Image } from "react-native";
+import { Text, View, Pressable, StyleSheet, ActivityIndicator, TextInput, Image, Platform } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "../../components/Screen";
@@ -36,6 +36,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { checkCarrierCompatibility, setHouseholdLandline, setHouseholdIphone, joinWaitingList, fetchActivationDevice, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { saveActivationDevice } from "../../lib/activationDeviceStorage";
+import { iphoneSignupOpenOnThisDevice, deviceOptionLabel } from "../../lib/iphoneAvailability";
 import { MOBILE_CARRIERS } from "../../lib/carriers";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 import type { DeviceType, LandlineProvider, MobileCarrierKey, TariffType } from "../../lib/types";
@@ -176,9 +177,12 @@ export default function DevicePicker() {
   // record won't yet reflect "iphone" — genuinely low-stakes, so the
   // step shows either way rather than stranding the customer on a
   // spinner for a non-critical write.
+  // 2026-09-30 (iOS 1.0.2): inside the iOS app the iPhone card is the
+  // normal path (lib/iphoneAvailability.ts) and continues to the carrier
+  // check like Android. On Android the Coming-soon step below is unchanged.
   function selectDevice(type: DeviceType) {
     setDeviceType(type);
-    if (type === "iphone") {
+    if (type === "iphone" && !iphoneSignupOpenOnThisDevice(Platform.OS)) {
       setStep({ name: "ios-coming-soon" });
       setHouseholdIphone(session?.access_token).catch(() => {});
       return;
@@ -543,7 +547,9 @@ export default function DevicePicker() {
           : "Pick the phone whose calls you want screened."}
       </Text>
       <View style={styles.cards}>
-        {DEVICE_OPTIONS.map(({ type, label, icon, iconSource }) => (
+        {DEVICE_OPTIONS.map(({ type, label: defaultLabel, icon, iconSource }) => {
+          const label = deviceOptionLabel(type, defaultLabel, Platform.OS);
+          return (
           <Pressable
             key={type}
             onPress={() => selectDevice(type)}
@@ -558,7 +564,8 @@ export default function DevicePicker() {
             )}
             <Text style={styles.cardText}>{label}</Text>
           </Pressable>
-        ))}
+          );
+        })}
       </View>
       {/* Landline positioning (2026-09-24): one restrained line, no CTA,
           no timeline, no waiting list — matches the website's own single

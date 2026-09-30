@@ -358,9 +358,11 @@ check(
   'mobile device-picker.tsx retains the iPhone option, clearly marked "Coming soon" (2026-09-20: icon changed from the generic Ionicons Apple-logo glyph to a non-trademarked device silhouette — see tests/device-picker-platform-icons.test.mjs — but the option itself and its label are unchanged)'
 );
 check(
-  devicePickerSource.includes('if (type === "iphone") {') &&
+  // 2026-09-30: guarded by platform too — inside the iOS app the iPhone
+  // card is the normal path (tests/ios-iphone-signup-path.test.mjs).
+  devicePickerSource.includes('if (type === "iphone" && !iphoneSignupOpenOnThisDevice(Platform.OS)) {') &&
     devicePickerSource.includes('setStep({ name: "ios-coming-soon" });'),
-  'selecting iPhone on mobile routes to its own dead-end step'
+  'selecting iPhone in the Android app routes to its own dead-end step'
 );
 {
   const selectDeviceStart = devicePickerSource.indexOf('function selectDevice(type: DeviceType) {');
