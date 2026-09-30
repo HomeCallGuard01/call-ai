@@ -1412,6 +1412,55 @@ async function main() {
     assert(fn.owner === ADMIN_OWNER, `${label}: owner is the intended administrative role (${ADMIN_OWNER}), found: ${fn.owner}`);
   }
 
+  // --- RLS coverage + migration 057 (terms_acceptances lockdown) ---
+  //
+  // Migration 039 shipped terms_acceptances without RLS, relying on "no
+  // grants" — false on staging, whose newer Supabase default ACL grants
+  // anon/authenticated ALL on every new public table. This harness has no
+  // such default ACL, so it cannot reproduce that exposure; what it can do
+  // is fail any future migration that creates a public table without RLS,
+  // and pin 057's grants so the lockdown can't silently regress.
+  console.log('\nChecking RLS coverage and migration 057 (terms_acceptances)...\n');
+  await db.exec('reset role;');
+  const { rows: noRls } = await db.query(`
+    select c.relname from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity
+    order by c.relname;
+  `);
+  assert(noRls.length === 0, `every public table has RLS enabled (missing: ${noRls.map((r) => r.relname).join(', ') || 'none'})`);
+
+  for (const role of ['anon', 'authenticated']) {
+    for (const priv of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+      const { rows: [{ has }] } = await db.query(
+        `select has_table_privilege($1, 'public.terms_acceptances', $2) as has`, [role, priv]
+      );
+      assert(!has, `terms_acceptances: ${role} has no ${priv}`);
+    }
+  }
+  for (const [priv, expected] of [['SELECT', true], ['INSERT', true], ['UPDATE', false], ['DELETE', false], ['TRUNCATE', false]]) {
+    const { rows: [{ has }] } = await db.query(
+      `select has_table_privilege('service_role', 'public.terms_acceptances', $1) as has`, [priv]
+    );
+    assert(has === expected, `terms_acceptances: service_role ${expected ? 'has' : 'has no'} ${priv} (append-only evidence)`);
+  }
+
+  const { rows: [{ id: termsHouseholdId }] } = await db.query(
+    `insert into public.households (auth_user_id, email) values (null, $1) returning id`,
+    ['terms@example.com']
+  );
+  await asServiceRole(db);
+  const { rows: [{ accepted_at: acceptedAt }] } = await db.query(
+    `select public.record_terms_acceptance($1, 'test-terms', 'test-privacy') as accepted_at`, [termsHouseholdId]
+  );
+  assert(acceptedAt !== null, 'record_terms_acceptance() still inserts via service_role after 057');
+  await db.exec('reset role;');
+  await db.query(`delete from public.households where id = $1`, [termsHouseholdId]);
+  const { rows: [{ n: termsLeft }] } = await db.query(
+    `select count(*)::int as n from public.terms_acceptances where household_id = $1`, [termsHouseholdId]
+  );
+  assert(termsLeft === 0, 'household delete still cascades to terms_acceptances after 057');
+
   await db.close();
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
