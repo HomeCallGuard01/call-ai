@@ -17,6 +17,7 @@ import type {
   ActivationDeviceResponse,
   ContactResponse,
   CheckoutSessionResponse,
+  StripeOfferResponse,
   PortalSessionResponse,
   ApiErrorResponse,
   DeviceType,
@@ -318,6 +319,13 @@ export async function acceptTerms(accessToken?: string): Promise<TermsAcceptance
 // device) — surfaced as a distinct error code rather than a generic
 // failure so B2 can show "you're already protected" instead of a scary
 // error banner.
+// GET /api/v1/billing/offer — the current Stripe price, Android only (iOS
+// shows StoreKit's own price). Never cached here: the server is the source.
+export async function fetchStripeOffer(accessToken?: string): Promise<StripeOfferResponse> {
+  const response = await authorizedFetch("/api/v1/billing/offer", {}, accessToken);
+  return parseJsonOrThrow<StripeOfferResponse>(response);
+}
+
 export async function createCheckoutSession(accessToken?: string): Promise<CheckoutSessionResponse> {
   const response = await authorizedFetch("/api/v1/billing/create-checkout-session", { method: "POST" }, accessToken);
   return parseJsonOrThrow<CheckoutSessionResponse>(response);

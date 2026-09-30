@@ -158,10 +158,11 @@ check(
 
 check(
   typeof sessionParams.custom_text?.submit?.message === 'string' &&
-    sessionParams.custom_text.submit.message.includes('£4.99') &&
+    !/£\s?\d/.test(sessionParams.custom_text.submit.message) &&
+    sessionParams.custom_text.submit.message.includes('the amount shown on this page') &&
     sessionParams.custom_text.submit.message.toLowerCase().includes('every month') &&
     sessionParams.custom_text.submit.message.toLowerCase().includes('terms'),
-  'the checkout submit message states £4.99/month, that it recurs, and references Terms and Conditions'
+  'the checkout submit message refers to the amount Stripe shows (no hard-coded figure), states that it recurs, and references Terms and Conditions'
 );
 
 check(

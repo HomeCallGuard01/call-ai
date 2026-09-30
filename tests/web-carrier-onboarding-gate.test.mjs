@@ -161,11 +161,12 @@ check(
   'the Terms agreement and the cooling-off consent remain two separate controls, never merged into one combined checkbox'
 );
 check(
-  html.includes('£4.99/month, including VAT') && /recurring monthly subscription\s+that renews automatically/.test(html),
+  html.includes('including VAT, before you pay') && html.includes('"/month, including VAT. This is a recurring monthly subscription "') &&
+    /recurring monthly subscription\s+that renews automatically/.test(html),
   'the web price line states VAT-inclusive pricing and explicit recurring/auto-renewal wording, before payment'
 );
 check(
-  html.includes('Subscribe &amp; pay £4.99/month now'),
+  html.includes('Subscribe &amp; pay now') && html.includes('"Subscribe & pay " + offer.amountLabel + "/month now"'),
   'the web payment button wording makes the payment obligation unambiguous, matching the mobile app'
 );
 check(
