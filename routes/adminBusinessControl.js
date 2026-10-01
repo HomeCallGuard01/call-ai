@@ -59,6 +59,19 @@ router.get("/admin/api/business-control/marketing", requireAuth, requireAdmin, a
   sendResult(res, await getCampaignPerformance(new Date()));
 });
 
+// Usage & cost safety (Operations): monitored minutes, unusual usage,
+// estimated concurrency, which caps exist in this build, and relevant
+// recorded failures. Read-only (calls + households + classifications).
+router.get("/admin/api/business-control/usage-safety", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { loadUsageSafety } = require("../services/businessControl/usageSafety");
+    sendResult(res, await loadUsageSafety({ now: new Date() }));
+  } catch (err) {
+    console.error("BUSINESS CONTROL USAGE SAFETY ERROR:", err.message);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
 // Monthly due-diligence snapshot (read-only; aggregates only, no personal
 // data — refused if any slips in). ?month=YYYY-MM&format=json|md
 router.get("/admin/api/business-control/snapshot", requireAuth, requireAdmin, async (req, res) => {

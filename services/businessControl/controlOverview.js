@@ -307,9 +307,19 @@ async function getControlOverview(now = new Date()) {
   const { loadFinancialSafety } = require('./financialSafetyAdapter');
   const safety = await loadFinancialSafety({ now });
 
+  // Usage-safety signals for "Needs your attention" (full detail on Operations).
+  const { loadUsageSafety, summariseForOverview } = require('./usageSafety');
+  let usageSafety;
+  try {
+    usageSafety = summariseForOverview(await loadUsageSafety({ now }));
+  } catch (err) {
+    usageSafety = { available: false, reason: err.message };
+  }
+
   return {
     available: true,
     generatedAt: now.toISOString(),
+    usageSafety,
     financialSafety: { state: safety.state, level: safety.level, asOf: safety.asOf, ageHours: safety.ageHours, reason: safety.reason, warnings: safety.warnings.filter((w) => w.severity !== 'info') },
     ...computeControlOverview({ households, entitlementsByHousehold, subscriptionsByHousehold, classificationMap: classification.map, quarantineRows: qRes.data || [], inventory, stripeRevenue, releaseRecordingAvailable }, now),
     inventory,

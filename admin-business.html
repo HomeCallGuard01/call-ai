@@ -255,6 +255,9 @@
   .control-card.st-green { border-left-color: #10b981; }
   .control-card.st-grey { border-left-color: #475569; }
   .control-card.st-info { border-left-color: #334155; }
+  /* --- Usage & cost safety (2026-10-01) --- */
+  .usage-series td.bar-cell { width: 40%; }
+  .usage-bar { display: inline-block; height: 10px; background: #0ea5e9; border-radius: 3px; min-width: 1px; vertical-align: middle; }
   .control-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
   .control-label { font-size: 12.5px; font-weight: 700; color: #cbd5e1; }
   .control-value { font-size: 26px; font-weight: 800; color: #e2e8f0; margin: 6px 0 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -322,7 +325,7 @@
   <div id="customers" class="tab-panel" role="tabpanel" hidden><div id="customerHealth"><div class="loading">Loading…</div></div><div id="subscriptions"></div></div>
   <div id="numbers" class="tab-panel" role="tabpanel" hidden><div id="reconciliation"><div class="loading">Loading…</div></div></div>
   <div id="money" class="tab-panel" role="tabpanel" hidden><div id="finance"><div class="loading">Loading…</div></div><div id="marketing"></div><div id="acquisition"></div></div>
-  <div id="operations" class="tab-panel" role="tabpanel" hidden><div id="callActivity"><div class="loading">Loading…</div></div><div id="systemhealth"></div><div id="opsTools"><div class="loading">Loading…</div></div></div>
+  <div id="operations" class="tab-panel" role="tabpanel" hidden><div id="usageSafety"></div><div id="callActivity"><div class="loading">Loading…</div></div><div id="systemhealth"></div><div id="opsTools"><div class="loading">Loading…</div></div></div>
 </div>
 
 <script>
@@ -1568,8 +1571,8 @@ const businessControlLoaded = {};
 const businessControlCache = {};
 // Sections fetched from /admin/api/business-control/*, by the tab that
 // shows them. Each section loads the first time its tab opens.
-const BUSINESS_CONTROL_TABS = ['overviewBody', 'subscriptions', 'reconciliation', 'finance', 'marketing'];
-const TAB_SECTIONS = { overview: ['overviewBody'], customers: ['subscriptions'], numbers: ['reconciliation'], money: ['finance', 'marketing'] };
+const BUSINESS_CONTROL_TABS = ['overviewBody', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'usageSafety'];
+const TAB_SECTIONS = { overview: ['overviewBody'], customers: ['subscriptions'], numbers: ['reconciliation'], money: ['finance', 'marketing'], operations: ['usageSafety'] };
 
 // TEST-EXTRACT-START: businessControlHelpers
 const PROVENANCE_BADGES = {
@@ -1657,7 +1660,7 @@ function loadBusinessControlTab(name, force) {
   businessControlLoaded[name] = true;
   const el = document.getElementById(name);
   el.innerHTML = '<div class="loading">Loading…</div>';
-  const loaders = { overviewBody: renderOverviewTab, subscriptions: renderSubscriptionsTab, reconciliation: renderReconciliationTab, finance: renderFinanceTab, marketing: renderMarketingTab };
+  const loaders = { overviewBody: renderOverviewTab, subscriptions: renderSubscriptionsTab, reconciliation: renderReconciliationTab, finance: renderFinanceTab, marketing: renderMarketingTab, usageSafety: renderUsageSafetyTab };
   loaders[name](force).catch((err) => { el.innerHTML = '<div class="error">' + escapeHtml(err.message) + '</div>'; businessControlLoaded[name] = false; });
 }
 
@@ -1720,6 +1723,7 @@ const ATTENTION_TOPICS = {
   classification: { title: 'Accounts that need classifying', why: 'Unclassified accounts are in no customer or revenue figure — a real payer can be invisible.', next: 'Customers → View → Classification (reason required; no effect on access or billing).', tab: 'customers' },
   payments: { title: 'Payments not attributed', why: 'Revenue figures exclude these until they are.', next: 'Open Money; classify the paying account, or note App Store revenue is not connected.', tab: 'money' },
   finance: { title: 'Spend safety', why: 'Provider spend is above normal, or cannot be observed.', next: 'Open Money: read the level reasons and check the provider console. Recommended actions are listed; none are executed.', tab: 'money' },
+  usage: { title: 'Unusual usage or unrecorded call outcomes', why: 'Monitored minutes and inbound minutes are billed per call, and only the per-call monitoring limit is enforced today.', next: 'Open Operations → Usage & cost safety: each signal lists its rule and the calls behind it. Nothing is blocked from the dashboard.', tab: 'operations' },
   system: { title: 'System components not confirmed healthy', why: 'Calls, payments or alerts may be failing silently.', next: 'Operations → System health: each component states its evidence.', tab: 'operations' },
   other_checks: { title: 'Other checks flagged', why: 'A dashboard check found something outside its normal state.', next: 'Open the Overview card for its rule and the affected items.', tab: 'overview' },
   data_freshness: { title: 'Some checks could not run', why: 'Missing data is not the same as zero or "fine".', next: 'Treat these figures as unknown until their source is connected or refreshed.', tab: 'overview' },
@@ -1776,6 +1780,14 @@ function buildAttentionItems(overview, customers, business) {
     if (f.level === 'EMERGENCY' || f.level === 'ALERT') add('finance', 'red', { detail: 'Level ' + f.level, when: f.asOf });
     else if (f.level === 'WATCH') add('finance', 'amber', { detail: 'Level WATCH', when: f.asOf });
     for (const w of f.warnings || []) if (w.severity === 'critical') add('finance', 'red', { detail: w.text, when: f.asOf });
+  }
+  if (overview && overview.usageSafety) {
+    const u = overview.usageSafety;
+    if (!u.available) add('data_freshness', 'amber', { detail: 'Usage & cost safety: ' + (u.reason || 'unavailable') });
+    else {
+      if (u.truncated) add('usage', 'amber', { detail: 'Too many calls to load in full — usage figures incomplete' });
+      for (const s of u.signals || []) add('usage', s.severity, { detail: s.title + ': ' + s.count, who: (s.items || []).filter((i) => i.householdId).map((i) => ({ householdId: i.householdId, email: i.label, detail: i.detail })) });
+    }
   }
   if (customers && customers.rows) {
     for (const r of customers.rows) {
@@ -2047,7 +2059,7 @@ function safetyMoney(v) {
 
 function renderSafetyHtml(safety) {
   if (!safety) return '';
-  let html = '<h3>Spend safety</h3>';
+  let html = '<h3>Spend safety</h3><p class="sub">Minutes, limits and unusual-usage signals: Operations → Usage &amp; cost safety.</p>';
   if (safety.state === 'not_connected' || safety.state === 'load_failed') {
     html += '<div class="readiness-banner ' + (safety.state === 'load_failed' ? 'not_ready' : 'ready_with_open_items') + '">' + (safety.state === 'load_failed' ? 'Cost data could not be loaded — spend is unobserved, not zero' : 'Not connected') + '</div>';
     html += '<p class="sub">' + escapeHtml(safety.reason || '') + ' MRR, spend by component, trusted / monitored call cost, household outliers, projected month-end and the WATCH / ALERT / EMERGENCY level appear here once it is.</p>';
@@ -2181,6 +2193,82 @@ async function renderMarketingTab() {
   byId('lbPreset').addEventListener('change', (e) => { const [s, m] = e.target.value.split('|'); if (s !== undefined) { byId('lbSource').value = s; byId('lbMedium').value = m || ''; } update(); });
   for (const id of ['lbSource', 'lbMedium', 'lbCampaign', 'lbContent', 'lbTerm']) byId(id).addEventListener('input', update);
   update();
+}
+
+// ---------- Usage & cost safety (Operations, 2026-10-01) ----------
+// Monitored minutes, unusual usage, estimated concurrency, which limits
+// exist in this build and the failures the database records. Minutes the
+// database never recorded are "not measured", never 0; concurrency is an
+// estimate (lower bound). Nothing here acts.
+const CONTROL_MODE_LABELS = {
+  enforced: { text: 'Enforced', status: 'green' },
+  alert_only: { text: 'Alert only', status: 'amber' },
+  visibility_only: { text: 'Dashboard only', status: 'amber' },
+  provider_default: { text: 'Provider default', status: 'amber' },
+  not_in_build: { text: 'Not in this build', status: 'red' },
+  present_unverified: { text: 'Code present — verify', status: 'amber' },
+};
+
+function usageWindowCard(label, w) {
+  const gaps = [];
+  if (w.callsWithoutDuration) gaps.push(w.callsWithoutDuration + ' approved call(s) without a recorded duration');
+  if (w.unknownCallsWithoutMonitoringRecord) gaps.push(w.unknownCallsWithoutMonitoringRecord + ' unknown call(s) without a monitoring record');
+  return bcCard(label, escapeHtml(fmtNum(w.monitoredMinutes)) + ' <span class="sub">monitored min</span>',
+    escapeHtml(fmtNum(w.calls) + ' calls (' + fmtNum(w.unknownCalls) + ' unknown) · ' + fmtNum(w.callMinutes) + ' call min (' + fmtNum(w.trustedCallMinutes) + ' trusted / ' + fmtNum(w.unknownCallMinutes) + ' unknown)') +
+    (w.monitoringLimitReached ? '<br>' + escapeHtml(w.monitoringLimitReached + ' hit the monitoring limit') : '') +
+    (w.warningSmsSent ? '<br>' + escapeHtml(w.warningSmsSent + ' warning SMS') : '') +
+    (gaps.length ? '<br><span class="text-warn">Measured part only: ' + escapeHtml(gaps.join('; ')) + '</span>' : ''));
+}
+
+function usageSeriesHtml(series) {
+  const max = Math.max(1, ...series.map((s) => s.monitoredMinutes));
+  return '<table class="usage-series"><tr><th>Day (UTC)</th><th>Calls</th><th>Unknown</th><th>Monitored min</th><th></th></tr>' + series.map((s) =>
+    '<tr><td>' + escapeHtml(s.day) + (s.partial ? ' <span class="customer-sub">(so far)</span>' : '') + '</td><td class="num">' + escapeHtml(fmtNum(s.calls)) + '</td><td class="num">' + escapeHtml(fmtNum(s.unknownCalls)) + '</td><td class="num">' + escapeHtml(fmtNum(s.monitoredMinutes)) + '</td>' +
+    '<td class="bar-cell"><span class="usage-bar" style="width:' + Math.round((s.monitoredMinutes / max) * 100) + '%"></span></td></tr>').join('') + '</table>';
+}
+
+function usageSignalHtml(s) {
+  const items = s.items || [];
+  return '<div class="control-card ' + (STATUS_STYLES[s.severity] || STATUS_STYLES.grey).className + '">' +
+    '<div class="control-head"><span class="control-label">' + escapeHtml(s.title) + '</span>' + statusBadge(s.severity) + '</div>' +
+    '<div class="control-value">' + escapeHtml(fmtNum(s.count)) + '</div>' +
+    '<details class="card-items"><summary>rule' + (items.length ? ' &amp; ' + items.length + ' item' + (items.length === 1 ? '' : 's') : '') + '</summary>' +
+      '<div class="control-rule">' + escapeHtml(s.rule) + '</div>' +
+      (items.length ? '<ul>' + items.slice(0, 50).map((it) => '<li>' + escapeHtml(it.label || '—') + (it.accountClass && it.accountClass !== 'genuine' ? ' <span class="customer-sub">[' + escapeHtml(it.accountClass) + ']</span>' : '') + ' <span class="customer-sub">— ' + escapeHtml(it.detail || '') + (it.at ? ' · ' + escapeHtml(fmtDateTime(it.at)) : '') + '</span></li>').join('') + (items.length > 50 ? '<li class="customer-sub">+' + (items.length - 50) + ' more</li>' : '') + '</ul>' : '') +
+    '</details></div>';
+}
+
+function renderUsageSafetyHtml(d) {
+  let html = '<div class="section">' + sectionHeader('Usage &amp; cost safety', d.generatedAt, 'usageSafety');
+  html += '<p class="sub">All accounts (test and reviewer included, badged). Day boundaries are UTC. Minutes come from what each call recorded; a call with no recorded duration is <em>not measured</em>, never 0. £ figures are on Money → Spend safety.</p>';
+  if (d.truncated) html += '<div class="readiness-banner not_ready">Too many calls to load in full — figures below are incomplete.</div>';
+  const w = d.windows;
+  html += '<div class="cards">' + usageWindowCard('Today (so far)', w.today) + usageWindowCard('Previous 7 days', w.last7Days) + usageWindowCard('Month to date', w.monthToDate) +
+    bcCard('Peak simultaneous calls (MTD)', escapeHtml(fmtNum(d.concurrency.calls.peak)), escapeHtml('ESTIMATED lower bound from start time + duration' + (d.concurrency.calls.peakAt ? ' · ' + fmtDateTime(d.concurrency.calls.peakAt) : '') + (d.concurrency.calls.intervalsWithoutLength ? ' · ' + d.concurrency.calls.intervalsWithoutLength + ' call(s) without a duration excluded' : ''))) +
+    bcCard('Peak simultaneous monitoring (MTD)', escapeHtml(fmtNum(d.concurrency.monitoredStreams.peak)) + ' <span class="sub">/ cap ' + escapeHtml(fmtNum(d.concurrency.streamCap)) + '</span>', 'ESTIMATED lower bound; refusals at the cap are not recorded') +
+    '</div>';
+
+  html += '<h3 style="margin-top:18px;">Unusual usage &amp; recorded failures</h3><div class="control-grid">' + d.signals.map(usageSignalHtml).join('') + '</div>';
+
+  html += '<h3 style="margin-top:18px;">Limits in this build</h3><table class="fact-table"><tr><th>Limit</th><th>Value</th><th>Status</th><th>What happens</th><th>Evidence</th></tr>' + d.controls.map((c) => {
+    const m = CONTROL_MODE_LABELS[c.mode] || { text: c.mode, status: 'grey' };
+    return '<tr><td>' + escapeHtml(c.label) + '</td><td>' + escapeHtml(c.limit) + (c.source && c.source !== '—' ? '<div class="customer-sub">' + escapeHtml(c.source) + '</div>' : '') + '</td><td><span class="st-badge ' + (STATUS_STYLES[m.status] || STATUS_STYLES.grey).className + '">' + escapeHtml(m.text) + '</span></td><td>' + escapeHtml(c.effect) + (c.note ? '<div class="customer-sub">' + escapeHtml(c.note) + '</div>' : '') + '</td><td class="customer-sub">' + escapeHtml(c.evidence) + '</td></tr>';
+  }).join('') + '</table>';
+
+  html += '<h3 style="margin-top:18px;">Households by monitored minutes (month to date)</h3>';
+  if (!d.households.length) html += '<p class="sub">No calls this month.</p>';
+  else html += '<table><tr><th>Household</th><th class="num">Monitored min</th><th class="num">Call min (trusted / unknown)</th><th class="num">Unknown calls</th><th class="num">Busiest day</th><th class="num">Longest call</th><th class="num">Peak simultaneous</th><th class="num">Today</th></tr>' + d.households.slice(0, 25).map((h) =>
+    '<tr><td>' + escapeHtml(h.label) + ' <span class="customer-sub">[' + escapeHtml(h.accountClass) + ']</span></td><td class="num">' + escapeHtml(fmtNum(h.monthToDate.monitoredMinutes)) + '</td><td class="num">' + escapeHtml(fmtNum(h.monthToDate.trustedCallMinutes) + ' / ' + fmtNum(h.monthToDate.unknownCallMinutes)) + '</td><td class="num">' + escapeHtml(fmtNum(h.monthToDate.unknownCalls)) + '</td><td class="num">' + escapeHtml(h.peakDayUnknownCalls ? h.peakDayUnknownCalls + ' (' + h.peakDay + ')' : '—') + '</td><td class="num">' + escapeHtml(fmtNum(h.longestCallMinutes)) + ' min</td><td class="num">' + escapeHtml(h.peakConcurrentCalls + ' calls / ' + h.peakConcurrentMonitored + ' mon.') + '</td><td class="num">' + escapeHtml(fmtNum(h.today.monitoredMinutes)) + ' min</td></tr>').join('') + '</table>' +
+    (d.households.length > 25 ? '<p class="sub">Top 25 of ' + d.households.length + ' shown.</p>' : '');
+
+  html += '<h3 style="margin-top:18px;">Daily monitored minutes (last 14 days)</h3>' + usageSeriesHtml(d.series);
+  html += '<details style="margin-top:14px;"><summary>Not recorded anywhere this dashboard can read</summary><ul class="sub">' + d.notRecorded.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul></details>';
+  return html + '</div>';
+}
+
+async function renderUsageSafetyTab() {
+  const d = await fetchBusinessControl('usage-safety');
+  document.getElementById('usageSafety').innerHTML = renderUsageSafetyHtml(d);
 }
 
 // TEST-EXTRACT-END: businessControlTabs
