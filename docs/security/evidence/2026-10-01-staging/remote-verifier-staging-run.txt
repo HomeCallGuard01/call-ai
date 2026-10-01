@@ -1,0 +1,33 @@
+# scripts/verify-voice-surface.mjs MODE=staging against staging server (commit 29d5825) via ngrok, 2026-10-01T17:11Z
+✓ unsigned /voice → 403 (got 403)
+✓ unsigned /voice returns an empty body (no TwiML, no identifiers)
+✓ unsigned /voice response is identical for a trusted and an unknown caller
+✓ unsigned /process → 403, empty body
+✓ unsigned /call-delivery-failed → 403, empty body
+✓ unsigned /call-status → 403, empty body
+✓ unsigned /red-line-terminate → 403, empty body
+✓ forged /media-stream start (no token) is closed by the server
+✓ no calls row was created for the unsigned /voice CallSid
+✓ server log: forged stream rejected, never started
+✓ invalid signature → 403
+✓ signature for a non-allowlisted host → 403
+✓ signed unknown-caller /voice → Dial/Client
+✓ signed unknown-caller /voice → monitoring stream with a server-issued token
+✓ TwiML carries no customer mobile number / household / destination parameters
+✓ signed call logged once, against the right household
+✓ signed trusted-contact /voice → delivered, no monitoring
+✓ signed client:-originated /voice → Reject
+✓ a forged /call-delivery-failed did not change the call row
+✓ signed /call-delivery-failed → handled (Hangup)
+✓ signed callback recorded the dial outcome
+✓ signed /red-line-terminate → termination TwiML
+✓ a valid token presented with a different CallSid is refused
+✓ the genuine token + matching CallSid starts a stream
+✓ server-established household identity is used; attacker customParameters ignored
+✓ replaying a used token is refused
+✓ an invalid token is refused
+✓ third simultaneous stream for one household is refused (cap 2)
+✓ a socket that never sends start is closed after ~10 s (closed at 10161 ms)
+✓ staging log contains no customer or attacker-supplied phone number
+✓ staging log shows no exceptions
+All checks passed.

@@ -131,7 +131,7 @@ Rates: inbound £0.007558/started min (invoice), Media Streams £0.003329/min (i
 - `tests/media-stream-auth-and-cost-caps.test.mjs`: 19/19.
 - Existing source-inspection tests were updated for the new route shape (`twilioSignatureGuard` middleware, `attachLiveMonitoring` signature, explicit `trustingTestAuthorizer` in handler tests), with **invariants unchanged**.
 
-## 10. Staging verification: NOT yet performed
+## 10. Staging verification: performed 2026-10-01 (see VOICE_SURFACE_P0_HANDOVER_2026-10-01.md); real-handset test pending
 
 Required before production:
 1. Deploy the branch to the staging service.
