@@ -1,9 +1,36 @@
 <!--
-STATUS (2026-09-29, v4): branch feature/admin-control-centre-v2 (pushed, no PR, not deployed). Draft migration 055 NOT applied.
+STATUS (2026-10-01, v5): branch feature/admin-control-centre-v2 (pushed, no PR, not deployed). Draft migration 055 NOT applied. No new migration in v5.
 v3 = the five-tab consolidation + payment history. Strictly observational (GET only), no migration.
 See also: RECONCILIATION_CONSOLIDATION_PLAN.md, ACQUISITION_READINESS_REVIEW.md,
 STAGING_NUMBERS_ON_PRODUCTION_TWILIO.md.
 -->
+
+## v5 (2026-10-01): Usage & cost safety (the financial-safety requirement)
+
+A new section at the top of **Operations**, served by `GET /admin/api/business-control/usage-safety` (admin-only, read-only). It is built only from columns the deployed code already writes to `calls`: duration (034), monitored duration and limit flag (034), dial status (044), red-line termination (025) and warning SMS (024). It invents no backend data.
+
+| Block | What it shows | Honesty rule |
+|---|---|---|
+| Minutes | Today, the previous 7 days and month to date: monitored min, call min (trusted / unknown), monitoring-limit hits, warning SMS | A call with no recorded duration or monitoring record is counted as **not measured** ("measured part only"), never 0 |
+| Concurrency | Peak simultaneous calls and monitoring streams, for the service and per household, against the 200-stream server cap | **ESTIMATED lower bound** (start time + duration). Refusals at the cap are not recorded |
+| Signals | Daily unknown-call threshold (20) · repeat caller (3 in 10 min) · monitored-minute spike (≥3× the trailing 7-day average and +10 min) · per-call limit hits · calls ≥ 60 min · failed delivery (red) · approved calls with no recorded outcome · connected unknown calls with no monitoring record · HCG terminations (count) | The rapid-abuse rules use the live alert thresholds, recomputed from `calls`. Caller numbers are masked to the last 3 digits |
+| Limits in this build | Per-call monitoring limit (**enforced**) · server stream cap (**enforced**) · call length (**provider default**: no `<Dial timeLimit>`, so Twilio's 4 h applies) · rapid abuse (**alert only**) · fair use (**dashboard only**) · per-household streams / allowance / concurrency, £ ceilings, SMS budget (**not in this build**) | Pinned by tests to `server.js` and `mediaStreamHandler.js`. If another branch's limit module lands, the row turns "code present — verify"; it is never assumed enabled |
+| Households | Ranked by monitored minutes: class badge, unknown calls, busiest day, longest call, peak concurrency, today | Test, reviewer and unclassified accounts are shown, with a badge |
+| Not recorded | Stream refusals, transcription failures, alert e-mails as sent, the limit-reached SMS, security events (signature checks, forged streams), provider minutes with no `calls` row | Listed instead of being shown as zero |
+
+Overview → Needs your attention gains a **usage** group (red/amber signals, de-duplicated by household). If usage data can't load, it raises "Some checks could not run".
+
+**Also in v5:**
+- **Pagination.** PostgREST returns at most 1000 rows per response, whatever `.limit()` asks for. Four dashboard reads would therefore have undercounted silently once `calls` passed 1000 rows in their window: usage, the DD snapshot, Finance minutes, and Numbers "last inbound call". They now go through `selectAll.js` and report `truncated` at the ceiling.
+- **One meaning of "monitored minutes".** Finance's "Monitored minutes (delivered unknown-caller calls)" was really unknown-caller *call* duration. Finance now reports both: unknown-caller call minutes (inbound telephony) and monitored minutes (time live monitoring ran).
+- **DD snapshot schema 1.1.** Additive: a `usage` block and `calls.truncated`.
+- **Preview.** `docs/admin/previews/usage-safety-SYNTHETIC-FIXTURE.png` is the real renderer with **synthetic fixture data**. It is a layout check, not a screenshot of any environment.
+
+**Out of scope here (deployed code on `main`, noted for a decision):**
+- `services/businessMetrics/callStats.js` (Operations → Call activity today / MTD, fair use) has the same 1000-row cap. It will undercount once a month has more than 1000 calls.
+- Its `averageMonitoredDurationUnavailableReason` text is stale (it isn't displayed).
+
+What needs production data to confirm is listed in `PRODUCTION_DATA_REQUIRED.md`.
 
 ## v4 (2026-09-29): operations depth, same five tabs
 
