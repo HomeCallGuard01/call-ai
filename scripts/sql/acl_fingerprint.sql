@@ -1,0 +1,6 @@
+-- Read-only fingerprint of every public-schema privilege, RLS flag, column ACL,
+-- default ACL, public function ACL/config and RLS policy. Used by the
+-- production runbook to prove nothing drifted between review and apply.
+-- Run inside: begin transaction read only; ...; rollback;
+-- Production 2026-09-30T20:13Z: 7529d825e53f459c4763d74ea0c3be85 (n=68)
+select md5(string_agg(x, '|' order by x)) fingerprint, count(*) n from (select 'rel:'||c.relname||':'||c.relkind::text||':'||c.relrowsecurity::text||':'||coalesce(c.relacl::text,'') x from pg_class c where c.relnamespace='public'::regnamespace and c.relkind in ('r','p','v','m','f','S') union all select 'col:'||att.attrelid::regclass||'.'||att.attname||':'||att.attacl::text from pg_attribute att join pg_class c on c.oid=att.attrelid where c.relnamespace='public'::regnamespace and att.attacl is not null union all select 'def:'||pg_get_userbyid(defaclrole)||':'||defaclnamespace::regnamespace::text||':'||defaclobjtype::text||':'||defaclacl::text from pg_default_acl union all select 'fn:'||p.oid::regprocedure::text||':'||coalesce(p.proacl::text,'NULL')||':'||coalesce(array_to_string(p.proconfig,','),'') from pg_proc p where p.pronamespace='public'::regnamespace union all select 'pol:'||tablename||':'||policyname||':'||cmd||':'||array_to_string(roles,',') from pg_policies where schemaname='public') s

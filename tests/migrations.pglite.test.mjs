@@ -1496,10 +1496,9 @@ async function main() {
   assert(anonGrants.length === 0,
     `anon/PUBLIC hold no privilege on any public relation (found: ${anonGrants.map((r) => `${r.relname}:${r.privilege_type}`).join(', ') || 'none'})`);
 
-  const AUTHENTICATED_TABLE_GRANTS = [
-    'contacts:DELETE', 'contacts:INSERT', 'contacts:SELECT', 'contacts:UPDATE',
-    'entitlements:SELECT', 'households:SELECT', 'subscriptions:SELECT', 'user_roles:SELECT',
-  ];
+  // 060 removed the unused 008/011 grants on contacts/subscriptions/
+  // entitlements — only ensureHouseholdAndRole()'s tables remain.
+  const AUTHENTICATED_TABLE_GRANTS = ['households:SELECT', 'user_roles:SELECT'];
   const { rows: authGrants } = await aclQuery(`a.grantee = 'authenticated'::regrole`);
   const authFound = authGrants.map((r) => `${r.relname}:${r.privilege_type}`).sort();
   assert(JSON.stringify(authFound) === JSON.stringify(AUTHENTICATED_TABLE_GRANTS),
@@ -1535,6 +1534,54 @@ async function main() {
     assert(!t && !s, `a newly created public table/sequence grants ${role} nothing by default`);
   }
   await db.exec(`drop table public.zz_default_acl_canary; drop sequence public.zz_default_acl_canary_seq;`);
+
+  // Function canary (022's default): a new function is not executable by
+  // anon/authenticated until a migration grants it explicitly.
+  await db.exec(`create function public.zz_default_acl_canary_fn() returns int language sql as 'select 1';`);
+  for (const role of ['anon', 'authenticated']) {
+    const { rows: [{ x }] } = await db.query(
+      `select has_function_privilege($1, 'public.zz_default_acl_canary_fn()', 'EXECUTE') as x`, [role]);
+    assert(!x, `a newly created public function is not executable by ${role} by default`);
+  }
+  await db.exec(`drop function public.zz_default_acl_canary_fn();`);
+
+  // Views run with their owner's privileges (bypassing RLS) unless
+  // security_invoker is set — any view reachable by anon/authenticated must
+  // be security_invoker.
+  const { rows: unsafeViews } = await db.query(`
+    select c.relname from pg_class c
+    where c.relnamespace = 'public'::regnamespace and c.relkind in ('v', 'm')
+      and not coalesce(c.reloptions @> array['security_invoker=true'], false)
+      and (has_table_privilege('anon', c.oid, 'SELECT') or has_table_privilege('authenticated', c.oid, 'SELECT'));
+  `);
+  assert(unsafeViews.length === 0,
+    `no owner-privileged view is readable by anon/authenticated (found: ${unsafeViews.map((r) => r.relname).join(', ') || 'none'})`);
+
+  // 060: the shared updated_at trigger function is pinned and not callable.
+  const { rows: [trg] } = await db.query(`
+    select proconfig, has_function_privilege('anon', oid, 'EXECUTE') as anon_x,
+           has_function_privilege('authenticated', oid, 'EXECUTE') as auth_x
+    from pg_proc where oid = 'public.hcg_set_updated_at()'::regprocedure;
+  `);
+  assert((trg.proconfig || []).some((c) => c === 'search_path=""' || c === 'search_path='),
+    'hcg_set_updated_at has a pinned empty search_path (060)');
+  assert(!trg.anon_x && !trg.auth_x, 'anon/authenticated cannot execute hcg_set_updated_at (060)');
+  await db.query(`update public.households set email = email where id = $1`, [householdId]);
+  assert(true, 'updated_at trigger still fires after 060 revoked EXECUTE (update succeeded)');
+
+  // Static lint over the migration files themselves: patterns that have
+  // caused or could reintroduce Data API exposure. Files already applied
+  // before this check existed are allowlisted by name.
+  const LINT_ALLOW = new Set(['000_baseline_contacts_table.sql']);
+  for (const file of files) {
+    if (LINT_ALLOW.has(file)) continue;
+    const sql = (await readFile(path.join(migrationsDir, file), 'utf8'))
+      .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n').toLowerCase();
+    assert(!/grant\s+[^;]*\bto\s+[^;]*\banon\b/.test(sql), `${file}: no GRANT ... TO anon`);
+    assert(!/disable\s+row\s+level\s+security/.test(sql), `${file}: never disables RLS`);
+    assert(!/grant\s+all\b[^;]*\bto\s+[^;]*\b(authenticated|public)\b/.test(sql), `${file}: no GRANT ALL to authenticated/PUBLIC`);
+    assert(!/alter\s+default\s+privileges[^;]*\bgrant\b/.test(sql), `${file}: never widens default privileges`);
+  }
 
   // The only real authenticated write path — ensureHouseholdAndRole() —
   // still works, while arbitrary households columns are refused.

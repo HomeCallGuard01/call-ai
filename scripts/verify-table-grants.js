@@ -4,7 +4,7 @@
 //   - every public table has RLS enabled;
 //   - anon and PUBLIC hold no privilege on any public table, view or sequence;
 //   - authenticated holds exactly the allowlisted table and column grants
-//     that ensureHouseholdAndRole() and migrations 008/011 need;
+//     that ensureHouseholdAndRole() needs (after 060);
 //   - the postgres-owned default ACL for public tables/sequences grants
 //     nothing to anon/authenticated, so a future table starts closed.
 //
@@ -22,10 +22,8 @@
 
 const { execFileSync } = require("node:child_process");
 
-const AUTHENTICATED_TABLE_GRANTS = [
-  "contacts:DELETE", "contacts:INSERT", "contacts:SELECT", "contacts:UPDATE",
-  "entitlements:SELECT", "households:SELECT", "subscriptions:SELECT", "user_roles:SELECT",
-];
+// 060 removed the unused 008/011 grants on contacts/subscriptions/entitlements.
+const AUTHENTICATED_TABLE_GRANTS = ["households:SELECT", "user_roles:SELECT"];
 const AUTHENTICATED_COLUMN_GRANTS = [
   "households.auth_user_id:INSERT", "households.auth_user_id:UPDATE",
   "households.email:INSERT", "households.email:UPDATE", "households.status:INSERT",
