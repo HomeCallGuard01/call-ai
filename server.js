@@ -41,7 +41,11 @@ const { insertWaitingListSignup } = require("./database/waitingList");
 const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
 const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
 const { findConfirmedUnreleasedQuarantine } = require("./database/twilioQuarantine");
-const { buildWebhookUrl, isGenuineTwilioRequest } = require("./services/twilioWebhookAuth");
+// P0 voice-surface remediation (2026-10-01): fail-closed Twilio signature
+// enforcement on every Twilio webhook, and /media-stream bound to signed
+// /voice requests. See docs/security/VOICE_SURFACE_P0_REMEDIATION.md.
+const { createTwilioWebhookGuard } = require("./services/twilioWebhookGuard");
+const { createStreamAuthRegistry } = require("./services/liveMonitoring/streamAuth");
 const { wouldCreateForwardingLoop } = require("./services/phone");
 const {
   DEVICE_TYPES,
@@ -371,20 +375,32 @@ function buildRedLineTerminateUrl(appUrl) {
   return appUrl + "/red-line-terminate";
 }
 
-function attachLiveMonitoring(twiml, { household, twilioNumber }) {
+// P0 remediation (2026-10-01): the stream carries ONLY a single-use token
+// bound to this CallSid (streamAuth.js). Household, SMS destination and
+// sender stay server-side and are recovered from the token when the
+// stream starts — nothing the /media-stream client sends is trusted, and
+// the customer's mobile number no longer appears in TwiML.
+function attachLiveMonitoring(twiml, { household, twilioNumber, callSid }) {
   if (!household) return;
 
   const destination = resolveForwardingDestination(household);
+  if (!destination.canForward) {
+    console.error("LIVE MONITORING: no valid destination — SMS warning will be skipped", household.id);
+  }
+  const streamToken = streamAuth.issue({
+    callSid,
+    householdId: household.id,
+    toNumber: destination.canForward ? destination.number : null,
+    fromNumber: twilioNumber || null,
+  });
+  if (!streamToken) {
+    console.error("LIVE MONITORING: no stream token (missing CallSid) — call connects without monitoring", household.id);
+    return;
+  }
 
   const start = twiml.start();
   const stream = start.stream({ url: buildMediaStreamUrl(APP_URL) });
-  stream.parameter({ name: "householdId", value: household.id });
-  if (destination.canForward) {
-    stream.parameter({ name: "toNumber", value: destination.number });
-  } else {
-    console.error("LIVE MONITORING: no valid destination — SMS warning will be skipped", household.id);
-  }
-  stream.parameter({ name: "protectedNumber", value: twilioNumber });
+  stream.parameter({ name: "streamToken", value: streamToken });
 }
 
 async function getCallsToday(householdId) {
@@ -638,8 +654,29 @@ function toClientCall(call) {
 
 // VOICE CALL ENTRY
 
-app.post("/voice", async (req, res) => {
+const twilioSignatureGuard = createTwilioWebhookGuard({
+  authToken: process.env.TWILIO_AUTH_TOKEN,
+  appUrl: APP_URL,
+  allowedHosts: process.env.TWILIO_WEBHOOK_ALLOWED_HOSTS,
+  mode: process.env.TWILIO_WEBHOOK_AUTH_MODE === "report" ? "report" : "enforce",
+});
+if (process.env.TWILIO_WEBHOOK_AUTH_MODE === "report") {
+  console.error("SECURITY: TWILIO_WEBHOOK_AUTH_MODE=report — unsigned Twilio webhooks are being ALLOWED (emergency setting)");
+  sendCriticalAlert("twilio_webhook_auth_report_mode", "Twilio webhook signature enforcement is OFF (TWILIO_WEBHOOK_AUTH_MODE=report)", {}).catch(() => {});
+}
+const streamAuth = createStreamAuthRegistry();
+
+app.post("/voice", twilioSignatureGuard, async (req, res) => {
   const twiml = new VoiceResponse();
+
+  // A Voice SDK client-originated request (TwiML App pointed here) must never
+  // be treated as an inbound call to a household: unbilled <Reject> before
+  // any lookup, write or paid step.
+  if (typeof req.body.From === "string" && req.body.From.startsWith("client:")) {
+    twiml.reject();
+    const rejectXml = twiml.toString();
+    return res.type("text/xml").send(rejectXml);
+  }
 
   const household = await getHouseholdByTwilioNumber(req.body.To);
 
@@ -669,12 +706,9 @@ app.post("/voice", async (req, res) => {
   // never be triggered by client activity alone (only ever called from
   // here, and now only when the signature genuinely validates).
   if (household) {
-    const genuineTwilioRequest = isGenuineTwilioRequest({
-      authToken: process.env.TWILIO_AUTH_TOKEN,
-      signature: req.get("X-Twilio-Signature"),
-      url: buildWebhookUrl(APP_URL, req.originalUrl),
-      params: req.body,
-    });
+    // Verified by twilioSignatureGuard (which also accepts allowlisted
+    // alternate hosts); false only in the emergency report mode.
+    const genuineTwilioRequest = req.twilioVerified === true;
 
     if (genuineTwilioRequest) {
       stampActivationVerifiedOnRealCall(household, { markActivationVerified }).catch(err =>
@@ -811,7 +845,7 @@ app.post("/voice", async (req, res) => {
       "This number is monitored and protected by Home Call Guard."
     );
 
-    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To, callSid: req.body.CallSid });
   } else if (household) {
     // Expected, steady-state behaviour for a lapsed/cancelled/never-
     // subscribed household — not a fault, so no sendCriticalAlert (that's
@@ -840,7 +874,7 @@ app.post("/voice", async (req, res) => {
 // from git history. Do not delete without an explicit decision to drop
 // pre-call screening permanently.
 
-app.post("/process", async (req, res) => {
+app.post("/process", twilioSignatureGuard, async (req, res) => {
   const twiml = new VoiceResponse();
   const processingStart = Date.now();
 
@@ -951,7 +985,7 @@ app.post("/process", async (req, res) => {
 
     twiml.pause({ length: 1 });
 
-    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To, callSid: req.body.CallSid });
 
     dialHouseholdOrFailClosed(twiml, household);
   }
@@ -967,7 +1001,7 @@ app.post("/process", async (req, res) => {
 // handling of its own. Deliberately generic wording: no detail about
 // which specific behaviour triggered it, so a real caller doesn't get a
 // coaching signal on what to avoid saying next time.
-app.post("/red-line-terminate", (req, res) => {
+app.post("/red-line-terminate", twilioSignatureGuard, (req, res) => {
   const twiml = new VoiceResponse();
   twiml.say(
     { voice: "Polly.Amy", language: "en-GB" },
@@ -993,7 +1027,7 @@ app.post("/red-line-terminate", (req, res) => {
 // console.error) so "approved call, app unreachable" is identifiable on
 // its own — a real customer-notification gap (voicemail/SMS) flagged for
 // later, not built here today.
-app.post("/call-delivery-failed", (req, res) => {
+app.post("/call-delivery-failed", twilioSignatureGuard, (req, res) => {
   const twiml = new VoiceResponse();
   const dialCallStatus = req.body.DialCallStatus;
 
@@ -1044,7 +1078,7 @@ app.post("/call-delivery-failed", (req, res) => {
 // rather than a separate implementation, so this route is correct by
 // construction if it's ever wired up again — never landline-specific,
 // this helper knows nothing about device classification.
-app.post("/call-status", (req, res) => {
+app.post("/call-status", twilioSignatureGuard, (req, res) => {
   const twiml = new VoiceResponse();
 
   recordApprovedCallDeliveryOutcome(
@@ -2380,6 +2414,8 @@ setTimeout(() => {
 // unaffected either way, since <Start><Stream> is fire-and-forget
 // relative to <Dial>).
 attachMediaStreamServer(httpServer, {
+  // P0 remediation: only streams bound to a Twilio-signed /voice are monitored.
+  authorizeStream: (args) => streamAuth.authorize(args),
   transcribeClient: openai ? createOpenAiTranscribeClient(openai) : null,
   smsClient: twilioRestClient,
   fromNumber: null,

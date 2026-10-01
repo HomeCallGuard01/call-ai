@@ -31,6 +31,11 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaStreamHandler');
 
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
+
 let failures = 0;
 function check(condition, message) {
   if (condition) {
@@ -42,7 +47,7 @@ function check(condition, message) {
 }
 
 function makeHandler() {
-  return createMediaStreamHandler({ transcribeClient: null, smsClient: null, fromNumber: '+441000000000' });
+  return createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient: null, smsClient: null, fromNumber: '+441000000000' });
 }
 
 // Every one of these is a real, previously-crashing input. Each is

@@ -19,6 +19,11 @@ const { createSpeechSegmenter } = require('../services/liveMonitoring/speechSegm
 const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaStreamHandler.js');
 const { createCallMonitor } = require('../services/liveMonitoring/riskMonitor.js');
 const { wrapMulawAsWav } = require('../services/liveMonitoring/mulawWav.js');
+
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
 const {
   WARNING_BODY,
   RED_LINE_WARNING_BODY,
@@ -83,7 +88,7 @@ function makeRecordingClient(lines) {
 }
 
 function makeHandler({ transcribeClient, smsClient, twilioRestClient, outcomes, alerts = [], now, finalizeWaitMs }) {
-  return createMediaStreamHandler({
+  return createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
     transcribeClient,
     smsClient,
     fromNumber: '+441615700779',

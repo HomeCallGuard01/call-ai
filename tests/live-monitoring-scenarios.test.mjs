@@ -35,6 +35,11 @@ const { THRESHOLDS } = require('../services/liveMonitoring/scoring/thresholds.js
 const { createCallMonitor } = require('../services/liveMonitoring/riskMonitor.js');
 const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaStreamHandler.js');
 
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let failures = 0;
@@ -211,7 +216,7 @@ async function run() {
       throw new Error('simulated database outage');
     };
 
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient,
       smsClient,
       fromNumber: '+441615700779',

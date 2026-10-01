@@ -96,7 +96,7 @@ function run() {
   // --- attachLiveMonitoring (screened-call routing) has no reference to
   // the reachability check either — genuinely separate concerns ---
   const attachLiveMonitoringMatch = serverSrc.match(
-    /function attachLiveMonitoring\(twiml, \{ household, twilioNumber \}\) \{[\s\S]*?\n\}/
+    /function attachLiveMonitoring\(twiml, \{ household, twilioNumber(?:, callSid)? \}\) \{[\s\S]*?\n\}/
   );
   check(
     Boolean(attachLiveMonitoringMatch) && !attachLiveMonitoringMatch[0].includes('hasVoiceClientRegistrationHistory'),

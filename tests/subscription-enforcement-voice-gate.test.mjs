@@ -46,7 +46,7 @@ check(
 // a coincidental match elsewhere in the file (e.g. in /process, the
 // deliberately-dead pre-call-screening route) can never produce a false
 // pass.
-const voiceRouteMatch = serverSrc.match(/app\.post\("\/voice", async \(req, res\) => \{[\s\S]*?\n\}\);\n/);
+const voiceRouteMatch = serverSrc.match(/app\.post\("\/voice", (?:twilioSignatureGuard, )?async \(req, res\) => \{[\s\S]*?\n\}\);\n/);
 check(Boolean(voiceRouteMatch), 'sanity check: the /voice route handler body is found in server.js');
 const voiceBody = voiceRouteMatch ? voiceRouteMatch[0] : '';
 
@@ -72,7 +72,7 @@ check(
   'the "monitored and protected" announcement is inside the entitlement-gated branch — never spoken to a caller when no monitoring will actually happen'
 );
 check(
-  /attachLiveMonitoring\(twiml, \{ household, twilioNumber: req\.body\.To \}\)/.test(gatedBranch),
+  /attachLiveMonitoring\(twiml, \{ household, twilioNumber: req\.body\.To(?:, callSid: req\.body\.CallSid)? \}\)/.test(gatedBranch),
   'attachLiveMonitoring (the actual Media Stream / paid transcription trigger) is inside the same gated branch as the announcement — both or neither, never one without the other'
 );
 
