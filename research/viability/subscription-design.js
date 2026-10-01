@@ -84,7 +84,7 @@ function costs(mix, { subs = 1000, f = 1, o = {} } = {}) {
   const monitoredExtra = g('twStream') + g('transcription');
   const minutes = u.trusted + u.unknown;
   const channels = Math.ceil(erlangChannels((subs * minutes / 30 * 0.1) / 60) * v('channelHeadroom'));
-  const platform = v('railway') + Math.max(0, subs / 1000 - 1) * 20 + v('supabase') + v('email') + v('appleDev') + v('monitoring') + v('tokenService') + (o.insurance !== undefined ? o.insurance : v('insurance'));
+  const platform = (o.extraPlatform || 0) + v('railway') + Math.max(0, subs / 1000 - 1) * 20 + v('supabase') + v('email') + v('appleDev') + v('monitoring') + v('tokenService') + (o.insurance !== undefined ? o.insurance : v('insurance'));
   const c = {
     trusted: (u.trusted + v('roundUp') * u.tc) * connected,
     unknownTransport: (u.unknown + v('roundUp') * u.uc) * connected + u.uc * v('twPolly'),
