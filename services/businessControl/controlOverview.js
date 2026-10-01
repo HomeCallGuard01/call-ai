@@ -266,10 +266,12 @@ async function getControlOverview(now = new Date()) {
       const [numbers, lastMonth, callsRes] = await Promise.all([
         twilio.incomingPhoneNumbers.list({ limit: 1000 }),
         twilio.usage.records.lastMonth.list({ limit: 1000 }),
-        supabaseAdmin.from('calls').select('household_id, created_at').order('created_at', { ascending: false }).limit(5000),
+        // Paginated: one response is capped at 1000 rows, which would
+        // leave older households with "no inbound call" wrongly.
+        require('./selectAll').selectAll(() => supabaseAdmin.from('calls').select('household_id, created_at').order('created_at', { ascending: false })),
       ]);
       let lastCallByHousehold = null;
-      if (!callsRes.error) {
+      if (!callsRes.error && !callsRes.truncated) {
         lastCallByHousehold = new Map();
         for (const c of callsRes.data || []) if (c.household_id && !lastCallByHousehold.has(c.household_id)) lastCallByHousehold.set(c.household_id, c.created_at);
       }

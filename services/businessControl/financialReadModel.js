@@ -204,6 +204,8 @@ function buildProfitAndLoss({ period, lines, source, units }) {
       telephonyPerAccountWithAccess: lines.telephony && lines.telephony.amountGbp !== null && u.accountsWithAccess ? { amountGbp: round2(lines.telephony.amountGbp / u.accountsWithAccess), complete: true } : null,
       revenueExVatPerGenuinePayingCustomer: per(revenue, u.genuinePayingCustomers),
       monitoredMinutes: u.monitoredMinutes ?? null,
+      unknownCallMinutes: u.unknownCallMinutes ?? null,
+      minutesIncomplete: u.minutesIncomplete ?? null,
       customerAcquisitionCost: { amountGbp: null, provenance: PROVENANCE.NOT_CONNECTED, basis: 'Needs attributed paying customers (migration 049) and advertising spend (ledger)' },
     },
   };

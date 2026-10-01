@@ -2128,7 +2128,8 @@ async function renderFinanceTab() {
     '<tr><td>Operating cost per account with access</td><td>' + unit(u.operatingCostPerAccountWithAccess) + '</td></tr>' +
     '<tr><td>Telephony per account with access</td><td>' + unit(u.telephonyPerAccountWithAccess) + '</td></tr>' +
     '<tr><td>Revenue ex VAT per genuine paying customer</td><td>' + unit(u.revenueExVatPerGenuinePayingCustomer) + '</td></tr>' +
-    '<tr><td>Monitored minutes (delivered unknown-caller calls)</td><td>' + (u.monitoredMinutes === null ? '—' : escapeHtml(u.monitoredMinutes)) + '</td></tr>' +
+    '<tr><td>Unknown-caller call minutes (inbound telephony)</td><td>' + (u.unknownCallMinutes === null || u.unknownCallMinutes === undefined ? '—' : escapeHtml(u.unknownCallMinutes) + (u.minutesIncomplete ? ' <span class="text-warn">(measured part only)</span>' : '')) + '</td></tr>' +
+    '<tr><td>Monitored minutes (live monitoring ran)</td><td>' + (u.monitoredMinutes === null || u.monitoredMinutes === undefined ? '—' : escapeHtml(u.monitoredMinutes) + (u.minutesIncomplete ? ' <span class="text-warn">(measured part only)</span>' : '')) + ' <span class="customer-sub">detail: Operations → Usage &amp; cost safety</span></td></tr>' +
     '<tr><td>Customer acquisition cost</td><td>' + provenanceBadge('NOT_CONNECTED') + ' <span class="customer-sub">' + escapeHtml(u.customerAcquisitionCost.basis) + '</span></td></tr>' +
     '</table>';
 

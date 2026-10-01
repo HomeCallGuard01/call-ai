@@ -186,5 +186,32 @@ const call = (o) => ({
   check(attn.buildAttentionItems({ cards: [], usageSafety: summariseForOverview(computeUsageSafety({ calls: [], env: {} }, NOW)) }, null, null).length === 0, 'quiet usage adds nothing to the attention list');
 }
 
+
+// ---------- 7. paginated reads (selectAll) ----------
+{
+  const { selectAll } = require('../services/businessControl/selectAll.js');
+  const rows = Array.from({ length: 2345 }, (_, i) => ({ i }));
+  let builds = 0;
+  const build = () => { builds++; return { range: async (a, b) => ({ data: rows.slice(a, Math.min(b + 1, a + 1000)), error: null }) }; };
+  const r = await selectAll(build);
+  check(r.data.length === 2345 && !r.truncated && builds === 3, 'selectAll reads past the 1000-row response cap, one fresh query per page');
+  const capped = await selectAll(build, { maxRows: 2000 });
+  check(capped.truncated && capped.data.length === 2000, 'selectAll stops at its ceiling and says truncated');
+  const exact = await selectAll(() => ({ range: async (a) => ({ data: a === 0 ? rows.slice(0, 1000) : [], error: null }) }));
+  check(exact.data.length === 1000 && !exact.truncated, 'an exact multiple of the page size ends on the empty page');
+  const err = await selectAll(() => ({ range: async () => ({ data: null, error: { message: 'boom' } }) }));
+  check(err.error && err.error.message === 'boom' && err.data === null, 'a read error is returned, never partial data presented as complete');
+
+  // Finance and Usage use one definition of "monitored minutes".
+  const fin = readFileSync(path.join(__dirname, '..', 'services', 'businessControl', 'financialOverview.js'), 'utf8');
+  check(/summariseMinutes/.test(fin) && /monitored_duration_seconds/.test(fin) && !/readMonitoredMinutes/.test(fin), 'Finance monitored minutes = monitored_duration_seconds via the shared helper (was unknown-call duration)');
+  const html = readFileSync(path.join(__dirname, '..', 'admin-business.html'), 'utf8');
+  check(html.includes('Unknown-caller call minutes (inbound telephony)') && html.includes('Monitored minutes (live monitoring ran)') && !html.includes('Monitored minutes (delivered unknown-caller calls)'), 'Finance unit economics labels the two minute figures distinctly');
+  for (const f of ['usageSafety.js', 'dueDiligenceSnapshot.js', 'financialOverview.js', 'controlOverview.js']) {
+    const src = readFileSync(path.join(__dirname, '..', 'services', 'businessControl', f), 'utf8');
+    check(/selectAll/.test(src) && !/from\('calls'\)[^\n]*\.limit\(\d{4,}\)/.test(src), `${f}: calls are read with selectAll, not a capped .limit()`);
+  }
+}
+
 console.log(failures === 0 ? '\nAll usage-safety checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;

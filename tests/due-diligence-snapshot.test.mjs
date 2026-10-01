@@ -86,7 +86,37 @@ check(empty.customers.genuinePayingNow === null && empty.customers.entitledHouse
 check(/not connected/.test(dd.renderSnapshotMarkdown(empty)) && !/: 0\b/.test(dd.renderSnapshotMarkdown(empty)), 'markdown with no sources says "not connected", never 0');
 
 // ---------- stable schema ----------
-check(snap.schemaVersion === '1.0' && Object.keys(snap).join() === 'schemaVersion,product,generatedAt,period,basis,customers,numbers,calls,finance,checks,definitions', 'top-level schema pinned (a change must bump schemaVersion)');
+check(snap.schemaVersion === '1.1' && Object.keys(snap).join() === 'schemaVersion,product,generatedAt,period,basis,customers,numbers,calls,usage,finance,checks,definitions', 'top-level schema pinned (a change must bump schemaVersion; 1.1 added usage)');
+
+// ---------- usage block (1.1) ----------
+{
+  const rows = [
+    { created_at: '2026-09-10T10:00:00.000Z', status: 'Unknown', result: 'SAFE', dial_call_status: 'completed', duration_seconds: 4000, monitored_duration_seconds: 1800, monitoring_limit_reached: true, warning_sent: true },
+    { created_at: '2026-09-10T10:05:00.000Z', status: 'Known', result: 'SAFE', dial_call_status: 'completed', duration_seconds: 120, monitored_duration_seconds: null },
+    { created_at: '2026-09-11T10:00:00.000Z', status: 'Unknown', result: 'SAFE', dial_call_status: null, duration_seconds: null, monitored_duration_seconds: null },
+  ];
+  const u = dd.summariseUsage(rows);
+  check(u.monitoredMinutes === 30 && u.trustedCallMinutes === 2 && u.unknownCallMinutes === Math.round((4000 / 60) * 10) / 10, 'usage: monitored / trusted / unknown minutes from recorded durations');
+  check(u.approvedCallsWithoutDuration === 1 && u.unknownCallsWithoutMonitoringRecord === 1, 'usage: unmeasured calls counted, not zero');
+  check(u.monitoringLimitReached === 1 && u.callsOverOneHour === 1 && u.warningSmsSent === 1 && u.peakSimultaneousCallsEstimated === 2, 'usage: limit hits, ≥1h calls, warning SMS, estimated peak');
+  check(dd.summariseUsage(null) === null, 'usage: no calls source → null (not connected), not zeros');
+  const s2 = dd.buildDueDiligenceSnapshot({ overview: null, subscriptions: null, calls: rows, callsTruncated: true, month: '2026-09', now: new Date('2026-09-30T00:00:00Z') });
+  check(s2.calls.truncated === true && /INCOMPLETE/.test(dd.renderSnapshotMarkdown(s2)) && /Monitored minutes 30/.test(dd.renderSnapshotMarkdown(s2)), 'markdown carries usage and announces a truncated load');
+  check(dd.findPrivacyLeaks(s2).length === 0, 'usage block carries no personal data');
+}
+
+// ---------- pagination: never trust one capped response ----------
+{
+  const total = 2500;
+  const all = Array.from({ length: total }, (_, i) => ({ created_at: new Date(Date.UTC(2026, 8, 1) + i * 60000).toISOString(), status: 'Known', result: 'SAFE' }));
+  let selected = null;
+  const fake = { from: () => { const q = { select: (cols) => { selected = cols; return q; }, gte: () => q, lt: () => q, order: () => q, range: async (a, b) => ({ data: all.slice(a, Math.min(b + 1, a + 1000)), error: null }) }; return q; } };
+  const res = await dd.loadMonthCalls(fake, dd.monthBounds('2026-09'));
+  check(res.data.length === total && res.truncated === false, 'loadMonthCalls pages past the 1000-row response cap (2500 rows)');
+  check(!/\bnumber\b/.test(selected), 'loadMonthCalls never selects caller numbers');
+  const capped = await dd.loadMonthCalls(fake, dd.monthBounds('2026-09'), { maxRows: 2000 });
+  check(capped.truncated === true, 'a load stopped at the safety ceiling is marked truncated');
+}
 check(Object.keys(snap.customers).join() === 'entitledHouseholds,genuinePayingNow,genuineEverPaid,genuineFormerPaying,paidButUnclassified,complimentaryWithAccess,trialWithAccess,testReviewerAccounts,testReviewerWithAccess,unclassifiedWithAccess,protected,entitledNotProtected,cancelled,expired,deletedAccounts,churn30d', 'customer section keys pinned');
 check(dd.monthBounds('2026-09').start === '2026-09-01T00:00:00.000Z' && dd.monthBounds('2026-12').end === '2027-01-01T00:00:00.000Z' && dd.monthBounds('Sept') === null, 'month bounds (UTC), invalid month refused');
 

@@ -32,16 +32,30 @@ function groupBy(rows, key) {
   return m;
 }
 
-async function readMonitoredMinutes(supabaseAdmin, period) {
-  const { data, error } = await supabaseAdmin
+// Unknown-caller minutes for unit economics, from the same rule as
+// Operations → Usage & cost safety: monitoredMinutes = how long live
+// monitoring ran (monitored_duration_seconds); unknownCallMinutes = the
+// unknown callers' call durations (inbound telephony). They differ: a
+// call over the monitoring limit, or one never monitored, still bills
+// inbound minutes. Unmeasured calls are counted, never treated as 0.
+// Paginated (see selectAll.js); null when unreadable.
+async function readCallMinutes(supabaseAdmin, period) {
+  const { selectAll } = require('./selectAll');
+  const { summariseMinutes } = require('./usageSafety');
+  const res = await selectAll(() => supabaseAdmin
     .from('calls')
-    .select('duration_seconds, status')
+    .select('status, result, duration_seconds, monitored_duration_seconds, monitoring_limit_reached, warning_sent')
     .eq('status', 'Unknown')
     .gte('created_at', new Date(period.startMs).toISOString())
-    .limit(50000);
-  if (error) return null;
-  const seconds = (data || []).reduce((acc, c) => acc + (typeof c.duration_seconds === 'number' ? c.duration_seconds : 0), 0);
-  return Math.round((seconds / 60) * 10) / 10;
+    .order('created_at', { ascending: true }));
+  if (res.error) return null;
+  const m = summariseMinutes(res.data);
+  return {
+    monitoredMinutes: m.monitoredMinutes,
+    unknownCallMinutes: m.unknownCallMinutes,
+    unmeasuredCalls: m.callsWithoutDuration + m.unknownCallsWithoutMonitoringRecord,
+    truncated: res.truncated,
+  };
 }
 
 async function readFinanceViews(supabaseAdmin, period) {
@@ -84,12 +98,12 @@ async function getFinancialOverview(now = new Date(), env = process.env) {
   for (const h of hRes.data || []) if (h.stripe_customer_id && classification.map.get(h.id) === 'genuine_customer') genuineByCustomer.set(h.stripe_customer_id, h.id);
 
   const ledgerSwitch = env.BUSINESS_FINANCE_LEDGER_VIEWS === 'enabled';
-  const [views, stripeRevenue, twilio, callStats, monitoredMinutes] = await Promise.all([
+  const [views, stripeRevenue, twilio, callStats, callMinutes] = await Promise.all([
     ledgerSwitch ? readFinanceViews(supabaseAdmin, period) : Promise.resolve({ available: false, reason: 'Ledger views not enabled (BUSINESS_FINANCE_LEDGER_VIEWS)' }),
     getGenuineStripeRevenue({ stripe: resolve('../stripeClient', 'stripe'), genuineByCustomer, vatRate: resolveVatRate(), now, env }),
     getTwilioAccountSnapshot({}),
     getCallStatsMtd(),
-    readMonitoredMinutes(supabaseAdmin, period),
+    readCallMinutes(supabaseAdmin, period),
   ]);
 
   const useViews = views.available && views.lines;
@@ -110,7 +124,9 @@ async function getFinancialOverview(now = new Date(), env = process.env) {
     units: {
       accountsWithAccess: biz.filter((b) => b.accountClass !== 'deleted' && b.membership === 'current').length,
       genuinePayingCustomers: biz.filter((b) => b.isGenuinePayingCustomer).length,
-      monitoredMinutes,
+      monitoredMinutes: callMinutes ? callMinutes.monitoredMinutes : null,
+      unknownCallMinutes: callMinutes ? callMinutes.unknownCallMinutes : null,
+      minutesIncomplete: callMinutes ? callMinutes.unmeasuredCalls > 0 || callMinutes.truncated : null,
     },
   });
 

@@ -14,7 +14,9 @@
 // storage decision; not built — download and keep the file for now.
 'use strict';
 
-const SCHEMA_VERSION = '1.0';
+// 1.1 (2026-10-01): additive — `usage` (monitored minutes, call minutes,
+// limit hits, estimated peak concurrency) and `calls.truncated`.
+const SCHEMA_VERSION = '1.1';
 
 const EMAIL_RE = /[^\s@"]+@[^\s@"]+\.[a-z]{2,}/i;
 const PHONE_RE = /\+?\d[\d\s-]{9,}\d/;
@@ -67,13 +69,36 @@ function summariseCalls(rows) {
   };
 }
 
+// Pure. Same rows; minutes and concurrency via usageSafety's helpers so
+// the snapshot and Operations → Usage & cost safety cannot disagree.
+// Unmeasured calls are counted, never treated as 0 minutes.
+function summariseUsage(rows) {
+  if (!rows) return null;
+  const { summariseMinutes, peakConcurrency } = require('./usageSafety');
+  const m = summariseMinutes(rows);
+  const unknown = rows.filter((c) => c.status === 'Unknown');
+  return {
+    monitoredMinutes: m.monitoredMinutes,
+    callMinutes: m.callMinutes,
+    trustedCallMinutes: m.trustedCallMinutes,
+    unknownCallMinutes: m.unknownCallMinutes,
+    approvedCallsWithoutDuration: m.callsWithoutDuration,
+    unknownCallsWithoutMonitoringRecord: m.unknownCallsWithoutMonitoringRecord,
+    monitoringLimitReached: m.monitoringLimitReached,
+    callsOverOneHour: rows.filter((c) => typeof c.duration_seconds === 'number' && c.duration_seconds >= 3600).length,
+    warningSmsSent: m.warningSmsSent,
+    peakSimultaneousCallsEstimated: peakConcurrency(rows, 'duration_seconds').peak,
+    peakSimultaneousMonitoringEstimated: peakConcurrency(unknown, 'monitored_duration_seconds').peak,
+  };
+}
+
 /**
  * Pure.
  * @param {{ overview, subscriptions, calls, month, now }} input
  *   overview: getControlOverview() payload; subscriptions: getSubscriptionOverview();
  *   calls: rows for the month (or null if unavailable).
  */
-function buildDueDiligenceSnapshot({ overview, subscriptions, calls, month, now }) {
+function buildDueDiligenceSnapshot({ overview, subscriptions, calls, callsTruncated = false, month, now }) {
   const sub = subscriptions && subscriptions.counts ? subscriptions.counts : null;
   const ph = sub && sub.paymentHistory ? sub.paymentHistory : null;
   const inv = overview && overview.inventory ? overview.inventory : null;
@@ -121,7 +146,8 @@ function buildDueDiligenceSnapshot({ overview, subscriptions, calls, month, now 
       orphanOrUnknown: (cat('orphan').count || 0) + (cat('unknown').count || 0),
       possiblyUnnecessary: inv.needsReview ? { count: inv.needsReview.count, monthlyCostGbp: inv.needsReview.monthlyCost } : null,
     } : { unavailable: overview && overview.inventoryReason ? 'provider inventory unavailable' : 'not connected' },
-    calls: calls ? summariseCalls(calls) : null,
+    calls: calls ? { ...summariseCalls(calls), truncated: !!callsTruncated } : null,
+    usage: calls ? summariseUsage(calls) : null,
     finance: {
       stripeMode: stripe ? stripe.mode : 'unavailable',
       genuineMrrGbp: stripe && stripe.mode === 'live' && stripe.mrr ? gbp(stripe.mrr.genuine) : null,
@@ -137,6 +163,7 @@ function buildDueDiligenceSnapshot({ overview, subscriptions, calls, month, now 
       protected: 'Current membership, delivery confirmed and app registered.',
       numberCategories: 'customer_active, customer_cancelled_grace, pending_release, internal_test, staging, reviewer, orphan, unknown, other — see the dashboard Numbers tab.',
       deliveryFailed: 'Twilio DialCallStatus "failed". Unanswered = "no-answer"/"busy". Not recorded = calls before migration 044 or not dialled.',
+      usageMinutes: 'Sums of recorded per-call durations (calls.duration_seconds, monitored_duration_seconds). Calls without a recorded value are counted separately, never as 0. Peak simultaneous figures are estimates (lower bounds) from start time + duration.',
     },
   };
   return snapshot;
@@ -181,6 +208,15 @@ function renderSnapshotMarkdown(s) {
     ...(k ? [
       `- Total ${k.total} · known contacts ${k.knownContact} · unknown callers ${k.unknownCaller} (blocked ${k.unknownBlocked}, ended by HCG ${k.endedByHcg})`,
       `- Delivery failed ${k.deliveryFailed} · unanswered ${k.deliveryUnanswered} · outcome not recorded ${k.deliveryNotRecorded}`,
+      ...(k.truncated ? ['- INCOMPLETE: too many calls to load in full'] : []),
+    ] : ['- not connected']),
+    '',
+    `## Usage (${s.period})`,
+    ...(s.usage ? [
+      `- Monitored minutes ${s.usage.monitoredMinutes} · call minutes ${s.usage.callMinutes} (trusted ${s.usage.trustedCallMinutes} / unknown ${s.usage.unknownCallMinutes})`,
+      `- Not measured: ${s.usage.approvedCallsWithoutDuration} approved call(s) without a duration, ${s.usage.unknownCallsWithoutMonitoringRecord} unknown call(s) without a monitoring record`,
+      `- Per-call monitoring limit reached ${s.usage.monitoringLimitReached} · calls of an hour or more ${s.usage.callsOverOneHour} · warning SMS ${s.usage.warningSmsSent}`,
+      `- Peak simultaneous (estimated, lower bound): calls ${s.usage.peakSimultaneousCallsEstimated} · monitoring ${s.usage.peakSimultaneousMonitoringEstimated}`,
     ] : ['- not connected']),
     '',
     '## Finance',
@@ -198,6 +234,16 @@ function resolveSupabaseAdmin() {
   try { return require('../supabaseClients').supabaseAdmin; } catch (err) { return null; }
 }
 
+// Read-only, paginated: PostgREST caps a single response (1000 rows by
+// default on Supabase), so one .limit() call would silently undercount a
+// busy month. No caller number is selected (aggregates only).
+const SNAPSHOT_CALL_COLUMNS = 'created_at, status, result, dial_call_status, terminated_by_system, duration_seconds, monitored_duration_seconds, monitoring_limit_reached, warning_sent';
+async function loadMonthCalls(supabaseAdmin, bounds, { page = 1000, maxRows = 200000 } = {}) {
+  const { selectAll } = require('./selectAll');
+  const res = await selectAll(() => supabaseAdmin.from('calls').select(SNAPSHOT_CALL_COLUMNS).gte('created_at', bounds.start).lt('created_at', bounds.end).order('created_at', { ascending: true }), { page, maxRows });
+  return res.error ? { error: res.error } : { data: res.data, truncated: res.truncated };
+}
+
 // Read-only gather.
 async function getDueDiligenceSnapshot({ month, now = new Date() } = {}) {
   const period = month || now.toISOString().slice(0, 7);
@@ -209,14 +255,13 @@ async function getDueDiligenceSnapshot({ month, now = new Date() } = {}) {
   const [overview, subscriptions, callsRes] = await Promise.all([
     getControlOverview(now).catch(() => null),
     getSubscriptionOverview(now).catch(() => null),
-    supabaseAdmin
-      ? supabaseAdmin.from('calls').select('status, result, dial_call_status, terminated_by_system').gte('created_at', bounds.start).lt('created_at', bounds.end).limit(100000)
-      : Promise.resolve({ error: { message: 'not configured' } }),
+    supabaseAdmin ? loadMonthCalls(supabaseAdmin, bounds) : Promise.resolve({ error: { message: 'not configured' } }),
   ]);
   const snapshot = buildDueDiligenceSnapshot({
     overview: overview && overview.available ? overview : null,
     subscriptions: subscriptions && subscriptions.available ? subscriptions : null,
     calls: callsRes && !callsRes.error ? callsRes.data || [] : null,
+    callsTruncated: !!(callsRes && callsRes.truncated),
     month: period,
     now,
   });
@@ -225,4 +270,4 @@ async function getDueDiligenceSnapshot({ month, now = new Date() } = {}) {
   return { available: true, snapshot, markdown: renderSnapshotMarkdown(snapshot) };
 }
 
-module.exports = { SCHEMA_VERSION, findPrivacyLeaks, summariseCalls, buildDueDiligenceSnapshot, renderSnapshotMarkdown, getDueDiligenceSnapshot, monthBounds };
+module.exports = { SCHEMA_VERSION, findPrivacyLeaks, summariseCalls, summariseUsage, loadMonthCalls, buildDueDiligenceSnapshot, renderSnapshotMarkdown, getDueDiligenceSnapshot, monthBounds };

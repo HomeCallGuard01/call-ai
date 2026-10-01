@@ -372,8 +372,6 @@ function summariseForOverview(result) {
   };
 }
 
-const PAGE = 1000;
-const MAX_ROWS = 50000;
 const CALL_COLUMNS = 'household_id, created_at, number, status, result, duration_seconds, monitored_duration_seconds, monitoring_limit_reached, dial_call_status, terminated_by_system, warning_sent';
 
 async function loadUsageSafety({ now = new Date(), env = process.env } = {}) {
@@ -383,15 +381,11 @@ async function loadUsageSafety({ now = new Date(), env = process.env } = {}) {
   const nowMs = now.getTime();
   const since = new Date(Math.min(startOfUtcMonth(nowMs), startOfUtcDay(nowMs) - (SERIES_DAYS - 1) * DAY_MS)).toISOString();
 
-  const calls = [];
-  let truncated = false;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin.from('calls').select(CALL_COLUMNS).gte('created_at', since).order('created_at', { ascending: true }).range(from, from + PAGE - 1);
-    if (error) return { available: false, reason: error.message };
-    calls.push(...(data || []));
-    if (!data || data.length < PAGE) break;
-    if (calls.length >= MAX_ROWS) { truncated = true; break; }
-  }
+  const { selectAll } = require('./selectAll');
+  const res = await selectAll(() => supabaseAdmin.from('calls').select(CALL_COLUMNS).gte('created_at', since).order('created_at', { ascending: true }));
+  if (res.error) return { available: false, reason: res.error.message };
+  const calls = res.data;
+  const truncated = res.truncated;
 
   const { getClassificationMap } = require('../businessMetrics/accountClassification');
   const [hRes, classification] = await Promise.all([
