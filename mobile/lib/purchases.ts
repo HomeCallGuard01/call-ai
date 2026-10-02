@@ -23,7 +23,8 @@ const REVENUECAT_API_KEY_IOS = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS;
 // Confirmed RevenueCat/App Store Connect configuration (2026-08-29) —
 // none of these are secrets, same category as a Stripe Price ID:
 //   App Store Connect product ID: co.uk.homecallguard.app.monthly
-//     (bundle ID co.uk.homecallguard.app, £4.99/month, UK only)
+//     (bundle ID co.uk.homecallguard.app, monthly, UK only; the price is set
+//     in App Store Connect and read from StoreKit — see lib/subscriptionPrice.ts)
 //   RevenueCat entitlement:        hcg_protected
 //   RevenueCat offering:           default
 //   RevenueCat package:            $rc_monthly

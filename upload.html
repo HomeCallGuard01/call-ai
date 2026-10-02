@@ -1395,8 +1395,12 @@
          landline). Recorded via POST /billing/terms-acceptance
          immediately before the real Stripe redirect, never earlier. -->
     <div id="termsConsentSection" hidden>
-      <p class="price-note" id="priceNote">£4.99/month, including VAT. This is a recurring monthly subscription
-        that renews automatically every month until you cancel — cancel anytime.</p>
+      <!-- 2026-09-30: no amount in the markup. The real Stripe price is filled
+           in from GET /billing/offer (services/subscriptionPricing.js); if it
+           can't be read, this price-free wording stays and Stripe Checkout
+           shows the amount before any payment. -->
+      <p class="price-note" id="priceNote">This is a recurring monthly subscription that renews automatically
+        every month until you cancel — cancel anytime. You'll see the monthly price, including VAT, before you pay.</p>
 
       <p class="legal-links">
         <a href="/terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
@@ -1412,7 +1416,7 @@
 
     <form class="subscribe-button" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
       <button type="submit">
-        Subscribe &amp; pay £4.99/month now
+        Subscribe &amp; pay now
       </button>
     </form>
 
@@ -3822,6 +3826,33 @@
     });
   }
 
+  // Subscription price (2026-09-30). Shown ONLY when the server returns a
+  // well-formed Stripe offer; anything else keeps the price-free wording
+  // already in the markup. Never a remembered or default figure.
+  let subscribeButtonText = "Subscribe & pay now";
+  const OFFER_AMOUNT_PATTERN = /^£\d{1,3}(,\d{3})*\.\d{2}$/;
+  function applySubscriptionOffer(offer) {
+    if (!offer || offer.available !== true || offer.channel !== "stripe" || offer.interval !== "month" ||
+        typeof offer.amountLabel !== "string" || !OFFER_AMOUNT_PATTERN.test(offer.amountLabel)) {
+      return;
+    }
+    const priceNoteEl = document.getElementById("priceNote");
+    if (priceNoteEl) {
+      priceNoteEl.textContent = offer.amountLabel + "/month, including VAT. This is a recurring monthly subscription " +
+        "that renews automatically every month until you cancel — cancel anytime.";
+    }
+    subscribeButtonText = "Subscribe & pay " + offer.amountLabel + "/month now";
+    const btn = subscribeFormEl && subscribeFormEl.querySelector("button[type=submit]");
+    if (btn && !btn.disabled) btn.textContent = subscribeButtonText;
+  }
+  fetch("/billing/offer", { credentials: "same-origin" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("offer " + r.status);
+      return r.json();
+    })
+    .then(applySubscriptionOffer)
+    .catch(function () { /* keep the price-free wording */ });
+
   // FAILS CLOSED. Landline is treated as available ONLY when this response
   // is a 2xx object containing landlineComingSoon === false (boolean false).
   // A failed, timed-out, non-2xx, malformed or field-less response — or an
@@ -3852,7 +3883,7 @@
     const btn = subscribeFormEl && subscribeFormEl.querySelector("button[type=submit]");
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Subscribe & pay £4.99/month now";
+      btn.textContent = subscribeButtonText;
     }
   }
 

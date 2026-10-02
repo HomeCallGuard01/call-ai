@@ -23,6 +23,7 @@ const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require(".
 const { renderGoPage } = require("./services/goLanding");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
+const { resolveMembershipPriceLabel, getSharedStripePriceLookup } = require("./services/subscriptionPricing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const {
@@ -1399,14 +1400,19 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
       memberSince: req.household.created_at,
       entitlementType: req.entitlement.entitlement_type,
     },
-    // Membership card (Stage 4). planName/priceLabel are hardcoded,
-    // matching this project's existing single-price-point convention
-    // (Decision 009) — not a live Stripe Price lookup. Every date/status
-    // value here comes from the real subscriptions/entitlements rows the
-    // webhook wrote; never invented client-side.
+    // Membership card (Stage 4). Every date/status value here comes from
+    // the real subscriptions/entitlements rows the webhook wrote; never
+    // invented client-side. 2026-09-30: priceLabel is THIS household's own
+    // price (its own Stripe subscription's Price), or no amount for
+    // Apple-billed / non-charged memberships — never one global list price
+    // (services/subscriptionPricing.js).
     membership: {
       planName: "Home Call Guard Standard",
-      priceLabel: "£4.99 per month including VAT",
+      priceLabel: await resolveMembershipPriceLabel({
+        entitlement: req.entitlement,
+        subscription,
+        lookupStripePrice: getSharedStripePriceLookup(),
+      }),
       status: membershipStatus,
       nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
       accessUntil: subscription ? subscription.current_period_end : null,

@@ -95,8 +95,8 @@ check(
 );
 
 check(
-  source.includes('including VAT'),
-  'the price is explicitly shown as including VAT, not just a bare £4.99 figure'
+  source.includes('subscribePriceLine(displayPrice)') && source.includes('PRICE_PENDING_NOTE'),
+  'the price is shown from the billing system (with VAT wording from lib/subscriptionPrice.ts), and when it is unknown the screen says the price is shown before payment — never a bare or guessed figure'
 );
 
 check(
@@ -105,8 +105,8 @@ check(
 );
 
 check(
-  source.includes('Subscribe & pay £4.99/month now'),
-  'the payment button wording makes the payment obligation unambiguous (not a vague "Continue"/"Subscribe" alone)'
+  source.includes('label={subscribeButtonLabel(displayPrice)}'),
+  'the payment button wording makes the payment obligation unambiguous (not a vague "Continue"/"Subscribe" alone) — see lib/subscriptionPrice.ts, both labels contain "pay"'
 );
 
 check(

@@ -49,7 +49,7 @@ export function resolveLandlineComingSoon(flags: unknown): boolean {
 export interface LandlineFlagStoreOptions {
   fetchFlags: () => Promise<unknown>;
   // 2026-09-30: which launch flag this store tracks (default: landline).
-  // lib/iphoneFlag.ts reuses the same fail-closed store for IOS_COMING_SOON.
+  // Kept generic so another launch flag can reuse the same fail-closed store.
   resolve?: (flags: unknown) => boolean;
   // A launch-flags request that hasn't answered by this point counts as a
   // failure (=> Coming soon), so a hung connection can never leave landline

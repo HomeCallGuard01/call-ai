@@ -101,7 +101,9 @@ export default function SetupWelcome() {
       <Text style={styles.subtitle}>Three quick steps:</Text>
 
       <View style={styles.steps}>
-        <Step number={1} label="Membership" detail="£4.99/month including VAT" />
+        {/* 2026-09-30: no amount here — the Subscribe step shows the real
+            price from the App Store (iOS) or Stripe (Android). */}
+        <Step number={1} label="Membership" detail="Monthly subscription, cancel anytime" />
         <Step number={2} label="Trusted contacts" detail="So family and friends always ring straight through" />
         <Step number={3} label="Activate" detail="Turn on call forwarding — we'll confirm it's working" />
       </View>

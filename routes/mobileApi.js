@@ -61,6 +61,7 @@ const { normaliseNumber, wouldCreateForwardingLoop } = require("../services/phon
 const { MAX_SYNC_CONTACTS, buildSyncPlan, buildSyncResultMessage } = require("../services/contactsSync");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 const { stripe } = require("../services/stripeClient");
+const { createOfferHandler, resolveMembershipPriceLabel, getSharedStripePriceLookup } = require("../services/subscriptionPricing");
 const {
   hasQualifyingStripeSubscription,
   findReusableOpenCheckoutSession,
@@ -367,6 +368,12 @@ router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (re
 // redirect, and a homecallguard:// return_url instead of the web
 // dashboard, matching D1's in-app-browser handoff
 // (APP_VISUAL_SPECIFICATION.md).
+// GET /api/v1/billing/offer — the current Stripe price for the Android/web
+// purchase path (requireAuthApi, not requireEntitlement: the Subscribe step
+// runs before payment). iOS never uses this: it shows StoreKit's own price
+// (mobile/lib/subscriptionPrice.ts). `available: false` = show no amount.
+router.get("/api/v1/billing/offer", requireAuthApi, createOfferHandler());
+
 router.post("/api/v1/billing/manage-membership", requireAuthApi, async (req, res) => {
   if (!stripe) {
     console.error("MOBILE PORTAL SESSION ERROR: STRIPE_SECRET_KEY not configured");
@@ -659,7 +666,16 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       },
       membership: {
         planName: "Home Call Guard Standard",
-        priceLabel: "£4.99 per month including VAT",
+        // 2026-09-30: THIS household's own price (its own Stripe
+        // subscription's Price), or no amount at all for Apple-billed and
+        // non-charged memberships — never one global list price, so a
+        // customer kept on an earlier price is never shown a newer one.
+        // See services/subscriptionPricing.js.
+        priceLabel: await resolveMembershipPriceLabel({
+          entitlement: req.entitlement,
+          subscription,
+          lookupStripePrice: getSharedStripePriceLookup(),
+        }),
         status: membershipStatus,
         nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
         accessUntil: subscription ? subscription.current_period_end : null,

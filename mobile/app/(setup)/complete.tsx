@@ -12,7 +12,8 @@
 // must not reintroduce a claim already removed earlier in the same flow.
 // 2026-09-21 copy correction: the 30-day money-back guarantee line was
 // removed from this screen (and is deliberately NOT replaced by any other
-// guarantee); the price note now states that £4.99 includes VAT.
+// guarantee). 2026-09-30: the price note no longer states an amount (the
+// customer has just seen the real one on Subscribe / the payment sheet).
 //
 // Onboarding-verification UX change (2026-09-23): this is now the
 // terminal screen of setup on every path (activate.tsx no longer routes
@@ -86,7 +87,7 @@ export default function SetupComplete() {
         don't need to do anything else. Check the Home tab any time to see your current status.
       </Text>
       <Text style={styles.body}>{contactsLine}</Text>
-      <Text style={styles.priceNote}>£4.99 per month including VAT, cancel anytime.</Text>
+      <Text style={styles.priceNote}>Your membership renews monthly. You can cancel anytime.</Text>
       <PrimaryButton label="Go to my dashboard" onPress={() => router.replace("/(tabs)")} />
 
       {/* Clearly secondary, optional — never a requirement to proceed.

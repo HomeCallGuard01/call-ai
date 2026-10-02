@@ -35,33 +35,18 @@ function loadTs(relPath, fakeModules = {}) {
 
 // --- iPhone availability (pure) ---
 const ia = loadTs(['mobile', 'lib', 'iphoneAvailability.ts']);
-check(ia.resolveIosComingSoon({ iosComingSoon: false }) === false, 'explicit iosComingSoon:false → available');
-check(ia.resolveIosComingSoon({ iosComingSoon: true }) && ia.resolveIosComingSoon({}) && ia.resolveIosComingSoon(null) && ia.resolveIosComingSoon('x'), 'anything else → coming soon (fail closed)');
-check(ia.isIphoneOnboardingAvailable('ios', false), 'iOS app + flag off → iPhone onboarding available');
-check(!ia.isIphoneOnboardingAvailable('ios', true), 'iOS app + flag on → still coming soon');
-check(!ia.isIphoneOnboardingAvailable('android', false), 'the Android app never onboards an iPhone');
+check(ia.isIphoneOnboardingAvailable('ios'), 'iOS app → iPhone onboarding available (1.0.2: not gated by IOS_COMING_SOON)');
+check(!ia.isIphoneOnboardingAvailable('android') && !ia.isIphoneOnboardingAvailable('web'), 'the Android app never onboards an iPhone');
 check(JSON.stringify(ia.deviceOptionTypesFor('ios')) === '["iphone"]', 'iOS app shows only the iPhone card (no Android — App Review 2.3.10)');
 check(JSON.stringify(ia.deviceOptionTypesFor('android')) === '["iphone","android"]', 'Android device picker unchanged');
-check(ia.iphoneCardLabel('ios', false) === 'iPhone' && ia.iphoneCardLabel('ios', true) === 'iPhone — Coming soon' && ia.iphoneCardLabel('android', false) === 'iPhone — Coming soon', 'iPhone card label follows platform + flag');
-check(ia.carrierDeviceTypeFor('iphone') === 'iphone' && ia.carrierDeviceTypeFor('android') === 'mobile' && ia.carrierDeviceTypeFor(null) === 'mobile', 'carrier request device type');
+check(ia.iphoneCardLabel('ios') === 'iPhone' && ia.iphoneCardLabel('android') === 'iPhone — Coming soon', 'iPhone card label follows platform');
+check(ia.carrierDeviceTypeFor('iphone') === 'mobile' && ia.carrierDeviceTypeFor('android') === 'mobile' && ia.carrierDeviceTypeFor(null) === 'mobile', 'carrier request records a UK mobile line (the iphone shape is blocked at payment while IOS_COMING_SOON is on)');
 {
   const la0 = loadTs(['mobile', 'lib', 'landlineAvailability.ts']);
   check(!/android/i.test(la0.LANDLINE_COMING_SOON_BODY_IOS) && /Android/.test(la0.LANDLINE_COMING_SOON_BODY), 'landline copy mentions Android only in the Android app');
 }
 check(!/android/i.test(ia.contactsPermissionHelp('ios')) && /Limited Access/.test(ia.contactsPermissionHelp('ios')), 'iOS contacts help: iPhone steps only');
 check(!/iphone|limited access/i.test(ia.contactsPermissionHelp('android')) && /Permissions > Contacts/.test(ia.contactsPermissionHelp('android')), 'Android contacts help: Android steps only');
-
-// --- flag store reuse (fail closed) ---
-{
-  const la = loadTs(['mobile', 'lib', 'landlineAvailability.ts']);
-  const iosStore = la.createLandlineFlagStore({ fetchFlags: async () => ({ iosComingSoon: false, landlineComingSoon: true }), resolve: ia.resolveIosComingSoon });
-  check(iosStore.get() === true, 'iOS flag store starts closed');
-  check((await iosStore.refresh()) === false, 'iOS flag store reads iosComingSoon, not the landline flag');
-  const landStore = la.createLandlineFlagStore({ fetchFlags: async () => ({ iosComingSoon: false, landlineComingSoon: true }) });
-  check((await landStore.refresh()) === true, 'landline store unchanged by default');
-  const failing = la.createLandlineFlagStore({ fetchFlags: async () => { throw new Error('offline'); }, resolve: ia.resolveIosComingSoon });
-  check((await failing.refresh()) === true, 'network failure → iPhone stays coming soon');
-}
 
 // --- iOS microphone permission ---
 {
@@ -100,8 +85,8 @@ const banner = read('mobile', 'components', 'CallReadinessBanner.tsx');
 check(/label="Continue"/.test(banner) && /requestIosMicrophonePermission\(\)/.test(banner), 'iOS banner: Continue → system prompt');
 const picker = read('mobile', 'app', '(setup)', 'device-picker.tsx');
 check(/deviceOptionTypesFor\(Platform\.OS\)/.test(picker) && /deviceOptions\.map\(/.test(picker) && !/DEVICE_OPTIONS\.map\(/.test(picker), 'device picker renders platform-filtered options');
-check(/async function selectIphone\(\)/.test(picker) && /await refreshIosComingSoon\(\)/.test(picker) && /isIphoneOnboardingAvailable\(Platform\.OS, comingSoon\)/.test(picker), 'iPhone selection decides from a fresh, fail-closed flag read');
-check(/checkCarrierCompatibility\(provider, tariffType, session\?\.access_token, carrierDeviceTypeFor\(deviceType\)\)/.test(picker), 'carrier step sends deviceType iphone for iPhone');
+check(/if \(type === "iphone" && !isIphoneOnboardingAvailable\(Platform\.OS\)\) \{/.test(picker) && !/iphoneFlag|refreshIosComingSoon|useIosComingSoon/.test(picker), 'iPhone selection: Coming soon only outside the iOS app; no backend flag read');
+check(/checkCarrierCompatibility\(provider, tariffType, session\?\.access_token, carrierDeviceTypeFor\(deviceType\)\)/.test(picker), 'carrier step sends the device type from carrierDeviceTypeFor');
 check(/setStep\(\{ name: "ios-coming-soon" \}\);\s*setHouseholdIphone/.test(picker), 'coming-soon path unchanged when not available');
 const api = read('mobile', 'lib', 'api.ts');
 check(/deviceType: "mobile" \| "iphone" = "mobile"/.test(api) && /JSON\.stringify\(\{ deviceType, provider, tariffType \}\)/.test(api), 'api sends the device type (default mobile: Android behaviour unchanged)');

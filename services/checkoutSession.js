@@ -10,6 +10,7 @@ const { version: APP_VERSION } = require("../package.json");
 const { stripe } = require("./stripeClient");
 const { setHouseholdStripeCustomerId } = require("../database/billing");
 const { getHouseholdByAuthUserId } = require("../database/households");
+const { CHECKOUT_SUBMIT_MESSAGE } = require("./subscriptionPricing");
 
 const QUALIFYING_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"]);
 
@@ -128,10 +129,12 @@ function buildCheckoutSessionParams({ customer, priceId, householdId, successUrl
     // Stripe Dashboard first (not settable via the API) — see
     // docs/PROJECT_STATUS.md. Until then, the custom_text.submit message
     // below is the only ToS/recurring-billing disclosure shown.
+    // 2026-09-30: price-agnostic (services/subscriptionPricing.js). Stripe
+    // Checkout shows the real amount of the Price being charged on the
+    // same page, so this text never repeats (and can never contradict) it.
     custom_text: {
       submit: {
-        message:
-          "You'll be charged £4.99 today, then £4.99 every month until you cancel. By continuing, you agree to Home Call Guard's Terms and Conditions and Privacy Policy.",
+        message: CHECKOUT_SUBMIT_MESSAGE,
       },
     },
     success_url: successUrl,

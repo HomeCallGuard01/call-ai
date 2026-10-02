@@ -2,25 +2,27 @@
 // iOS technical parity). Pure — no React Native imports — so it is unit
 // tested directly (tests/ios-parity.test.mjs).
 //
-// Mirrors lib/landlineAvailability.ts: the backend's IOS_COMING_SOON flag
-// (GET /api/v1/launch-flags) is the single source of truth, and anything but
-// an explicit `iosComingSoon: false` counts as coming soon (fail closed).
-// The server still enforces the same flag at checkout
-// (services/providerPolicy.js evaluateHouseholdCheckoutEligibility).
+// iOS 1.0.2 release decision (2026-10-01, release/ios-1.0.2): the iOS app is
+// distributed only through the App Store, so when it runs on an iPhone the
+// iPhone IS the supported path — it buys through Apple in-app purchase and
+// continues to the carrier check exactly like Android, with no dependency on
+// the backend IOS_COMING_SOON flag. A flag-gated path would show "iPhone —
+// Coming soon" inside an approved iPhone app (an App Review 2.1 dead end for a
+// reviewer creating a new account) until a backend deploy, migration 061 and
+// IOS_COMING_SOON=false had all reached production.
+//
+// IOS_COMING_SOON (services/featureFlags.js) keeps its existing job: it blocks
+// Stripe checkout for households recorded as device_type "iphone" (website
+// and the Android app's waiting list). The iOS app therefore records its
+// carrier as a UK mobile line (deviceType "mobile"); it buys through Apple and
+// is not subject to that Stripe-side gate.
 
 export type AppPlatform = "ios" | "android" | "web" | string;
 export type OnboardingDeviceType = "iphone" | "android";
 
-export function resolveIosComingSoon(flags: unknown): boolean {
-  if (flags !== null && typeof flags === "object" && (flags as { iosComingSoon?: unknown }).iosComingSoon === false) {
-    return false;
-  }
-  return true;
-}
-
-// Only the iOS app can onboard an iPhone, and only once the flag is off.
-export function isIphoneOnboardingAvailable(platform: AppPlatform, iosComingSoon: boolean): boolean {
-  return platform === "ios" && !iosComingSoon;
+// Only the iOS app onboards an iPhone; everywhere else it is "Coming soon".
+export function isIphoneOnboardingAvailable(platform: AppPlatform): boolean {
+  return platform === "ios";
 }
 
 // Which device cards the picker shows. The iOS app never shows an Android
@@ -30,16 +32,16 @@ export function deviceOptionTypesFor(platform: AppPlatform): OnboardingDeviceTyp
   return platform === "ios" ? ["iphone"] : ["iphone", "android"];
 }
 
-export function iphoneCardLabel(platform: AppPlatform, iosComingSoon: boolean): string {
-  return isIphoneOnboardingAvailable(platform, iosComingSoon) ? "iPhone" : "iPhone — Coming soon";
+export function iphoneCardLabel(platform: AppPlatform): string {
+  return isIphoneOnboardingAvailable(platform) ? "iPhone" : "iPhone — Coming soon";
 }
 
-// The carrier-compatibility request's deviceType. An iPhone household records
-// its carrier exactly like an Android one — without it, checkout eligibility
-// fell through to "unverified carrier" and an iPhone customer could never pay
-// even with IOS_COMING_SOON=false.
-export function carrierDeviceTypeFor(deviceType: string | null | undefined): "iphone" | "mobile" {
-  return deviceType === "iphone" ? "iphone" : "mobile";
+// The carrier-compatibility request's deviceType: always a UK mobile line
+// (see the header). The route and migration 061 can also store a carrier for
+// device_type "iphone", but that household shape stays blocked at payment
+// while IOS_COMING_SOON is on, so the app does not send it.
+export function carrierDeviceTypeFor(_deviceType: string | null | undefined): "mobile" {
+  return "mobile";
 }
 
 // Customer copy that must not mention the other platform (2.3.10 on iOS).

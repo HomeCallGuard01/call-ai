@@ -137,6 +137,20 @@ export interface NotEntitledResponse {
   error: "not_entitled";
 }
 
+// GET /api/v1/billing/offer (services/subscriptionPricing.js). Describes the
+// current Stripe price for the Android/web purchase path; `available: false`
+// means "show no amount". Validated again client-side in
+// lib/subscriptionPrice.ts before anything is displayed.
+export interface StripeOfferResponse {
+  available: boolean;
+  channel: "stripe";
+  amountMinor?: number;
+  currency?: string;
+  interval?: string;
+  amountLabel?: string;
+  priceLabel?: string;
+}
+
 export interface CheckoutSessionResponse {
   url: string;
 }
