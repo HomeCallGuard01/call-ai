@@ -44,6 +44,7 @@
   .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; margin-left: 6px; vertical-align: middle; }
   .tag-confirmed { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
   .tag-estimated { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
+  .tag-derived { background: #083344; color: #67e8f9; border: 1px solid #06b6d4; }
   .headline { background: #0d1526; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px; margin-bottom: 30px; }
   .headline-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 14px; }
   .headline-item .label { font-size: 11.5px; color: #93a3b8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
@@ -158,6 +159,18 @@
   .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
   .filter-chip { background: #111a2e; color: #cbd5e1; border: 1px solid #334155; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-family: inherit; cursor: pointer; }
   .filter-chip:hover { border-color: #64748b; }
+  .card.bc-warn { border-color: #f59e0b; }
+  .classification-form { display: grid; gap: 8px; max-width: 560px; margin: 8px 0 12px; }
+  .classification-panel { margin-top: 10px; border-top: 1px solid #1e293b; padding-top: 6px; }
+  .release-review { display: grid; gap: 8px; padding: 8px 0; }
+  .filter-sep { width: 1px; align-self: stretch; background: #334155; margin: 0 4px; }
+  .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .att-body { display: grid; gap: 2px; }
+  .attention-list li { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-radius: 8px; background: #111a2e; border-left: 4px solid #334155; }
+  .attention-list li.att-red { border-left-color: #ef4444; }
+  .attention-list li.att-amber { border-left-color: #f59e0b; }
+  .attention-list a { color: #67e8f9; }
+  .control-group-title { margin: 22px 0 10px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #93a3b8; }
   .filter-chip[aria-pressed="true"] { background: #22d3ee; color: #04222b; border-color: #22d3ee; font-weight: 700; }
   .filter-chip.urgent:not([aria-pressed="true"]) { border-color: #ef4444; color: #fca5a5; }
   .chip-count { font-variant-numeric: tabular-nums; opacity: 0.85; margin-left: 2px; }
@@ -211,6 +224,61 @@
   .recent-calls th, .recent-calls td, .fact-table td { padding: 5px 8px; white-space: normal; }
   .fact-table td:first-child { color: #93a3b8; white-space: nowrap; width: 110px; }
 
+  /* --- Business control tabs (2026-09-27) --- */
+  .prov-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
+  .prov-actual { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
+  .prov-allocated { background: #083344; color: #67e8f9; border: 1px solid #06b6d4; }
+  .prov-estimated { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
+  .prov-manual { background: #1e1b4b; color: #c7d2fe; border: 1px solid #6366f1; }
+  .prov-mixed { background: #3b0764; color: #e9d5ff; border: 1px solid #a855f7; }
+  .prov-none { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .card.bc-primary { border-color: #22d3ee; }
+  .pnl-table td, .pnl-table th { vertical-align: top; }
+  .pnl-table .num, table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pnl-section td { color: #7dd3fc; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; padding-top: 16px; }
+  .cell-chain { white-space: normal; min-width: 280px; }
+  .chain-dot { display: inline-block; font-size: 10.5px; padding: 1px 6px; margin: 1px 2px; border-radius: 4px; border: 1px solid #334155; }
+  .chain-good { background: #064e3b; color: #6ee7b7; border-color: #10b981; }
+  .chain-bad { background: #450a0a; color: #fca5a5; border-color: #ef4444; }
+  .chain-off { color: #64748b; }
+  .chain-neutral { background: #1e293b; color: #cbd5e1; }
+  .manual-cost-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .manual-cost-form input, .manual-cost-form select { background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 7px 9px; font-size: 13px; }
+  .manual-cost-form input:disabled, .manual-cost-form select:disabled, .manual-cost-form button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .link-output { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 13px; background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 12px; overflow-wrap: anywhere; }
+
+  /* --- Control centre v2 (2026-09-27) --- */
+  .control-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .control-card { background: #111a2e; border: 1px solid #1e293b; border-left-width: 5px; border-radius: 10px; padding: 14px 16px; }
+  .control-card.st-red { border-left-color: #ef4444; }
+  .control-card.st-amber { border-left-color: #f59e0b; }
+  .control-card.st-green { border-left-color: #10b981; }
+  .control-card.st-grey { border-left-color: #475569; }
+  .control-card.st-info { border-left-color: #334155; }
+  /* --- Usage & cost safety (2026-10-01) --- */
+  .usage-series td.bar-cell { width: 40%; }
+  .usage-bar { display: inline-block; height: 10px; background: #0ea5e9; border-radius: 3px; min-width: 1px; vertical-align: middle; }
+  .control-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .control-label { font-size: 12.5px; font-weight: 700; color: #cbd5e1; }
+  .control-value { font-size: 26px; font-weight: 800; color: #e2e8f0; margin: 6px 0 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .control-rule { font-size: 11px; color: #64748b; margin-top: 6px; }
+  .st-badge { font-size: 10.5px; font-weight: 800; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .st-badge.st-red { background: #450a0a; color: #fca5a5; }
+  .st-badge.st-amber { background: #451a03; color: #fbbf24; }
+  .st-badge.st-green { background: #064e3b; color: #6ee7b7; }
+  .st-badge.st-grey { background: #1e293b; color: #94a3b8; }
+  .st-badge.st-info { background: #1e293b; color: #cbd5e1; }
+  .card-items { margin-top: 8px; font-size: 12px; }
+  .card-items summary { cursor: pointer; color: #93a3b8; }
+  .card-items ul { margin: 6px 0 0; padding-left: 18px; }
+  .lc-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+  .lc-step { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid #334155; }
+  .lc-step small { color: inherit; opacity: 0.75; }
+  .lc-arrow { color: #475569; font-size: 10px; }
+  .lc-first-broken { outline: 2px solid #ef4444; }
+  tr.inv-red td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+  tr.inv-amber td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+
   @media (max-width: 1300px) {
     .stat-grid { grid-template-columns: repeat(3, 1fr); }
   }
@@ -241,16 +309,23 @@
 
 <div class="main">
   <nav class="tab-nav" id="tabNav" role="tablist" aria-label="Admin dashboard sections">
-    <button type="button" class="tab-button" id="tabBtn-business" role="tab" onclick="switchTab('business')">Business</button>
+    <button type="button" class="tab-button" id="tabBtn-overview" role="tab" onclick="switchTab('overview')">Overview</button>
     <button type="button" class="tab-button" id="tabBtn-customers" role="tab" onclick="switchTab('customers')">Customers</button>
+    <button type="button" class="tab-button" id="tabBtn-numbers" role="tab" onclick="switchTab('numbers')">Numbers</button>
+    <button type="button" class="tab-button" id="tabBtn-money" role="tab" onclick="switchTab('money')">Money</button>
     <button type="button" class="tab-button" id="tabBtn-operations" role="tab" onclick="switchTab('operations')">Operations</button>
-    <button type="button" class="tab-button" id="tabBtn-systemhealth" role="tab" onclick="switchTab('systemhealth')">System Health</button>
   </nav>
 
-  <div id="business" class="tab-panel" role="tabpanel"><div class="loading">Loading…</div></div>
-  <div id="customers" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
-  <div id="operations" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
-  <div id="systemhealth" class="tab-panel" role="tabpanel" hidden><div class="loading">Loading…</div></div>
+  <!-- Five tabs (2026-09-28 consolidation). Each panel holds one or more
+       sections; each section is rendered by one function from one
+       existing endpoint. The old Business / Subscriptions /
+       Reconciliation / Finance / Marketing / System Health tabs are
+       sections now — no endpoint changed. -->
+  <div id="overview" class="tab-panel" role="tabpanel"><div id="attention"></div><div id="overviewBody"><div class="loading">Loading…</div></div></div>
+  <div id="customers" class="tab-panel" role="tabpanel" hidden><div id="customerHealth"><div class="loading">Loading…</div></div><div id="subscriptions"></div></div>
+  <div id="numbers" class="tab-panel" role="tabpanel" hidden><div id="reconciliation"><div class="loading">Loading…</div></div></div>
+  <div id="money" class="tab-panel" role="tabpanel" hidden><div id="finance"><div class="loading">Loading…</div></div><div id="marketing"></div><div id="acquisition"></div></div>
+  <div id="operations" class="tab-panel" role="tabpanel" hidden><div id="usageSafety"></div><div id="callActivity"><div class="loading">Loading…</div></div><div id="systemhealth"></div><div id="opsTools"><div class="loading">Loading…</div></div></div>
 </div>
 
 <script>
@@ -267,25 +342,6 @@ function card(label, value, sub, isEstimate) {
   return '<div class="card"><div class="label">' + label + '</div><div class="value' + (isEstimate ? ' est' : '') + '">' + value + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
 }
 function tag(kind) { return '<span class="tag tag-' + kind + '">' + kind + '</span>'; }
-function headlineItem(label, value, incomplete) {
-  return '<div class="headline-item"><div class="label">' + label + '</div><div class="value' + (incomplete ? ' incomplete' : '') + '">' + value + '</div></div>';
-}
-
-// TEST-EXTRACT-START: formatCurrency
-function formatCurrency(money) {
-  if (!money || !money.available) return "—";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: (money.currency || "gbp").toUpperCase(),
-  }).format(money.amount);
-}
-// TEST-EXTRACT-END: formatCurrency
-
-// TEST-EXTRACT-START: formatProtectionRate
-function formatProtectionRate(rate) {
-  return rate === null || rate === undefined ? "No calls yet" : `${rate}%`;
-}
-// TEST-EXTRACT-END: formatProtectionRate
 
 // TEST-EXTRACT-START: describeActivityEvent
 function describeActivityEvent(event) {
@@ -390,7 +446,9 @@ function describeAdminAction(action) {
 // Tab switching — one visible panel at a time, active tab has a
 // solid-fill, high-contrast state (never just text colour/underline).
 // ============================================================
-const TAB_NAMES = ['business', 'customers', 'operations', 'systemhealth'];
+const TAB_NAMES = ['overview', 'customers', 'numbers', 'money', 'operations'];
+// Bookmarks to the pre-consolidation tabs still land somewhere sensible.
+const LEGACY_TAB_HASHES = { business: 'money', subscriptions: 'customers', reconciliation: 'numbers', finance: 'money', marketing: 'money', systemhealth: 'operations' };
 
 function switchTab(name) {
   for (const t of TAB_NAMES) {
@@ -403,18 +461,22 @@ function switchTab(name) {
     }
   }
   window.location.hash = name;
+  if (typeof loadBusinessControlTab === 'function') for (const section of TAB_SECTIONS[name] || []) loadBusinessControlTab(section);
 }
 
 function initialTab() {
   const fromHash = (window.location.hash || '').replace('#', '');
-  return TAB_NAMES.includes(fromHash) ? fromHash : 'business';
+  const mapped = LEGACY_TAB_HASHES[fromHash] || fromHash;
+  return TAB_NAMES.includes(mapped) ? mapped : 'overview';
 }
 
 // ============================================================
-// Data loading — three JSON endpoints:
-// /admin/api/business/overview (Business/System Health tabs)
-// /admin/api/overview (Operations tab)
-// /admin/api/customers/onboarding (Customers tab — onboarding monitor)
+// Data loading — three JSON endpoints load with the page:
+// /admin/api/business/overview (Operations: call activity + system
+//   health; Money: acquisition funnel)
+// /admin/api/overview (Operations: admin tools, activity, readiness)
+// /admin/api/customers/onboarding (Customers — onboarding monitor)
+// The /admin/api/business-control/* sections load when their tab opens.
 // ============================================================
 let lastBusinessData = null;
 let lastOperationsData = null;
@@ -435,16 +497,18 @@ async function loadBusinessOverview() {
       return;
     }
     if (!res.ok) {
-      showTabError('business', 'Failed to load (' + res.status + ')');
+      showTabError('callActivity', 'Failed to load (' + res.status + ')');
       showTabError('systemhealth', 'Failed to load (' + res.status + ')');
       return;
     }
     const d = await res.json();
     lastBusinessData = d;
-    renderBusinessTab(d);
+    renderCallActivitySection(d);
     renderSystemHealthTab(d);
+    renderAcquisitionSection(d);
+    renderAttentionStrip();
   } catch (err) {
-    showTabError('business', 'Failed to load: ' + err.message);
+    showTabError('callActivity', 'Failed to load: ' + escapeHtml(err.message));
   }
 }
 
@@ -456,14 +520,14 @@ async function loadOperationsOverview() {
       return;
     }
     if (!res.ok) {
-      showTabError('operations', 'Failed to load (' + res.status + ')');
+      showTabError('opsTools', 'Failed to load (' + res.status + ')');
       return;
     }
     const d = await res.json();
     lastOperationsData = d;
     renderOperationsTab(d);
   } catch (err) {
-    showTabError('operations', 'Failed to load: ' + err.message);
+    showTabError('opsTools', 'Failed to load: ' + escapeHtml(err.message));
   }
 }
 
@@ -475,140 +539,45 @@ function showTabError(tab, message) {
 }
 
 // ============================================================
-// BUSINESS TAB — leads with real customers/real paying/real MRR and
-// genuine profitability; raw/test totals live in Operations instead,
-// never presented as commercial performance here.
+// OPERATIONS → CALL ACTIVITY & FAILURES (2026-09-28). The one place
+// call volume, outcomes and delivery-affecting failures are shown. The
+// former Business tab's revenue / cost / two profitability blocks, its
+// entitlement × list-price MRR and its stale "known gaps" list are gone:
+// Overview (genuine customers, MRR from Stripe) and Money (Finance, with
+// provenance on every line) replace them, so no figure is shown twice
+// with two different meanings.
 // ============================================================
-function renderBusinessTab(d) {
-  let html = '';
-
-  const g = d.customers.genuine;
-  const pc = d.profitability.confirmedMonthToDate;
-  const abnormal = d.fairUse.overHardThresholdCount > 0 ? (d.fairUse.overHardThresholdCount + ' household(s) over hard threshold')
-    : (d.fairUse.approachingCount > 0 ? (d.fairUse.approachingCount + ' approaching threshold') : 'None');
-
-  html += '<div class="headline"><div class="section-header" style="border:none;margin:0;padding:0;"><h2>At a glance ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Last updated ' + new Date(d.generatedAt).toLocaleString('en-GB') + '</span></div><div class="headline-grid">';
-  if (g && g.genuineCustomers !== undefined) {
-    html += headlineItem('Real customers', fmtNum(g.genuineCustomers));
-    html += headlineItem('Real paying customers', fmtNum(g.genuinePayingCustomers));
-    html += headlineItem('Real MRR ' + tag('confirmed'), d.revenue.confirmedMrr.available ? fmtGbp(d.revenue.confirmedMrr.amount) : '—');
-  } else {
-    html += headlineItem('Real customers', 'unavailable' + (g && g.reason ? ' (' + g.reason + ')' : ''), true);
-  }
-  html += headlineItem('Collected this month ' + tag('confirmed'), d.revenue.stripe.available ? fmtGbp(d.revenue.stripe.grossRevenueMtdGbp) : '—');
-  if (pc) {
-    const profitLabel = pc.profit.operatingProfitStatus === 'CONFIRMED' ? fmtGbp(pc.profit.operatingProfitGbp) : 'INCOMPLETE';
-    html += headlineItem('Operating profit ' + tag('confirmed'), profitLabel, pc.profit.operatingProfitStatus !== 'CONFIRMED');
-    if (pc.profit.operatingProfitStatus !== 'CONFIRMED') {
-      html += headlineItem('Missing cost inputs', pc.profit.missingCostInputs.join(', ') || '—', true);
-    }
-  }
-  html += headlineItem('Abnormal cost', abnormal);
-  html += '</div></div>';
-
-  html += '<div class="section"><div class="section-header"><h2>Real customers ' + tag('confirmed') + '</h2></div><div class="cards">';
-  if (g && g.genuineCustomers !== undefined) {
-    html += card('Real customers', fmtNum(g.genuineCustomers), 'excludes unclassified — never assumed genuine');
-    html += card('Real paying customers', fmtNum(g.genuinePayingCustomers));
-    html += card('Real, Stripe-paying customers', fmtNum(g.genuineStripePayingCustomers), 'basis for Real MRR');
-    html += card('Active protected (real)', fmtNum(g.activeProtectedGenuineCustomers));
-    html += '</div>';
-  } else {
-    html += '</div><div class="error">Classification data unavailable' + (g && g.reason ? ': ' + g.reason : '') + '</div>';
-  }
-  html += '</div>';
-
-  const rev = d.revenue, cost = d.costs, profit = d.profitability;
-  html += '<div class="section"><div class="section-header"><h2>Revenue (MTD)</h2></div><div class="cards">';
-  html += card('Stripe gross MTD ' + tag('confirmed'), rev.stripe.available ? fmtGbp(rev.stripe.grossRevenueMtdGbp) : 'unavailable');
-  html += card('Stripe fees MTD ' + tag('confirmed'), rev.stripe.available ? fmtGbp(rev.stripe.stripeFeesMtdGbp) : 'unavailable');
-  html += card('Apple gross MTD ' + tag('estimated'), fmtGbp(rev.apple.grossRevenueEstimateGbp), rev.apple.note, true);
-  html += card('Real MRR ' + tag('confirmed'), rev.confirmedMrr.available ? fmtGbp(rev.confirmedMrr.amount) : 'unavailable', 'Stripe-only, genuine paying customers only');
-  html += card('MRR (all sources/accounts) ' + tag('estimated'), rev.mrr.available ? fmtGbp(rev.mrr.amount) : 'unavailable', 'includes Apple estimate + test/admin/reviewer accounts', true);
-  html += card('VAT rate', (rev.vatRate * 100).toFixed(0) + '%');
-  html += '</div></div>';
-
-  html += '<div class="section"><div class="section-header"><h2>Costs</h2></div><div class="cards">';
-  html += card('Twilio spend today ' + tag('confirmed'), cost.twilio.available ? fmtGbp(cost.twilio.spendTodayGbp) : 'unavailable');
-  html += card('Twilio spend MTD ' + tag('confirmed'), cost.twilio.available ? fmtGbp(cost.twilio.spendMtdGbp) : 'unavailable');
-  if (cost.twilio.available) {
-    html += card('— number rental MTD', fmtGbp(cost.twilio.spendMtdSplit.numberRentalGbp));
-    html += card('— call usage MTD', fmtGbp(cost.twilio.spendMtdSplit.callUsageGbp));
-  }
-  html += card('Twilio numbers', cost.twilio.available ? fmtNum(cost.twilio.numberCount) : '—');
-  html += card('Twilio balance', cost.twilio.available ? (cost.twilio.balance.amount + ' ' + cost.twilio.balance.currency) : 'unavailable');
-  html += card('OpenAI cost today ' + tag('estimated'), fmtGbp(cost.openai.today.estimatedCostGbp), 'assumes ' + cost.openai.today.assumedAvgMinutesPerCall + ' min/call', true);
-  html += card('OpenAI cost MTD ' + tag('estimated'), fmtGbp(cost.openai.monthToDate.estimatedCostGbp), null, true);
-  const fcs = cost.fixedMonthlyCostsStatus;
-  html += card('Railway (fixed)', fcs.railway.configured ? fmtGbp(fcs.railway.valueGbp) + '/mo' : 'NOT CONFIGURED', null, !fcs.railway.configured);
-  html += card('Supabase (fixed)', fcs.supabase.configured ? fmtGbp(fcs.supabase.valueGbp) + '/mo' : 'NOT CONFIGURED', null, !fcs.supabase.configured);
-  html += card('Resend (fixed)', fcs.resend.configured ? fmtGbp(fcs.resend.valueGbp) + '/mo' : 'NOT CONFIGURED', null, !fcs.resend.configured);
-  html += '</div></div>';
-
-  if (pc) {
-    html += '<div class="section"><div class="section-header"><h2>Profitability — CONFIRMED (MTD) ' + tag('confirmed') + '</h2></div><div class="cards">';
-    html += card('Net revenue ex-VAT', fmtGbp(pc.revenue.netRevenueExVatGbp));
-    html += card('Variable costs (Stripe fees + Twilio)', fmtGbp(pc.costs.totalVariableCostsGbp));
-    html += card('Contribution', fmtGbp(pc.profit.contributionGbp));
-    html += card('Contribution margin', pc.profit.contributionMarginPercent !== null ? pc.profit.contributionMarginPercent + '%' : '—');
-    if (pc.profit.operatingProfitStatus === 'CONFIRMED') {
-      html += card('Fixed costs', fmtGbp(pc.costs.fixedMonthlyCostsGbp));
-      html += card('Operating profit', fmtGbp(pc.profit.operatingProfitGbp));
-      html += card('Operating margin', pc.profit.operatingMarginPercent !== null ? pc.profit.operatingMarginPercent + '%' : '—');
-    } else {
-      html += card('Operating profit', 'INCOMPLETE', 'missing: ' + pc.profit.missingCostInputs.join(', '), true);
-    }
-    html += card('Cost per real paying customer', fmtGbp(pc.perCustomer.costPerGenuinePayingCustomerGbp));
-    html += '</div></div>';
-  } else {
-    html += '<div class="section"><div class="error">Confirmed profitability unavailable — Stripe data could not be retrieved.</div></div>';
-  }
-
-  if (profit.monthToDate) {
-    const p = profit.monthToDate;
-    html += '<div class="section"><div class="section-header"><h2>Profitability — ESTIMATED, all sources/accounts (MTD) ' + tag('estimated') + '</h2></div><div class="cards">';
-    html += card('Net revenue ex-VAT', fmtGbp(p.revenue.netRevenueExVatGbp));
-    html += card('Total variable costs', fmtGbp(p.costs.totalVariableCostsGbp));
-    html += card('Fixed costs', fmtGbp(p.costs.fixedMonthlyCostsGbp));
-    html += card('Contribution', fmtGbp(p.profit.contributionGbp));
-    html += card('Operating profit', fmtGbp(p.profit.operatingProfitGbp));
-    html += card('Gross margin', p.profit.grossMarginPercent !== null ? p.profit.grossMarginPercent + '%' : '—');
-    html += card('Avg revenue/customer', fmtGbp(p.perCustomer.avgRevenuePerCustomerGbp));
-    html += card('Avg cost/customer', fmtGbp(p.perCustomer.avgVariableCostPerCustomerGbp));
-    html += card('Avg contribution/customer', fmtGbp(p.perCustomer.avgContributionPerCustomerGbp));
-    html += card('Break-even monitored min/customer', fmtNum(profit.breakEvenMonitoredMinutesPerCustomer), 'estimate', true);
-    html += '</div></div>';
-  } else {
-    html += '<div class="section"><div class="error">Profitability unavailable — Stripe data could not be retrieved.</div></div>';
-  }
-
+function renderCallActivitySection(d) {
   const cs = d.callStats;
-  html += '<div class="grid2"><div class="section"><div class="section-header"><h2>Calls today</h2></div>' + callStatsTable(cs.today) + '</div>';
-  html += '<div class="section"><div class="section-header"><h2>Calls MTD</h2></div>' + callStatsTable(cs.monthToDate) + '</div></div>';
+  let html = '<div class="section"><div class="section-header"><h2>Call activity &amp; failures ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Updated ' + escapeHtml(new Date(d.generatedAt).toLocaleString('en-GB')) + '</span></div>';
+  html += '<p class="sub" style="margin-bottom:10px;">All accounts, including test and reviewer households. Per-customer delivery failures are on Customers (Needs attention); provisioning and number problems on Overview and Numbers.</p>';
+  html += '<div class="grid2"><div><h3>Today</h3>' + callStatsTable(cs.today) + '</div>';
+  html += '<div><h3>Month to date</h3>' + callStatsTable(cs.monthToDate) + '</div></div>';
 
-  html += '<div class="section"><div class="section-header"><h2>Fair use — top Unknown-caller volume this month (count-based proxy, not £)</h2></div>';
+  html += '<h3 style="margin-top:18px;">Fair use — Unknown-caller volume this month (count-based proxy, not £)</h3>';
   html += '<table><tr><th>Household</th><th>Unknown calls (MTD)</th><th>Tier</th></tr>';
   for (const h of d.fairUse.households) {
     html += renderFairUseRowHtml(h);
   }
   if (d.fairUse.households.length === 0) html += '<tr><td colspan="3" style="color:#64748b;">No Unknown-caller calls recorded this month.</td></tr>';
-  html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div></div>';
+  if (d.fairUse.truncated) html += '<tr><td colspan="3" class="text-warn">Too many calls to load in full — counts below are incomplete.</td></tr>';
+  html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div>';
 
-  html += acquisitionSection(d.acquisition);
-
-  html += '<div class="section"><div class="section-header"><h2>Production release</h2></div><div class="cards">';
-  html += card('Backend commit', d.release.backend.gitCommitSha || 'UNCONFIRMED', d.release.backend.note);
-  html += card('Backend branch', d.release.backend.gitBranch || 'UNCONFIRMED');
-  html += card('Environment', d.release.backend.environmentName);
-  html += card('Android version', d.release.mobile.android.appVersion + ' (build ' + d.release.mobile.android.versionCode + ')', d.release.mobile.android.confidence);
-  html += card('iOS version', d.release.mobile.ios.appVersion + ' (build ' + d.release.mobile.ios.buildNumber + ')', d.release.mobile.ios.confidence);
+  html += '<h3 style="margin-top:18px;">Production release</h3><div class="cards">';
+  html += card('Backend commit', escapeHtml(d.release.backend.gitCommitSha || 'UNCONFIRMED'), escapeHtml(d.release.backend.note || ''));
+  html += card('Environment', escapeHtml(d.release.backend.environmentName));
+  html += card('Android version', escapeHtml(d.release.mobile.android.appVersion + ' (build ' + d.release.mobile.android.versionCode + ')'), escapeHtml(d.release.mobile.android.confidence));
+  html += card('iOS version', escapeHtml(d.release.mobile.ios.appVersion + ' (build ' + d.release.mobile.ios.buildNumber + ')'), escapeHtml(d.release.mobile.ios.confidence));
   html += '</div></div>';
 
-  html += '<div class="section"><h3>Known gaps in this dashboard (not faked)</h3><div class="gaps"><ul>';
-  for (const gap of d.knownGaps) html += '<li>' + gap + '</li>';
-  html += '</ul></div></div>';
+  document.getElementById('callActivity').innerHTML = html;
+}
 
-  document.getElementById('business').innerHTML = html;
+// MONEY → website acquisition funnel (moved from the former Business
+// tab; same data, same labels).
+function renderAcquisitionSection(d) {
+  const el = document.getElementById('acquisition');
+  if (el) el.innerHTML = acquisitionSection(d.acquisition);
 }
 
 // Security fix (2026-09): the customer email used to be concatenated
@@ -623,7 +592,7 @@ function renderFairUseRowHtml(h) {
 
 function callStatsTable(cs) {
   if (!cs.available) return '<div class="error">Unavailable: ' + cs.reason + '</div>';
-  return '<table>' +
+  return (cs.truncated ? '<div class="error">Too many calls to load in full — figures below are incomplete.</div>' : '') + '<table>' +
     row('Total calls', cs.totalCalls) +
     row('Known contact', cs.knownContactCalls) +
     row('Unknown monitored', cs.unknownMonitoredCalls) +
@@ -659,7 +628,7 @@ function acquisitionGenuineFunnelTable(snapshot) {
 }
 
 function acquisitionSection(acquisition) {
-  let html = '<div class="section"><div class="section-header"><h2>Acquisition / Website</h2></div>';
+  let html = '<div class="section"><div class="section-header"><h2>Website funnel</h2></div>';
 
   if (!acquisition || !acquisition.available) {
     html += '<div class="error">Acquisition data unavailable' + (acquisition && acquisition.reason ? ': ' + acquisition.reason : '') + '</div></div>';
@@ -679,17 +648,10 @@ function acquisitionSection(acquisition) {
   html += '<div><h3 style="margin-bottom:8px;">Classified genuine-customer funnel (month to date) ' + tag('confirmed') + '</h3>' + acquisitionGenuineFunnelTable(acquisition.monthToDate) + '</div>';
   html += '</div>';
 
-  html += '<div style="margin-top:16px;"><h3 style="margin-bottom:8px;">Top sources (month to date)</h3><table><tr><th>Source</th><th>Events</th></tr>';
-  if (acquisition.monthToDate.topUtmSources.length === 0) {
-    html += '<tr><td colspan="2" style="color:#64748b;">No UTM-tagged traffic recorded this month.</td></tr>';
-  } else {
-    for (const s of acquisition.monthToDate.topUtmSources) {
-      html += '<tr><td>' + s.source + '</td><td>' + fmtNum(s.count) + '</td></tr>';
-    }
-  }
-  html += '</table></div>';
-
-  html += '<div class="sub" style="margin-top:12px;color:#64748b;">Landing/registration counts are raw page-request counts, not unique visitors — no cookie or session is used to deduplicate. Unclassified accounts are never counted as genuine customers. See Known gaps below for the full limitation.</div>';
+  // "Top sources" table removed (2026-09-28): it duplicated Marketing's
+  // campaign/source table and rendered the visitor-supplied utm_source
+  // into innerHTML unescaped.
+  html += '<div class="sub" style="margin-top:12px;color:#64748b;">Landing/registration counts are raw page-request counts, not unique visitors — no cookie or session is used to deduplicate. Unclassified accounts are never counted as genuine customers. Channel and campaign detail is in Marketing above.</div>';
   html += '</div>';
   return html;
 }
@@ -709,11 +671,12 @@ function acquisitionSection(acquisition) {
 //
 // Every account with a membership is shown, including complimentary,
 // test and reviewer accounts (badged, never hidden) — revenue figures on
-// the Business tab stay genuine-paid-only. Deleted (anonymised) accounts
+// Overview and Money stay genuine-paid-only. Deleted (anonymised) accounts
 // are not customers and are left out, with a count.
 // ============================================================
 let customerMonitorData = null;
 let customerFilter = 'active';
+let customerAudience = 'all';
 let customerSearch = '';
 let openCustomerDetailId = null;
 
@@ -726,7 +689,7 @@ const HEALTH_LABELS = {
 };
 
 const CUSTOMER_FILTERS = ["active", "needs_attention", "setup_incomplete", "healthy", "inactive"];
-const CUSTOMER_FILTER_LABELS = { active: "All customers", needs_attention: "Needs attention", setup_incomplete: "Setup incomplete", healthy: "Healthy", inactive: "Inactive" };
+const CUSTOMER_FILTER_LABELS = { active: "All with access", needs_attention: "Needs attention", setup_incomplete: "Setup incomplete", healthy: "Healthy", inactive: "Inactive" };
 
 const HEALTH_ORDER = ["needs_attention", "setup_incomplete", "healthy", "inactive"];
 
@@ -821,6 +784,45 @@ function describeLatestCallCell(row, nowMs) {
   return { main, delivery, failure: !!(d && d.failure) };
 }
 
+// Audience (2026-09-28): which KIND of account a row is — shown as a
+// badge on every row so a genuine customer is never confused with a
+// test, reviewer or complimentary account. Classification is explicit
+// (account_classifications); a missing one is "Unclassified", never
+// assumed genuine.
+const AUDIENCE_FILTERS = ["all", "genuine", "unclassified", "test"];
+const AUDIENCE_LABELS = { all: "All kinds", genuine: "Genuine", unclassified: "Unclassified", test: "Test / reviewer / admin" };
+
+function audienceOfRow(row) {
+  if (row.classification === "genuine_customer") return "genuine";
+  if (!row.classification || row.classification === "unclassified") return "unclassified";
+  return "test";
+}
+
+function filterRowsByAudience(rows, audience) {
+  if (!audience || audience === "all") return rows || [];
+  return (rows || []).filter((r) => audienceOfRow(r) === audience);
+}
+
+function countAudiences(rows) {
+  const counts = { all: 0, genuine: 0, unclassified: 0, test: 0 };
+  for (const r of rows || []) {
+    if (r.deletedAccount || r.health === "inactive") continue;
+    counts.all += 1;
+    counts[audienceOfRow(r)] += 1;
+  }
+  return counts;
+}
+
+function describeAudienceBadges(row) {
+  const audience = audienceOfRow(row);
+  const badges = [];
+  if (audience === "genuine") badges.push({ label: "Genuine", className: "good" });
+  else if (audience === "unclassified") badges.push({ label: "Unclassified", className: "warn" });
+  else badges.push({ label: (row.account && row.account.testLabel) || "Test", className: "classification" });
+  if (row.everPaid && !(row.account && row.account.kind === "paying")) badges.push({ label: "Paid before", className: "" });
+  return badges;
+}
+
 function escapeHtml(value) {
   return String(value === null || value === undefined ? "" : value)
     .replace(/&/g, "&amp;")
@@ -853,16 +855,22 @@ async function loadCustomerMonitor() {
   try {
     const res = await fetch('/admin/api/customers/onboarding', { credentials: 'include' });
     if (res.redirected || res.status === 403) { setUnauthorized(); return; }
-    if (!res.ok) { showTabError('customers', 'Failed to load customers (' + res.status + ')'); return; }
+    if (!res.ok) { showTabError('customerHealth', 'Failed to load customers (' + res.status + ')'); return; }
     customerMonitorData = await res.json();
     renderCustomersTab();
+    renderAttentionStrip();
   } catch (err) {
-    showTabError('customers', 'Failed to load customers: ' + escapeHtml(err.message));
+    showTabError('customerHealth', 'Failed to load customers: ' + escapeHtml(err.message));
   }
 }
 
 function setCustomerFilter(filter) {
   customerFilter = CUSTOMER_FILTERS.includes(filter) ? filter : 'active';
+  renderCustomersTab();
+}
+
+function setCustomerAudience(audience) {
+  customerAudience = AUDIENCE_FILTERS.includes(audience) ? audience : 'all';
   renderCustomersTab();
 }
 
@@ -892,7 +900,7 @@ function customerMonitorRow(row, nowMs) {
   const isOpen = openCustomerDetailId === row.householdId;
   let html = '<tr class="customer-row health-' + escapeHtml(row.health) + '">' +
     '<td class="cell-customer"><div class="customer-email">' + escapeHtml(row.email) + '</div><div class="customer-sub">Joined ' + escapeHtml(fmtDateTime(row.signedUpAt)) + '</div></td>' +
-    '<td><div>' + escapeHtml(account.label) + (account.testLabel ? ' <span class="status-pill classification">' + escapeHtml(account.testLabel) + '</span>' : '') + '</div>' +
+    '<td><div>' + escapeHtml(account.label) + describeAudienceBadges(row).map((b) => ' <span class="status-pill ' + b.className + '">' + escapeHtml(b.label) + '</span>').join('') + '</div>' +
       (account.sub ? '<div class="customer-sub' + (row.subscriptionIssue ? ' text-warn' : '') + '">' + escapeHtml(account.sub) + '</div>' : '') + '</td>' +
     '<td class="cell-health"><span class="status-pill ' + health.className + '">' + escapeHtml(health.label) + '</span>' +
       (row.health !== 'healthy' ? '<div class="customer-sub">' + escapeHtml(row.healthReason) + '</div>' : '') + '</td>' +
@@ -916,7 +924,8 @@ function renderCustomersTab() {
   const nowMs = new Date(d.generatedAt).getTime();
   const counts = countCustomerHealth(d.rows);
   const s = d.summary || {};
-  const visible = sortCustomerRows(customerRowsForView(d.rows, customerFilter, customerSearch));
+  const visible = sortCustomerRows(customerRowsForView(filterRowsByAudience(d.rows, customerAudience), customerFilter, customerSearch));
+  const audienceCounts = countAudiences(d.rows);
   updateCustomersTabFlag(counts);
 
   let html = '<div class="section"><div class="section-header"><h2>Customers</h2>' +
@@ -924,7 +933,7 @@ function renderCustomersTab() {
 
   const mix = [s.paying ? s.paying + ' paying' : null, s.complimentary ? s.complimentary + ' complimentary' : null, s.trial ? s.trial + ' trial' : null].filter(Boolean).join(' · ') || 'none';
   html += '<div class="summary-strip">' +
-    summaryCard('Customers', counts.active, mix + (s.test ? ' · incl. ' + s.test + ' test/reviewer' : ''), '', 'active') +
+    summaryCard('Accounts with access', counts.active, mix + (s.test ? ' · incl. ' + s.test + ' test/reviewer' : ''), '', 'active') +
     summaryCard('Healthy', counts.healthy, 'protected, no problems seen', 'good', 'healthy') +
     summaryCard('Needs attention', counts.needs_attention, counts.needs_attention ? 'click to see who and why' : 'nothing to investigate', counts.needs_attention ? 'bad' : '', 'needs_attention') +
     summaryCard('Setup incomplete', counts.setup_incomplete, 'not yet protected, nothing wrong seen', counts.setup_incomplete ? 'warn' : '', 'setup_incomplete') +
@@ -935,6 +944,10 @@ function renderCustomersTab() {
     const urgent = f === 'needs_attention' && counts[f] > 0;
     html += '<button type="button" class="filter-chip' + (urgent ? ' urgent' : '') + '" aria-pressed="' + (customerFilter === f ? 'true' : 'false') + '"' +
       ' onclick="setCustomerFilter(\'' + f + '\')">' + CUSTOMER_FILTER_LABELS[f] + ' <span class="chip-count">' + counts[f] + '</span></button>';
+  }
+  html += '<span class="filter-sep" aria-hidden="true"></span>';
+  for (const a of AUDIENCE_FILTERS) {
+    html += '<button type="button" class="filter-chip" aria-pressed="' + (customerAudience === a ? 'true' : 'false') + '" onclick="setCustomerAudience(\'' + a + '\')">' + AUDIENCE_LABELS[a] + ' <span class="chip-count">' + audienceCounts[a] + '</span></button>';
   }
   html += '<input type="search" id="customerSearchInput" class="customer-search" placeholder="Search email, network, device" value="' + escapeHtml(customerSearch) + '" oninput="setCustomerSearch(this.value)">';
   html += '</div>';
@@ -954,7 +967,7 @@ function renderCustomersTab() {
     (d.truncated ? ' Showing the newest households only — list truncated.' : '') + '</p>';
   html += '</div>';
 
-  document.getElementById('customers').innerHTML = html;
+  document.getElementById('customerHealth').innerHTML = html;
   if (openCustomerDetailId && visible.some((r) => r.householdId === openCustomerDetailId)) {
     loadCustomerDetail(openCustomerDetailId);
   }
@@ -971,8 +984,9 @@ async function loadCustomerDetail(householdId) {
     const el = document.getElementById('customerDetail');
     if (!el) return;
     if (!res.ok) { el.innerHTML = '<div class="error">Failed to load (' + res.status + ')</div>'; return; }
-    el.innerHTML = renderCustomerDetailHtml(await res.json());
+    el.innerHTML = renderCustomerDetailHtml(await res.json()) + '<div id="classificationPanel" class="classification-panel"><div class="empty-state">Loading classification…</div></div>';
     wireCustomerDetailActions(householdId);
+    loadClassificationPanel(householdId);
   } catch (err) {
     const el = document.getElementById('customerDetail');
     if (el) el.innerHTML = '<div class="error">Failed to load: ' + escapeHtml(err.message) + '</div>';
@@ -1040,7 +1054,7 @@ function renderCustomerDetailHtml(detail) {
   }
   html += '<button type="button" class="row-button" id="detailCopyIdBtn">Copy household ID</button>';
   html += '</div><div class="quick-action-result" id="detailActionResult"></div>';
-  html += '<p class="customer-sub">Monitoring only — nothing here contacts the customer. Complimentary access and deactivation confirmation are in the Operations tab (paste the household ID).</p>';
+  html += '<p class="customer-sub">Monitoring only — nothing here contacts the customer. Complimentary access is in Operations (paste the household ID). Numbers awaiting deactivation confirmation are listed on Numbers; this page has no confirm button.</p>';
   html += '<details class="tech-details"><summary>Technical details</summary><table>';
   const techRows = [
     ['Household ID', t.householdId],
@@ -1070,6 +1084,94 @@ function renderCustomerDetailHtml(detail) {
   return html;
 }
 // TEST-EXTRACT-END: renderCustomerDetailHtml
+
+// ============================================================
+// ACCOUNT CLASSIFICATION (2026-09-29) — reporting label only. Saving
+// needs a reason and an explicit acknowledgement, sends the value the
+// admin was looking at (a stale edit is refused server-side), and has no
+// effect on access, billing, calls or numbers. History is append-only
+// (migration 055); without 055 the form is disabled, never written
+// without an audit record.
+// ============================================================
+// TEST-EXTRACT-START: classificationPanel
+const CLASSIFICATION_CHOICES = [
+  ['genuine_customer', 'Genuine customer'],
+  ['internal_test', 'Internal test'],
+  ['reviewer', 'Reviewer'],
+  ['other_non_customer', 'Other non-customer'],
+];
+const CLASSIFICATION_LABELS = { genuine_customer: 'Genuine customer', internal_test: 'Internal test', reviewer: 'Reviewer', other_non_customer: 'Other non-customer', admin: 'Admin', qa_automation: 'QA automation', unclassified: 'Unclassified' };
+
+function validateClassificationForm({ current, next, note, acknowledged }) {
+  if (!CLASSIFICATION_CHOICES.some((c) => c[0] === next)) return { ok: false, message: 'Choose a classification.' };
+  if (next === current) return { ok: false, message: 'That is already the classification.' };
+  if (!note || note.trim().length < 3) return { ok: false, message: 'Give a reason (at least 3 characters).' };
+  if (!acknowledged) return { ok: false, message: 'Confirm that this changes reporting only.' };
+  return { ok: true, message: '' };
+}
+
+function renderClassificationPanelHtml(data) {
+  const label = (v) => escapeHtml(CLASSIFICATION_LABELS[v] || v || '—');
+  let html = '<h3 style="margin-top:18px;">Classification</h3>';
+  html += '<p>Current: <strong>' + label(data.current) + '</strong>' + (data.currentNote ? ' <span class="customer-sub">— ' + escapeHtml(data.currentNote) + '</span>' : '') + '</p>';
+  if (data.writable) {
+    html += '<div class="classification-form">' +
+      '<select id="clsNext">' + '<option value="">Change to…</option>' + CLASSIFICATION_CHOICES.filter((c) => c[0] !== data.current).map((c) => '<option value="' + c[0] + '">' + c[1] + '</option>').join('') + '</select>' +
+      '<input type="text" id="clsNote" maxlength="500" placeholder="Reason (required) — e.g. paid by Stripe 6 Sep, real person">' +
+      '<label class="customer-sub"><input type="checkbox" id="clsAck"> This changes reporting only — no effect on access, billing, calls or numbers.</label>' +
+      '<button type="button" class="action-button" id="clsSave" data-current="' + escapeHtml(data.current) + '">Save classification</button>' +
+      '<div class="quick-action-result" id="clsResult"></div></div>';
+  } else {
+    html += '<p class="customer-sub">' + escapeHtml(data.reason || 'Changes are disabled.') + '</p>';
+  }
+  if (data.history && data.history.length) {
+    html += '<table class="fact-table"><tr><th>When</th><th>Change</th><th>Who</th><th>Reason</th></tr>' + data.history.map((e) =>
+      '<tr><td>' + escapeHtml(fmtDateTime(e.created_at)) + '</td><td>' + (e.source === 'baseline' ? 'baseline: ' : label(e.previous_classification || 'unclassified') + ' → ') + label(e.new_classification) + '</td><td>' + escapeHtml(e.changed_by_email || '—') + '</td><td>' + escapeHtml(e.note) + '</td></tr>').join('') + '</table>';
+  } else if (data.history) {
+    html += '<p class="customer-sub">No classification history yet.</p>';
+  }
+  return html;
+}
+// TEST-EXTRACT-END: classificationPanel
+
+async function loadClassificationPanel(householdId) {
+  const el = document.getElementById('classificationPanel');
+  if (!el) return;
+  try {
+    const res = await fetch('/admin/api/households/' + encodeURIComponent(householdId) + '/classification', { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { el.innerHTML = '<div class="error">Classification unavailable: ' + escapeHtml(data.reason || res.status) + '</div>'; return; }
+    el.innerHTML = renderClassificationPanelHtml(data);
+    const save = document.getElementById('clsSave');
+    if (!save) return;
+    save.addEventListener('click', async () => {
+      const out = document.getElementById('clsResult');
+      const form = { current: save.dataset.current, next: document.getElementById('clsNext').value, note: document.getElementById('clsNote').value, acknowledged: document.getElementById('clsAck').checked };
+      const v = validateClassificationForm(form);
+      if (!v.ok) { out.textContent = v.message; return; }
+      save.disabled = true;
+      out.textContent = 'Saving…';
+      try {
+        const r = await fetch('/admin/api/households/' + encodeURIComponent(householdId) + '/classification', {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ classification: form.next, note: form.note, expectedPrevious: form.current }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { out.textContent = body.reason || ('Failed (' + r.status + ')'); save.disabled = false; return; }
+        out.textContent = 'Saved.';
+        loadCustomerMonitor();
+        for (const k of Object.keys(businessControlLoaded)) businessControlLoaded[k] = false;
+        businessControlCache.overview = null;
+        loadClassificationPanel(householdId);
+      } catch (err) {
+        out.textContent = 'Request failed — see console.';
+        save.disabled = false;
+      }
+    });
+  } catch (err) {
+    el.innerHTML = '<div class="error">Classification unavailable: ' + escapeHtml(err.message) + '</div>';
+  }
+}
 
 function wireCustomerDetailActions(householdId) {
   const resultEl = document.getElementById('detailActionResult');
@@ -1126,18 +1228,12 @@ function renderSystemHealthTab(d) {
 }
 
 // ============================================================
-// OPERATIONS TAB — ported from the retired admin.html: raw/diagnostic
-// account totals (moved out of the Business tab so they can never
-// masquerade as commercial performance), protection activity, search,
+// OPERATIONS → ADMIN TOOLS — ported from the retired admin.html: search,
 // provisioning retry, complimentary access administration, launch
 // readiness, recent activity. Uses the existing, unmodified
 // /admin/api/overview endpoint and its existing /admin/api/* actions —
 // no authentication/authorisation change of any kind.
 // ============================================================
-function renderStatCardsHtml(cards) {
-  return cards.map((c) => '<div class="stat-card"><div class="stat-number' + (c.className ? ' ' + c.className : '') + '">' + c.value + '</div><div class="stat-label">' + c.label + '</div></div>').join('');
-}
-
 // Security fix (2026-09): customer emails (and caller numbers, which
 // the caller controls) used to be concatenated into innerHTML raw, so a
 // crafted email address could inject markup/script into the admin page.
@@ -1159,11 +1255,6 @@ function renderCallsHtml(calls) {
     const who = call.householdEmail || 'Unknown household';
     return '<div class="list-item"><div class="list-icon">' + icon + '</div><div class="list-details"><div class="list-title">' + escapeHtml(call.number) + ' — ' + escapeHtml(call.result) + '</div><div class="list-meta">' + escapeHtml(who) + ' · ' + escapeHtml(call.time) + '</div></div></div>';
   }).join('');
-}
-
-function renderBreakdownHtml(rows, emptyMessage) {
-  if (!rows || rows.length === 0) return '<div class="empty-state">' + emptyMessage + '</div>';
-  return rows.map((r) => '<div class="breakdown-row"><span>' + r.status + '</span><span class="breakdown-count">' + r.count + '</span></div>').join('');
 }
 
 function renderLaunchReadinessHtml(launchReadiness) {
@@ -1220,36 +1311,18 @@ function renderSearchResultsHtml(results) {
 // TEST-EXTRACT-END: operationsListRenderers
 
 function renderOperationsTab(data) {
-  let html = '';
-
-  html += '<div class="section"><div class="section-header"><h2>All accounts — raw, diagnostic view</h2></div>';
-  html += '<p class="sub" style="margin-bottom:12px;">Every household regardless of classification, including historical/test/anonymised accounts. Never presented as commercial performance — see the Business tab for real-customer figures.</p>';
-  html += '<div class="stat-grid">' + renderStatCardsHtml([
-    { label: 'Total customers', value: fmtNum(data.businessOverview.totalCustomers) },
-    { label: 'Active paid customers', value: fmtNum(data.businessOverview.activePaidCustomers), className: 'good' },
-    { label: 'Active protected households', value: fmtNum(data.businessOverview.activeProtectedHouseholds), className: 'good' },
-    { label: 'New today', value: fmtNum(data.businessOverview.newCustomersToday) },
-    { label: 'New this week', value: fmtNum(data.businessOverview.newCustomersThisWeek) },
-    { label: 'Monthly recurring revenue (all accounts)', value: formatCurrency(data.businessOverview.mrr) },
-    { label: 'Failed payments', value: fmtNum(data.businessOverview.failedPayments), className: data.businessOverview.failedPayments > 0 ? 'warn' : '' },
-    { label: 'Canceled', value: fmtNum(data.businessOverview.canceled), className: data.businessOverview.canceled > 0 ? 'warn' : '' },
-  ]) + '</div></div>';
-
-  html += '<div class="section"><div class="section-header"><h2>Protection activity (today)</h2></div><div class="stat-grid">' + renderStatCardsHtml([
-    { label: 'Calls processed today', value: fmtNum(data.protectionActivity.callsProcessedToday) },
-    { label: 'Calls blocked today', value: fmtNum(data.protectionActivity.callsBlockedToday), className: data.protectionActivity.callsBlockedToday > 0 ? 'warn' : '' },
-    { label: 'Calls allowed today', value: fmtNum(data.protectionActivity.callsAllowedToday), className: 'good' },
-    { label: 'Unknown callers challenged', value: fmtNum(data.protectionActivity.unknownChallengedToday) },
-    { label: 'Protection rate', value: formatProtectionRate(data.protectionActivity.protectionRate) },
-  ]) + '</div></div>';
-
-  html += '<div class="section"><div class="section-header"><h2>Customer operations</h2></div><div class="columns-3-1">';
+  // Removed 2026-09-28 (duplicates with a different meaning elsewhere):
+  // the raw "All accounts" block (its entitlement × list-price MRR and
+  // "Active paid customers" contradicted Overview's genuine figures), the
+  // "Protection rate" (blocked ÷ processed read as a quality score), and
+  // the subscription / Twilio-number status breakdowns (Customers and
+  // Numbers show the same households with their lifecycle).
+  const failing = data.customerOperations.provisioningFailuresCount;
+  let html = '<div class="section"><div class="section-header"><h2>Admin tools</h2></div><div class="columns-3-1">';
   html += '<div class="subcards">';
   html += '<div class="card"><h3>Recent registrations</h3><div id="opRecentRegistrations">' + renderListHtml(data.customerOperations.recentRegistrations, 'No registrations yet.', describeActivityEvent) + '</div></div>';
-  html += '<div class="card"><h3>Subscription status</h3><div>' + renderBreakdownHtml(data.customerOperations.subscriptionStatusBreakdown, 'No subscriptions yet.') + '</div></div>';
-  html += '<div class="card"><h3>Twilio number status</h3><div>' + renderBreakdownHtml(data.customerOperations.provisioningStatusBreakdown, 'No households yet.') + '</div></div>';
-  html += '<div class="card"><h3>Provisioning failures</h3><div>' + (data.customerOperations.provisioningFailuresCount > 0
-    ? '<div class="stat-number warn">' + data.customerOperations.provisioningFailuresCount + '</div><div class="stat-label">household(s) currently failing provisioning</div>'
+  html += '<div class="card"><h3>Provisioning failures</h3><div>' + (failing > 0
+    ? '<div class="stat-number warn">' + failing + '</div><div class="stat-label">household(s) currently failing provisioning — retry with the household ID</div>'
     : '<div class="empty-state">No provisioning failures.</div>') + '</div></div>';
   html += '</div>';
 
@@ -1275,6 +1348,12 @@ function renderOperationsTab(data) {
     '</div>';
   html += '</div>';
 
+  html += '<div class="section"><div class="section-header"><h2>Due-diligence snapshot</h2></div><div class="card">' +
+    '<p class="sub">Monthly operational snapshot: aggregates only (no emails, numbers or ids), definitions included. Customers and numbers are as of the moment you download; calls are for the chosen month. Keep each month\'s file — nothing is archived automatically yet.</p>' +
+    '<div class="quick-action-row"><input type="month" id="ddMonth" value="' + new Date().toISOString().slice(0, 7) + '">' +
+    '<a class="action-button" id="ddJson" href="#" onclick="this.href=\'/admin/api/business-control/snapshot?download=1&month=\' + document.getElementById(\'ddMonth\').value">Download JSON</a> ' +
+    '<a class="action-button" id="ddMd" href="#" onclick="this.href=\'/admin/api/business-control/snapshot?format=md&month=\' + document.getElementById(\'ddMonth\').value">Download summary (.md)</a></div></div></div>';
+
   html += '<div class="section"><div class="section-header"><h2>Launch readiness</h2></div><div class="card">' + renderLaunchReadinessHtml(data.launchReadiness) + '</div></div>';
 
   html += '<div class="section"><div class="section-header"><h2>Recent activity</h2></div><div class="subcards">';
@@ -1285,7 +1364,7 @@ function renderOperationsTab(data) {
   html += '<div class="card"><h3>Admin actions (this session)</h3><div>' + renderListHtml(data.recentActivityFeed.adminActions, 'No admin actions yet this session.', describeAdminAction) + '</div></div>';
   html += '</div></div>';
 
-  document.getElementById('operations').innerHTML = html;
+  document.getElementById('opsTools').innerHTML = html;
   wireOperationsActions();
 }
 
@@ -1467,6 +1546,734 @@ async function revokeInvite(inviteId) {
     console.error('REVOKE INVITE ERROR:', err);
   }
 }
+
+// ============================================================
+// BUSINESS CONTROL TABS (2026-09-27) — Subscriptions, Reconciliation,
+// Finance, Marketing. Data: /admin/api/business-control/* (admin-only).
+// Each tab loads the first time it is opened (Finance calls Stripe and
+// Twilio read-only, so it is never fetched just because the page loaded).
+// Every figure carries its provenance: ACTUAL / ALLOCATED / ESTIMATED /
+// MANUAL / NOT CONNECTED — a missing source is never shown as £0.
+// Strictly observational: these tabs only issue GET requests.
+// All data-derived values are rendered through escapeHtml.
+// ============================================================
+// TEST-EXTRACT-START: businessControlTabs
+// ============================================================
+// BUSINESS CONTROL CENTRE (2026-09-27, v2) — Overview, Subscriptions,
+// Reconciliation, Finance, Marketing. Data: /admin/api/business-control/*
+// (admin-only, GET-only). Each tab loads the first time it is opened.
+// Colours come from explicit factual rules shown on each card; every
+// figure carries its provenance (ACTUAL / ALLOCATED / ESTIMATED / MANUAL /
+// NOT CONNECTED) and a missing source is never shown as £0.
+// Strictly observational: these tabs only issue GET requests. All
+// data-derived values are rendered through escapeHtml.
+// ============================================================
+const businessControlLoaded = {};
+const businessControlCache = {};
+// Sections fetched from /admin/api/business-control/*, by the tab that
+// shows them. Each section loads the first time its tab opens.
+const BUSINESS_CONTROL_TABS = ['overviewBody', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'usageSafety'];
+const TAB_SECTIONS = { overview: ['overviewBody'], customers: ['subscriptions'], numbers: ['reconciliation'], money: ['finance', 'marketing'], operations: ['usageSafety'] };
+
+// TEST-EXTRACT-START: businessControlHelpers
+const PROVENANCE_BADGES = {
+  ACTUAL: { label: 'Actual', className: 'prov-actual' },
+  ALLOCATED: { label: 'Allocated', className: 'prov-allocated' },
+  ESTIMATED: { label: 'Estimated', className: 'prov-estimated' },
+  MANUAL: { label: 'Manual', className: 'prov-manual' },
+  NOT_CONNECTED: { label: 'Not connected', className: 'prov-none' },
+  NOT_CAPTURED: { label: 'Not captured', className: 'prov-none' },
+  PARTIAL: { label: 'Partial', className: 'prov-estimated' },
+  MIXED: { label: 'Mixed', className: 'prov-mixed' },
+};
+
+const STATUS_STYLES = {
+  red: { label: 'Action needed', className: 'st-red' },
+  amber: { label: 'Check', className: 'st-amber' },
+  green: { label: 'OK', className: 'st-green' },
+  grey: { label: 'Cannot check', className: 'st-grey' },
+  info: { label: 'Count', className: 'st-info' },
+};
+
+function provenanceBadge(provenance) {
+  const b = PROVENANCE_BADGES[provenance] || { label: String(provenance || '—'), className: 'prov-none' };
+  return '<span class="prov-badge ' + b.className + '">' + escapeHtml(b.label) + '</span>';
+}
+
+function statusBadge(status) {
+  const s = STATUS_STYLES[status] || { label: String(status || '—'), className: 'st-grey' };
+  return '<span class="st-badge ' + s.className + '">' + escapeHtml(s.label) + '</span>';
+}
+
+function formatGbpOrMissing(amount) {
+  if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) return 'Not connected';
+  const n = Number(amount);
+  const s = '£' + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n < 0 ? '−' + s : s;
+}
+
+// A total: complete → the figure; partial → "known part only"; nothing
+// known → "Not connected". Never a figure that pretends to be complete.
+function describeTotal(total) {
+  if (!total || total.amountGbp === null || total.amountGbp === undefined) return { text: 'Not connected', incomplete: true, note: 'not connected' };
+  if (total.complete) return { text: formatGbpOrMissing(total.amountGbp), incomplete: false, note: 'complete' };
+  return { text: formatGbpOrMissing(total.amountGbp), incomplete: true, note: 'known part only' };
+}
+
+function reconciliationBanner(overall, actionCount, watchCount) {
+  if (overall === 'ACTION_REQUIRED') return { className: 'not_ready', text: 'ACTION REQUIRED — ' + actionCount + ' household/number' + (actionCount === 1 ? '' : 's') + ' need action' + (watchCount ? ' · ' + watchCount + ' to watch' : '') };
+  if (overall === 'WATCH') return { className: 'ready_with_open_items', text: 'OK, with ' + watchCount + ' item' + (watchCount === 1 ? '' : 's') + ' to watch' };
+  return { className: 'ready', text: 'OK — every number matches its subscription and lifecycle' };
+}
+
+function chainStageClass(stage) {
+  const good = { active: 1, assigned: 1, yes: 1, released: 1, done: 1 };
+  const bad = { failed: 1, 'awaiting confirmation': 1, broken: 1 };
+  if (good[stage.state]) return 'chain-good';
+  if (bad[stage.state]) return 'chain-bad';
+  if (stage.state === 'no' || stage.state === 'none' || stage.state === 'na') return 'chain-off';
+  return 'chain-neutral';
+}
+
+function overallBanner(overview) {
+  if (overview.overall === 'red') return { className: 'not_ready', text: 'Loose ends found — ' + overview.counts.red + ' card' + (overview.counts.red === 1 ? '' : 's') + ' need action' };
+  if (overview.overall === 'amber') return { className: 'ready_with_open_items', text: 'No broken states, ' + overview.counts.amber + ' item' + (overview.counts.amber === 1 ? '' : 's') + ' to check' };
+  return { className: 'ready', text: 'Nothing to act on' + (overview.incomplete ? ' in what could be checked' : '') };
+}
+// TEST-EXTRACT-END: businessControlHelpers
+
+async function fetchBusinessControl(path) {
+  const res = await fetch('/admin/api/business-control/' + path, { credentials: 'include' });
+  if (res.redirected || res.status === 403) throw new Error('Not authorized');
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.reason || ('Failed (' + res.status + ')'));
+  return body;
+}
+
+async function fetchOverviewOnce(force) {
+  if (!businessControlCache.overview || force) businessControlCache.overview = await fetchBusinessControl('overview');
+  return businessControlCache.overview;
+}
+
+function loadBusinessControlTab(name, force) {
+  if (!BUSINESS_CONTROL_TABS.includes(name)) return;
+  if (businessControlLoaded[name] && !force) return;
+  businessControlLoaded[name] = true;
+  const el = document.getElementById(name);
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  const loaders = { overviewBody: renderOverviewTab, subscriptions: renderSubscriptionsTab, reconciliation: renderReconciliationTab, finance: renderFinanceTab, marketing: renderMarketingTab, usageSafety: renderUsageSafetyTab };
+  loaders[name](force).catch((err) => { el.innerHTML = '<div class="error">' + escapeHtml(err.message) + '</div>'; businessControlLoaded[name] = false; });
+}
+
+function sectionHeader(title, generatedAt, tab) {
+  return '<div class="section-header"><h2>' + title + '</h2><span class="last-updated">Updated ' + escapeHtml(fmtDateTime(generatedAt)) +
+    ' · <a href="#" onclick="loadBusinessControlTab(\'' + tab + '\', true);return false;">refresh</a></span></div>';
+}
+
+function bcCard(label, value, sub, className) {
+  return '<div class="card' + (className ? ' ' + className : '') + '"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + value + '</div>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
+}
+
+// ---------- Overview ----------
+const GLOSSARY_ROWS = [
+  ['Account / household', 'Any registered household. Neutral: not necessarily a customer.'],
+  ['Genuine customer', 'Explicitly classified as a genuine customer. Never inferred.'],
+  ['Internal test / reviewer / admin / QA', 'Explicitly classified non-customer accounts. Visible everywhere, never counted as customers or revenue.'],
+  ['Unclassified', 'Not yet classified. Not counted as a customer or revenue until classified.'],
+  ['Paid / complimentary / trial access', 'The type of the current entitlement.'],
+  ['Genuine paying customer', 'A genuine customer with paid access now.'],
+  ['Payment history / former paying', 'A paid membership was recorded at some point (any status); former paying = no paid access now. Stripe test / Apple sandbox rows look the same, so this is not proof money was received.'],
+  ['Cancelled', 'No current or upcoming membership; the subscription was cancelled or access revoked.'],
+  ['Expired', 'No current or upcoming membership; the last one ended by date.'],
+  ['Protected', 'Current membership + delivery confirmed + app registered (the customer-facing definition).'],
+  ['Entitled but not protected', 'Current membership, not (yet) Protected.'],
+  ['Revenue / MRR', 'Money from genuine customers only, read from the payment provider. Never an entitlement count multiplied by the list price.'],
+];
+
+// Overview cards in three groups, so the page reads top-down:
+// who are my customers → are they protected → what am I paying for.
+const OVERVIEW_GROUPS = [
+  { title: 'Customers & revenue', ids: ['genuine_paying', 'paid_unclassified', 'non_paying_access', 'mrr'] },
+  { title: 'Protection', ids: ['protected', 'entitled_not_protected', 'entitled_missing_number'] },
+  { title: 'Numbers & cost', ids: ['provider_numbers', 'households_with_number', 'unmapped_numbers', 'lapsed_retaining_number', 'pending_release_quarantine', 'lifecycle_anomalies'] },
+];
+
+function groupOverviewCards(cards) {
+  const byId = new Map((cards || []).map((c) => [c.id, c]));
+  const used = new Set();
+  const groups = OVERVIEW_GROUPS.map((g) => ({ title: g.title, cards: g.ids.map((id) => byId.get(id)).filter(Boolean) }));
+  for (const g of groups) for (const c of g.cards) used.add(c.id);
+  const rest = (cards || []).filter((c) => !used.has(c.id));
+  if (rest.length) groups.push({ title: 'Other checks', cards: rest });
+  return groups.filter((g) => g.cards.length);
+}
+
+// "Needs your attention" (2026-09-29): actionable exceptions only,
+// grouped by topic and de-duplicated by household, each with WHAT / WHO /
+// WHEN / WHY / NEXT. Pure: takes the cached payloads (any may be null).
+// Deliberately excluded: "entitled but not protected" (new customers
+// setting up — Customers raises it only once overdue), info counts, and
+// green/grey cards (grey feeds the single data-freshness item).
+const ATTENTION_TOPICS = {
+  delivery: { title: 'Calls not reaching customers', why: 'A customer who believes they are protected may be missing calls.', next: 'Open the customer: check the latest call\'s Twilio and phone outcome and whether the app is registered; contact them if the app was offline.', tab: 'customers' },
+  voice_sdk: { title: 'App not registered for calls', why: 'Calls forwarded to HCG cannot ring the customer\'s phone.', next: 'Ask the customer to open the app (it re-registers) and check the app version.', tab: 'customers' },
+  provisioning: { title: 'Entitled households without a working HCG number', why: 'The customer cannot forward calls anywhere.', next: 'Retry provisioning (Operations → Admin tools, household ID); check the recorded error.', tab: 'customers' },
+  setup_overdue: { title: 'Setup overdue', why: 'Paying for protection that is not active yet.', next: 'Contact the customer to finish forwarding setup; check network/device are recorded.', tab: 'customers' },
+  number_lifecycle: { title: 'Number lifecycle anomalies', why: 'A number may be released from someone who still needs it, or kept (and billed) for someone who does not.', next: 'Open Numbers and follow each row\'s next step. Nothing is released from the dashboard.', tab: 'numbers' },
+  numbers_cost: { title: 'Numbers billed with no customer behind them', why: 'Recurring rental for staging, orphan or unmapped numbers.', next: 'Open Numbers: check each number\'s inbound calls and environment before any decision.', tab: 'numbers' },
+  classification: { title: 'Accounts that need classifying', why: 'Unclassified accounts are in no customer or revenue figure — a real payer can be invisible.', next: 'Customers → View → Classification (reason required; no effect on access or billing).', tab: 'customers' },
+  payments: { title: 'Payments not attributed', why: 'Revenue figures exclude these until they are.', next: 'Open Money; classify the paying account, or note App Store revenue is not connected.', tab: 'money' },
+  finance: { title: 'Spend safety', why: 'Provider spend is above normal, or cannot be observed.', next: 'Open Money: read the level reasons and check the provider console. Recommended actions are listed; none are executed.', tab: 'money' },
+  usage: { title: 'Unusual usage or unrecorded call outcomes', why: 'Monitored minutes and inbound minutes are billed per call, and only the per-call monitoring limit is enforced today.', next: 'Open Operations → Usage & cost safety: each signal lists its rule and the calls behind it. Nothing is blocked from the dashboard.', tab: 'operations' },
+  system: { title: 'System components not confirmed healthy', why: 'Calls, payments or alerts may be failing silently.', next: 'Operations → System health: each component states its evidence.', tab: 'operations' },
+  other_checks: { title: 'Other checks flagged', why: 'A dashboard check found something outside its normal state.', next: 'Open the Overview card for its rule and the affected items.', tab: 'overview' },
+  data_freshness: { title: 'Some checks could not run', why: 'Missing data is not the same as zero or "fine".', next: 'Treat these figures as unknown until their source is connected or refreshed.', tab: 'overview' },
+};
+const CARD_TOPIC = {
+  entitled_missing_number: 'provisioning', lifecycle_anomalies: 'number_lifecycle', lapsed_retaining_number: 'number_lifecycle',
+  pending_release_quarantine: 'number_lifecycle', unmapped_numbers: 'numbers_cost', paid_unclassified: 'classification',
+  non_paying_access: 'classification', mrr: 'payments',
+};
+const ATTENTION_SEVERITY_RANK = { red: 0, amber: 1 };
+
+function customerTopic(row) {
+  const reason = String(row.healthReason || '');
+  if (row.lastDelivery && row.lastDelivery.failure) return 'delivery';
+  if (/deliver/i.test(reason)) return 'delivery';
+  if (/app|voice sdk|registered/i.test(reason)) return 'voice_sdk';
+  if (/provision|hcg number|number problem/i.test(reason)) return 'provisioning';
+  return 'setup_overdue';
+}
+
+function buildAttentionItems(overview, customers, business) {
+  const groups = new Map();
+  const add = (topic, severity, { detail = null, who = [], when = null } = {}) => {
+    if (!ATTENTION_TOPICS[topic]) return;
+    const g = groups.get(topic) || { topic, ...ATTENTION_TOPICS[topic], severity, details: [], who: new Map(), when: null };
+    if (ATTENTION_SEVERITY_RANK[severity] < ATTENTION_SEVERITY_RANK[g.severity]) g.severity = severity;
+    if (detail && !g.details.includes(detail)) g.details.push(detail);
+    for (const w of who) {
+      const key = w.householdId || w.number || w.email;
+      if (!key) continue;
+      const prev = g.who.get(key);
+      g.who.set(key, { label: w.email || w.number || String(w.householdId).slice(0, 8), detail: prev && prev.detail && w.detail && prev.detail !== w.detail ? prev.detail + '; ' + w.detail : (prev && prev.detail) || w.detail || null });
+    }
+    if (when && (!g.when || when > g.when)) g.when = when;
+    groups.set(topic, g);
+  };
+
+  if (overview && overview.cards) {
+    for (const c of overview.cards) {
+      if (c.status === 'grey') { add('data_freshness', 'amber', { detail: c.label + ': ' + c.value }); continue; }
+      if (c.status !== 'red' && c.status !== 'amber') continue;
+      if (c.id === 'entitled_not_protected') continue; // normal setup; Customers raises it once overdue
+      // A new check without a topic is never dropped silently.
+      const topic = CARD_TOPIC[c.id] || 'other_checks';
+      // Only the unclassified part of "non-paying access" is actionable.
+      const items = c.id === 'non_paying_access' ? (c.items || []).filter((i) => /unclassified/.test(i.detail || '')) : (c.items || []);
+      if (c.id === 'non_paying_access' && !items.length) continue;
+      add(topic, c.status, { detail: c.label + ': ' + (c.id === 'non_paying_access' ? items.length + ' unclassified with access' : c.value), who: items });
+    }
+  }
+  if (overview && overview.financialSafety) {
+    const f = overview.financialSafety;
+    if (f.state === 'stale' || f.state === 'load_failed') add('finance', 'red', { detail: f.state === 'stale' ? 'Cost data is stale — spend since then is unobserved' : 'Cost data could not be loaded', when: f.asOf });
+    if (f.level === 'EMERGENCY' || f.level === 'ALERT') add('finance', 'red', { detail: 'Level ' + f.level, when: f.asOf });
+    else if (f.level === 'WATCH') add('finance', 'amber', { detail: 'Level WATCH', when: f.asOf });
+    for (const w of f.warnings || []) if (w.severity === 'critical') add('finance', 'red', { detail: w.text, when: f.asOf });
+  }
+  if (overview && overview.usageSafety) {
+    const u = overview.usageSafety;
+    if (!u.available) add('data_freshness', 'amber', { detail: 'Usage & cost safety: ' + (u.reason || 'unavailable') });
+    else {
+      if (u.truncated) add('usage', 'amber', { detail: 'Too many calls to load in full — usage figures incomplete' });
+      for (const s of u.signals || []) add('usage', s.severity, { detail: s.title + ': ' + s.count, who: (s.items || []).filter((i) => i.householdId).map((i) => ({ householdId: i.householdId, email: i.label, detail: i.detail })) });
+    }
+  }
+  if (customers && customers.rows) {
+    for (const r of customers.rows) {
+      if (r.deletedAccount || r.health !== 'needs_attention') continue;
+      const when = (r.lastDelivery && r.lastDelivery.at) || (r.latestCall && r.latestCall.at) || null;
+      add(customerTopic(r), 'red', { who: [{ householdId: r.householdId, email: r.email, detail: r.healthReason }], when });
+    }
+  }
+  if (business && business.systemHealth) {
+    for (const [name, comp] of Object.entries(business.systemHealth.components || {})) {
+      if (comp.status === 'RED') add('system', 'red', { detail: name + ' — ' + comp.reason, when: business.generatedAt });
+      else if (comp.status === 'AMBER') add('system', 'amber', { detail: name + ' — ' + comp.reason, when: business.generatedAt });
+    }
+  }
+
+  return [...groups.values()]
+    .map((g) => ({ topic: g.topic, severity: g.severity, what: g.title, details: g.details, who: [...g.who.values()], affected: g.who.size, when: g.when, why: g.why, next: g.next, tab: g.tab }))
+    .sort((x, y) => ATTENTION_SEVERITY_RANK[x.severity] - ATTENTION_SEVERITY_RANK[y.severity] || y.affected - x.affected);
+}
+
+function renderAttentionItemHtml(it) {
+  const whoList = it.who.slice(0, 3).map((w) => escapeHtml(w.label)).join(', ') + (it.who.length > 3 ? ' +' + (it.who.length - 3) + ' more' : '');
+  let html = '<li class="att-' + escapeHtml(it.severity) + '"><div class="att-body">' +
+    '<div class="att-what">' + statusBadge(it.severity) + ' <strong>' + escapeHtml(it.what) + '</strong>' + (it.affected ? ' <span class="customer-sub">(' + it.affected + ')</span>' : '') + '</div>';
+  if (it.details.length) html += '<div class="customer-sub">' + it.details.slice(0, 3).map(escapeHtml).join(' · ') + (it.details.length > 3 ? ' · +' + (it.details.length - 3) : '') + '</div>';
+  if (it.who.length) html += '<div class="customer-sub">Affects: ' + whoList + '</div>';
+  if (it.when) html += '<div class="customer-sub">Latest: ' + escapeHtml(fmtDateTime(it.when)) + '</div>';
+  html += '<div class="customer-sub">Why it matters: ' + escapeHtml(it.why) + '</div>';
+  html += '<div class="customer-sub">Next: ' + escapeHtml(it.next) + ' <a href="#' + escapeHtml(it.tab) + '" onclick="switchTab(\'' + escapeHtml(it.tab) + '\');return false;">open</a></div>';
+  if (it.who.length > 3) html += '<details><summary class="customer-sub">All affected</summary><ul class="sub">' + it.who.map((w) => '<li>' + escapeHtml(w.label) + (w.detail ? ' — ' + escapeHtml(w.detail) : '') + '</li>').join('') + '</ul></details>';
+  return html + '</div></li>';
+}
+
+function renderAttentionStrip() {
+  const el = document.getElementById('attention');
+  if (!el) return;
+  // typeof guards: these page globals are declared outside this block.
+  const customers = typeof customerMonitorData !== 'undefined' ? customerMonitorData : null;
+  const business = typeof lastBusinessData !== 'undefined' ? lastBusinessData : null;
+  const items = buildAttentionItems(businessControlCache.overview, customers, business);
+  const pending = [!businessControlCache.overview && 'checks', !customers && 'customers', !business && 'system health'].filter(Boolean);
+  let html = '<div class="section"><div class="section-header"><h2>Needs your attention' + (items.length ? ' (' + items.length + ')' : '') + '</h2></div>';
+  if (!items.length) {
+    const base = businessControlCache.overview ? overallBanner(businessControlCache.overview).text : 'Nothing found yet';
+    html += '<div class="readiness-banner ready">' + escapeHtml(base) + (pending.length ? ' · still loading ' + escapeHtml(pending.join(', ')) : '') + '</div>';
+  } else {
+    html += '<ul class="attention-list">' + items.map(renderAttentionItemHtml).join('') + '</ul>';
+    if (pending.length) html += '<p class="sub">Still loading: ' + escapeHtml(pending.join(', ')) + '</p>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+async function renderOverviewTab(force) {
+  const d = await fetchOverviewOnce(force);
+  renderAttentionStrip();
+  let html = '<div class="section">' + sectionHeader('Checks', d.generatedAt, 'overviewBody');
+  html += '<p class="sub">Genuine = explicitly classified genuine customer; test, reviewer, admin, complimentary and unclassified accounts are never counted as customers or revenue. Each card states the rule behind its colour — open "rule &amp; items".</p>';
+  for (const g of groupOverviewCards(d.cards)) {
+    html += '<div class="control-group-title">' + escapeHtml(g.title) + '</div>';
+    html += '<div class="control-grid">' + g.cards.map((c) =>
+      '<div class="control-card ' + (STATUS_STYLES[c.status] || STATUS_STYLES.grey).className + '">' +
+        '<div class="control-head"><span class="control-label">' + escapeHtml(c.label) + '</span>' + statusBadge(c.status) + '</div>' +
+        '<div class="control-value">' + escapeHtml(c.value) + '</div>' +
+        (c.sub ? '<div class="sub">' + escapeHtml(c.sub) + '</div>' : '') +
+        '<details class="card-items"><summary>rule' + (c.items && c.items.length ? ' &amp; ' + c.items.length + ' item' + (c.items.length === 1 ? '' : 's') : '') + '</summary>' +
+          '<div class="control-rule">' + escapeHtml(c.rule) + '</div>' +
+          (c.items && c.items.length ? '<ul>' + c.items.map((it) => '<li>' + escapeHtml(it.email || it.number || it.householdId || '—') + (it.detail ? ' <span class="customer-sub">— ' + escapeHtml(it.detail) + '</span>' : '') + '</li>').join('') + '</ul>' : '') +
+        '</details>' +
+      '</div>').join('') + '</div>';
+  }
+  html += '<p class="sub" style="margin-top:12px;">Stripe: ' + escapeHtml(d.stripe.mode === 'live' ? 'live mode' : d.stripe.mode === 'test' ? 'TEST mode — no real revenue in this environment' : (d.stripe.reason || d.stripe.mode)) + ' · Release failures: ' + escapeHtml(d.inventory ? d.inventory.releaseFailureRecording : 'provider inventory unavailable') + '</p>';
+  html += '<details style="margin-top:14px;"><summary>Definitions used on every tab</summary><table class="fact-table" style="margin-top:8px;">' + GLOSSARY_ROWS.map((r) => '<tr><td>' + escapeHtml(r[0]) + '</td><td>' + escapeHtml(r[1]) + '</td></tr>').join('') + '</table></details>';
+  html += '</div>';
+  document.getElementById('overviewBody').innerHTML = html;
+}
+
+// ---------- Subscriptions ----------
+async function renderSubscriptionsTab() {
+  const d = await fetchBusinessControl('subscriptions');
+  const c = d.counts;
+  const src = Object.entries(c.activePaidSubscriptions.bySource).map(([k, v]) => escapeHtml(k) + ' ' + v).join(' · ') || 'none';
+  const m = c.membership || {};
+  const p = c.protection || {};
+  const ph = c.paymentHistory || {};
+  let html = '<div class="section">' + sectionHeader('Memberships &amp; payment history', d.generatedAt, 'subscriptions');
+  html += '<p class="sub" style="margin-bottom:14px;">Counts per account kind. Genuine = explicitly classified genuine customer; test, reviewer, admin and unclassified accounts are never counted as customers or revenue. Protection counts are on Overview.</p>';
+  html += '<div class="cards">' +
+    bcCard('Genuine paying now', fmtNum(c.genuinePayingCustomers), 'genuine + current paid access', 'bc-primary') +
+    bcCard('Genuine former paying', fmtNum(ph.genuineFormerPaying), fmtNum(ph.genuineEverPaid) + ' genuine account(s) ever paid') +
+    bcCard('Paid before, not classified', fmtNum(ph.unclassifiedEverPaid), ph.unclassifiedEverPaid ? 'counted nowhere until classified — see list below' : 'none', ph.unclassifiedEverPaid ? 'bc-warn' : '') +
+    bcCard('Paid access (all accounts)', fmtNum(c.activePaidSubscriptions.total), fmtNum(c.activePaidSubscriptions.genuine) + ' genuine · ' + src) +
+    bcCard('Complimentary access', fmtNum(c.complimentary), 'current, no payment') +
+    bcCard('Trial access', fmtNum(c.trial), 'current free trial') +
+    bcCard('Test / reviewer / admin / QA with access', fmtNum(c.nonGenuineWithActiveAccess), fmtNum(c.nonGenuineAccounts.reviewer) + ' reviewer, ' + fmtNum(c.nonGenuineAccounts.internal_test) + ' test, ' + fmtNum(c.nonGenuineAccounts.admin) + ' admin, ' + fmtNum(c.nonGenuineAccounts.qa_automation) + ' QA accounts in total') +
+    bcCard('Unclassified with access', fmtNum(c.unclassifiedWithActiveAccess), 'not counted either way until classified') +
+    bcCard('Cancelling at period end', fmtNum(c.cancellingAtPeriodEnd.total), fmtNum(c.cancellingAtPeriodEnd.genuine) + ' genuine') +
+    bcCard('Payment issue', fmtNum(c.paymentIssue.total), fmtNum(c.paymentIssue.genuine) + ' genuine') +
+    bcCard('Cancelled / expired', fmtNum(m.cancelled) + ' / ' + fmtNum(m.expired), 'no current or upcoming membership') +
+    bcCard('New genuine paying', fmtNum(c.newGenuinePayingLast7d) + ' / ' + fmtNum(c.newGenuinePayingLast30d), 'last 7 / 30 days') +
+    bcCard('Churn (30 days)', d.churn.available ? escapeHtml(d.churn.rate) + '%' : '—', d.churn.available ? escapeHtml(d.churn.lost + ' of ' + d.churn.base + ' genuine paying customers') : escapeHtml(d.churn.reason)) +
+    '</div>';
+  html += '<div class="sub" style="margin-top:8px;">' + fmtNum(c.households) + ' accounts · ' + fmtNum(c.deletedAccounts) + ' deleted (anonymised) accounts excluded.</div>';
+  if (d.needsClassification.length) {
+    html += '<h3 style="margin-top:22px;">Needs classification (' + d.needsClassification.length + ')</h3>';
+    html += '<p class="sub">Classify each as genuine customer or test / reviewer / admin / QA (account_classifications). Until then it is in no customer or revenue figure.</p>';
+    html += '<table><tr><th>Account</th><th>Why it needs classifying</th><th>Access now</th></tr>' + d.needsClassification.map((n) => '<tr><td>' + escapeHtml(n.email) + '</td><td>' + escapeHtml(n.reason || 'has access') + '</td><td>' + escapeHtml(n.entitlementType || 'none') + '</td></tr>').join('') + '</table>';
+  }
+  html += '</div>';
+  document.getElementById('subscriptions').innerHTML = html;
+}
+
+// ---------- Reconciliation ----------
+function timelineHtml(timeline) {
+  if (!timeline || !timeline.steps || !timeline.steps.length) return '<span class="text-muted">number only</span>';
+  return '<div class="lc-steps">' + timeline.steps.map((s, i) =>
+    '<span class="lc-step ' + chainStageClass(s) + (timeline.firstBroken === i ? ' lc-first-broken' : '') + '" title="' + escapeHtml((s.note || '') + (s.at ? ' (' + fmtDateTime(s.at) + ')' : '')) + '">' +
+      escapeHtml(s.label) + (s.at ? ' <small>' + escapeHtml(String(s.at).slice(0, 10)) + '</small>' : '') + '</span>').join('<span class="lc-arrow">→</span>') + '</div>' +
+    (timeline.firstBroken !== null ? '<div class="text-bad customer-sub">First broken step: ' + escapeHtml(timeline.steps[timeline.firstBroken].label) + ' — ' + escapeHtml(timeline.steps[timeline.firstBroken].note || '') + '</div>' : '');
+}
+
+// Safe number-release review — PROTOTYPE, NOT WIRED (2026-09-29).
+// The server decides blockers (services/numberLifecycle/releaseReadiness.js);
+// this panel shows the evidence, re-checks the page's age, and collects the
+// confirmations a future release would require. The final button is
+// always disabled: nothing here can release a number.
+let openReleaseReviewSid = null;
+
+function releaseReviewBlockers(review, generatedAt, nowMs) {
+  const blockers = (review && review.blockers ? review.blockers.slice() : []);
+  const gen = generatedAt ? new Date(generatedAt).getTime() : NaN;
+  if (!Number.isFinite(gen) || nowMs - gen > 10 * 60 * 1000) {
+    if (!blockers.some((b) => b.code === 'STALE_VIEW')) blockers.push({ code: 'STALE_VIEW', text: 'This view is more than 10 minutes old. Reload before reviewing a release.' });
+  }
+  return blockers;
+}
+
+function releaseChecklistStatus(review, answers) {
+  if (!review || !review.confirmations || !review.confirmations.length) return { ok: false, message: 'Blocked — resolve every blocker first.' };
+  for (const c of review.confirmations) {
+    if (c.id === 'typed_last4' && String(answers.typed_last4 || '').trim() !== c.expect) return { ok: false, message: 'The typed digits do not match this number.' };
+    if (c.id === 'reason' && String(answers.reason || '').trim().length < 10) return { ok: false, message: 'Give a reason (at least 10 characters).' };
+    if ((c.id === 'forwarding_removed' || c.id === 'calls_checked') && answers[c.id] !== true) return { ok: false, message: 'Every confirmation must be ticked.' };
+  }
+  return { ok: true, message: 'All checks complete. Release is NOT wired in this prototype — nothing will happen.' };
+}
+
+function renderReleaseReviewHtml(row, generatedAt, nowMs) {
+  const review = row.releaseReview || { blockers: [], confirmations: [], evidence: {} };
+  const blockers = releaseReviewBlockers(review, generatedAt, nowMs);
+  const ev = review.evidence || {};
+  const fact = (k, v) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v === null || v === undefined || v === '' ? '—' : v) + '</td></tr>';
+  let html = '<div class="release-review"><div class="readiness-banner not_ready">PROTOTYPE — release is not wired. Nothing on this panel can release a number.</div>';
+  html += '<table class="fact-table">' + fact('Number', ev.number) + fact('Provider SID', ev.sid) + fact('Category', ev.category) + fact('Environment', ev.environment) +
+    fact('Household', ev.household) + fact('Classification', ev.classification) + fact('Membership / access', [ev.membership, ev.access].filter(Boolean).join(' · ')) +
+    fact('Membership ended', ev.membershipEndedAt ? String(ev.membershipEndedAt).slice(0, 10) : null) + fact('Grace period ends / release scheduled', ev.graceEndsAt ? String(ev.graceEndsAt).slice(0, 10) : 'not scheduled') +
+    fact('Quarantine', ev.quarantine ? (ev.quarantine.confirmed ? 'deactivation confirmed' : 'awaiting deactivation confirmation') + (ev.quarantine.reason ? ' (' + ev.quarantine.reason + ')' : '') : 'no') +
+    fact('Last inbound call', ev.lastInboundCall ? fmtDateTime(ev.lastInboundCall) : ev.lastInboundCallSource) + fact('Lifecycle state', ev.lifecycleState) + '</table>';
+  if (blockers.length) {
+    html += '<h4 class="text-bad">Blocked (' + blockers.length + ')</h4><ul>' + blockers.map((b) => '<li class="text-bad">' + escapeHtml(b.text) + '</li>').join('') + '</ul>';
+  } else {
+    html += '<h4>Confirmations a release would require</h4><div class="classification-form">' + review.confirmations.map((c) =>
+      c.id === 'typed_last4' ? '<label class="customer-sub">' + escapeHtml(c.text) + ' <input type="text" id="rr_typed_last4" maxlength="4" inputmode="numeric"></label>'
+      : c.id === 'reason' ? '<label class="customer-sub">' + escapeHtml(c.text) + ' <input type="text" id="rr_reason" maxlength="300"></label>'
+      : '<label class="customer-sub"><input type="checkbox" id="rr_' + escapeHtml(c.id) + '"> ' + escapeHtml(c.text) + '</label>').join('') + '</div>';
+  }
+  html += '<button type="button" class="action-button" disabled title="Not wired — prototype">Release number (not available)</button> <span class="customer-sub" id="rrStatus">' + escapeHtml(blockers.length ? 'Blocked — resolve every blocker first.' : 'Complete every confirmation.') + '</span></div>';
+  return html;
+}
+
+function toggleReleaseReview(sid) {
+  openReleaseReviewSid = openReleaseReviewSid === sid ? null : sid;
+  businessControlLoaded.reconciliation = false;
+  loadBusinessControlTab('reconciliation');
+}
+
+function wireReleaseReview(row, generatedAt) {
+  const status = document.getElementById('rrStatus');
+  if (!status || !row || !row.releaseReview || !row.releaseReview.confirmations.length) return;
+  const read = () => ({
+    typed_last4: (document.getElementById('rr_typed_last4') || {}).value,
+    reason: (document.getElementById('rr_reason') || {}).value,
+    forwarding_removed: !!(document.getElementById('rr_forwarding_removed') || {}).checked,
+    calls_checked: !!(document.getElementById('rr_calls_checked') || {}).checked,
+  });
+  const update = () => {
+    if (releaseReviewBlockers(row.releaseReview, generatedAt, Date.now()).length) { status.textContent = 'Blocked — this view is stale; reload.'; return; }
+    status.textContent = releaseChecklistStatus(row.releaseReview, read()).message;
+  };
+  for (const id of ['rr_typed_last4', 'rr_reason', 'rr_forwarding_removed', 'rr_calls_checked']) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', update);
+  }
+}
+
+function inventoryHtml(inv, reason, generatedAt) {
+  if (!inv) return '<div class="gaps">Twilio number inventory unavailable: ' + escapeHtml(reason || 'unknown') + '</div>';
+  const r = inv.monthlyRental;
+  const money = (v) => (v === null || v === undefined ? 'Not connected' : escapeHtml((r.currency || 'GBP') === 'GBP' ? '£' + Number(v).toFixed(2) : r.currency + ' ' + Number(v).toFixed(2)));
+  let html = '<p class="sub">' + fmtNum(inv.providerNumberCount) + ' number(s) on the provider account · ' + (r.perNumber !== null ? money(r.allNumbers) + '/month (' + escapeHtml(r.basis) + ')' : 'rental Not connected') + '</p>';
+  if (inv.needsReview) {
+    html += '<div class="readiness-banner ' + (inv.needsReview.count ? 'ready_with_open_items' : 'ready') + '">' +
+      (inv.needsReview.count ? 'Possibly unnecessary: ' + fmtNum(inv.needsReview.count) + ' number(s) ≈ ' + money(inv.needsReview.monthlyCost) + '/month' : 'No numbers flagged as possibly unnecessary') +
+      '</div><p class="sub">' + escapeHtml(inv.needsReview.note) + '</p>';
+  }
+  if (inv.byCategory) {
+    html += '<table style="margin:10px 0 18px;"><tr><th>Category</th><th class="num">Numbers</th><th class="num">£/month</th><th>What to do</th></tr>' +
+      inv.byCategory.filter((c) => c.count > 0).map((c) => '<tr><td>' + escapeHtml(c.label) + '</td><td class="num">' + fmtNum(c.count) + '</td><td class="num">' + money(c.monthlyCost) + '</td><td class="cell-wrap">' + escapeHtml(c.action) + '</td></tr>').join('') + '</table>';
+  }
+  html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Number</th><th>Category</th><th>Household</th><th>Environment</th><th>Acquired</th><th>Last inbound call</th><th>Lifecycle</th><th class="num">£/month</th><th>Flag &amp; next step</th><th></th></tr></thead><tbody>';
+  for (const row of inv.rows) {
+    const owner = row.owner ? escapeHtml(row.owner.email || row.owner.householdId) + (row.owner.accountClass ? '<div class="customer-sub">' + escapeHtml(row.owner.accountClass + ' · ' + (row.owner.membership || '') + (row.owner.access && row.owner.access !== 'none' ? ' · ' + row.owner.access : '')) + '</div>' : '') : '<span class="text-muted">none</span>';
+    const flags = (row.flags.length ? row.flags.map((f) => '<div class="' + (f.severity === 'red' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(f.label) + '</div>').join('') : '') + row.recommendations.map((t) => '<div class="customer-sub">→ ' + escapeHtml(t) + '</div>').join('');
+    const call = row.lastInboundCall || {};
+    const lifecycle = escapeHtml(row.stateLabel) + (row.pendingReleaseAt ? '<div class="customer-sub">release ' + escapeHtml(String(row.pendingReleaseAt).slice(0, 10)) + '</div>' : '') + (row.quarantinedAt ? '<div class="customer-sub">quarantined ' + escapeHtml(String(row.quarantinedAt).slice(0, 10)) + '</div>' : '');
+    html += '<tr class="inv-' + escapeHtml(row.severity) + '"><td>' + escapeHtml(row.number || '—') + (row.sid ? '<div class="customer-sub">…' + escapeHtml(String(row.sid).slice(-6)) + '</div>' : '') + '</td>' +
+      '<td>' + escapeHtml(row.categoryLabel || '—') + '</td><td class="cell-wrap">' + owner + '</td>' +
+      '<td>' + escapeHtml((row.environment || '—').replace(/_/g, ' ')) + (row.voiceHost ? '<div class="customer-sub">' + escapeHtml(row.voiceHost) + '</div>' : '') + '</td>' +
+      '<td>' + escapeHtml(row.createdAt ? String(row.createdAt).slice(0, 10) : '—') + '</td>' +
+      '<td class="cell-wrap">' + (call.at ? escapeHtml(fmtDateTime(call.at)) : '<span class="text-muted">' + escapeHtml(call.source || '—') + '</span>') + '</td>' +
+      '<td class="cell-wrap">' + lifecycle + '</td><td class="num">' + escapeHtml(row.monthlyRental !== null ? Number(row.monthlyRental).toFixed(2) : '—') + '</td><td class="cell-wrap">' + flags + '</td>' +
+      '<td>' + (row.sid ? '<button type="button" class="row-button" data-sid="' + escapeHtml(row.sid) + '" onclick="toggleReleaseReview(this.dataset.sid)">' + (openReleaseReviewSid === row.sid ? 'Close' : 'Review release…') + '</button>' : '') + '</td></tr>';
+    if (row.sid && openReleaseReviewSid === row.sid) html += '<tr class="detail-row"><td colspan="10">' + renderReleaseReviewHtml(row, generatedAt, Date.now()) + '</td></tr>';
+  }
+  html += '</tbody></table></div>';
+  return html;
+}
+
+async function renderReconciliationTab(force) {
+  const [d, overview] = await Promise.all([fetchBusinessControl('reconciliation'), fetchOverviewOnce(force).catch(() => null)]);
+  const banner = reconciliationBanner(d.overall, d.actionCount, d.watchCount);
+  let html = '<div class="section">' + sectionHeader('Numbers — cost and lifecycle', d.generatedAt, 'reconciliation');
+  html += '<p class="sub">Read-only. Nothing here schedules, quarantines or releases a number; lifecycle rules are the canonical ones the release job uses (services/numberLifecycle/state.js).</p>';
+  html += '<h3 style="margin-top:14px;">What HCG pays for — every number on the provider account</h3>';
+  html += inventoryHtml(overview && overview.inventory, overview ? overview.inventoryReason : 'overview unavailable', overview ? overview.generatedAt : null);
+  html += '<h3 style="margin-top:26px;">Household lifecycle</h3>';
+  html += '<div class="readiness-banner ' + banner.className + '">' + escapeHtml(banner.text) + '</div>';
+  if (!d.rows.length) {
+    html += '<div class="empty-state">No households with an entitlement, number or quarantine.</div>';
+  } else {
+    html += '<div class="customer-table-wrap"><table class="customer-table"><thead><tr><th>Household</th><th>Status</th><th>Issues</th><th>Lifecycle</th></tr></thead><tbody>';
+    for (const r of d.rows.filter((x) => !x.providerOnly)) {
+      const statusPill = r.status === 'action_required' ? '<span class="status-pill bad">Action</span>' : r.status === 'watch' ? '<span class="status-pill warn">Watch</span>' : '<span class="status-pill good">OK</span>';
+      const issues = r.anomalies.length ? r.anomalies.map((a) => '<div class="' + (a.severity === 'action' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(a.label) + (a.detail ? '<span class="customer-sub"> — ' + escapeHtml(a.detail) + '</span>' : '') + '</div>').join('') : '<span class="text-muted">—</span>';
+      html += '<tr><td class="cell-customer"><div class="customer-email">' + escapeHtml(r.email || (r.numberOnly ? 'Deleted account' : '—')) + '</div><div class="customer-sub">' + escapeHtml(r.hcgNumber || 'no number') + '</div></td>' +
+        '<td>' + statusPill + '</td><td class="cell-wrap">' + issues + '</td><td class="cell-chain">' + timelineHtml(r.timeline) + '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+
+  html += '<ul class="sub" style="margin-top:12px;">' + d.notes.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>';
+  html += '</div>';
+  document.getElementById('reconciliation').innerHTML = html;
+  if (openReleaseReviewSid && overview && overview.inventory) wireReleaseReview(overview.inventory.rows.find((r) => r.sid === openReleaseReviewSid), overview.generatedAt);
+}
+
+// ---------- Finance ----------
+const FINANCE_SECTION_TITLES = { revenue: 'Revenue', direct: 'Direct costs', overhead: 'Infrastructure &amp; other', marketing: 'Marketing (shown separately)' };
+
+// Spend safety (Pricing Safety's layer, adapted by
+// services/businessControl/financialSafetyAdapter.js). Missing, failed or
+// stale data is stated, never shown as £0; recommended actions are
+// displayed only — nothing here runs them.
+const SAFETY_LEVEL_CLASS = { NORMAL: 'ready', WATCH: 'ready_with_open_items', ALERT: 'not_ready', EMERGENCY: 'not_ready' };
+
+function safetyMoney(v) {
+  return v === null || v === undefined ? provenanceBadge('NOT_CONNECTED') : escapeHtml(formatGbpOrMissing(v));
+}
+
+function renderSafetyHtml(safety) {
+  if (!safety) return '';
+  let html = '<h3>Spend safety</h3><p class="sub">Minutes, limits and unusual-usage signals: Operations → Usage &amp; cost safety.</p>';
+  if (safety.state === 'not_connected' || safety.state === 'load_failed') {
+    html += '<div class="readiness-banner ' + (safety.state === 'load_failed' ? 'not_ready' : 'ready_with_open_items') + '">' + (safety.state === 'load_failed' ? 'Cost data could not be loaded — spend is unobserved, not zero' : 'Not connected') + '</div>';
+    html += '<p class="sub">' + escapeHtml(safety.reason || '') + ' MRR, spend by component, trusted / monitored call cost, household outliers, projected month-end and the WATCH / ALERT / EMERGENCY level appear here once it is.</p>';
+    return html;
+  }
+  const levelClass = SAFETY_LEVEL_CLASS[safety.level] || 'not_ready';
+  html += '<div class="readiness-banner ' + (safety.state === 'stale' ? 'not_ready' : levelClass) + '">Level: ' + escapeHtml(safety.level || 'unknown') + (safety.state === 'stale' ? ' · STALE DATA' : '') + ' · as of ' + escapeHtml(fmtDateTime(safety.asOf)) + (safety.ageHours !== null ? ' (' + escapeHtml(String(safety.ageHours)) + 'h ago)' : '') + '</div>';
+  if (safety.warnings && safety.warnings.length) html += '<ul class="sub">' + safety.warnings.map((w) => '<li class="' + (w.severity === 'critical' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(w.text) + '</li>').join('') + '</ul>';
+  if (safety.levelReasons && safety.levelReasons.length) html += '<details><summary>Why this level</summary><ul class="sub">' + safety.levelReasons.map((r) => '<li>' + escapeHtml(r) + '</li>').join('') + '</ul></details>';
+  const c = safety.company || {};
+  html += '<div class="cards">' +
+    bcCard('Telephony spend today', safetyMoney(c.todaySpendGbp), 'ledger, all quality levels') +
+    bcCard('Month to date', safetyMoney(c.monthToDateGbp), c.unknownItems ? escapeHtml(c.unknownItems + ' item(s) not yet priced — not £0') : 'all items priced') +
+    bcCard('Projected month-end', safetyMoney(c.projectedMonthEndGbp), escapeHtml(c.projectionBasis || '')) +
+    bcCard('Unallocated', safetyMoney(c.unallocatedGbp), 'no household (never spread across customers)') +
+    bcCard('Trusted-call cost', safetyMoney(safety.split && safety.split.trustedCallCostGbp), 'inbound leg of known-contact calls + app leg') +
+    bcCard('Monitored-call cost', safetyMoney(safety.split && safety.split.monitoredCallCostGbp), 'unknown-caller leg + streams + AI + TTS') +
+    bcCard('Number rental (households)', safetyMoney(safety.split && safety.split.numberRentalGbp), 'unattributed rental is in Unallocated') +
+    bcCard('Loss-making households (projected)', c.projectedLossMakingHouseholds === null || c.projectedLossMakingHouseholds === undefined ? provenanceBadge('NOT_CONNECTED') : fmtNum(c.projectedLossMakingHouseholds), 'internal fair-use review only') +
+    '</div>';
+  if (safety.components && safety.components.length) {
+    html += '<table class="pnl-table" style="margin-top:12px;"><tr><th>Component (month to date)</th><th>Amount</th></tr>' + safety.components.map((x) => '<tr><td>' + escapeHtml(x.label) + '</td><td>' + safetyMoney(x.amountGbp) + '</td></tr>').join('') + '</table>';
+  }
+  if (safety.outliers && safety.outliers.length) {
+    html += '<h3 style="margin-top:14px;">Highest-cost households (projected)</h3><table><tr><th>Household</th><th>Month to date</th><th>Projected month</th><th>Projected contribution</th><th>Trusted / monitored min</th></tr>' +
+      safety.outliers.map((o) => '<tr><td>' + escapeHtml(o.householdRef) + '…</td><td>' + safetyMoney(o.monthToDateGbp) + '</td><td>' + safetyMoney(o.projectedMonthGbp) + '</td><td class="' + (o.lossMaking ? 'text-bad' : '') + '">' + safetyMoney(o.projectedContributionGbp) + '</td><td>' + escapeHtml((o.trustedMinutes ?? '—') + ' / ' + (o.monitoredMinutes ?? '—')) + '</td></tr>').join('') + '</table>';
+  }
+  if (safety.actions && safety.actions.length) {
+    html += '<h3 style="margin-top:14px;">Recommended actions (not executed)</h3><ul class="sub">' + safety.actions.map((a) => '<li>' + escapeHtml(a.label) + ' — <em>' + escapeHtml(String(a.status || '').replace(/_/g, ' ')) + '</em></li>').join('') + '</ul>';
+  }
+  return html;
+}
+
+async function renderFinanceTab() {
+  const d = await fetchBusinessControl('finance');
+  const t = d.totals;
+  const u = d.unitEconomics;
+  let html = '<div class="section">' + sectionHeader('Finance — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
+  html += '<p class="sub" style="margin-bottom:6px;">Source: ' + escapeHtml(d.connections.source) + ' · Stripe: ' + escapeHtml(d.stripeMode) + '</p>';
+  html += '<p class="sub" style="margin-bottom:14px;">' + provenanceBadge('ACTUAL') + ' supplier-reported ' + provenanceBadge('ALLOCATED') + ' supplier total apportioned ' + provenanceBadge('ESTIMATED') + ' calculated ' + provenanceBadge('MANUAL') + ' entered by you ' + provenanceBadge('NOT_CONNECTED') + ' no source (never £0). A total missing any line is shown as <em>known part only</em> or not at all.</p>';
+  html += renderSafetyHtml(d.safety);
+  html += '<h3 style="margin-top:22px;">Profit &amp; loss</h3>';
+  const headline = [
+    ['Revenue ex VAT (genuine)', t.revenueExVat], ['Total operating cost', t.totalOperatingCost], ['Gross contribution', t.grossContribution], ['Operating contribution', t.operatingContribution], ['Marketing', t.marketing],
+  ];
+  html += '<div class="cards">' + headline.map(([label, total]) => {
+    const dt = describeTotal(total);
+    return bcCard(label, escapeHtml(dt.text), dt.incomplete ? '<span class="text-warn">' + escapeHtml(dt.note) + '</span>' : 'complete', label === 'Operating contribution' ? 'bc-primary' : '');
+  }).join('') + '</div>';
+
+  html += '<h3 style="margin-top:22px;">Lines</h3><table class="pnl-table"><tr><th>Line</th><th>Amount</th><th>Source</th><th>Basis</th></tr>';
+  for (const section of Object.keys(FINANCE_SECTION_TITLES)) {
+    const ls = d.lines.filter((x) => x.section === section);
+    if (!ls.length) continue;
+    html += '<tr class="pnl-section"><td colspan="4">' + FINANCE_SECTION_TITLES[section] + '</td></tr>';
+    for (const l of ls) {
+      html += '<tr><td>' + escapeHtml(l.label) + '</td><td class="num">' + escapeHtml(formatGbpOrMissing(l.amountGbp)) + '</td><td>' + provenanceBadge(l.provenance) + (l.stale ? ' <span class="text-warn">re-check</span>' : '') + '</td><td class="customer-sub cell-wrap">' + escapeHtml(l.basis || '') + '</td></tr>';
+    }
+  }
+  html += '</table>';
+
+  const unit = (v) => (v && v.amountGbp !== null ? escapeHtml(formatGbpOrMissing(v.amountGbp)) + (v.partial ? ' <span class="text-warn">(known part only)</span>' : v.complete === false ? ' <span class="text-warn">(incomplete)</span>' : '') : '—');
+  html += '<h3 style="margin-top:22px;">Unit economics</h3><table class="fact-table">' +
+    '<tr><td>Accounts with access (any kind)</td><td>' + fmtNum(u.accountsWithAccess) + '</td></tr>' +
+    '<tr><td>Genuine paying customers</td><td>' + fmtNum(u.genuinePayingCustomers) + '</td></tr>' +
+    '<tr><td>Operating cost per account with access</td><td>' + unit(u.operatingCostPerAccountWithAccess) + '</td></tr>' +
+    '<tr><td>Telephony per account with access</td><td>' + unit(u.telephonyPerAccountWithAccess) + '</td></tr>' +
+    '<tr><td>Revenue ex VAT per genuine paying customer</td><td>' + unit(u.revenueExVatPerGenuinePayingCustomer) + '</td></tr>' +
+    '<tr><td>Unknown-caller call minutes (inbound telephony)</td><td>' + (u.unknownCallMinutes === null || u.unknownCallMinutes === undefined ? '—' : escapeHtml(u.unknownCallMinutes) + (u.minutesIncomplete ? ' <span class="text-warn">(measured part only)</span>' : '')) + '</td></tr>' +
+    '<tr><td>Monitored minutes (live monitoring ran)</td><td>' + (u.monitoredMinutes === null || u.monitoredMinutes === undefined ? '—' : escapeHtml(u.monitoredMinutes) + (u.minutesIncomplete ? ' <span class="text-warn">(measured part only)</span>' : '')) + ' <span class="customer-sub">detail: Operations → Usage &amp; cost safety</span></td></tr>' +
+    '<tr><td>Customer acquisition cost</td><td>' + provenanceBadge('NOT_CONNECTED') + ' <span class="customer-sub">' + escapeHtml(u.customerAcquisitionCost.basis) + '</span></td></tr>' +
+    '</table>';
+
+  html += '<h3 style="margin-top:22px;">Fixed-cost settings</h3><table class="fact-table">' + (d.fixedCostSettings || []).map((f) =>
+    '<tr><td>' + escapeHtml(f.label) + '</td><td>' + (f.configured ? escapeHtml(formatGbpOrMissing(f.valueGbp)) + '/month · ' + (f.asOf ? 'checked ' + escapeHtml(f.asOf) : 'no checked date') + (f.stale ? ' <span class="text-warn">re-check</span>' : '') : provenanceBadge('NOT_CONNECTED') + ' set <code>' + escapeHtml(f.amountVar) + '</code> and <code>' + escapeHtml(f.asOfVar) + '</code>') + '<div class="customer-sub">' + escapeHtml(f.howToFind) + '</div></td></tr>').join('') + '</table>';
+
+  html += '<h3 style="margin-top:22px;">Data sources</h3><table class="fact-table">' +
+    Object.entries(d.connections).map(([k, v]) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v) + '</td></tr>').join('') + '</table>';
+  html += '<div class="gaps" style="margin-top:16px;">Manual costs (advertising invoices, developer programmes, insurance, accountancy…) arrive with the Finance ledger (migration 051) and manual cost schedules. Until then those lines stay <strong>Not connected</strong> — never £0.</div>';
+  html += '</div>';
+  document.getElementById('finance').innerHTML = html;
+}
+
+// ---------- Marketing ----------
+// TEST-EXTRACT-START: buildTrackedGoLinkClient
+function buildTrackedGoLinkClient(baseUrl, fields) {
+  const params = new URLSearchParams();
+  for (const key of ['source', 'medium', 'campaign', 'content', 'term']) {
+    const v = (fields[key] || '').trim().toLowerCase().replace(/\s+/g, '-');
+    if (v) params.set('utm_' + key, v);
+  }
+  const qs = params.toString();
+  return String(baseUrl || '').replace(/\/+$/, '') + '/go' + (qs ? '?' + qs : '');
+}
+// TEST-EXTRACT-END: buildTrackedGoLinkClient
+
+async function renderMarketingTab() {
+  const d = await fetchBusinessControl('marketing');
+  let html = '<div class="section">' + sectionHeader('Acquisition &amp; marketing — last ' + escapeHtml(d.windowDays) + ' days', d.generatedAt, 'marketing');
+  const cc = d.channelComparison;
+  if (cc) {
+    const st = cc.stageStatus;
+    html += '<h3>By channel</h3><table><tr><th>Channel</th><th class="num">Visits ' + provenanceBadge(st.visits.status) + '</th><th class="num">Signups ' + provenanceBadge(st.signups.status) + '</th><th>Paying customers ' + provenanceBadge(st.payingCustomers.status) + '</th><th>Revenue ' + provenanceBadge(st.revenue.status) + '</th><th>CAC ' + provenanceBadge(st.cac.status) + '</th></tr>' +
+      cc.rows.map((r) => '<tr><td>' + escapeHtml(r.label) + (Object.keys(r.otherDetails || {}).length ? '<div class="customer-sub">' + escapeHtml(Object.entries(r.otherDetails).map(([k, n]) => k + ' ' + n).join(' · ')) + '</div>' : '') + '</td><td class="num">' + fmtNum(r.visits) + '</td><td class="num">' + fmtNum(r.registrations) + '</td><td>—</td><td>—</td><td>—</td></tr>').join('') + '</table>';
+    html += '<ul class="sub">' + Object.values(st).map((s) => '<li>' + escapeHtml(s.note) + '</li>').join('') + '</ul>';
+    html += '<p class="sub"><strong>Self-reported ("How did you hear about us?"):</strong> ' + escapeHtml(cc.selfReported.note) + '</p>';
+  }
+  html += '<h3 style="margin-top:22px;">By campaign / source</h3>';
+  if (!d.rows.length) {
+    html += '<div class="empty-state">No visits or registrations recorded in this window.</div>';
+  } else {
+    html += '<table><tr><th>Campaign / source</th><th>Channel</th><th class="num">Visits</th><th class="num">Registrations</th><th>Spend</th><th>Paying customers</th><th>CAC</th></tr>' +
+      d.rows.map((r) => '<tr><td>' + escapeHtml(r.label) + '</td><td>' + escapeHtml(r.channel.replace(/_/g, ' ')) + '</td><td class="num">' + fmtNum(r.landingVisits) + '</td><td class="num">' + fmtNum(r.registrationsCompleted) + '</td>' +
+        '<td>' + (r.spend && r.spend.amountGbp !== null ? escapeHtml(formatGbpOrMissing(r.spend.amountGbp)) : provenanceBadge('NOT_CONNECTED')) + '</td>' +
+        '<td>' + (r.payingCustomers === null ? provenanceBadge('NOT_CONNECTED') : fmtNum(r.payingCustomers)) + '</td>' +
+        '<td>' + (r.cac === null ? '—' : escapeHtml(formatGbpOrMissing(r.cac))) + '</td></tr>').join('') + '</table>';
+  }
+  html += '<p class="sub" style="margin-top:8px;">Visits are raw page requests (not unique people). ' + fmtNum(d.unattributed.checkoutsStarted) + ' checkout(s) and ' + fmtNum(d.unattributed.paidConversions) + ' paid conversion(s) in this window cannot be credited to any channel: ' + escapeHtml(d.unattributed.note) + '</p>';
+
+  html += '<h3 style="margin-top:22px;">Tracked link builder</h3><p class="sub">Every channel links to the same /go page; only the tags differ. Use utm_source=instagram or facebook explicitly (a "meta" source cannot be split). Nothing is saved.</p>' +
+    '<div class="manual-cost-form" id="linkBuilder">' +
+    '<select id="lbPreset"><option value="">Preset…</option><option value="instagram|organic_social">Instagram (organic)</option><option value="tiktok|organic_social">TikTok (organic)</option><option value="facebook|community">Facebook group post</option><option value="linkedin|organic_social">LinkedIn</option><option value="instagram|paid_social">Instagram paid ad</option><option value="facebook|paid_social">Facebook paid ad</option><option value="tiktok|paid_social">TikTok paid ad</option><option value="|pr">PR / press</option><option value="|qr">QR code</option></select>' +
+    '<input id="lbSource" placeholder="utm_source"><input id="lbMedium" placeholder="utm_medium"><input id="lbCampaign" placeholder="utm_campaign"><input id="lbContent" placeholder="utm_content (ad id)"><input id="lbTerm" placeholder="utm_term (ad set)">' +
+    '</div><div class="link-output" id="lbOutput"></div>';
+  html += '</div>';
+  document.getElementById('marketing').innerHTML = html;
+
+  const byId = (id) => document.getElementById(id);
+  const update = () => {
+    byId('lbOutput').textContent = buildTrackedGoLinkClient(window.location.origin, { source: byId('lbSource').value, medium: byId('lbMedium').value, campaign: byId('lbCampaign').value, content: byId('lbContent').value, term: byId('lbTerm').value });
+  };
+  byId('lbPreset').addEventListener('change', (e) => { const [s, m] = e.target.value.split('|'); if (s !== undefined) { byId('lbSource').value = s; byId('lbMedium').value = m || ''; } update(); });
+  for (const id of ['lbSource', 'lbMedium', 'lbCampaign', 'lbContent', 'lbTerm']) byId(id).addEventListener('input', update);
+  update();
+}
+
+// ---------- Usage & cost safety (Operations, 2026-10-01) ----------
+// Monitored minutes, unusual usage, estimated concurrency, which limits
+// exist in this build and the failures the database records. Minutes the
+// database never recorded are "not measured", never 0; concurrency is an
+// estimate (lower bound). Nothing here acts.
+const CONTROL_MODE_LABELS = {
+  enforced: { text: 'Enforced', status: 'green' },
+  alert_only: { text: 'Alert only', status: 'amber' },
+  visibility_only: { text: 'Dashboard only', status: 'amber' },
+  provider_default: { text: 'Provider default', status: 'amber' },
+  not_in_build: { text: 'Not in this build', status: 'red' },
+  present_unverified: { text: 'Code present — verify', status: 'amber' },
+};
+
+function usageWindowCard(label, w) {
+  const gaps = [];
+  if (w.callsWithoutDuration) gaps.push(w.callsWithoutDuration + ' approved call(s) without a recorded duration');
+  if (w.unknownCallsWithoutMonitoringRecord) gaps.push(w.unknownCallsWithoutMonitoringRecord + ' unknown call(s) without a monitoring record');
+  return bcCard(label, escapeHtml(fmtNum(w.monitoredMinutes)) + ' <span class="sub">monitored min</span>',
+    escapeHtml(fmtNum(w.calls) + ' calls (' + fmtNum(w.unknownCalls) + ' unknown) · ' + fmtNum(w.callMinutes) + ' call min (' + fmtNum(w.trustedCallMinutes) + ' trusted / ' + fmtNum(w.unknownCallMinutes) + ' unknown)') +
+    (w.monitoringLimitReached ? '<br>' + escapeHtml(w.monitoringLimitReached + ' hit the monitoring limit') : '') +
+    (w.warningSmsSent ? '<br>' + escapeHtml(w.warningSmsSent + ' warning SMS') : '') +
+    (gaps.length ? '<br><span class="text-warn">Measured part only: ' + escapeHtml(gaps.join('; ')) + '</span>' : ''));
+}
+
+function usageSeriesHtml(series) {
+  const max = Math.max(1, ...series.map((s) => s.monitoredMinutes));
+  return '<table class="usage-series"><tr><th>Day (UTC)</th><th>Calls</th><th>Unknown</th><th>Monitored min</th><th></th></tr>' + series.map((s) =>
+    '<tr><td>' + escapeHtml(s.day) + (s.partial ? ' <span class="customer-sub">(so far)</span>' : '') + '</td><td class="num">' + escapeHtml(fmtNum(s.calls)) + '</td><td class="num">' + escapeHtml(fmtNum(s.unknownCalls)) + '</td><td class="num">' + escapeHtml(fmtNum(s.monitoredMinutes)) + '</td>' +
+    '<td class="bar-cell"><span class="usage-bar" style="width:' + Math.round((s.monitoredMinutes / max) * 100) + '%"></span></td></tr>').join('') + '</table>';
+}
+
+function usageSignalHtml(s) {
+  const items = s.items || [];
+  return '<div class="control-card ' + (STATUS_STYLES[s.severity] || STATUS_STYLES.grey).className + '">' +
+    '<div class="control-head"><span class="control-label">' + escapeHtml(s.title) + '</span>' + statusBadge(s.severity) + '</div>' +
+    '<div class="control-value">' + escapeHtml(fmtNum(s.count)) + '</div>' +
+    '<details class="card-items"><summary>rule' + (items.length ? ' &amp; ' + items.length + ' item' + (items.length === 1 ? '' : 's') : '') + '</summary>' +
+      '<div class="control-rule">' + escapeHtml(s.rule) + '</div>' +
+      (items.length ? '<ul>' + items.slice(0, 50).map((it) => '<li>' + escapeHtml(it.label || '—') + (it.accountClass && it.accountClass !== 'genuine' ? ' <span class="customer-sub">[' + escapeHtml(it.accountClass) + ']</span>' : '') + ' <span class="customer-sub">— ' + escapeHtml(it.detail || '') + (it.at ? ' · ' + escapeHtml(fmtDateTime(it.at)) : '') + '</span></li>').join('') + (items.length > 50 ? '<li class="customer-sub">+' + (items.length - 50) + ' more</li>' : '') + '</ul>' : '') +
+    '</details></div>';
+}
+
+function renderUsageSafetyHtml(d) {
+  let html = '<div class="section">' + sectionHeader('Usage &amp; cost safety', d.generatedAt, 'usageSafety');
+  html += '<p class="sub">All accounts (test and reviewer included, badged). Day boundaries are UTC. Minutes come from what each call recorded; a call with no recorded duration is <em>not measured</em>, never 0. £ figures are on Money → Spend safety.</p>';
+  if (d.truncated) html += '<div class="readiness-banner not_ready">Too many calls to load in full — figures below are incomplete.</div>';
+  const w = d.windows;
+  html += '<div class="cards">' + usageWindowCard('Today (so far)', w.today) + usageWindowCard('Previous 7 days', w.last7Days) + usageWindowCard('Month to date', w.monthToDate) +
+    bcCard('Peak simultaneous calls (MTD)', escapeHtml(fmtNum(d.concurrency.calls.peak)), escapeHtml('ESTIMATED lower bound from start time + duration' + (d.concurrency.calls.peakAt ? ' · ' + fmtDateTime(d.concurrency.calls.peakAt) : '') + (d.concurrency.calls.intervalsWithoutLength ? ' · ' + d.concurrency.calls.intervalsWithoutLength + ' call(s) without a duration excluded' : ''))) +
+    bcCard('Peak simultaneous monitoring (MTD)', escapeHtml(fmtNum(d.concurrency.monitoredStreams.peak)) + ' <span class="sub">/ cap ' + escapeHtml(fmtNum(d.concurrency.streamCap)) + '</span>', 'ESTIMATED lower bound; refusals at the cap are not recorded') +
+    '</div>';
+
+  html += '<h3 style="margin-top:18px;">Unusual usage &amp; recorded failures</h3><div class="control-grid">' + d.signals.map(usageSignalHtml).join('') + '</div>';
+
+  html += '<h3 style="margin-top:18px;">Limits in this build</h3><table class="fact-table"><tr><th>Limit</th><th>Value</th><th>Status</th><th>What happens</th><th>Evidence</th></tr>' + d.controls.map((c) => {
+    const m = CONTROL_MODE_LABELS[c.mode] || { text: c.mode, status: 'grey' };
+    return '<tr><td>' + escapeHtml(c.label) + '</td><td>' + escapeHtml(c.limit) + (c.source && c.source !== '—' ? '<div class="customer-sub">' + escapeHtml(c.source) + '</div>' : '') + '</td><td><span class="st-badge ' + (STATUS_STYLES[m.status] || STATUS_STYLES.grey).className + '">' + escapeHtml(m.text) + '</span></td><td>' + escapeHtml(c.effect) + (c.note ? '<div class="customer-sub">' + escapeHtml(c.note) + '</div>' : '') + '</td><td class="customer-sub">' + escapeHtml(c.evidence) + '</td></tr>';
+  }).join('') + '</table>';
+
+  html += '<h3 style="margin-top:18px;">Households by monitored minutes (month to date)</h3>';
+  if (!d.households.length) html += '<p class="sub">No calls this month.</p>';
+  else html += '<table><tr><th>Household</th><th class="num">Monitored min</th><th class="num">Call min (trusted / unknown)</th><th class="num">Unknown calls</th><th class="num">Busiest day</th><th class="num">Longest call</th><th class="num">Peak simultaneous</th><th class="num">Today</th></tr>' + d.households.slice(0, 25).map((h) =>
+    '<tr><td>' + escapeHtml(h.label) + ' <span class="customer-sub">[' + escapeHtml(h.accountClass) + ']</span></td><td class="num">' + escapeHtml(fmtNum(h.monthToDate.monitoredMinutes)) + '</td><td class="num">' + escapeHtml(fmtNum(h.monthToDate.trustedCallMinutes) + ' / ' + fmtNum(h.monthToDate.unknownCallMinutes)) + '</td><td class="num">' + escapeHtml(fmtNum(h.monthToDate.unknownCalls)) + '</td><td class="num">' + escapeHtml(h.peakDayUnknownCalls ? h.peakDayUnknownCalls + ' (' + h.peakDay + ')' : '—') + '</td><td class="num">' + escapeHtml(fmtNum(h.longestCallMinutes)) + ' min</td><td class="num">' + escapeHtml(h.peakConcurrentCalls + ' calls / ' + h.peakConcurrentMonitored + ' mon.') + '</td><td class="num">' + escapeHtml(fmtNum(h.today.monitoredMinutes)) + ' min</td></tr>').join('') + '</table>' +
+    (d.households.length > 25 ? '<p class="sub">Top 25 of ' + d.households.length + ' shown.</p>' : '');
+
+  html += '<h3 style="margin-top:18px;">Daily monitored minutes (last 14 days)</h3>' + usageSeriesHtml(d.series);
+  html += '<details style="margin-top:14px;"><summary>Not recorded anywhere this dashboard can read</summary><ul class="sub">' + d.notRecorded.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul></details>';
+  return html + '</div>';
+}
+
+async function renderUsageSafetyTab() {
+  const d = await fetchBusinessControl('usage-safety');
+  document.getElementById('usageSafety').innerHTML = renderUsageSafetyHtml(d);
+}
+
+// TEST-EXTRACT-END: businessControlTabs
 
 // ============================================================
 // Boot

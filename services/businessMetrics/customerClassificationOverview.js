@@ -32,6 +32,7 @@ function computeGenuineCustomerBreakdown({ households, activeEntitlementHousehol
     admin: [],
     reviewer: [],
     qa_automation: [],
+    other_non_customer: [],
     unclassified: [],
   };
 
@@ -64,6 +65,7 @@ function computeGenuineCustomerBreakdown({ households, activeEntitlementHousehol
     admin: byClassification.admin.length,
     reviewer: byClassification.reviewer.length,
     qaAutomation: byClassification.qa_automation.length,
+    otherNonCustomer: byClassification.other_non_customer.length,
     unclassified: byClassification.unclassified.length,
     // Emails surfaced for admin visibility only — this is already
     // admin-only data (routes/adminBusiness.js, requireAuth+requireAdmin),

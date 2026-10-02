@@ -1412,6 +1412,74 @@ async function main() {
     assert(fn.owner === ADMIN_OWNER, `${label}: owner is the intended administrative role (${ADMIN_OWNER}), found: ${fn.owner}`);
   }
 
+  console.log('\nRunning smoke checks on migration 055 (account classification history)...\n');
+  {
+    await db.exec(`reset role;`);
+    const { rows: [h] } = await db.query(`insert into public.households (auth_user_id, email, phone_number) values (null, $1, $2) returning id`, ['classify-me@example.com', '+447700900901']);
+    const { rows: [ent] } = await db.query(`select count(*)::int as n from public.entitlements where household_id = $1`, [h.id]);
+    const { rows: [before] } = await db.query(`select row_to_json(x)::text as j from (select * from public.households where id = $1) x`, [h.id]);
+    const actor = '00000000-0000-0000-0000-00000000a001';
+    const set = (cls, note, expected) => db.query(`select public.set_account_classification($1, $2, $3, $4, $5, $6) as r`, [h.id, cls, note, actor, 'admin@example.com', expected]);
+
+    await asServiceRole(db);
+    const first = await set('genuine_customer', 'Paid by Stripe on 6 Sep; real person', 'unclassified');
+    assert(first.rows[0].r.previous === 'unclassified' && first.rows[0].r.classification === 'genuine_customer', '055: unclassified → genuine_customer via the RPC (as service_role)');
+    let stale = null;
+    try { await set('reviewer', 'second admin, stale view', 'unclassified'); } catch (e) { stale = e.message; }
+    assert(/stale edit/.test(stale || ''), '055: a stale edit (expected previous no longer current) is refused');
+    let noop = null;
+    try { await set('genuine_customer', 'same again', 'genuine_customer'); } catch (e) { noop = e.message; }
+    assert(/already/.test(noop || ''), '055: a no-op change is refused');
+    let noReason = null;
+    try { await set('reviewer', '  ', 'genuine_customer'); } catch (e) { noReason = e.message; }
+    assert(/reason/.test(noReason || ''), '055: a change without a reason is refused');
+    let bad = null;
+    try { await set('customer', 'typo', 'genuine_customer'); } catch (e) { bad = e.message; }
+    assert(/unknown classification/.test(bad || ''), '055: an unknown classification is refused');
+    await set('other_non_customer', 'It was the owner\'s own second phone', 'genuine_customer');
+
+    await db.exec(`reset role;`);
+    const { rows: events } = await db.query(`select previous_classification, new_classification, note, changed_by_user_id, changed_by_email, source from public.account_classification_events where household_id = $1 order by created_at, new_classification`, [h.id]);
+    assert(events.length === 2 && events[0].previous_classification === null && events[0].new_classification === 'genuine_customer' && events[1].previous_classification === 'genuine_customer' && events[1].new_classification === 'other_non_customer', '055: every change is recorded with previous and new value (refused attempts leave no event)');
+    assert(events.every((e) => e.changed_by_user_id === actor && e.changed_by_email === 'admin@example.com' && e.source === 'admin_dashboard' && e.note.length >= 3), '055: who, source and reason recorded on every event');
+    const { rows: [cur] } = await db.query(`select classification, classified_by from public.account_classifications where household_id = $1`, [h.id]);
+    assert(cur.classification === 'other_non_customer' && cur.classified_by === 'admin@example.com', '055: current classification updated, with the actor');
+
+    let upd = null;
+    try { await db.query(`update public.account_classification_events set note = 'rewritten' where household_id = $1`, [h.id]); } catch (e) { upd = e.message; }
+    let del = null;
+    try { await db.query(`delete from public.account_classification_events where household_id = $1`, [h.id]); } catch (e) { del = e.message; }
+    assert(/append-only/.test(upd || '') && /append-only/.test(del || ''), '055: history cannot be updated or deleted, even by the owner');
+
+    const { rows: [after] } = await db.query(`select row_to_json(x)::text as j from (select * from public.households where id = $1) x`, [h.id]);
+    const { rows: [ent2] } = await db.query(`select count(*)::int as n from public.entitlements where household_id = $1`, [h.id]);
+    assert(after.j === before.j && ent2.n === ent.n, '055: the household row and entitlements are untouched by classification changes');
+
+    await asAuthUser(db, '00000000-0000-0000-0000-00000000b002', 'someone@example.com');
+    let authDenied = null;
+    try { await set('genuine_customer', 'self-promotion', 'other_non_customer'); } catch (e) { authDenied = e.message; }
+    let readDenied = null;
+    try { await db.query(`select * from public.account_classification_events`); } catch (e) { readDenied = e.message; }
+    assert(/permission denied/.test(authDenied || '') && /permission denied/.test(readDenied || ''), '055: an ordinary signed-in user can neither classify nor read the history');
+    await db.exec(`reset role;`);
+
+    const fnSrc = (await db.query(`select prosrc from pg_proc where proname = 'set_account_classification'`)).rows[0].prosrc;
+    const writes = [...fnSrc.matchAll(/(insert\s+into|update|delete\s+from)\s+public\.(\w+)/gi)].map((m) => m[2]);
+    assert(writes.length > 0 && writes.every((t) => t === 'account_classifications' || t === 'account_classification_events'), `055: the RPC writes only the two classification tables (found: ${[...new Set(writes)].join(', ')})`);
+
+    // Rollback: refuses while a row uses the new value; then restores 031.
+    const rollbackSql = await readFile(path.join(migrationsDir, '_rollbacks', '055_rollback_account_classification_history.sql'), 'utf8');
+    let refused = null;
+    try { await db.exec(rollbackSql); } catch (e) { refused = e.message; await db.exec('rollback;').catch(() => {}); }
+    assert(/other_non_customer/.test(refused || ''), '055 rollback: refuses while an account is classified other_non_customer');
+    await db.query(`update public.account_classifications set classification = 'internal_test' where household_id = $1`, [h.id]);
+    await db.exec(rollbackSql);
+    const { rows: [gone] } = await db.query(`select to_regclass('public.account_classification_events') as t, (select count(*)::int from pg_proc where proname = 'set_account_classification') as f`);
+    let oldCheck = null;
+    try { await db.query(`update public.account_classifications set classification = 'other_non_customer' where household_id = $1`, [h.id]); } catch (e) { oldCheck = e.message; }
+    assert(gone.t === null && gone.f === 0 && /check/.test(oldCheck || ''), '055 rollback: events table and function dropped; 031\'s value check restored');
+  }
+
   await db.close();
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
