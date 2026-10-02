@@ -2,9 +2,13 @@
 // iOS technical parity). Pure — no React Native imports — so it is unit
 // tested directly (tests/ios-parity.test.mjs).
 //
-// PROPOSED — AWAITING ANDREW'S APPROVAL (2026-10-02). Do not change this
-// path's architecture further until that decision is made; the alternative
-// (flag-gated, deviceType "iphone") is on readiness/ios-parity 2f8d31f.
+// APPROVED by Andrew on 2 October 2026, exactly as implemented here:
+// - inside the iOS app, iPhone is an available, normal setup path;
+// - selecting iPhone continues through carrier check, setup and Apple IAP;
+// - for now the household stays recorded as device_type "mobile";
+// - IOS_COMING_SOON may keep gating the separate Stripe/web iPhone path.
+// Not to be redesigned as part of 1.0.2. (The unadopted flag-gated
+// alternative, deviceType "iphone", is on readiness/ios-parity 2f8d31f.)
 //
 // iOS 1.0.2 release decision (2026-10-01, release/ios-1.0.2): the iOS app is
 // distributed only through the App Store, so when it runs on an iPhone the

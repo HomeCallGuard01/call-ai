@@ -23,23 +23,23 @@ The live IAP stays at £4.99, and no price is hard-coded anywhere in the app.
 |---|---|
 | `91e1834` | Merge `feature/ios-102-dynamic-pricing` (StoreKit/Stripe-sourced price, iPhone signup path) into the iOS-parity line (mic permission, iOS-only device card, platform copy) |
 | `2cf1003` | Version 1.0.1 → 1.0.2 |
-| `9a054b3` | App Store listing pack + screenshot frame generator (frame 1 ready); approval marker on the iPhone-path decision |
+| `9a054b3` | App Store listing pack + screenshot frame generator (frame 1 ready); marker on the iPhone-path decision (then pending) |
 | `a30f1b7` | Merge `a1fcede`: Build 19 removal of the manual onboarding test call |
 | `829135c` | Merge `db998be`: giffgaff/Three forwarding-number fix (+ base `698bc58`, Android-only EAS Submit track pin) |
 | `a3442d9` | iPhone-only Settings forwarding wording (App Review 2.3.10) |
-| (this commit) | RevenueCat sandbox risk doc + this report |
+| `ec8a7cd` | RevenueCat sandbox risk doc + this report |
+| (this commit) | iPhone-path decision recorded as **approved (2 Oct 2026)** in source and docs |
 
-## 2. ⚠ Decision awaiting Andrew's approval: iPhone availability / set-up path
+## 2. ✅ Decision APPROVED by Andrew (2 October 2026): iPhone availability / set-up path
 
-Current implementation (`mobile/lib/iphoneAvailability.ts`, marked PROPOSED in the source):
-- Inside the iOS app, choosing "iPhone" always continues to the carrier check and Apple purchase.
-- The carrier is recorded as a UK mobile line (`deviceType "mobile"`), so the backend `IOS_COMING_SOON` flag (which gates Stripe iPhone signups) doesn't block it.
-- Works on today's production backend.
-- Trade-off: iPhone households show as `mobile` in admin.
+Approved **exactly as implemented** (`mobile/lib/iphoneAvailability.ts`, recorded in the source header):
+- Inside the iOS app, iPhone is an available, normal setup path.
+- Selecting iPhone continues through the carrier check, setup and Apple IAP.
+- For now the household stays recorded as `device_type = mobile`. The trade-off: iPhone households show as `mobile` in admin.
+- `IOS_COMING_SOON` may keep gating the separate Stripe/web iPhone path.
+- **This architecture is not to be redesigned as part of 1.0.2.**
 
-The alternative (flag-gated, `deviceType "iphone"`) is on `readiness/ios-parity` `2f8d31f`. It needs a backend deploy + migration 061 + `IOS_COMING_SOON=false` before any new iPhone user, including an App Reviewer, gets past the picker.
-
-**No further architectural change has been made**, by instruction.
+It works on today's production backend. The unadopted alternative (flag-gated, `deviceType "iphone"`, needs a backend deploy + migration 061 + `IOS_COMING_SOON=false`) remains on `readiness/ios-parity` `2f8d31f` for reference only.
 
 ## 3. Forwarding behaviour now implemented (per network)
 
@@ -89,12 +89,13 @@ Side-effect: sandbox buyers get no number, so review notes should keep reviewers
 
 ## 6. What still prevents Build 15
 
-1. **Your approvals:**
-   - the iPhone-path decision (§2);
-   - the EAS build itself.
+1. **Your approval of the EAS build itself.** (The iPhone-path decision was approved on 2 Oct.)
 2. **Before any TestFlight purchase:** deploy the RevenueCat sandbox guard (053 → `f5a920e`). It's not strictly a build blocker, but required before the TestFlight purchase tests that build would be for.
 3. **giffgaff/Three set-up needs the backend half of the forwarding fix in production.** The binary is ready for it; the backend is not deployed.
-4. **Migration-number collisions** block any backend deploy from this line: 060/061 (this line vs Claude C's, already applied on staging) and 055 (two branches). They don't affect the iOS binary.
+4. **BLOCKER (recorded, deliberately not resolved in this step): migration-number collisions.** They block any backend deploy or merge from this line. They don't affect the iOS binary.
+   - **060** and **061**: this line's `060_call_delivery_events` / `061_household_iphone_carrier` vs `security/supabase-staging-remediation`'s `060_revoke_unused_…` / `061_global_default_revoke_…` (**already applied on staging**).
+   - **055**: `p0/call-delivery-resilience`'s `055_call_delivery_evidence` (on this line) vs `feature/admin-control-centre-v2`'s `055_account_classification_history`.
+   - **053** (RevenueCat guard) is unique, and is **not deployed**.
 5. **Still unverified on a physical iPhone** (TestFlight matrix, prep doc §11):
    - whether iOS dials the `**21*` tel: link (`APP_DECISION_003` says yes, the 30 Sep parity note says no);
    - incoming calls in all app states;
