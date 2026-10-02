@@ -32,6 +32,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { canAutoOpenDialer, buildDialerUrl, IOS_MANUAL_DIAL_HINT } from "../../lib/dialerLink";
 import { saveActivationDevice, loadActivationDevice } from "../../lib/activationDeviceStorage";
 import { resolveForwardingNumber, formatUkPhoneForDisplay } from "../../lib/forwardingNumber";
+import { settingsForwardingNote } from "../../lib/forwardingSettingsCopy";
 import {
   computeProvisioningStages,
   shouldAutoAdvance,
@@ -425,7 +426,7 @@ export default function Activate() {
           <Text style={styles.copyLinkText}>{numberCopied ? "Copied!" : "Copy number"}</Text>
         </Pressable>
 
-        <Banner variant="notice" message={instructions.activationNote || "Use your phone's native call forwarding settings."} />
+        <Banner variant="notice" message={settingsForwardingNote("activate", instructions.activationNote, Platform.OS) || "Use your phone's native call forwarding settings."} />
 
         {instructions.requiresPreliminaryCall && instructions.preliminaryCallNote && (
           <Banner variant="notice" message={instructions.preliminaryCallNote} />
@@ -561,7 +562,7 @@ function UndoForwardingSection({
         </Text>
       ) : cancelCodeMethod === "native_settings" ? (
         <Text style={styles.undoBody}>
-          {cancelCodeNote || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network."}
+          {settingsForwardingNote("deactivate", cancelCodeNote, Platform.OS) || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network."}
         </Text>
       ) : (
         <Text style={styles.undoBody}>

@@ -23,6 +23,7 @@ import { isLandlineComingSoon, useLandlineComingSoon } from "../../../lib/landli
 import { LandlineComingSoon } from "../../../components/LandlineComingSoon";
 import { canAutoOpenDialer, buildDialerUrl, IOS_MANUAL_DIAL_HINT } from "../../../lib/dialerLink";
 import { resolveForwardingNumber, formatUkPhoneForDisplay } from "../../../lib/forwardingNumber";
+import { settingsForwardingNote } from "../../../lib/forwardingSettingsCopy";
 import type { ActivationInstructionsResponse } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -188,7 +189,7 @@ export default function SetUpCallForwarding() {
         <>
           <Banner
             variant="notice"
-            message={instructions.activationNote || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this on — a dial code isn't reliable on this network."}
+            message={settingsForwardingNote("activate", instructions.activationNote, Platform.OS) || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this on — a dial code isn't reliable on this network."}
           />
           {instructions.cancelCodeMethod === "native_settings" && (
             <Text style={styles.explanation}>To turn protection off again later, use the same settings screen.</Text>
