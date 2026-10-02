@@ -1,0 +1,38 @@
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN is not set — automatic Twilio number provisioning will not function until both are configured.
+Server running on port 3099
+TWILIO WEBHOOK REFUSED: missing or invalid signature { path: '/voice' }
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:10:47.777Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_unauthorised_start","ts":"2026-10-01T17:10:47.882Z","streamSid":"MZforged0001"}
+Known contact → bypass AI
+CALL DELIVERY FAILED: household's Voice SDK Client did not answer {
+  dialCallStatus: 'no-answer',
+  callSid: 'CA842f0f407b8aafbd67bbd06483c2c8c9'
+}
+ALERTING: Resend_API_Key not configured, alert not sent: [HCG ALERT] approved_call_delivery_failed
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:10:53.366Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_unauthorised_start","ts":"2026-10-01T17:10:53.433Z","streamSid":"MZwrongcall01"}
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:10:54.871Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_started","ts":"2026-10-01T17:10:54.939Z","streamSid":"MZgoodstream1","callSid":"CAba5f8648ed83f9bfd4c0eb59cb08d627","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87"}
+{"event":"media_stream_stopped","ts":"2026-10-01T17:10:56.797Z","streamSid":"MZgoodstream1","callSid":"CAba5f8648ed83f9bfd4c0eb59cb08d627","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87","warningSent":false,"peakRiskScore":0,"terminatedBySystem":false,"detectedAfterCallEnded":false,"monitoredDurationSeconds":2,"monitoringLimitReached":false}
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:10:56.868Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_unauthorised_start","ts":"2026-10-01T17:10:56.944Z","streamSid":"MZreplay00001"}
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:10:58.376Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_unauthorised_start","ts":"2026-10-01T17:10:58.446Z","streamSid":"MZjunktoken01"}
+RAPID ABUSE: same caller number calling repeatedly in a short window { householdId: 'ffc4cfe1-6d93-46d8-8e88-3b93eadabf87', repeatCount: 3 }
+ALERTING: Resend_API_Key not configured, alert not sent: [HCG ALERT] rapid_abuse_repeat_caller
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:11:00.209Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_started","ts":"2026-10-01T17:11:00.277Z","streamSid":"MZcap00000000","callSid":"CAf1a2f9fbfbcdb97c9afb2729f04b7286","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87"}
+RAPID ABUSE: same caller number calling repeatedly in a short window { householdId: 'ffc4cfe1-6d93-46d8-8e88-3b93eadabf87', repeatCount: 3 }
+ALERTING: suppressed (rate-limited) — rapid_abuse_repeat_caller: The same caller has called household ffc4cfe1-6d93-46d8-8e88-3b93eadabf87 3 times in the last 10 minutes
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:11:01.610Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_started","ts":"2026-10-01T17:11:01.680Z","streamSid":"MZcap00000001","callSid":"CA18ebcfa970406d7fd0941cd39da17171","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87"}
+RAPID ABUSE: same caller number calling repeatedly in a short window { householdId: 'ffc4cfe1-6d93-46d8-8e88-3b93eadabf87', repeatCount: 4 }
+ALERTING: suppressed (rate-limited) — rapid_abuse_repeat_caller: The same caller has called household ffc4cfe1-6d93-46d8-8e88-3b93eadabf87 4 times in the last 10 minutes
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:11:03.011Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_cost_cap_reached","ts":"2026-10-01T17:11:03.077Z","rule":"household_stream_limit","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87"}
+ALERTING: Resend_API_Key not configured, alert not sent: [HCG ALERT] media_stream_household_stream_limit
+{"event":"media_stream_stopped","ts":"2026-10-01T17:11:04.141Z","streamSid":"MZcap00000001","callSid":"CA18ebcfa970406d7fd0941cd39da17171","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87","warningSent":false,"peakRiskScore":0,"terminatedBySystem":false,"detectedAfterCallEnded":false,"monitoredDurationSeconds":2,"monitoringLimitReached":false}
+{"event":"media_stream_stopped","ts":"2026-10-01T17:11:04.144Z","streamSid":"MZcap00000000","callSid":"CAf1a2f9fbfbcdb97c9afb2729f04b7286","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87","warningSent":false,"peakRiskScore":0,"terminatedBySystem":false,"detectedAfterCallEnded":false,"monitoredDurationSeconds":4,"monitoringLimitReached":false}
+{"event":"media_stream_signature_check","ts":"2026-10-01T17:11:04.205Z","hasSignatureHeader":false,"matchedVariant":null}
+{"event":"media_stream_no_start_timeout","ts":"2026-10-01T17:11:14.206Z"}

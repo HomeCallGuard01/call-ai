@@ -1,0 +1,17 @@
+◇ injected env (0) from .env // tip: ⌘ enable debugging { debug: true }
+Server running on port 3099
+{"event":"media_stream_signature_check","ts":"2026-10-01T18:09:54.991Z","hasSignatureHeader":true,"matchedVariant":"wss"}
+CALL DELIVERY FAILED: household's Voice SDK Client did not answer {
+  dialCallStatus: 'no-answer',
+  callSid: 'CA3e3fe55e6469e804a4536d3613538a16'
+}
+ALERTING: Resend_API_Key not configured, alert not sent: [HCG ALERT] approved_call_delivery_failed
+{"event":"media_stream_started","ts":"2026-10-01T18:09:55.132Z","streamSid":"MZa3f7f1dd5a7d9b1d7051b2f28a9328c5","callSid":"CA3e3fe55e6469e804a4536d3613538a16","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87"}
+{"event":"transcript_chunk","ts":"2026-10-01T18:10:00.107Z","callSid":"CA3e3fe55e6469e804a4536d3613538a16","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87","chunkIndex":1,"chunkChars":27,"chunkWords":4,"emptyTranscript":false,"riskScore":0,"confidence":20}
+{"event":"media_stream_stopped","ts":"2026-10-01T18:10:00.107Z","streamSid":"MZa3f7f1dd5a7d9b1d7051b2f28a9328c5","callSid":"CA3e3fe55e6469e804a4536d3613538a16","householdId":"ffc4cfe1-6d93-46d8-8e88-3b93eadabf87","warningSent":false,"peakRiskScore":0,"terminatedBySystem":false,"detectedAfterCallEnded":false,"monitoredDurationSeconds":5,"monitoringLimitReached":false}
+Known contact → bypass AI
+CALL DELIVERY FAILED: household's Voice SDK Client did not answer {
+  dialCallStatus: 'no-answer',
+  callSid: 'CAefb431ad80da3f686e0a980552079cd6'
+}
+ALERTING: suppressed (rate-limited) — approved_call_delivery_failed: An approved call could not be delivered — Client did not answer (no-answer)
