@@ -213,5 +213,26 @@ const call = (o) => ({
   }
 }
 
+
+// ---------- 8. callStats.js (Operations → Call activity, fair use) paginated ----------
+{
+  const callStatsPath = require.resolve('../services/businessMetrics/callStats.js');
+  const clientsPath = require.resolve('../services/supabaseClients.js');
+  const rows = Array.from({ length: 2600 }, (_, i) => ({ status: i % 2 ? 'Known' : 'Unknown', result: 'SAFE', risk_score: 10, warning_sent: false, terminated_by_system: false, household_id: 'h' + (i % 3), created_at: new Date(Date.UTC(2026, 9, 1) + i * 1000).toISOString() }));
+  const fake = { from: () => { let f = rows; const q = { select: () => q, gte: () => q, order: () => q, eq: (k, v) => { f = f.filter((r) => r[k] === v); return q; }, range: async (a, b) => ({ data: f.slice(a, Math.min(b + 1, a + 1000)), error: null }) }; return q; } };
+  const saved = require.cache[clientsPath];
+  require.cache[clientsPath] = { id: clientsPath, filename: clientsPath, loaded: true, exports: { supabaseAdmin: fake } };
+  delete require.cache[callStatsPath];
+  const cs = require(callStatsPath);
+  const today = await cs.getCallStatsToday();
+  check(today.available && today.totalCalls === 2600 && today.unknownMonitoredCalls === 1300 && today.truncated === false, 'callStats today counts all 2600 rows (was capped at 1000)');
+  const top = await cs.getTopUnknownCallHouseholdsMtd(10);
+  check(top.households.reduce((a, h) => a + h.unknownCallCount, 0) === 1300 && top.truncated === false, 'fair-use ranking counts every unknown call past the 1000-row cap');
+  const src = readFileSync(callStatsPath, 'utf8');
+  check((src.match(/selectAll\(/g) || []).length === 2, 'both callStats reads use the shared selectAll reader');
+  if (saved) require.cache[clientsPath] = saved; else delete require.cache[clientsPath];
+  delete require.cache[callStatsPath];
+}
+
 console.log(failures === 0 ? '\nAll usage-safety checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;

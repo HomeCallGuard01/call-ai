@@ -560,6 +560,7 @@ function renderCallActivitySection(d) {
     html += renderFairUseRowHtml(h);
   }
   if (d.fairUse.households.length === 0) html += '<tr><td colspan="3" style="color:#64748b;">No Unknown-caller calls recorded this month.</td></tr>';
+  if (d.fairUse.truncated) html += '<tr><td colspan="3" class="text-warn">Too many calls to load in full — counts below are incomplete.</td></tr>';
   html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div>';
 
   html += '<h3 style="margin-top:18px;">Production release</h3><div class="cards">';
@@ -591,7 +592,7 @@ function renderFairUseRowHtml(h) {
 
 function callStatsTable(cs) {
   if (!cs.available) return '<div class="error">Unavailable: ' + cs.reason + '</div>';
-  return '<table>' +
+  return (cs.truncated ? '<div class="error">Too many calls to load in full — figures below are incomplete.</div>' : '') + '<table>' +
     row('Total calls', cs.totalCalls) +
     row('Known contact', cs.knownContactCalls) +
     row('Unknown monitored', cs.unknownMonitoredCalls) +

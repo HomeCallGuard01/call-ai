@@ -199,7 +199,7 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
           })
         : null;
 
-    const fairUse = classifyHouseholds(await enrichHouseholdsWithEmail(topHouseholdsRaw.households || []));
+    const fairUse = { ...classifyHouseholds(await enrichHouseholdsWithEmail(topHouseholdsRaw.households || [])), truncated: !!topHouseholdsRaw.truncated };
 
     res.json({
       generatedAt: new Date().toISOString(),

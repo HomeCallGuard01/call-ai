@@ -76,14 +76,19 @@ async function getCallStatsForRange(sinceIso) {
   const supabaseAdmin = resolveSupabaseAdmin();
   if (!supabaseAdmin) return { available: false, reason: 'SUPABASE_SERVICE_ROLE_KEY not configured' };
 
-  const { data, error } = await supabaseAdmin
+  // Paginated (2026-10-01): PostgREST caps one response at 1000 rows
+  // whatever .limit() says, so a single query silently undercounted any
+  // window with more calls. Same shared reader as the control centre.
+  const { selectAll } = require('../businessControl/selectAll');
+  const { data, error, truncated } = await selectAll(() => supabaseAdmin
     .from('calls')
     .select('status, result, risk_score, warning_sent, terminated_by_system, household_id, created_at')
-    .gte('created_at', sinceIso);
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: true }));
 
   if (error) return { available: false, reason: error.message };
 
-  return { available: true, ...summariseCalls(data) };
+  return { available: true, truncated, ...summariseCalls(data) };
 }
 
 async function getCallStatsToday() {
@@ -115,15 +120,17 @@ async function getTopUnknownCallHouseholdsMtd(limit = 10) {
   const supabaseAdmin = resolveSupabaseAdmin();
   if (!supabaseAdmin) return { available: false, reason: 'SUPABASE_SERVICE_ROLE_KEY not configured', households: [] };
 
-  const { data, error } = await supabaseAdmin
+  const { selectAll } = require('../businessControl/selectAll');
+  const { data, error, truncated } = await selectAll(() => supabaseAdmin
     .from('calls')
     .select('household_id, status, created_at')
     .eq('status', 'Unknown')
-    .gte('created_at', startOfMonthIso());
+    .gte('created_at', startOfMonthIso())
+    .order('created_at', { ascending: true }));
 
   if (error) return { available: false, reason: error.message, households: [] };
 
-  return { available: true, isCountProxy: true, households: rankHouseholdsByUnknownCallCount(data, limit) };
+  return { available: true, isCountProxy: true, truncated, households: rankHouseholdsByUnknownCallCount(data, limit) };
 }
 
 module.exports = {
