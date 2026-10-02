@@ -31,7 +31,7 @@ import { fetchActivationInstructions, fetchDashboard, ApiError, NotEntitledError
 import { useAuth } from "../../lib/AuthContext";
 import { canAutoOpenDialer, buildDialerUrl, IOS_MANUAL_DIAL_HINT } from "../../lib/dialerLink";
 import { saveActivationDevice, loadActivationDevice } from "../../lib/activationDeviceStorage";
-import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../lib/forwardingNumber";
+import { resolveForwardingNumber, formatUkPhoneForDisplay } from "../../lib/forwardingNumber";
 import {
   computeProvisioningStages,
   shouldAutoAdvance,
@@ -53,6 +53,7 @@ export default function Activate() {
   const [notProvisioned, setNotProvisioned] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [numberCopied, setNumberCopied] = useState(false);
   const [dialerError, setDialerError] = useState(false);
   const [provisioningStatus, setProvisioningStatus] = useState<TwilioProvisioningStatus | null>(null);
   const [pollFailures, setPollFailures] = useState(0);
@@ -229,7 +230,15 @@ export default function Activate() {
     };
   }, [notProvisioned, session?.access_token]);
 
-  const forwardingNumber = instructions ? extractForwardingNumberFromCode(instructions.code) : null;
+  // The API's explicit forwardingNumber (2026-09-26); code extraction is
+  // only a fallback for an older backend that doesn't send it yet.
+  const forwardingNumber = resolveForwardingNumber(instructions);
+
+  async function handleCopyNumber() {
+    if (!forwardingNumber) return;
+    await Clipboard.setStringAsync(forwardingNumber);
+    if (isMounted.current) setNumberCopied(true);
+  }
 
   async function handleCopy() {
     // instructions.code is only ever null for a native_settings carrier
@@ -381,6 +390,22 @@ export default function Activate() {
   // explain that and let them confirm once done — same "Already done
   // this? Continue" pattern the MMI path already uses.
   if (instructions.activationMethod === "native_settings") {
+    // The number is the one thing the customer has to type into Settings
+    // (2026-09-26): without it this step is impossible, so never show the
+    // Settings instructions or "I've done this" without it — show a
+    // retryable error instead.
+    if (!forwardingNumber) {
+      return (
+        <Screen>
+          <SetupProgress currentStep={3} />
+          <BackLink />
+          <BackToDashboardLink />
+          <Banner variant="error" message="We couldn't load your Home Call Guard number. Check your connection and try again, or contact support." />
+          <PrimaryButton label="Try again" onPress={load} />
+        </Screen>
+      );
+    }
+
     return (
       <Screen>
         <SetupProgress currentStep={3} />
@@ -388,16 +413,18 @@ export default function Activate() {
         <BackToDashboardLink />
         <Text style={styles.title} accessibilityRole="header">Turn on call forwarding</Text>
 
-        {forwardingNumber && (
-          <View style={styles.numberBox}>
-            <Text style={styles.numberLabel}>Your Home Call Guard number</Text>
-            <Text style={styles.numberValue} selectable>{formatUkPhoneForDisplay(forwardingNumber)}</Text>
-          </View>
-        )}
-
         <Text style={styles.explanation}>
           Your network needs call forwarding set up through your phone's own settings, not a dial code.
         </Text>
+
+        <View style={styles.numberBox} accessibilityRole="text" accessibilityLabel={`Enter this Home Call Guard number: ${forwardingNumber}`}>
+          <Text style={styles.numberLabel}>Enter this Home Call Guard number:</Text>
+          <Text style={styles.numberValue} selectable>{formatUkPhoneForDisplay(forwardingNumber)}</Text>
+        </View>
+        <Pressable onPress={handleCopyNumber} accessibilityRole="button" style={styles.copyLink}>
+          <Text style={styles.copyLinkText}>{numberCopied ? "Copied!" : "Copy number"}</Text>
+        </Pressable>
+
         <Banner variant="notice" message={instructions.activationNote || "Use your phone's native call forwarding settings."} />
 
         {instructions.requiresPreliminaryCall && instructions.preliminaryCallNote && (
@@ -422,8 +449,8 @@ export default function Activate() {
           — a real customer had no way to identify it as "a number" at
           all, and no way to look it up again without redoing this whole
           screen. Shown here as its own plain value, separately from the
-          carrier dialling instruction that follows — derived client-side
-          from the same code already returned, no backend change needed. */}
+          carrier dialling instruction that follows — now the API's own
+          forwardingNumber field (2026-09-26), see resolveForwardingNumber. */}
       {forwardingNumber && (
         <View style={styles.numberBox}>
           <Text style={styles.numberLabel}>Your Home Call Guard number</Text>

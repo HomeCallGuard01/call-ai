@@ -51,6 +51,21 @@ function toNationalDialingFormat(e164Number) {
   return e164Number.replace(/^\+44/, "0");
 }
 
+// The customer's own HCG forwarding number in UK national format
+// ("0" + 9–10 digits), returned as its own `forwardingNumber` field
+// (2026-09-26) so no client ever has to parse it back out of a dial code —
+// a native-Settings carrier (giffgaff, Three) has no code at all, and the
+// customer must still be shown the number to type into Phone Settings.
+// Strict on purpose: anything that isn't a well-formed UK E.164 number
+// returns null, and buildActivationInstructions then refuses to build
+// instructions rather than show a wrong number or a malformed code.
+const UK_E164_PATTERN = /^\+44([1-9]\d{8,9})$/;
+function toUkNationalForwardingNumber(e164Number) {
+  if (typeof e164Number !== "string") return null;
+  const match = UK_E164_PATTERN.exec(e164Number.trim());
+  return match ? `0${match[1]}` : null;
+}
+
 // Pure — directly unit-testable, no Supabase/Twilio/Express involved.
 // carrier is the mobile network key (services/providerPolicy.js's
 // PROVIDER_POLICY keys, e.g. 'o2', 'vodafone') — landline-only, ignored
@@ -168,6 +183,15 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider, carri
     throw new Error(`buildActivationInstructions: invalid landline provider "${provider}"`);
   }
 
+  // Fails safely: a missing or malformed allocated number never produces
+  // instructions at all (the routes turn this into a 500 "failed", which
+  // both clients show as a retryable error) — never a wrong number to
+  // enter in Settings, never a malformed dial code.
+  const forwardingNumber = toUkNationalForwardingNumber(twilioNumber);
+  if (!forwardingNumber) {
+    throw new Error("buildActivationInstructions: allocated forwarding number is missing or not a valid UK E.164 number");
+  }
+
   const deactivation = buildDeactivationInstructions({ deviceType, provider, carrier });
 
   if (deviceType !== "landline") {
@@ -177,12 +201,13 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider, carri
         code: null,
         activationMethod: "native_settings",
         activationNote: activation.note,
+        forwardingNumber,
         ...deactivation,
       };
     }
   }
 
-  const nationalNumber = toNationalDialingFormat(twilioNumber);
+  const nationalNumber = forwardingNumber;
 
   // Virgin Media is the one confirmed exception to the universal
   // *21*<number># format — an extra leading zero before the number.
@@ -208,6 +233,7 @@ function buildActivationInstructions({ twilioNumber, deviceType, provider, carri
     code,
     activationMethod: "mmi",
     activationNote: null,
+    forwardingNumber,
     ...deactivation,
   };
 }
@@ -217,6 +243,7 @@ module.exports = {
   LANDLINE_PROVIDERS,
   toActivationDeviceType,
   toNationalDialingFormat,
+  toUkNationalForwardingNumber,
   buildDeactivationInstructions,
   buildActivationInstructions,
 };

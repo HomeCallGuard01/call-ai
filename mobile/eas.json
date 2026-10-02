@@ -47,6 +47,10 @@
     "production": {
       "ios": {
         "ascAppId": "6804235643"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
       }
     }
   }

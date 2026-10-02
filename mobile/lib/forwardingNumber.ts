@@ -65,6 +65,22 @@ export function extractForwardingNumberFromCode(code: string | null): string | n
   return match ? match[1] : null;
 }
 
+// The one place screens get the number to show (2026-09-26). Prefers the
+// API's explicit `forwardingNumber` (UK national, "0" + 9–10 digits);
+// falls back to extracting it from the dial code ONLY for a backend old
+// enough not to send that field. A malformed value is ignored rather than
+// shown. Returns null when neither source gives a usable number.
+const NATIONAL_NUMBER_PATTERN = /^0\d{9,10}$/;
+export function resolveForwardingNumber(
+  instructions: { forwardingNumber?: string | null; code: string | null } | null | undefined
+): string | null {
+  if (!instructions) return null;
+  const explicit = instructions.forwardingNumber;
+  if (typeof explicit === "string" && NATIONAL_NUMBER_PATTERN.test(explicit)) return explicit;
+  if (explicit === undefined) return extractForwardingNumberFromCode(instructions.code);
+  return null;
+}
+
 // Matches upload.html's own formatUkPhoneForDisplay exactly (5+6 group
 // split) for consistency between the web dashboard and this app — this
 // is the standard convention for both UK mobile (07XXX XXXXXX) and most

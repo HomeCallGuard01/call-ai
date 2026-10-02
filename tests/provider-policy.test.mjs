@@ -18,6 +18,7 @@ const {
   getCustomerFacingState,
   evaluateProviderCompatibility,
   getMobileDeactivationInstructions,
+  getMobileActivationInstructions,
   evaluateHouseholdCheckoutEligibility,
   PROVIDER_POLICY,
 } = require('../services/providerPolicy.js');
@@ -182,7 +183,8 @@ function check(condition, message) {
 
 {
   const result = getMobileDeactivationInstructions('sky');
-  check(result.method === 'mmi' && result.code === '#61#', "Sky Mobile: deactivation code is #61# — a different service-code family entirely, not #21#/##21#");
+  check(result.method === 'native_settings' && result.code === null && /Always forward/.test(result.note || ''), "Sky Mobile: #61# withdrawn (2026-09-26 — service code 61 is no-reply forwarding, not the unconditional 21 HCG sets up); cancellation via phone Settings, no guessed replacement code");
+  check(getMobileActivationInstructions('sky').method === 'mmi', 'Sky Mobile: ACTIVATION is unchanged (still the dial code) — only cancellation moved to Settings');
 }
 
 {
