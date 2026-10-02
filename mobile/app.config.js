@@ -10,7 +10,11 @@ module.exports = {
     // iOS Build 14. versionCode itself is managed remotely by EAS
     // (eas.json's appVersionSource: "remote" + production autoIncrement),
     // not this field.
-    version: "1.0.1",
+    // 1.0.2 (2026-10-01, release/ios-1.0.2): iOS 1.0.2 is the modern app line
+    // (iPhone signup path, StoreKit-sourced price, microphone permission).
+    // 1.0.1 (Build 14) is live, so the next iOS upload needs a new version.
+    // Shared with Android's versionName.
+    version: "1.0.2",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
