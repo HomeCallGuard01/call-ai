@@ -2,6 +2,10 @@
 // iOS technical parity). Pure — no React Native imports — so it is unit
 // tested directly (tests/ios-parity.test.mjs).
 //
+// PROPOSED — AWAITING ANDREW'S APPROVAL (2026-10-02). Do not change this
+// path's architecture further until that decision is made; the alternative
+// (flag-gated, deviceType "iphone") is on readiness/ios-parity 2f8d31f.
+//
 // iOS 1.0.2 release decision (2026-10-01, release/ios-1.0.2): the iOS app is
 // distributed only through the App Store, so when it runs on an iPhone the
 // iPhone IS the supported path — it buys through Apple in-app purchase and
