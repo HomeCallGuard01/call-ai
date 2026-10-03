@@ -961,6 +961,35 @@ const telephonyAbuse = createTelephonyAbuseLayer({
   },
 });
 configureProvisioningAbuseGuard(telephonyAbuse.provisioningGuard);
+
+// Integration 2026-10-03: admin visibility of the Launch Fortress controls
+// (read-only; DASHBOARD ≠ ENFORCEMENT — see services/businessControl/fortressOverview.js).
+app.use(require("./routes/adminFortress").createAdminFortressRoutes({ supabaseAdmin, financialContainmentDb, telephonyAbuse }));
+
+// Integration 2026-10-03: the customer allowance describes the AUTHORITATIVE
+// £ budget (Financial Fortress) unless explicitly set otherwise, so the
+// percentage a customer sees is the capacity that actually decides their calls.
+if (!process.env.ALLOWANCE_SOURCE) process.env.ALLOWANCE_SOURCE = "fortress";
+
+// Integration 2026-10-03: commercial configuration must be economically
+// possible (services/finance/commercialConfigValidation.js). Reported at boot;
+// a production error raises a critical alert. It decides nothing commercial.
+(async () => {
+  let profiles = null;
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin.from("fc_budget_profiles").select("profile, period_budget_gbp, delivery_reserve_gbp, delivery_reserve_scope, essential_reserve_gbp, monitoring_allowed");
+      if (!error) profiles = data;
+    } catch { profiles = null; }
+  }
+  const report = require("./services/finance/commercialConfigValidation").validateCommercialConfiguration({ env: process.env, profiles });
+  console.log(`COMMERCIAL CONFIG: ${report.ok ? "ok" : "ERRORS"} (${report.errors.length} error(s), ${report.warnings.length} warning(s))`);
+  for (const e of report.errors) console.error("COMMERCIAL CONFIG ERROR:", e.code, e.detail);
+  for (const w of report.warnings) console.error("COMMERCIAL CONFIG WARNING:", w.code, w.detail);
+  if (!report.ok && process.env.NODE_ENV === "production") {
+    sendCriticalAlert("commercial_config_invalid", "Commercial configuration lets HCG spend more than the margin model allows", { errors: report.errors.map((e) => e.code) }).catch(() => {});
+  }
+})().catch((err) => console.error("COMMERCIAL CONFIG CHECK FAILED:", err.message));
 const twilioWebhookIntegrity = telephonyAbuse.webhookIntegrity.middleware;
 
 // Every Twilio voice response leaves through here: the egress guard turns

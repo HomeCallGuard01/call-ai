@@ -128,6 +128,9 @@ async function getCustomerAllowance({ household, entitlement, subscription = nul
     // On the Fortress source, false once budget and delivery reserve are
     // both used: new forwarded calls may then be refused.
     callsContinue: monitoring.callsContinue !== false,
+    // Integration 2026-10-03: true when trusted callers still connect even
+    // though other callers may not (trusted-only delivery reserve).
+    trustedCallersContinue: monitoring.trustedCallersContinue === undefined ? monitoring.callsContinue !== false : monitoring.trustedCallersContinue !== false,
     source: monitoring.source === 'fortress' ? 'fortress' : 'monitoring_minutes',
     enforced: monitoring.enforced,
     membership: {

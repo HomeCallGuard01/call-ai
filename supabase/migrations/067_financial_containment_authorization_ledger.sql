@@ -1437,7 +1437,11 @@ begin
     'remainingWithReserveGbp', a.base_budget_gbp + a.adjustments_gbp - a.consumed_gbp - a.reserved_gbp + a.delivery_reserve_gbp,
     'activeExposureGbp', (select coalesce(sum(reserved_gbp), 0) from public.fc_reservations where household_id = p_household_id and state in ('active', 'terminating')),
     'worstCaseExposureGbp', (select coalesce(sum(worst_case_gbp), 0) from public.fc_reservations where household_id = p_household_id and state in ('active', 'terminating')),
-    'lastDenialReason', a.last_denial_reason, 'lastDenialAt', a.last_denial_at, 'live', v_live);
+    'lastDenialReason', a.last_denial_reason, 'lastDenialAt', a.last_denial_at, 'live', v_live,
+    -- Integration 2026-10-03: who the delivery reserve funds ('all' |
+    -- 'trusted_only' | 'none'), so the customer view never claims every call
+    -- still connects when only trusted callers would.
+    'deliveryReserveScope', (select pr.delivery_reserve_scope from public.fc_budget_profiles pr where pr.profile = a.profile));
 end;
 $$;
 

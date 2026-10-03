@@ -149,6 +149,8 @@ export interface CustomerAllowance {
   // false only on the Fortress (£ budget) source once its budget and
   // delivery reserve are both used — forwarded calls may then be refused.
   callsContinue: boolean;
+  /** Integration 2026-10-03: trusted callers still connect (trusted-only delivery reserve). Older backends omit it. */
+  trustedCallersContinue?: boolean;
   source: "monitoring_minutes" | "fortress";
   enforced: boolean;
   membership: {

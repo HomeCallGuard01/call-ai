@@ -43,15 +43,22 @@ function fromFortressHouseholdStatus(status, { plan, monitoringAllowed = true })
   const usedPercent = Math.min(100, Math.max(0, Math.floor(fraction * 100)));
   const exhausted = n(status.remainingBudgetGbp) <= 0;
   // Budget gone but Fortress's delivery reserve still funds unmonitored
-  // delivery: calls continue, unmonitored. Both gone: Fortress refuses
-  // new calls (a forwarded call would not reach the customer).
-  const callsContinue = !exhausted || n(status.remainingWithReserveGbp) > 0;
+  // delivery. Integration 2026-10-03: the reserve may fund only TRUSTED
+  // callers (profile scope 'trusted_only', the paid default), so:
+  //   callsContinue          — every caller still connects
+  //   trustedCallersContinue — the household's trusted callers still connect
+  // Both gone: Fortress refuses new calls.
+  const reserveLeft = n(status.remainingWithReserveGbp) > 0;
+  const scope = status.deliveryReserveScope || 'all';
+  const callsContinue = !exhausted || (reserveLeft && scope === 'all');
+  const trustedCallersContinue = !exhausted || (reserveLeft && scope !== 'none');
   const crossed = warningPoints.filter((p) => p < 100 && usedPercent >= p);
   return {
     ...base,
     periodStartsAt: status.periodStart ? new Date(status.periodStart).toISOString() : null,
     resetsAt: status.periodEnd ? new Date(status.periodEnd).toISOString() : null,
     callsContinue,
+    trustedCallersContinue,
     usedMinutes: null,
     remainingMinutes: null,
     usedPercent,

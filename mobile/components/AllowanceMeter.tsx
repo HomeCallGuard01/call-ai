@@ -35,7 +35,9 @@ export function allowanceMessage(a: CustomerAllowance): string | null {
         ? `You've used this month's call checking. Your phone still works normally and every call still reaches you, but calls from unknown numbers won't be checked for scams${until}.`
         : "You've used this month's included call checking. We're still checking calls from unknown numbers for now.";
     case "calls_limited":
-      return `You've used this month's protection allowance. Until it resets${resets ? ` on ${resets}` : ""}, calls forwarded to Home Call Guard may not get through. Please contact support@homecallguard.co.uk if you need help.`;
+      return a.trustedCallersContinue
+        ? `You've used this month's protection allowance. Calls from people you trust still get through. Until it resets${resets ? ` on ${resets}` : ""}, other calls forwarded to Home Call Guard may not get through. Please contact support@homecallguard.co.uk if you need help.`
+        : `You've used this month's protection allowance. Until it resets${resets ? ` on ${resets}` : ""}, calls forwarded to Home Call Guard may not get through. Please contact support@homecallguard.co.uk if you need help.`;
     case "paused":
       return "Call checking is paused for a short while. Your phone still works normally and every call still reaches you.";
     case "unavailable":
