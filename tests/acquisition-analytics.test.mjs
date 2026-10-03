@@ -336,7 +336,8 @@ check(
   'GET / records landing_visit as a fire-and-forget call (errors caught, never surfaced to the request)'
 );
 
-const registerRouteStart = serverSource.indexOf('app.post("/register", async (req, res) => {');
+// Integration 2026-10-03: /register now mounts the auth rate limiter first.
+const registerRouteStart = serverSource.indexOf('app.post("/register", authRateLimiter.limit("register", { group: "register" }), async (req, res) => {');
 const registerRouteEnd = serverSource.indexOf('\n// AUTH: LOGIN', registerRouteStart);
 const registerRouteBlock = serverSource.slice(registerRouteStart, registerRouteEnd);
 

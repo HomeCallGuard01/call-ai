@@ -251,6 +251,13 @@ app.use((req, res, next) => {
 });
 
 app.use(bodyParser.urlencoded({ extended: false }));
+
+// Integration 2026-10-03 (launch-gate PR-11): unauthenticated auth endpoints
+// are rate-limited (middleware/authEndpointRateLimit.js). Per-IP limits only
+// when TRUST_PROXY_HOPS is set — and then Express must trust exactly that
+// many proxy hops, or req.ip would be the proxy's address for everyone.
+if (Number(process.env.TRUST_PROXY_HOPS) > 0) app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS));
+const authRateLimiter = require("./middleware/authEndpointRateLimit").createAuthEndpointLimiter();
 app.use(cookieParser());
 app.use(express.static("public"));
 
@@ -2267,7 +2274,7 @@ function buildUserScopedClient() {
 
 // AUTH: REGISTER
 
-app.post("/register", async (req, res) => {
+app.post("/register", authRateLimiter.limit("register", { group: "register" }), async (req, res) => {
   const { email, password, confirm_password } = req.body;
 
   // Friends & Family invite (2026-09) — carried through as an opaque
@@ -2422,7 +2429,9 @@ app.post("/register", async (req, res) => {
 
 // AUTH: LOGIN
 
-app.post("/login", async (req, res) => {
+// No per-email limit on /login: failing logins with a victim's address must
+// never lock the victim out. Global (and, with TRUST_PROXY_HOPS, per-IP) only.
+app.post("/login", authRateLimiter.limit("login", { group: "login", emailField: null }), async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -2614,10 +2623,10 @@ app.post("/verify-confirmation-token", express.json(), async (req, res) => {
 
 // AUTH: RESEND CONFIRMATION
 
-app.post("/resend-confirmation", async (req, res) => {
+app.post("/resend-confirmation", authRateLimiter.limit("resend-confirmation", { group: "email", onEmailLimit: "suppress" }), async (req, res) => {
   const { email } = req.body;
 
-  if (email) {
+  if (email && !req.authEmailSuppressed) {
     const { error } = await supabase.auth.resend({
       type: "signup",
       email,
@@ -2647,10 +2656,10 @@ app.post("/logout", (req, res) => {
 
 // AUTH: FORGOT PASSWORD
 
-app.post("/forgot-password", async (req, res) => {
+app.post("/forgot-password", authRateLimiter.limit("forgot-password", { group: "email", onEmailLimit: "suppress" }), async (req, res) => {
   const { email } = req.body;
 
-  if (email) {
+  if (email && !req.authEmailSuppressed) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${APP_URL}/reset-password.html`,
     });
@@ -2825,7 +2834,7 @@ app.get("/api/v1/launch-flags", (req, res) => {
 // and Landline interest is separately identifiable by its own reason.
 const WAITING_LIST_REASONS = new Set(["ios_coming_soon", "unsupported_carrier", "landline_coming_soon"]);
 
-app.post("/api/v1/waiting-list", express.json(), async (req, res) => {
+app.post("/api/v1/waiting-list", express.json(), authRateLimiter.limit("waiting-list", { group: "waiting_list" }), async (req, res) => {
   const { email, reason, providerKey, deviceType } = req.body || {};
 
   if (typeof email !== "string" || !email.trim() || email.indexOf("@") === -1) {

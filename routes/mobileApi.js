@@ -473,7 +473,9 @@ const MOBILE_CONFIRM_EMAIL_REDIRECT_URL = `${APP_URL}/confirmed.html`;
 // fixes and why "pending_confirmation" deliberately covers two different
 // underlying outcomes (new signup vs. resend to an existing unconfirmed
 // email) — that's the anti-enumeration design, not an oversight.
-router.post("/api/v1/register", async (req, res) => {
+// Integration 2026-10-03 (launch-gate PR-11): same limiter as the web routes.
+const mobileAuthRateLimiter = require("../middleware/authEndpointRateLimit").createAuthEndpointLimiter();
+router.post("/api/v1/register", mobileAuthRateLimiter.limit("api-register", { group: "register" }), async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
