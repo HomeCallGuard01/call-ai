@@ -1215,7 +1215,7 @@ function renderSearchResultsHtml(results) {
   // (70c8516 — customer-controlled email/id/status values must never be
   // concatenated into innerHTML raw) with the protectionEvidence panel
   // added on this release branch — neither side alone is correct.
-  return results.map((h) => '<div class="search-result"><div class="search-result-email">' + escapeHtml(h.email) + '</div><div class="search-result-meta">ID: ' + escapeHtml(h.id) + '<br>Number: ' + escapeHtml(h.twilio_number || '—') + ' · Provisioning: ' + escapeHtml(h.twilio_provisioning_status) + '<br>Status: ' + escapeHtml(h.status) + '</div>' + protectionEvidenceHtml(h.protectionEvidence) + '</div>').join('');
+  return results.map((h) => '<div class="search-result"><div class="search-result-email">' + escapeHtml(h.email) + '</div><div class="search-result-meta">' + (h.account_number ? 'Account: ' + escapeHtml(h.account_number) + '<br>' : '') + 'ID: ' + escapeHtml(h.id) + '<br>Number: ' + escapeHtml(h.twilio_number || '—') + ' · Provisioning: ' + escapeHtml(h.twilio_provisioning_status) + '<br>Status: ' + escapeHtml(h.status) + '</div>' + protectionEvidenceHtml(h.protectionEvidence) + '</div>').join('');
 }
 // TEST-EXTRACT-END: operationsListRenderers
 

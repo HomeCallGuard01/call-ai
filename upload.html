@@ -2183,11 +2183,15 @@
     if (list) {
       list.innerHTML =
         '<li class="account-row"><span class="account-row-label">Email</span><span class="account-row-value">' + escapeHtml(account.email || "—") + "</span></li>" +
-        '<li class="account-row"><span class="account-row-label">Member since</span><span class="account-row-value">' + escapeHtml(formatMemberSince(account.memberSince)) + "</span></li>";
+        '<li class="account-row"><span class="account-row-label">Member since</span><span class="account-row-value">' + escapeHtml(formatMemberSince(account.memberSince)) + "</span></li>" +
+        (account.accountNumber
+          ? '<li class="account-row"><span class="account-row-label">Account number</span><span class="account-row-value" id="accountNumberValue">' + escapeHtml(account.accountNumber) + "</span></li>"
+          : "");
     }
 
     if (note) {
-      note.innerHTML = "Need help with your account? Contact us at <a href=\"mailto:support@homecallguard.co.uk\">support@homecallguard.co.uk</a>.";
+      note.innerHTML = "Need help with your account? Contact us at <a href=\"mailto:support@homecallguard.co.uk\">support@homecallguard.co.uk</a>" +
+        (account.accountNumber ? " and quote your account number." : ".");
     }
   }
 

@@ -1,4 +1,5 @@
 const { supabaseAdmin } = require("../services/supabaseClients");
+const { parseAccountNumber } = require("../services/customerIdentity/accountNumber");
 const { stripe } = require("../services/stripeClient");
 const { deriveAdminCustomerState, ONBOARDING_ATTENTION_THRESHOLD_MS } = require("../services/adminOnboardingStatus");
 const { deriveCustomerHealth, summariseCustomerHealth } = require("../services/adminCustomerHealth");
@@ -611,8 +612,14 @@ async function searchCustomers(query) {
   const trimmed = query.trim();
   let queryBuilder = supabaseAdmin.from("households").select("*").limit(25);
 
+  const accountNumber = parseAccountNumber(trimmed);
   if (looksLikeUuid(trimmed)) {
     queryBuilder = queryBuilder.eq("id", trimmed);
+  } else if (accountNumber.valid && /^hcg/i.test(trimmed)) {
+    // Exact match on the permanent HCG account number (migration 062).
+    // Requires the "HCG" prefix as well as a valid check digit, so a
+    // partial phone-number search (bare digits) keeps its substring path.
+    queryBuilder = queryBuilder.eq("account_number", accountNumber.canonical);
   } else {
     queryBuilder = queryBuilder.or(
       `email.ilike.%${trimmed}%,phone_number.ilike.%${trimmed}%,twilio_number.ilike.%${trimmed}%`

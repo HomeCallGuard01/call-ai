@@ -1161,6 +1161,9 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
       email: req.household.email,
       memberSince: req.household.created_at,
       entitlementType: req.entitlement.entitlement_type,
+      // Permanent HCG account number (migration 062) for quoting to
+      // support. Not a credential. null until 062 is applied.
+      accountNumber: req.household.account_number || null,
     },
     // Membership card (Stage 4). planName/priceLabel are hardcoded,
     // matching this project's existing single-price-point convention
