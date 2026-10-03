@@ -42,7 +42,7 @@ const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../servic
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
-const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources } = require("../services/revenuecatWebhook");
+const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources, resolveEventIsSandbox } = require("../services/revenuecatWebhook");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
@@ -1208,7 +1208,17 @@ router.post("/api/v1/contacts/sync", requireAuthApi, requireEntitlement, async (
 // source itself granted, never a Stripe-paid household's access. Twilio
 // provisioning reuses updateTwilioNumberForEntitlementChange verbatim,
 // the exact function the Stripe webhook already calls — same policy, one
-// implementation, two payment sources.
+// implementation, two payment sources — EXCEPT for a SANDBOX-environment
+// grant, which is deliberately excluded from that call (P0 fix,
+// 2026-09-27 — see the "grant" branch below and
+// services/revenuecatWebhook.js's resolveEventIsSandbox for the full
+// reasoning). Before this fix, a TestFlight/App-Review/local-dev sandbox
+// purchase reached this exact same path and provisioned a real Twilio
+// number against the real account — nothing anywhere in this route or
+// its downstream functions ever read RevenueCat's own `environment`
+// field. A revoke (EXPIRATION) always still runs regardless of
+// environment — releasing a number is never a cost/safety concern in
+// that direction, only granting one is.
 router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
   const expectedAuth = process.env.REVENUECAT_WEBHOOK_AUTHORIZATION;
 
@@ -1289,14 +1299,42 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
       if (!originalTransactionId) {
         return res.status(400).json({ error: "invalid_payload", message: "missing transaction id" });
       }
+      // P0 fix (2026-09-27): resolveEventIsSandbox fails closed — SANDBOX,
+      // missing, or any unrecognised environment value are all treated as
+      // "do not spend real money," only a confirmed 'PRODUCTION' is
+      // treated as safe to provision for. See services/revenuecatWebhook.js
+      // for the full reasoning.
+      const isSandbox = resolveEventIsSandbox(event);
       const result = await upsertActiveEntitlementFromRevenueCat(household.id, {
         originalTransactionId,
         expiresAtMs: event.expiration_at_ms,
+        environment: isSandbox ? "sandbox" : "production",
       });
-      await updateTwilioNumberForEntitlementChange(household, true).catch(err =>
-        console.error("REVENUECAT WEBHOOK: Twilio provisioning update failed:", err.message)
-      );
-      return res.json({ ok: true, ...result });
+      // A SANDBOX-environment event (Apple TestFlight/App Review/local
+      // dev, or fail-closed on anything unrecognised) must never
+      // provision a REAL Twilio number against the real Twilio account —
+      // this is what previously let an uncontrolled number of test
+      // purchases each accumulate real recurring telephony cost. The
+      // entitlement above is still granted (RevenueCat/StoreKit's own
+      // purchase-acknowledgement flow, and this app's own "Restore
+      // Purchases"/subscription-status UI, must keep working for
+      // legitimate sandbox testing) — only the real-money side effect is
+      // skipped. This does not block Apple App Review: the reviewer
+      // account is a pre-provisioned complimentary entitlement (see
+      // docs/launch/APP_REVIEW_RESUBMISSION_2026-09-09.md), never a live
+      // RevenueCat purchase, so review never depended on this path
+      // provisioning a real number.
+      if (isSandbox) {
+        console.warn(
+          "REVENUECAT WEBHOOK: SANDBOX-environment grant — entitlement recorded, real Twilio provisioning skipped",
+          { householdId: household.id, eventType: event.type, eventId: event.id }
+        );
+      } else {
+        await updateTwilioNumberForEntitlementChange(household, true).catch(err =>
+          console.error("REVENUECAT WEBHOOK: Twilio provisioning update failed:", err.message)
+        );
+      }
+      return res.json({ ok: true, ...result, sandbox: isSandbox });
     }
 
     if (classification === "revoke") {

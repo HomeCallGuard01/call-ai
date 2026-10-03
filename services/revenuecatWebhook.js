@@ -40,6 +40,35 @@ function resolveOriginalTransactionId(event) {
   return event && (event.original_transaction_id || event.transaction_id) || null;
 }
 
+// P0 fix (2026-09-27): every RevenueCat event carries `environment`
+// ('SANDBOX' or 'PRODUCTION') — confirmed against a real captured
+// payload already in this file's own test fixture (REAL_TRANSFER_EVENT,
+// `environment: 'SANDBOX'`) — but until now nothing in this codebase
+// ever read it. A TestFlight/App Review/local-dev sandbox purchase
+// therefore reached the exact same grant path as a real one: same
+// entitlement_type, same real Twilio number purchase
+// (updateTwilioNumberForEntitlementChange in routes/mobileApi.js). This
+// is what resolveEventIsSandbox exists to stop being possible.
+//
+// FAIL CLOSED toward "don't spend real money": only the literal string
+// 'PRODUCTION' (case-insensitive) is ever treated as safe to provision a
+// real number for. Anything else — 'SANDBOX', missing, null, an
+// unrecognised future value RevenueCat might add — is treated as
+// sandbox-equivalent (blocks real provisioning), never the reverse. The
+// asymmetry is deliberate: treating an ambiguous/missing environment as
+// "must be production" risks silent uncontrolled telephony cost (the
+// exact failure this fix exists to close); treating it as "assume
+// sandbox" risks, at worst, a genuine paying customer's number
+// provisioning being delayed until a human notices the missing/
+// malformed field on that one event — recoverable, not costly, and
+// loudly logged (see routes/mobileApi.js) rather than silent either way.
+// In practice `environment` has been a stable, always-present RevenueCat
+// field for years, so this branch is expected to be rare.
+function resolveEventIsSandbox(event) {
+  const raw = event && typeof event.environment === "string" ? event.environment.toUpperCase() : null;
+  return raw !== "PRODUCTION";
+}
+
 // TRANSFER is structurally different from every other event type this
 // webhook handles, confirmed against a real captured TRANSFER payload
 // (2026-08-31, RevenueCat's own delivery record for the sandbox event
@@ -197,6 +226,7 @@ async function resolveAndRevokeTransferSources(event, deps) {
 module.exports = {
   classifyRevenueCatEvent,
   resolveOriginalTransactionId,
+  resolveEventIsSandbox,
   resolveTransferGainingAppUserId,
   resolveEventAppUserId,
   resolveTransferReference,

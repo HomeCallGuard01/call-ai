@@ -19,6 +19,7 @@ const {
   resolveTransferReference,
   resolveGrantReference,
   resolveAndRevokeTransferSources,
+  resolveEventIsSandbox,
 } = require('../services/revenuecatWebhook.js');
 const {
   upsertActiveEntitlementFromRevenueCat,
@@ -94,6 +95,49 @@ check(
 check(
   resolveOriginalTransactionId(null) === null,
   'returns null rather than throwing for a null event'
+);
+
+// --- resolveEventIsSandbox (P0 fix, 2026-09-27) ---
+// FAIL CLOSED: only a confirmed 'PRODUCTION' (any case) is ever treated
+// as safe to provision a real Twilio number for. Everything else —
+// SANDBOX, missing, null, malformed, an unrecognised future value — is
+// treated as sandbox-equivalent.
+
+check(
+  resolveEventIsSandbox({ environment: 'SANDBOX' }) === true,
+  'resolveEventIsSandbox: a genuine SANDBOX event is treated as sandbox'
+);
+check(
+  resolveEventIsSandbox({ environment: 'sandbox' }) === true,
+  'resolveEventIsSandbox: lower-case "sandbox" is still recognised (case-insensitive)'
+);
+check(
+  resolveEventIsSandbox({ environment: 'PRODUCTION' }) === false,
+  'resolveEventIsSandbox: a genuine PRODUCTION event is NOT treated as sandbox — this is the one path that is allowed to provision a real Twilio number'
+);
+check(
+  resolveEventIsSandbox({ environment: 'production' }) === false,
+  'resolveEventIsSandbox: lower-case "production" is still recognised (case-insensitive)'
+);
+check(
+  resolveEventIsSandbox({ environment: undefined }) === true,
+  'FAIL CLOSED: a missing environment field is treated as sandbox, never assumed to be production — this is the exact gap that let every sandbox purchase through before this fix'
+);
+check(
+  resolveEventIsSandbox({}) === true,
+  'FAIL CLOSED: an event object with no environment key at all is treated as sandbox'
+);
+check(
+  resolveEventIsSandbox(null) === true,
+  'FAIL CLOSED: a null event is treated as sandbox rather than throwing'
+);
+check(
+  resolveEventIsSandbox({ environment: 'STAGING' }) === true,
+  'FAIL CLOSED: an unrecognised future environment value RevenueCat might add is treated as sandbox, not assumed safe'
+);
+check(
+  resolveEventIsSandbox({ environment: 123 }) === true,
+  'FAIL CLOSED: a non-string environment value is treated as sandbox rather than throwing or coercing unexpectedly'
 );
 
 // --- TRANSFER handling (2026-08-31) ---
@@ -633,9 +677,90 @@ async function testScenario3_ExactTransferReplay() {
   check(fx.calls.assign === 1, 'Scenario 3 (replay): B is NOT provisioned twice unnecessarily — the real ensureTwilioNumberProvisioned/shouldAttemptProvisioning guard (household.twilio_number already set) prevents a second purchase on the replayed delivery');
 }
 
+// --- Scenario 4 (P0 fix, 2026-09-27): a SANDBOX INITIAL_PURCHASE must
+// grant an entitlement (so RevenueCat/StoreKit's own purchase
+// acknowledgement and this app's own subscription-status UI keep
+// working for legitimate TestFlight/App-Review/local-dev testing) but
+// must NOT provision a real Twilio number. Mirrors routes/mobileApi.js's
+// exact grant-branch sequence: resolveEventIsSandbox -> upsert with
+// environment -> conditionally skip updateTwilioNumberForEntitlementChange. ---
+
+async function testScenario4_SandboxGrantSkipsRealProvisioning() {
+  const fx = makeLifecycleFixture([]);
+  fx.households['auth-sandbox-s4'] = { id: 'household-sandbox-s4' };
+
+  const sandboxEvent = {
+    id: 'evt_s4_sandbox_purchase',
+    type: 'INITIAL_PURCHASE',
+    environment: 'SANDBOX',
+    app_user_id: 'auth-sandbox-s4',
+    original_transaction_id: 'sandbox_txn_S4',
+    expiration_at_ms: Date.parse('2026-10-01T00:00:00Z'),
+  };
+
+  // Exactly the route's own sequence.
+  const isSandbox = resolveEventIsSandbox(sandboxEvent);
+  const grantResult = await upsertActiveEntitlementFromRevenueCat(
+    'household-sandbox-s4',
+    { originalTransactionId: sandboxEvent.original_transaction_id, expiresAtMs: sandboxEvent.expiration_at_ms, environment: isSandbox ? 'sandbox' : 'production' },
+    { client: fx.client }
+  );
+  if (!isSandbox) await fx.updateTwilio(fx.households['auth-sandbox-s4'], true);
+
+  check(isSandbox === true, 'Scenario 4: the SANDBOX event is correctly identified as sandbox');
+  check(grantResult.action === 'granted', 'Scenario 4: the sandbox purchase still results in a granted entitlement — RevenueCat/StoreKit\'s own acknowledgement flow and the app\'s subscription-status UI keep working');
+  const sandboxRow = fx.client.__store.entitlements.find((r) => r.id === grantResult.entitlementId);
+  check(sandboxRow.revenuecat_environment === 'sandbox', 'Scenario 4: the entitlement row durably records revenuecat_environment=\'sandbox\' — the factual evidence this fix exists to leave behind');
+  check(sandboxRow.entitlement_type === 'paid_subscription', 'Scenario 4: entitlement_type is deliberately unchanged (still an accurate, real RevenueCat-reported subscription state) — only the new column records the environment distinction');
+  check(fx.calls.assign === 0, 'Scenario 4 (the actual P0 fix): NO real Twilio number is purchased for a sandbox grant — this is the exact behaviour that was previously missing');
+  check(fx.calls.provision.length === 0, 'Scenario 4: updateTwilioNumberForEntitlementChange(household, true) is never even called for a sandbox grant, not just a no-op inside it');
+  check(fx.households['auth-sandbox-s4'].twilio_number === undefined, 'Scenario 4: the household genuinely has no twilio_number after a sandbox-only purchase');
+
+  // --- Now a genuine PRODUCTION purchase for a different household, same
+  // fixture, proving the fix doesn't over-correct and block real customers. ---
+  fx.households['auth-prod-s4'] = { id: 'household-prod-s4' };
+  const productionEvent = {
+    id: 'evt_s4_prod_purchase',
+    type: 'INITIAL_PURCHASE',
+    environment: 'PRODUCTION',
+    app_user_id: 'auth-prod-s4',
+    original_transaction_id: 'prod_txn_S4',
+    expiration_at_ms: Date.parse('2026-10-01T00:00:00Z'),
+  };
+  const isProdSandbox = resolveEventIsSandbox(productionEvent);
+  const prodGrantResult = await upsertActiveEntitlementFromRevenueCat(
+    'household-prod-s4',
+    { originalTransactionId: productionEvent.original_transaction_id, expiresAtMs: productionEvent.expiration_at_ms, environment: isProdSandbox ? 'sandbox' : 'production' },
+    { client: fx.client }
+  );
+  if (!isProdSandbox) await fx.updateTwilio(fx.households['auth-prod-s4'], true);
+
+  check(isProdSandbox === false, 'Scenario 4 (control): a genuine PRODUCTION event is correctly NOT identified as sandbox');
+  const prodRow = fx.client.__store.entitlements.find((r) => r.id === prodGrantResult.entitlementId);
+  check(prodRow.revenuecat_environment === 'production', 'Scenario 4 (control): the production entitlement records revenuecat_environment=\'production\'');
+  check(fx.calls.assign === 1, 'Scenario 4 (control): a genuine production purchase for a DIFFERENT household still provisions a real Twilio number exactly as before this fix — the fix is environment-specific, not a blanket regression');
+  check(fx.households['auth-prod-s4'].twilio_number === '+447700900123', 'Scenario 4 (control): the production household genuinely receives its Twilio number');
+
+  // --- A later RENEWAL for the sandbox subscription, still SANDBOX,
+  // must keep re-confirming — not silently switch to granting real
+  // provisioning just because it's a renewal rather than an initial
+  // purchase. ---
+  const sandboxRenewal = { type: 'RENEWAL', environment: 'SANDBOX', original_transaction_id: 'sandbox_txn_S4', expiration_at_ms: Date.parse('2026-10-02T00:00:00Z') };
+  const renewIsSandbox = resolveEventIsSandbox(sandboxRenewal);
+  await upsertActiveEntitlementFromRevenueCat(
+    'household-sandbox-s4',
+    { originalTransactionId: sandboxRenewal.original_transaction_id, expiresAtMs: sandboxRenewal.expiration_at_ms, environment: renewIsSandbox ? 'sandbox' : 'production' },
+    { client: fx.client }
+  );
+  if (!renewIsSandbox) await fx.updateTwilio(fx.households['auth-sandbox-s4'], true);
+
+  check(fx.calls.assign === 1, 'Scenario 4: a SANDBOX renewal still does not provision a real Twilio number — the assign count remains exactly 1 (from the one genuine production grant), not 2');
+}
+
 await testScenario1_TransferThenExpirationNoRenewal();
 await testScenario2_TransferThenRenewalThenExpiration();
 await testScenario3_ExactTransferReplay();
+await testScenario4_SandboxGrantSkipsRealProvisioning();
 
 // --- Determinism of the multi-source-ambiguity fallback: re-asserted
 // here with a console.error capture, proving the "documented behaviour,
@@ -684,8 +809,8 @@ await testMultiSourceAmbiguityIsLoggedNotSilent();
 const routeSource = readFileSync(new URL('../routes/mobileApi.js', import.meta.url), 'utf8');
 
 check(
-  routeSource.includes('const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources } = require("../services/revenuecatWebhook");'),
-  'routes/mobileApi.js: imports the TRANSFER-aware resolveEventAppUserId/resolveGrantReference/resolveAndRevokeTransferSources, replacing the old direct event.app_user_id/resolveOriginalTransactionId usage at the call site (the underlying resolveOriginalTransactionId function itself is untouched — resolveGrantReference delegates straight to it for every non-TRANSFER type)'
+  routeSource.includes('const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources, resolveEventIsSandbox } = require("../services/revenuecatWebhook");'),
+  'routes/mobileApi.js: imports the TRANSFER-aware resolveEventAppUserId/resolveGrantReference/resolveAndRevokeTransferSources plus resolveEventIsSandbox (P0 sandbox fix, 2026-09-27), replacing the old direct event.app_user_id/resolveOriginalTransactionId usage at the call site (the underlying resolveOriginalTransactionId function itself is untouched — resolveGrantReference delegates straight to it for every non-TRANSFER type)'
 );
 
 check(
@@ -717,7 +842,32 @@ check(
     grantRevokeBlock.includes('if (classification === "revoke") {') &&
     grantRevokeBlock.includes('const result = await expireEntitlementFromRevenueCat(household.id, originalTransactionId);') &&
     grantRevokeBlock.includes('await updateTwilioNumberForEntitlementChange(household, false)'),
-  'routes/mobileApi.js: the entire grant/revoke classification, entitlement upsert/expiry, and Twilio provisioning hook block is completely untouched — proves existing non-TRANSFER RevenueCat events (INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION, etc.) go through exactly the same code path as before this fix'
+  'routes/mobileApi.js: the core grant/revoke classification, entitlement upsert/expiry, and Twilio provisioning hook calls are all still present unchanged (2026-09-27 update: the grant branch now ALSO conditionally gates the provisioning call on resolveEventIsSandbox — checked explicitly below — but every pre-existing call site/argument remains byte-identical) — proves existing non-TRANSFER RevenueCat events (INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION, etc.) go through exactly the same underlying code path as before this fix'
+);
+
+// --- Structural (P0 fix, 2026-09-27): the grant branch must gate real
+// Twilio provisioning on resolveEventIsSandbox, and the revoke branch
+// must NOT — revoking/releasing a number is never a cost/safety concern
+// in that direction, so EXPIRATION must keep working identically
+// regardless of environment. ---
+
+const grantBranch = grantRevokeBlock.slice(
+  grantRevokeBlock.indexOf('if (classification === "grant") {'),
+  grantRevokeBlock.indexOf('if (classification === "revoke") {')
+);
+const revokeBranch = grantRevokeBlock.slice(grantRevokeBlock.indexOf('if (classification === "revoke") {'));
+
+check(
+  grantBranch.includes('const isSandbox = resolveEventIsSandbox(event);') &&
+    grantBranch.includes('environment: isSandbox ? "sandbox" : "production",') &&
+    grantBranch.includes('if (isSandbox) {') &&
+    grantBranch.includes('} else {\n        await updateTwilioNumberForEntitlementChange(household, true)'),
+  'routes/mobileApi.js: the grant branch computes isSandbox BEFORE upserting, records it on the entitlement, and only calls real Twilio provisioning in the else (non-sandbox) branch — the actual P0 fix, verified structurally'
+);
+check(
+  !revokeBranch.slice(0, revokeBranch.indexOf('return res.json({ ok: true, ...result });')).includes('resolveEventIsSandbox') &&
+    !revokeBranch.slice(0, revokeBranch.indexOf('return res.json({ ok: true, ...result });')).includes('isSandbox'),
+  'routes/mobileApi.js: the revoke (EXPIRATION) branch is NOT gated by sandbox in any way — releasing/deprovisioning a number always runs regardless of environment, since that direction is never a cost or safety concern'
 );
 
 // 2026-09-07 update: Voice-SDK-reachability logic now legitimately exists
