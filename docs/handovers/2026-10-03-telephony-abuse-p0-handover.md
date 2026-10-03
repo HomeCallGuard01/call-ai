@@ -248,7 +248,7 @@ Their invariants are unchanged; the diffs are in `c5f8c94`.
 ## 13. Migrations and conflicts
 
 - **None created in `supabase/migrations/`. None applied anywhere.**
-- Inventory across all local and remote branches: highest number used is **061**. Collisions exist at 055 (×2), 058 (×2), 060 (×2) and 061 (×2).
+- Inventory across all local and remote branches: highest number used was **061** at the start of this work. Collisions exist at 055 (×2), 058 (×2), 060 (×2) and 061 (×2). Re-checked at handover: **062** (`feature/customer-identity-carrier-abstraction`) and **063** (`feature/customer-allowance`) have since been claimed.
 - Provisional schema: `docs/security/provisional-migrations/PROVISIONAL_telephony_abuse_controls.sql`. It is unnumbered and covers:
   - `abuse_decisions`;
   - `abuse_counters` + `abuse_hit()`;
@@ -258,7 +258,7 @@ Their invariants are unchanged; the diffs are in `c5f8c94`.
   - `number_provisioning_claims` + `claim_number_provisioning()`.
 
   Everything is RLS-on, with anon/authenticated revoked.
-- Number it (≥ 062) only after the collisions are resolved and Andrew approves. Adapters for these ports are not written yet.
+- Number it (≥ **064**, re-check first) only after the collisions are resolved and Andrew approves. Adapters for these ports are not written yet.
 
 ## 14. Dependencies on Claude 1 (Financial Fortress)
 
@@ -291,7 +291,7 @@ Detail: threat model §7.
 
 ## 17. Exact integration order
 
-1. Resolve migration-number collisions (055/058/060/061). Agree the next free number.
+1. Resolve migration-number collisions (055/058/060/061). Agree the next free number (062/063 are now taken, so ≥ 064).
 2. Merge/deploy **`security/voice-surface-p0`** first, with its own host-allowlist checklist.
 3. Merge **`security/telephony-abuse-p0`** on top. No migration is needed for it to run. Set env:
    - `TWILIO_ACCOUNT_SID` (present);

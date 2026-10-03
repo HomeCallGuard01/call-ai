@@ -3,8 +3,9 @@
 -- STATUS: DRAFT. NOT APPLIED ANYWHERE (not local, not staging, not
 -- production). Deliberately kept OUT of supabase/migrations/ and UNNUMBERED:
 -- 055, 058, 060 and 061 are each claimed twice across branches today and the
--- highest number in use anywhere is 061. Give this file the next free number
--- (>= 062) only at integration time, after the 055/060/061 collisions are
+-- highest number in use was 061; 062 (customer identity) and 063 (customer
+-- allowance) were claimed by other branches on 2026-10-03. Give this file the
+-- next free number (>= 064, re-check) only at integration time, after the 055/060/061 collisions are
 -- resolved, and only with Andrew's approval.
 --
 -- WHY: the abuse layer (services/abuse/*) works today with process-local

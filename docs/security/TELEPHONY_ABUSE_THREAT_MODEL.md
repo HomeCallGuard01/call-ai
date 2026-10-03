@@ -267,7 +267,7 @@ A trusted contact therefore passes steps 0–9 like everyone else. Tests show it
 2. **Genuine inbound-minute flood from many spoofed CLIs to one household** is delivered by design (hard requirement). Cost is bounded only by household concurrency (3) × call duration. This needs Andrew's decision or a provider-side channel cap.
 3. **Master Twilio auth token + geo permissions** (catastrophic-risk review). Outbound voice geo is reportedly all off; SMS geo is still pending in Console.
 4. **Twilio number Voice URL hosts vs `TWILIO_WEBHOOK_ALLOWED_HOSTS`.** This is the Security P0 deploy risk, inherited.
-5. **Migration-number collisions** (055/058/060/061) block numbering the provisional migration.
+5. **Migration-number collisions** (055/058/060/061) block numbering the provisional migration. 062 and 063 are now claimed by other branches, so it needs ≥ 064.
 6. **Claude 1 integration:** the port is wired with `null` (not integrated), so financial authorisation is not consulted yet.
 7. **Legacy untagged numbers** are invisible to adoption and orphan detection.
 
