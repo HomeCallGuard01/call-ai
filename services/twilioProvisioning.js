@@ -143,6 +143,13 @@ async function purchaseTwilioNumber(household, deps, guard) {
     guard: environmentGuard = decideNumberPurchase,
     guardEnv = process.env,
   } = deps;
+  // Financial containment P0: every REAL number purchase needs a one-shot
+  // authorisation (company-wide daily purchase cap + global breaker/kill
+  // switch). Fail-closed. Applied by default whenever the real Twilio client
+  // is in use; tests with a fake client inject their own (or none).
+  const authorizeNumberPurchase = deps.authorizeNumberPurchase !== undefined
+    ? deps.authorizeNumberPurchase
+    : (client && client === twilioRestClient ? require("./containment").authorizeNumberPurchase : null);
 
   // Environment guard (services/telephony/provisioningGuard.js): a staging
   // or local server must never buy a real number on the production provider
@@ -187,6 +194,20 @@ async function purchaseTwilioNumber(household, deps, guard) {
       console.error("TWILIO PROVISIONING FAILURE-RECORD ERROR:", err.message)
     );
     return { attempted: true, success: false, error: message };
+  }
+
+  if (authorizeNumberPurchase) {
+    // Each attempt is counted (random key): two racing attempts are two
+    // purchases. A refusal is NOT recorded as a provisioning failure, so it
+    // never burns the household's limited attempts.
+    const auth = await Promise.resolve(authorizeNumberPurchase({ householdId: household.id, attemptKey: require("crypto").randomUUID() }))
+      .catch(err => ({ allowed: false, reason: `authorization_error: ${err.message}` }));
+    if (!auth || !auth.allowed) {
+      const reason = (auth && auth.reason) || "authorization_unavailable";
+      console.error("TWILIO PROVISIONING REFUSED BY FINANCIAL CONTAINMENT:", household.id, reason);
+      Promise.resolve().then(() => sendAlert("twilio_provisioning_refused_containment", `Number purchase not authorised: ${reason}`, { householdId: household.id, reason })).catch(() => {});
+      return { attempted: true, success: false, error: `number purchase not authorised: ${reason}`, containmentRefused: true };
+    }
   }
 
   try {

@@ -140,7 +140,8 @@ async function run() {
     // Telephony abuse P0 (2026-10-03): responses leave through
     // sendVoiceTwiml, and an abuse-refusal return precedes the known-contact
     // branch, so the branch is located from its own `if (isKnown) {`.
-    const EARLY_RETURN = 'return sendVoiceTwiml(req, res, twiml, { household, correlationId });';
+    // Integration 2026-10-03: the response also settles the reservation when the final TwiML has no <Dial>.
+  const EARLY_RETURN = 'return sendVoiceTwiml(req, res, twiml, { household, correlationId, settleIfNoDial: req.body.CallSid });';
     const knownStartIdx = voiceSrc.indexOf('if (isKnown) {');
     const firstReturnIdx = knownStartIdx === -1 ? -1 : voiceSrc.indexOf(EARLY_RETURN, knownStartIdx);
     check(firstReturnIdx !== -1, 'sanity check: /voice contains the known-contact branch\'s early return');

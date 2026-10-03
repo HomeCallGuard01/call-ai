@@ -17,6 +17,7 @@ import http from 'node:http';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createFortressBridge } from './helpers/pgliteRestBridge.mjs';
 
 const require = createRequire(import.meta.url);
 const twilio = require('twilio');
@@ -45,13 +46,27 @@ const household = {
 // ── Fake Supabase (PostgREST subset) ─────────────────────────────────────
 const dbLog = [];
 const aiLog = [];
+// Integration 2026-10-03: RPCs run the real 056 + Financial Fortress SQL on
+// PGlite (tests/helpers/pgliteRestBridge.mjs) with a pinned test budget, so
+// a signed call is authorised by the real financial authority.
+const bridge = await createFortressBridge({
+  households: [household],
+  entitlements: [{ household_id: HH_ID, source: 'stripe' }],
+  profile: { budget: 50, reserve: 5, scope: 'trusted_only', essential: 0.1 },
+});
 function startFakeSupabase() {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
       let body = '';
       req.on('data', (c) => { body += c; });
-      req.on('end', () => {
+      req.on('end', async () => {
         const u = new URL(req.url, 'http://x');
+        if (u.pathname.startsWith('/rest/v1/rpc/')) {
+          dbLog.push({ method: req.method, table: u.pathname.replace('/rest/v1/', ''), query: u.search });
+          const r = await bridge.rpc(u.pathname.slice('/rest/v1/rpc/'.length), body);
+          res.setHeader('content-type', 'application/json');
+          res.statusCode = r.status; res.end(r.body); return;
+        }
         if (u.pathname.startsWith('/v1/')) {
           // Local OpenAI stand-in: counts every attempted (paid) AI call.
           aiLog.push(u.pathname);
@@ -245,6 +260,7 @@ try {
 } finally {
   child.kill('SIGTERM');
   supa.close();
+  await bridge.close();
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

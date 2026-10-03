@@ -16,6 +16,7 @@ import http from 'node:http';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createFortressBridge } from './helpers/pgliteRestBridge.mjs';
 
 const require = createRequire(import.meta.url);
 const twilio = require('twilio');
@@ -47,15 +48,32 @@ const contacts = [
   { id: 'c3', household_id: HA.id, name: 'Synthetic abroad', number: '+33612345678' },
 ];
 
+// Integration 2026-10-03: RPCs run the REAL SQL (056 admission + Financial
+// Fortress ledger) on PGlite via tests/helpers/pgliteRestBridge.mjs, so these
+// fraud attacks go through the real financial authority too. Every synthetic
+// household is a paying customer here (the table fake below already returns an
+// active entitlement for any household), with a pinned, generous test budget:
+// these checks are about fraud semantics, not the undecided D1 figures.
+// Budget-exhaustion attacks live in tests/launch-fortress-integration.test.mjs.
+const bridge = await createFortressBridge({
+  households,
+  entitlements: households.map((h) => ({ household_id: h.id, source: 'stripe' })),
+  profile: { budget: 50, reserve: 5, scope: 'trusted_only', essential: 0.1 },
+});
+
 function startFakeSupabase() {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
       let body = '';
       req.on('data', (c) => { body += c; });
-      req.on('end', () => {
+      req.on('end', async () => {
         const u = new URL(req.url, 'http://x');
         res.setHeader('content-type', 'application/json');
         if (u.pathname.startsWith('/v1/')) { res.end(JSON.stringify({ text: '' })); return; }
+        if (u.pathname.startsWith('/rest/v1/rpc/')) {
+          const r = await bridge.rpc(u.pathname.slice('/rest/v1/rpc/'.length), body);
+          res.statusCode = r.status; res.end(r.body); return;
+        }
         const table = u.pathname.replace('/rest/v1/', '');
         const single = String(req.headers.accept || '').includes('vnd.pgrst.object');
         let rows = [];
@@ -243,5 +261,6 @@ for (const [level, expectDelivered, expectMonitored] of [['contain', true, true]
 }
 
 supa.close();
+await bridge.close();
 console.log(`\n${failures === 0 ? 'All telephony-abuse attack checks passed' : `${failures} telephony-abuse attack check(s) FAILED`} (${results.length} checks)`);
 process.exitCode = failures === 0 ? 0 : 1;

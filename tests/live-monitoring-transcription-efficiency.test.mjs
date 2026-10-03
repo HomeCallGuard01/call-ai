@@ -364,7 +364,7 @@ async function run() {
     const knownBranch = server.slice(knownStart, knownEnd);
     check(voiceStart > 0 && knownStart > voiceStart && knownEnd > knownStart, 'located /voice\'s known-contact branch in server.js');
     check(!/attachLiveMonitoring|\.stream\(/.test(knownBranch), 'known-contact branch attaches no Media Stream — trusted calls are never transcribed');
-    check(/dialHouseholdOrFailClosed\(twiml, household\)/.test(knownBranch), 'known-contact branch still dials the household directly');
+    check(/dialHouseholdOrFailClosed\(twiml, household, dialOptions\)/.test(knownBranch), 'known-contact branch still dials the household directly');
   }
 
   // ==========================================================================

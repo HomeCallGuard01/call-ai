@@ -43,7 +43,7 @@ function run() {
     'server.js no longer calls the old isVoiceClientReachable function anywhere (a plain-prose mention in an explanatory comment about the rename is fine and expected)'
   );
 
-  const dialFnMatch = serverSrc.match(/function dialHouseholdOrFailClosed\(twiml, household\) \{[\s\S]*?\n\}\n/);
+  const dialFnMatch = serverSrc.match(/function dialHouseholdOrFailClosed\(twiml, household, dialOptions = \{\}\) \{[\s\S]*?\n\}\n/);
   check(Boolean(dialFnMatch), 'sanity check: dialHouseholdOrFailClosed function body is found in server.js');
   const fnBody = dialFnMatch ? dialFnMatch[0] : '';
 
@@ -72,7 +72,7 @@ function run() {
   // added. See tests/call-delivery-ringback.test.mjs for the dedicated,
   // focused coverage of that fix specifically.
   check(
-    fnBody.includes('const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk" });') &&
+    fnBody.includes('const dial = twiml.dial({ action: "/call-delivery-failed", timeout: 20, ringTone: "uk", ...(dialOptions.timeLimit ? { timeLimit: dialOptions.timeLimit } : {}) });') &&
       fnBody.includes('dial.client(plan.clientIdentity);'),
     '<Dial><Client> construction (action, timeout, client identity) is unchanged aside from the cosmetic ringTone addition'
   );
@@ -87,12 +87,13 @@ function run() {
   // sendVoiceTwiml (TwiML egress guard), and an abuse-refusal return now
   // precedes the known-contact branch — so the branch is located by its
   // own `if (isKnown) {` opener rather than by "first return in /voice".
-  const EARLY_RETURN = 'return sendVoiceTwiml(req, res, twiml, { household, correlationId });';
+  // Integration 2026-10-03: the response also settles the reservation when the final TwiML has no <Dial>.
+  const EARLY_RETURN = 'return sendVoiceTwiml(req, res, twiml, { household, correlationId, settleIfNoDial: req.body.CallSid });';
   const knownStartIdx = voiceSrc.indexOf('if (isKnown) {');
   const firstReturnIdx = knownStartIdx === -1 ? -1 : voiceSrc.indexOf(EARLY_RETURN, knownStartIdx);
   const knownContactBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(knownStartIdx, firstReturnIdx);
   check(
-    knownContactBranch.includes('dialHouseholdOrFailClosed(twiml, household);') &&
+    knownContactBranch.includes('dialHouseholdOrFailClosed(twiml, household, dialOptions);') &&
       !knownContactBranch.includes('hasVoiceClientRegistrationHistory') &&
       !knownContactBranch.includes('attachLiveMonitoring'),
     'trusted-contact (known-contact) routing is unaffected: it still calls dialHouseholdOrFailClosed the same way, with no direct reference to the reachability check or monitoring'

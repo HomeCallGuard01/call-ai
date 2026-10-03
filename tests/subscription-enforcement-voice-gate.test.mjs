@@ -58,16 +58,17 @@ check(
 );
 
 check(
-  // The telephony-abuse decision may only NARROW this gate (incident mode,
-  // financial monitoring denial, duplicate webhook) — never widen it.
-  /if \(shouldStartPaidMonitoring\(household, activeEntitlement\)(?: && abuseDecision\.monitor && req\.twilioDuplicate !== true)?\) \{/.test(voiceBody),
-  '/voice gates on shouldStartPaidMonitoring(household, activeEntitlement) — not a re-implemented inline check'
+  // Integration 2026-10-03: the financial gate decides first; the
+  // telephony-abuse decision may only NARROW it (incident mode, global
+  // degrade, duplicate webhook) — never widen it.
+  /household && shouldStartPaidMonitoring\(household, activeEntitlement\)\s*\?\s*await requestMonitoring\(/.test(voiceBody) && /if \(monitoringDecision\.monitor && abuseDecision\.monitor && req\.twilioDuplicate !== true\) \{/.test(voiceBody),
+  '/voice gates on shouldStartPaidMonitoring(household, activeEntitlement) — not a re-implemented inline check — then the financial-safety gate (requestMonitoring); monitoring starts only if monitoringDecision.monitor AND abuseDecision.monitor AND not a duplicate webhook'
 );
 
 // --- both the announcement AND attachLiveMonitoring must be inside the
 // gated branch — the announcement must never claim "monitored and
 // protected" when monitoring is not actually about to happen ---
-const gatedBranchMatch = voiceBody.match(/if \(shouldStartPaidMonitoring\(household, activeEntitlement\)(?: && abuseDecision\.monitor && req\.twilioDuplicate !== true)?\) \{([\s\S]*?)\} else if \(household\) \{/);
+const gatedBranchMatch = voiceBody.match(/if \(monitoringDecision\.monitor && abuseDecision\.monitor && req\.twilioDuplicate !== true\) \{([\s\S]*?)\} else if \(household/);
 check(Boolean(gatedBranchMatch), 'sanity check: the shouldStartPaidMonitoring branch body is found');
 const gatedBranch = gatedBranchMatch ? gatedBranchMatch[1] : '';
 
@@ -102,7 +103,7 @@ check(
 // remain completely unconditional — a lapsed/cancelled household's calls
 // must still connect exactly as before. Only ONE call to it in the whole
 // /voice unknown-caller tail, outside both branches. ---
-const dialCallCount = (voiceBody.match(/dialHouseholdOrFailClosed\(twiml, household\)/g) || []).length;
+const dialCallCount = (voiceBody.match(/dialHouseholdOrFailClosed\(twiml, household, dialOptions\)/g) || []).length;
 check(
   dialCallCount === 2, // once for the known-contact branch (unaffected by this change), once for the unknown-caller tail
   `dialHouseholdOrFailClosed is called exactly twice in /voice (known-contact branch + the unconditional unknown-caller tail) — found ${dialCallCount}. This fix must never add a THIRD, conditional call site that could skip call delivery for an unentitled household.`

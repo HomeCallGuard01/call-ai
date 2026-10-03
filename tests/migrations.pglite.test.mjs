@@ -1365,6 +1365,238 @@ async function main() {
 
   await asServiceRole(db);
 
+  // --- 051: financial_entries + telephony_call_legs (financial ledger core) ---
+  //
+  // The constraints ARE the ledger's trust guarantees (absence of a charge is
+  // never a zero; allocated/estimated rows can't pass as provider-actual;
+  // costs are always classified), so each one is exercised directly.
+  await db.exec('reset role;');
+  const { rows: [ledgerHousehold] } = await db.query(
+    `insert into public.households (auth_user_id, email) values (null, $1) returning id`,
+    ['ledger-test@example.com']
+  );
+  const { rows: [ledgerCall] } = await db.query(
+    `insert into public.calls (household_id, call_sid, number, status, result)
+     values ($1, 'CA_ledger_parent', 'redacted', 'Known', 'SAFE') returning id`,
+    [ledgerHousehold.id]
+  );
+
+  async function rejects(sql, params, message) {
+    try {
+      await db.query(sql, params);
+      assert(false, message);
+    } catch (err) {
+      assert(true, `${message} (${err.message.split('\n')[0]})`);
+    }
+  }
+
+  await asServiceRole(db);
+  const { rows: [leg] } = await db.query(
+    `insert into public.telephony_call_legs
+       (provider, provider_account_ref, provider_call_id, leg_type, provider_direction, provider_status,
+        call_id, household_id, household_match, provider_duration_seconds, billing_model,
+        billing_increment_seconds, billed_quantity, billed_unit, reconciliation_status, finalised_at, provider_evidence)
+     values ('twilio', 'AC_test', 'CA_ledger_parent', 'inbound_pstn', 'inbound', 'completed',
+             $1, $2, 'via_call', 239, 'per_started_minute', 60, 4, 'minute', 'final', now(),
+             '{"price": "-0.03023", "price_unit": "GBP"}')
+     returning id`,
+    [ledgerCall.id, ledgerHousehold.id]
+  );
+  assert(!!leg.id, '051: service_role can record a provider call leg with native billed duration and evidence');
+
+  await rejects(
+    `insert into public.telephony_call_legs (provider, provider_call_id, leg_type) values ('twilio', 'CA_ledger_parent', 'inbound_pstn')`,
+    [],
+    '051: the same provider call id cannot be recorded twice'
+  );
+  await rejects(
+    `insert into public.telephony_call_legs (provider, provider_call_id, leg_type) values ('Twilio!', 'CA_x', 'inbound_pstn')`,
+    [],
+    '051: provider must be a lower-case slug (no free-form supplier names)'
+  );
+
+  const entryCols = `(source_system, supplier, entry_key, entry_class, category, cost_class, billing_model,
+                      provenance, charge_observation, reconciliation_status, finalised_at,
+                      native_amount, native_currency, native_quantity, native_unit, amount,
+                      household_id, call_id, telephony_leg_id, allocation_basis, source_reference,
+                      period_start, period_end)`;
+  const entrySql = `insert into public.financial_entries ${entryCols}
+                    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`;
+  const entry = (o) => [
+    o.source_system ?? 'twilio', o.supplier ?? 'twilio', o.entry_key, o.entry_class ?? 'cost', o.category ?? 'inbound_voice',
+    o.cost_class === undefined ? 'variable_direct' : o.cost_class, o.billing_model ?? 'per_started_minute',
+    o.provenance ?? 'provider_actual', o.charge_observation === undefined ? 'reported_amount' : o.charge_observation,
+    o.reconciliation_status ?? 'provisional', o.finalised_at ?? null,
+    o.native_amount === undefined ? -0.03023 : o.native_amount, o.native_currency === undefined ? 'GBP' : o.native_currency,
+    o.native_quantity ?? null, o.native_unit ?? null, o.amount === undefined ? 0.03023 : o.amount,
+    o.household_id === undefined ? ledgerHousehold.id : o.household_id, o.call_id ?? null,
+    o.telephony_leg_id === undefined ? leg.id : o.telephony_leg_id, o.allocation_basis ?? null, o.source_reference ?? null,
+    o.period_start ?? null, o.period_end ?? null,
+  ];
+
+  await db.query(entrySql, entry({ entry_key: 'CA_ledger_parent:inbound_voice', native_quantity: 4, native_unit: 'minute' }));
+  const { rows: [stored] } = await db.query(
+    `select native_amount, native_currency, amount from public.financial_entries where entry_key = 'CA_ledger_parent:inbound_voice'`
+  );
+  assert(
+    Number(stored.native_amount) === -0.03023 && stored.native_currency === 'GBP' && Number(stored.amount) === 0.03023,
+    '051: supplier-native signed amount and currency are preserved verbatim alongside the sign-normalised amount'
+  );
+  await rejects(entrySql, entry({ entry_key: 'CA_ledger_parent:inbound_voice' }),
+    '051: the same (source_system, entry_key) cannot be recorded twice (idempotency)');
+
+  await db.query(entrySql, entry({
+    entry_key: 'CA_child:app_leg:not_observed', category: 'app_leg', charge_observation: 'not_observed',
+    native_amount: null, amount: null, native_currency: null, reconciliation_status: 'final', finalised_at: new Date().toISOString(),
+  }));
+  assert(true, '051: "no charge observed after reconciliation" is recordable WITHOUT an amount');
+  await rejects(entrySql, entry({
+    entry_key: 'CA_child:app_leg:fake_zero', category: 'app_leg', charge_observation: 'not_observed', native_amount: 0, amount: 0,
+  }), '051: a not_observed charge can never be stored as £0');
+  await rejects(entrySql, entry({
+    entry_key: 'CA_child:app_leg:pending_zero', category: 'app_leg', charge_observation: 'pending', native_amount: null, amount: 0,
+  }), '051: a pending charge can never carry an amount');
+  await rejects(entrySql, entry({
+    entry_key: 'CA_child:app_leg:unavailable_amt', category: 'app_leg', charge_observation: 'unavailable', native_amount: -0.01, amount: 0.01,
+  }), '051: an unavailable charge can never carry an amount');
+  await db.query(entrySql, entry({
+    entry_key: 'CA_child:app_leg:reported_zero', category: 'app_leg', charge_observation: 'reported_zero', native_amount: 0, amount: 0,
+  }));
+  assert(true, '051: a supplier-reported explicit zero is recordable as zero');
+  await rejects(entrySql, entry({
+    entry_key: 'CA_child:app_leg:bad_zero', category: 'app_leg', charge_observation: 'reported_zero', native_amount: 0, amount: 0.01,
+  }), '051: a reported_zero row must actually be zero');
+  await rejects(entrySql, entry({
+    entry_key: 'CA_x:no_observation', charge_observation: null,
+  }), '051: a provider_actual row must state what the provider reported');
+
+  await rejects(entrySql, entry({
+    entry_key: 'media:alloc:no_source', category: 'media_stream', provenance: 'provider_allocated', charge_observation: null,
+    native_amount: null, amount: 0.01663, allocation_basis: 'daily total apportioned by stream seconds', source_reference: null,
+  }), '051: an allocated charge must cite the provider aggregate it was apportioned from');
+  await db.query(entrySql, entry({
+    entry_key: 'usage:calls-media-stream-minutes:2026-09-19:CA_ledger_parent', category: 'media_stream',
+    provenance: 'provider_allocated', charge_observation: null, native_amount: null, amount: 0.01663,
+    allocation_basis: 'daily total apportioned by stream seconds', source_reference: 'twilio usage calls-media-stream-minutes 2026-09-19',
+  }));
+  const { rows: [alloc] } = await db.query(
+    `select provenance, charge_observation from public.financial_entries where entry_key like 'usage:calls-media-stream-minutes:%'`
+  );
+  assert(alloc.provenance === 'provider_allocated' && alloc.charge_observation === null,
+    '051: an allocated daily Media Stream charge is stored as provider_allocated with no provider observation — it cannot pass as a per-call provider charge');
+  await rejects(entrySql, entry({
+    entry_key: 'media:estimate:with_observation', category: 'media_stream', provenance: 'estimated', charge_observation: 'reported_amount',
+    allocation_basis: 'ceil(stream_seconds/60) × rate',
+  }), '051: an estimated row cannot claim a provider observation');
+  await rejects(entrySql, entry({
+    entry_key: 'media:estimate:no_basis', category: 'media_stream', provenance: 'estimated', charge_observation: null,
+    native_amount: null, amount: 0.0183,
+  }), '051: an estimated row must state how it was calculated');
+
+  await rejects(entrySql, entry({ entry_key: 'cost:no_class', cost_class: null }),
+    '051: every cost must carry a cost class');
+  await rejects(entrySql, entry({
+    entry_key: 'revenue:with_class', entry_class: 'revenue', category: 'subscription', cost_class: 'variable_direct',
+    source_system: 'stripe', supplier: 'stripe', telephony_leg_id: null,
+  }), '051: revenue never carries a cost class');
+
+  await db.query(entrySql, entry({
+    entry_key: 'channels:2026-10', source_system: 'telnyx', supplier: 'telnyx', category: 'channel_capacity',
+    cost_class: 'semi_variable', billing_model: 'per_channel', provenance: 'provider_actual', charge_observation: 'reported_amount',
+    native_amount: 150, native_currency: 'USD', native_quantity: 10, native_unit: 'channel-month', amount: 150,
+    household_id: null, telephony_leg_id: null, period_start: '2026-10-01T00:00:00Z', period_end: '2026-11-01T00:00:00Z',
+  }));
+  assert(true, '051: channel-based (per_channel, period, no leg, USD) pricing fits without schema change');
+  await db.query(entrySql, entry({
+    entry_key: 'schedule:railway:2026-09', source_system: 'manual', supplier: 'railway', category: 'hosting',
+    cost_class: 'fixed_overhead', billing_model: 'fixed_period', provenance: 'manual', charge_observation: null,
+    native_amount: null, native_currency: 'USD', amount: 20, household_id: null, telephony_leg_id: null,
+    allocation_basis: 'monthly invoice entered manually', period_start: '2026-09-01T00:00:00Z', period_end: '2026-10-01T00:00:00Z',
+  }));
+  assert(true, '051: a manually entered overhead cost fits the same ledger');
+  await rejects(entrySql, entry({
+    entry_key: 'period:backwards', period_start: '2026-10-01T00:00:00Z', period_end: '2026-09-01T00:00:00Z',
+  }), '051: a period must end after it starts');
+
+  // --- 051 reporting views (the dashboard's read interface) ---
+  await asServiceRole(db);
+  await db.query(entrySql, entry({
+    entry_key: 'stripe:rev:1', source_system: 'stripe', supplier: 'stripe', entry_class: 'revenue', category: 'subscription',
+    cost_class: null, billing_model: 'fixed_period', native_amount: 4.99, native_currency: 'GBP', amount: 4.99, telephony_leg_id: null,
+  }));
+  await db.query(entrySql, entry({
+    entry_key: 'openai:est:1', source_system: 'hcg', supplier: 'openai', category: 'transcription', provenance: 'estimated',
+    charge_observation: null, native_amount: null, native_currency: 'USD', amount: 0.0295, telephony_leg_id: null,
+    allocation_basis: 'HCG estimate: monitored seconds × list price',
+  }));
+  const { rows: rep } = await db.query(
+    `select entry_key, dashboard_bucket, amount_quality, is_unallocated, signed_amount from public.finance_entries_reporting order by entry_key`
+  );
+  const by = Object.fromEntries(rep.map((r) => [r.entry_key, r]));
+  assert(by['CA_ledger_parent:inbound_voice'].dashboard_bucket === 'telephony' && by['CA_ledger_parent:inbound_voice'].amount_quality === 'ACTUAL'
+      && Number(by['CA_ledger_parent:inbound_voice'].signed_amount) === -0.03023,
+    '051 view: a priced Twilio leg is telephony / ACTUAL with a negative signed amount');
+  assert(by['CA_child:app_leg:not_observed'].amount_quality === 'UNKNOWN' && by['CA_child:app_leg:not_observed'].signed_amount === null,
+    '051 view: an unobserved charge is UNKNOWN with no amount (never shown as £0)');
+  assert(by['usage:calls-media-stream-minutes:2026-09-19:CA_ledger_parent'].amount_quality === 'ALLOCATED', '051 view: an allocated share is ALLOCATED');
+  assert(by['openai:est:1'].dashboard_bucket === 'ai_transcription' && by['openai:est:1'].amount_quality === 'ESTIMATED', '051 view: a transcription estimate is ai_transcription / ESTIMATED');
+  assert(by['schedule:railway:2026-09'].dashboard_bucket === 'infrastructure' && by['schedule:railway:2026-09'].amount_quality === 'MANUAL'
+      && by['schedule:railway:2026-09'].is_unallocated === true, '051 view: manual hosting cost is infrastructure / MANUAL / unallocated');
+  assert(by['stripe:rev:1'].dashboard_bucket === 'revenue' && Number(by['stripe:rev:1'].signed_amount) === 4.99 && by['stripe:rev:1'].is_unallocated === false,
+    '051 view: revenue is positive and never counted as unallocated cost');
+  const { rows: contrib } = await db.query(`select native_currency, revenue, direct_service_costs, contribution, unknown_items from public.finance_monthly_contribution order by native_currency`);
+  const usdRow = contrib.filter((r) => r.native_currency === 'USD');
+  const nullRows = contrib.filter((r) => r.native_currency === null);
+  const gbpRows = contrib.filter((r) => r.native_currency === 'GBP');
+  assert(usdRow.some((r) => Number(r.direct_service_costs) === -0.0295) && usdRow.every((r) => Number(r.revenue) === 0)
+      && gbpRows.length === 1 && Number(gbpRows[0].revenue) === 4.99 && Number(gbpRows[0].direct_service_costs) === -0.04686,
+    '051 contribution view keeps each currency on its own row (USD transcription and USD channel fees never added to GBP)');
+  assert(nullRows.every((r) => Number(r.revenue) === 0 && Number(r.direct_service_costs) === 0 && Number(r.unknown_items) > 0),
+    '051 contribution view: items with no amount (UNKNOWN) have no currency, carry no money and are counted as unknown_items');
+  const { rows: [summaryCount] } = await db.query(`select count(*)::int as n from public.finance_monthly_summary`);
+  assert(summaryCount.n > 0, '051 monthly summary view returns grouped rows');
+
+  await asAuthUser(db, userId, 'a@example.com');
+  await rejects(`select count(*) from public.finance_entries_reporting`, [], '051: authenticated users cannot read the reporting views');
+  await rejects(`select count(*) from public.finance_monthly_contribution`, [], '051: authenticated users cannot read the contribution view');
+  await db.exec('reset role; set role anon;');
+  await rejects(`select count(*) from public.finance_monthly_summary`, [], '051: anon cannot read the reporting views');
+  await db.exec('reset role;');
+  await db.query(`delete from public.financial_entries where entry_key in ('stripe:rev:1', 'openai:est:1')`);
+
+  await asAuthUser(db, userId, 'a@example.com');
+  await rejects(`select count(*) from public.financial_entries`, [], '051: authenticated users cannot read financial_entries');
+  await rejects(`select count(*) from public.telephony_call_legs`, [], '051: authenticated users cannot read telephony_call_legs');
+  await db.exec('reset role; set role anon;');
+  await rejects(`select count(*) from public.financial_entries`, [], '051: anon cannot read financial_entries');
+
+  await db.exec('reset role;');
+  await rejects(`delete from public.telephony_call_legs where id = $1`, [leg.id],
+    '051: a leg with money recorded against it cannot be deleted out from under the ledger');
+  await db.query(`delete from public.calls where id = $1`, [ledgerCall.id]);
+  await db.query(`delete from public.households where id = $1`, [ledgerHousehold.id]);
+  const { rows: [legAfter] } = await db.query(`select household_id, call_id from public.telephony_call_legs where id = $1`, [leg.id]);
+  const { rows: [entryAfter] } = await db.query(
+    `select household_id, amount from public.financial_entries where entry_key = 'CA_ledger_parent:inbound_voice'`
+  );
+  assert(legAfter.household_id === null && legAfter.call_id === null && entryAfter.household_id === null && Number(entryAfter.amount) === 0.03023,
+    '051: deleting a household or call keeps the cost history (links set null, amounts intact)');
+  const { rows: callIdx } = await db.query(
+    `select 1 from pg_indexes where schemaname = 'public' and tablename = 'financial_entries' and indexdef like '%(call_id)%'`);
+  assert(callIdx.length === 1, '051: financial_entries.call_id (the calls FK) is indexed, so call deletion never scans the ledger');
+
+  // Rollback, then re-apply: the rollback removes exactly the 051 objects and
+  // the migration applies cleanly again afterwards.
+  await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '051_rollback_financial_ledger_and_telephony_usage.sql'), 'utf8'));
+  const { rows: [gone] } = await db.query(`select to_regclass('public.financial_entries') as fe, to_regclass('public.telephony_call_legs') as tl,
+    to_regclass('public.finance_entries_reporting') as v, to_regclass('public.calls') as calls`);
+  assert(gone.fe === null && gone.tl === null && gone.v === null && gone.calls !== null,
+    '051 rollback: drops the ledger tables and views and nothing else');
+  await db.exec(await readFile(path.join(migrationsDir, '051_financial_ledger_and_telephony_usage.sql'), 'utf8'));
+  const { rows: [back] } = await db.query(`select to_regclass('public.financial_entries') as fe, to_regclass('public.finance_monthly_contribution') as v`);
+  assert(back.fe !== null && back.v !== null, '051: re-applies cleanly after rollback');
+  await asServiceRole(db);
+
   // --- SECURITY DEFINER grant/search_path/owner policy, checked dynamically ---
   //
   // Discovers every SECURITY DEFINER function in public from pg_proc
