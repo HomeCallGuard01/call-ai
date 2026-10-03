@@ -1,0 +1,333 @@
+{
+  "_instructions": "For each question set answer to YES, NO, PARTIAL, UNCLEAR or UNANSWERED and paste the provider's own words into excerpt. Fill commercial values as text with units (e.g. '£0.50/number/month at 1k'). Leave blank if not given.",
+  "AQL": {
+    "provider": "aql (and BlueWave core)",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "AQL-1": {
+        "q": "Do programmable diversion / number-level routing / mobile-core routing apply to calls to a number that STAYS on EE, O2, Vodafone or Three, before that network delivers or forwards them?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "AQL-2": {
+        "q": "For aql/BlueWave SIMs, can the core make a per-call decision before the handset rings (IMS AS via iFC, SIP 3xx, HTTP/ENUM lookup to HCG)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "AQL-3": {
+        "q": "On 'deliver', is the trusted call delivered natively with no media through HCG or aql's platform and no per-minute charge to HCG?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "AQL-4": {
+        "q": "Can consumers port an existing EE/O2/Vodafone/Three 07 number to an aql SIM (PAC / text-to-switch)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "AQL-5": {
+        "q": "Do aql SIMs support VoLTE and Wi-Fi Calling on iPhone and Android (Apple carrier settings for your PLMN)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "AQL-6": {
+        "q": "Will aql supply SIMs for HCG to retail to consumers under HCG's brand, with default bars (premium, international, roaming) and per-SIM credit limits?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "AQL-7": {
+        "q": "On Three (aql's radio host), does a SIP 486 or 603 from a declining VoLTE handset trigger Call Forwarding on Busy?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "AQL-8": {
+        "q": "Free-inbound SIP DIDs for forwarded unknown calls, with per-DID channel caps and maximum call duration (C3)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "setupFee": "",
+      "perSimMonthly": "",
+      "perDivertedMinute": "",
+      "sipEgressPerMinute": "",
+      "minimumVolume1k": "",
+      "minimumVolume10k": "",
+      "trialSimsAvailable": "",
+      "freeInboundDidMonthly": ""
+    }
+  },
+  "MAGRATHEA": {
+    "provider": "Magrathea",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "MAG-1": {
+        "q": "Will you host an HCG-owned Ofcom geographic range (block of 1,000), managed by API, with free inbound to our SIP endpoint?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MAG-2": {
+        "q": "Your price list shows 10 concurrent channels per number and free inbound: can the per-number cap be set lower (e.g. 2), is a maximum call duration enforceable on your side, and at what volume does free inbound end?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MAG-3": {
+        "q": "In Network Mode, do diverts from EE, O2, Vodafone and Three actually arrive with the original CLI plus the last diverted line identity (Diversion / LDLI)? Sample INVITE?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MAG-4": {
+        "q": "Can your platform ask our endpoint for a routing decision BEFORE answering and, on 'deliver to PSTN number X', leave the media path (no further leg billed to us)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MAG-5": {
+        "q": "Your August 2026 newsletter mentions a mobile product in testing: what is it, when does it launch, and can you port in or host 07 mobile numbers (on SIM or VoIP)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MAG-6": {
+        "q": "Can outbound calling be barred on our account (or limited to UK geographic/mobile) by you, independent of our API credentials?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "hostingFeePerNumberMonthly": "",
+      "ownRangeSetupFee": "",
+      "inboundPerMinute": "",
+      "channelFeeMonthly": "",
+      "minimumMonthlySpend": "",
+      "portInFeePerNumber": ""
+    }
+  },
+  "TELNYX": {
+    "provider": "Telnyx",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "TEL-1": {
+        "q": "Is channel billing available for UK (GB) numbers used with Call Control and WebRTC, and which per-minute fees (origination, Voice API, WebRTC, streaming) does it replace?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TEL-2": {
+        "q": "Is there any Call Control action after which Telnyx leaves both signalling and media of a PSTN-originated inbound call, with no further charge (e.g. refer)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TEL-3": {
+        "q": "Can Telnyx Mobile Voice SIMs/eSIMs hold UK 07 numbers, including numbers ported from EE/O2/Vodafone/Three?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TEL-4": {
+        "q": "Does a Mobile Voice connection (e.g. the `inbound.interception_app_id` field in your MobilePhoneNumber API) call HCG BEFORE the SIM rings, letting HCG choose 'ring natively' or 'route to Call Control', with a fail-open default?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TEL-5": {
+        "q": "Is a natively-delivered incoming call to a Mobile Voice SIM free of per-minute charges to HCG, and do VoLTE and Wi-Fi Calling work on iPhone in the UK?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TEL-6": {
+        "q": "Does the Telnyx React Native SDK support iOS PushKit/CallKit and Android FCM incoming calls equivalent to Twilio <Dial><Client>?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "ukOriginationPerMinute": "",
+      "billingIncrement": "",
+      "channelPriceMonthly": "",
+      "channelMinimum": "",
+      "voiceApiPerMinute": "",
+      "webrtcPerMinute": "",
+      "streamingPerMinute": "",
+      "ukNumberMonthly": "",
+      "mobileVoicePerSimMonthly": "",
+      "mobileVoiceIncomingPerMinute": ""
+    }
+  },
+  "TWILIO": {
+    "provider": "Twilio (Finnian)",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "TWI-1": {
+        "q": "Which product or carrier arrangement acts BEFORE the customer's own MNO delivers or forwards the call?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TWI-2": {
+        "q": "Is <Reject> as the first verb unbilled on calls that arrive by mobile-network conditional forwarding (CFB/CFNRy)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TWI-3": {
+        "q": "Is ForwardedFrom (or any field) populated with the diverting subscriber number on CFB/CFNRy calls?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TWI-4": {
+        "q": "On BYOC-originated calls, is the Voice SDK <Client> leg billed, and at what rate? Is the £0 on our invoices permanent?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TWI-5": {
+        "q": "Can outbound voice/SMS geo permissions be locked against API change; per-number concurrency caps; hard spend stop on a subaccount?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "TWI-6": {
+        "q": "For a dial-back of a screened call to the customer's mobile, may the caller ID be the original caller's number, or only an owned/verified number?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "committedInboundPerMinute1k": "",
+      "committedInboundPerMinute10k": "",
+      "byocPerMinute": "",
+      "sdkLegOnByocPerMinute": "",
+      "streamsPerMinuteCommitted": ""
+    }
+  },
+  "EE": {
+    "provider": "BT/EE",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "MNO-1": {
+        "q": "Will you offer caller-based conditional diversion (CDIV with cp:identity) or an IMS terminating AS hook for opted-in subscribers via a partner API?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-2": {
+        "q": "With CFB set, does a handset decline (SIP 486 or 603 over VoLTE/VoWiFi; UDUB on 2G) trigger Call Forwarding on Busy?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-3": {
+        "q": "On a CFB/CFU divert, is the original caller's CLI presented to the divert target, plus the diverting line identity (ND1016)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-4": {
+        "q": "Is the Call Forwarding Signal (CAMARA) API or equivalent available to HCG to read a consenting subscriber's forwarding state?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "perSubscriberMonthly": "",
+      "setupFee": "",
+      "minimumVolume": "",
+      "trialAvailability": ""
+    }
+  },
+  "VMO2": {
+    "provider": "Virgin Media O2",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "MNO-1": {
+        "q": "Will you offer caller-based conditional diversion (CDIV with cp:identity) or an IMS terminating AS hook for opted-in subscribers via a partner API?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-2": {
+        "q": "With CFB set, does a handset decline (SIP 486 or 603 over VoLTE/VoWiFi; UDUB on 2G) trigger Call Forwarding on Busy?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-3": {
+        "q": "On a CFB/CFU divert, is the original caller's CLI presented to the divert target, plus the diverting line identity (ND1016)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-4": {
+        "q": "Is the Call Forwarding Signal (CAMARA) API or equivalent available to HCG to read a consenting subscriber's forwarding state?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "perSubscriberMonthly": "",
+      "setupFee": "",
+      "minimumVolume": "",
+      "trialAvailability": ""
+    }
+  },
+  "VODAFONETHREE": {
+    "provider": "VodafoneThree",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "MNO-1": {
+        "q": "Will you offer caller-based conditional diversion (CDIV with cp:identity) or an IMS terminating AS hook for opted-in subscribers via a partner API?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-2": {
+        "q": "With CFB set, does a handset decline (SIP 486 or 603 over VoLTE/VoWiFi; UDUB on 2G) trigger Call Forwarding on Busy?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-3": {
+        "q": "On a CFB/CFU divert, is the original caller's CLI presented to the divert target, plus the diverting line identity (ND1016)?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "MNO-4": {
+        "q": "Is the Call Forwarding Signal (CAMARA) API or equivalent available to HCG to read a consenting subscriber's forwarding state?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "perSubscriberMonthly": "",
+      "setupFee": "",
+      "minimumVolume": "",
+      "trialAvailability": ""
+    }
+  },
+  "FMC": {
+    "provider": "FMC / MVNO providers (iQ Mobile, Gamma, Wireless Logic/Cloud9)",
+    "replyDate": "",
+    "source": "",
+    "questions": {
+      "FMC-1": {
+        "q": "Can an inbound call to your SIM be decided per call by a partner SIP endpoint answering 'deliver natively' (redirect) WITHOUT the media passing through your platform or ours?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "FMC-2": {
+        "q": "Is consumer resale allowed?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "FMC-3": {
+        "q": "Apple carrier settings (VoLTE, Wi-Fi Calling) for your network?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      },
+      "FMC-4": {
+        "q": "Port-in of consumer 07 numbers?",
+        "answer": "UNANSWERED",
+        "excerpt": ""
+      }
+    },
+    "commercial": {
+      "perSimMonthly": "",
+      "airtimeWholesale": "",
+      "sipEgressPerMinute": "",
+      "anchoredLegPerMinute": "",
+      "minimumVolume1k": "",
+      "minimumVolume10k": "",
+      "trialSims": ""
+    }
+  }
+}
