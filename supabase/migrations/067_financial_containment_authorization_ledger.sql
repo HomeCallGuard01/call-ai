@@ -118,7 +118,12 @@ insert into public.fc_budget_profiles (profile, period_budget_gbp, delivery_rese
   ('plus',          0.50, 0.25, 'trusted_only', 0.10, true),
   ('complimentary', 0.50, 0.25, 'trusted_only', 0.10, true),
   ('internal_test', 0.50, 0.25, 'trusted_only', 0.10, true),
-  ('unentitled',    0.00, 0.10, 'all', 0.10, false)
+  ('unentitled',    0.00, 0.10, 'all', 0.10, false),
+  -- Integration 2026-10-03: a RevenueCat SANDBOX entitlement is not payment.
+  -- In production it funds no monitoring and only the unentitled-sized
+  -- delivery reserve. Staging may raise it with the audited
+  -- fc_set_budget_profile to test monitoring with sandbox purchases.
+  ('sandbox',       0.00, 0.10, 'all', 0.00, false)
 on conflict (profile) do nothing;
 
 create table if not exists public.fc_policy_audit (
@@ -423,6 +428,9 @@ begin
      and e.starts_at <= p_now and (e.ends_at is null or e.ends_at > p_now)
    order by e.starts_at desc limit 1;
   if v_ent is null then return 'unentitled'; end if;
+  -- Integration 2026-10-03: explicit sandbox provenance (053) only; a null
+  -- (pre-053) environment is not treated as sandbox.
+  if v_ent->>'revenuecat_environment' = 'sandbox' then return 'sandbox'; end if;
   if v_ent->>'entitlement_type' in ('complimentary', 'partner', 'staff') then return 'complimentary'; end if;
   if v_ent->>'plan_code' = 'plus' then return 'plus'; end if;
   return 'standard';

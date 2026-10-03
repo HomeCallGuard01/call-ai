@@ -32,6 +32,7 @@ const EXPECTED = {
   '067': ['067_financial_containment_authorization_ledger.sql', 'draft (was provisional)'],
   '068': ['068_allowance_economic_credit_bridge.sql', 'draft (new)'],
   '069': ['069_account_classification_history.sql', 'draft (drafted as admin 055)'],
+  '070': ['070_stripe_entitlement_canonical_decision.sql', 'draft (new; replaces 027\'s function)'],
 };
 const BURNED = ['048', '049', '050'];
 
@@ -44,8 +45,8 @@ for (const [n, [file, state]] of Object.entries(EXPECTED)) {
 }
 for (const n of BURNED) check(!byNumber.has(n), `burned number ${n} is never reused`);
 const highest = Math.max(...files.map((f) => Number(f.slice(0, 3))));
-check(highest === 69, `highest migration is 069 (found ${String(highest).padStart(3, '0')}); a new one needs this allocation updated deliberately`);
-for (const n of ['062', '063', '064', '065', '066', '067', '068', '069']) {
+check(highest === 70, `highest migration is 070 (found ${String(highest).padStart(3, '0')}); a new one needs this allocation updated deliberately`);
+for (const n of ['062', '063', '064', '065', '066', '067', '068', '069', '070']) {
   const f = EXPECTED[n][0].replace(/^(\d{3})_/, '$1_rollback_');
   check(existsSync(path.join(DIR, '_rollbacks', f)), `${n} has a rollback file (${f})`);
 }

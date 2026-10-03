@@ -840,7 +840,7 @@ check(
     grantRevokeBlock.includes('originalTransactionId,\n        expiresAtMs: event.expiration_at_ms,') &&
     grantRevokeBlock.includes('await updateTwilioNumberForEntitlementChange(household, true)') &&
     grantRevokeBlock.includes('if (classification === "revoke") {') &&
-    grantRevokeBlock.includes('const result = await expireEntitlementFromRevenueCat(household.id, originalTransactionId);') &&
+    grantRevokeBlock.includes('const result = await expireEntitlementFromRevenueCat(household.id, originalTransactionId, { expiresAtMs: event.expiration_at_ms });') &&
     grantRevokeBlock.includes('await updateTwilioNumberForEntitlementChange(household, false)'),
   'routes/mobileApi.js: the core grant/revoke classification, entitlement upsert/expiry, and Twilio provisioning hook calls are all still present unchanged (2026-09-27 update: the grant branch now ALSO conditionally gates the provisioning call on resolveEventIsSandbox — checked explicitly below — but every pre-existing call site/argument remains byte-identical) — proves existing non-TRANSFER RevenueCat events (INITIAL_PURCHASE, RENEWAL, CANCELLATION, EXPIRATION, etc.) go through exactly the same underlying code path as before this fix'
 );

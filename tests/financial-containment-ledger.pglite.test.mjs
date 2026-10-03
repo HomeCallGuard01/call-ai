@@ -420,7 +420,7 @@ async function main() {
   const leftFns = await q("select count(*)::int n from pg_proc where proname like 'fc\\_%' and pronamespace = 'public'::regnamespace");
   check(left[0].n === 0 && leftFns[0].n === 0, 'rollback removes every fc_* table, index and function');
   await db.exec(await readFile(PROVISIONAL_SQL, 'utf8'));
-  check((await q('select count(*)::int n from public.fc_budget_profiles'))[0].n === 5, 're-apply after rollback works (seeds restored)');
+  check((await q('select count(*)::int n from public.fc_budget_profiles'))[0].n === 6, 're-apply after rollback works (seeds restored: 5 + the integration sandbox profile)');
 
   if (failures) { console.error(`\n${failures} check(s) FAILED`); process.exit(1); }
   console.log('\nAll financial-containment ledger checks passed.');

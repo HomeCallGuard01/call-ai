@@ -1521,6 +1521,14 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
         expiresAtMs: event.expiration_at_ms,
         environment: isSandbox ? "sandbox" : "production",
       });
+      // Integration 2026-10-03: a paid Apple purchase while a paid Stripe
+      // entitlement is in effect is kept OFF (never revokes the other channel)
+      // — the customer is paying twice; support must refund one.
+      if (result.action === "parallel_paid_kept_existing") {
+        sendCriticalAlert("entitlement_parallel_paid_channels", "A household bought Apple while a paid Stripe subscription is active — access continues from Stripe; refund/cancel one channel", {
+          householdId: household.id, existingSource: result.existingSource,
+        }).catch(() => {});
+      }
       // Higher tier (customer allowance, 2026-10-03): plan follows the
       // product the store says is CURRENTLY billed (event.product_id). A
       // PRODUCT_CHANGE's new_product_id is deliberately ignored — on Apple a
@@ -1558,7 +1566,10 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
     }
 
     if (classification === "revoke") {
-      const result = await expireEntitlementFromRevenueCat(household.id, originalTransactionId);
+      // Integration 2026-10-03: an EXPIRATION for a period that has since been
+      // renewed (out-of-order or replayed delivery) must not cut off the
+      // renewed period — expireEntitlementFromRevenueCat compares it.
+      const result = await expireEntitlementFromRevenueCat(household.id, originalTransactionId, { expiresAtMs: event.expiration_at_ms });
       if (result.revoked) {
         await updateTwilioNumberForEntitlementChange(household, false).catch(err =>
           console.error("REVENUECAT WEBHOOK: Twilio provisioning update failed:", err.message)

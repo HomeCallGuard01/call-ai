@@ -214,11 +214,28 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
     throw readError;
   }
 
+  // Integration 2026-10-03 — one canonical entitlement decision (mirrors
+  // migration 070 for Stripe):
+  //   * same Apple transaction → renew, but ends_at NEVER moves backwards (a
+  //     replayed or out-of-order older event cannot shorten access);
+  //   * a SANDBOX event never supersedes anything in effect (protects
+  //     complimentary/App Review accounts and paying customers);
+  //   * an in-effect PAID entitlement from another channel (Stripe) is never
+  //     expired by an Apple purchase — kept, and the caller alerts support
+  //     (the customer is paying twice);
+  //   * a stale "active" row (ends_at passed) is not in effect and is replaced.
+  const nowMs = typeof deps.now === "function" ? deps.now() : Date.now();
+  const inEffect = (row) => row && (!row.ends_at || Date.parse(row.ends_at) > nowMs);
+  const sandbox = environment !== "production";
+
   if (
     existingActive &&
     existingActive.source === "apple_revenuecat" &&
     existingActive.external_reference === originalTransactionId
   ) {
+    if (endsAt && existingActive.ends_at && Date.parse(endsAt) < Date.parse(existingActive.ends_at)) {
+      return { action: "ignored_older_event", entitlementId: existingActive.id, environment };
+    }
     const patch = {};
     if (existingActive.ends_at !== endsAt) patch.ends_at = endsAt;
     // A renewal can genuinely flip environment (e.g. a sandbox
@@ -237,6 +254,15 @@ async function upsertActiveEntitlementFromRevenueCat(householdId, { originalTran
       }
     }
     return { action: "renewed", entitlementId: existingActive.id, environment };
+  }
+
+  if (existingActive && inEffect(existingActive)) {
+    if (sandbox) {
+      return { action: "sandbox_kept_existing", entitlementId: existingActive.id, environment };
+    }
+    if (existingActive.entitlement_type === "paid_subscription" && existingActive.source !== "apple_revenuecat") {
+      return { action: "parallel_paid_kept_existing", entitlementId: existingActive.id, existingSource: existingActive.source, environment };
+    }
   }
 
   if (existingActive) {
@@ -324,6 +350,15 @@ async function grantComplimentaryEntitlement(householdId, { grantedByAuthUserId,
       reason: "active_paid_entitlement_exists",
       existingEntitlement: { source: existingActive.source, entitlementType: existingActive.entitlement_type },
     };
+  }
+
+  if (existingActive && inEffect(existingActive)) {
+    if (sandbox) {
+      return { action: "sandbox_kept_existing", entitlementId: existingActive.id, environment };
+    }
+    if (existingActive.entitlement_type === "paid_subscription" && existingActive.source !== "apple_revenuecat") {
+      return { action: "parallel_paid_kept_existing", entitlementId: existingActive.id, existingSource: existingActive.source, environment };
+    }
   }
 
   if (existingActive) {
@@ -447,12 +482,12 @@ async function getMostRecentRevenueCatEntitlement(householdId, deps = {}) {
 // must never have that Stripe entitlement revoked by a late/retried
 // Apple expiration event — this check is what prevents that.
 async function expireEntitlementFromRevenueCat(householdId, originalTransactionId, deps = {}) {
-  const { client = supabaseAdmin } = deps;
+  const { client = supabaseAdmin, expiresAtMs = null } = deps;
   if (!client) throw new Error("Supabase admin client not configured");
 
   const { data: existingActive, error: readError } = await client
     .from("entitlements")
-    .select("id, source, external_reference")
+    .select("id, source, external_reference, ends_at")
     .eq("household_id", householdId)
     .eq("status", "active")
     .maybeSingle();
@@ -468,6 +503,11 @@ async function expireEntitlementFromRevenueCat(householdId, originalTransactionI
     existingActive.external_reference !== originalTransactionId
   ) {
     return { revoked: false };
+  }
+  // Integration 2026-10-03: an expiry event for an EARLIER period than the
+  // one now stored (renewed since; out-of-order or replayed) is ignored.
+  if (expiresAtMs && existingActive.ends_at && Date.parse(existingActive.ends_at) > Number(expiresAtMs)) {
+    return { revoked: false, ignored: "older_than_current_period" };
   }
 
   const { error } = await client
