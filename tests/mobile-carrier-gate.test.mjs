@@ -147,9 +147,14 @@ check(
   captureBlock.includes('typeof provider !== "string" || !provider.trim()'),
   'a missing/non-string/empty provider is rejected when deviceType is mobile'
 );
+// 2026-09-30 (iOS parity, migration 065 — drafted as 061): iPhone no longer ALWAYS nulls the
+// provider — that made every iPhone household "unverified" at checkout once
+// IOS_COMING_SOON is off. It keeps a supplied carrier (iOS app carrier step)
+// and stores null only when none is sent (coming-soon waiting-list path).
 check(
-  captureBlock.includes('deviceType === "iphone" ? null : provider'),
-  'provider is only ever nulled for iphone — mobile persists its carrier as before, and (2026-09-19, migration 043) landline now persists the provider it captures too, which is what the checkout gate reads to enforce LANDLINE_SUPPORTED_PROVIDERS'
+  captureBlock.includes('deviceType === "iphone" ? iphoneProvider : provider') &&
+    captureBlock.includes('const iphoneProvider = deviceType === "iphone" && typeof provider === "string" && provider.trim() ? provider : null;'),
+  'mobile persists its carrier as before, landline (migration 043) persists the provider it captures, and iphone persists a supplied carrier (null only on the coming-soon path) — which is what the checkout gate reads'
 );
 check(
   captureBlock.includes('deviceType === "landline" && (typeof provider !== "string" || !LANDLINE_PROVIDERS.has(provider))'),

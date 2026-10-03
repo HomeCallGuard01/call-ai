@@ -14,6 +14,12 @@
 // .test.mjs guards this).
 // The Stripe price/checkout mechanics themselves are unchanged for
 // Android/web — this is presentation only.
+// 2026-09-30: this screen contains NO subscription amount. iOS shows
+// StoreKit's own price for the exact package it will buy; Android shows the
+// backend's description of the current Stripe Price (lib/subscriptionPrice.ts,
+// services/subscriptionPricing.js). If the price can't be read, no amount is
+// shown (and iOS can't purchase until it loads). Guarded by
+// tests/subscription-price-display.test.mjs.
 //
 // The "start immediately" consent checkbox exists because of the
 // Consumer Contracts Regulations 2013: a trader shouldn't begin
@@ -42,8 +48,17 @@ import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
-import { createCheckoutSession, fetchDashboard, fetchCarrierCompatibility, acceptTerms, ApiError } from "../../lib/api";
+import { createCheckoutSession, fetchDashboard, fetchCarrierCompatibility, acceptTerms, fetchStripeOffer, ApiError } from "../../lib/api";
 import { fetchHcgPackage, purchaseHcgPackage, isEntitled, PurchasesNotConfiguredError } from "../../lib/purchases";
+import type { PurchasesPackage } from "react-native-purchases";
+import {
+  displayPriceFromServerOffer,
+  displayPriceFromStoreProduct,
+  subscribePriceLine,
+  subscribeButtonLabel,
+  PRICE_PENDING_NOTE,
+  type DisplayPrice,
+} from "../../lib/subscriptionPrice";
 import { useAuth } from "../../lib/AuthContext";
 import { loadActivationDevice } from "../../lib/activationDeviceStorage";
 import { isLandlineComingSoon, useLandlineComingSoon } from "../../lib/landlineFlag";
@@ -80,6 +95,42 @@ export default function Subscribe() {
     };
   }, []);
   const landlineBlocked = landlineComingSoon && storedDeviceType === "landline";
+
+  // Price of the system that will actually charge this customer. iOS keeps
+  // the StoreKit package it priced, so the package bought is the package
+  // whose price was shown.
+  const [displayPrice, setDisplayPrice] = useState<DisplayPrice | null>(null);
+  const [priceState, setPriceState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const iosPackage = useRef<PurchasesPackage | null>(null);
+  const [priceAttempt, setPriceAttempt] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setPriceState("loading");
+    const load =
+      Platform.OS === "ios"
+        ? fetchHcgPackage().then(pkg => {
+            const price = displayPriceFromStoreProduct(pkg.product);
+            iosPackage.current = price ? pkg : null;
+            return price;
+          })
+        : fetchStripeOffer(session?.access_token).then(displayPriceFromServerOffer);
+    load
+      .then(price => {
+        if (cancelled) return;
+        setDisplayPrice(price);
+        setPriceState(price ? "ready" : "unavailable");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        iosPackage.current = null;
+        setDisplayPrice(null);
+        setPriceState("unavailable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token, priceAttempt]);
+  const iosPriceMissing = Platform.OS === "ios" && priceState !== "ready";
 
   // openAuthSessionAsync can stay open for minutes (Stripe Checkout is a
   // real payment form, not a quick redirect) — long enough that the
@@ -139,7 +190,12 @@ export default function Subscribe() {
   // resolving here.
   async function handleSubscribeIOS() {
     try {
-      const pkg = await fetchHcgPackage();
+      // Only ever buys the package whose StoreKit price is on screen.
+      const pkg = iosPackage.current;
+      if (!pkg) {
+        setError("We couldn't load the subscription price from the App Store. Please try again.");
+        return;
+      }
       const customerInfo = await purchaseHcgPackage(pkg);
       if (!isMounted.current) return;
 
@@ -274,7 +330,20 @@ export default function Subscribe() {
       <SetupProgress currentStep={1} />
 
       <Text style={styles.title} accessibilityRole="header">Home Call Guard Standard</Text>
-      <Text style={styles.price}>£4.99/month, including VAT</Text>
+      {displayPrice ? (
+        <Text style={styles.price}>{subscribePriceLine(displayPrice)}</Text>
+      ) : priceState === "loading" ? (
+        <Text style={styles.body}>Loading price…</Text>
+      ) : Platform.OS === "ios" ? (
+        <View>
+          <Text style={styles.body}>We couldn't load the subscription price from the App Store.</Text>
+          <Pressable onPress={() => setPriceAttempt(n => n + 1)} accessibilityRole="button">
+            <Text style={styles.legalLinkText}>Try again</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Text style={styles.body}>{PRICE_PENDING_NOTE}</Text>
+      )}
       <Text style={styles.body}>
         Scam call protection and unlimited trusted contacts. This is a recurring monthly
         subscription that renews automatically every month until you cancel — cancel anytime.
@@ -320,7 +389,12 @@ export default function Subscribe() {
         </Text>
       </Pressable>
 
-      <PrimaryButton label="Subscribe & pay £4.99/month now" onPress={handleSubscribe} loading={isProcessing} />
+      <PrimaryButton
+        label={subscribeButtonLabel(displayPrice)}
+        onPress={handleSubscribe}
+        loading={isProcessing}
+        disabled={iosPriceMissing}
+      />
 
       <Text style={styles.smallprint}>
         {Platform.OS === "ios"

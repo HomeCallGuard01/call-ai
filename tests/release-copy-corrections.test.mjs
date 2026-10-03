@@ -41,13 +41,17 @@ check(screens.every((f) => !/AI-powered/i.test(code(read('mobile', 'app', ...f.s
 // ---- 2. VAT ----
 const welcome = read('mobile', 'app', '(setup)', 'welcome.tsx');
 const complete = read('mobile', 'app', '(setup)', 'complete.tsx');
-check(welcome.includes('detail="£4.99/month including VAT"'), 'mobile welcome: "£4.99/month including VAT"');
-check(complete.includes('£4.99 per month including VAT, cancel anytime.'), 'mobile complete: "£4.99 per month including VAT, cancel anytime."');
-check(subscribe.includes('<Text style={styles.price}>£4.99/month, including VAT</Text>'), 'Subscribe: the price line still says "£4.99/month, including VAT" (price itself unchanged)');
+// 2026-09-30 (iOS 1.0.2 dynamic pricing): these screens no longer contain an
+// amount at all. The real price, and its VAT wording, now comes from StoreKit
+// (iOS) or the Stripe Price (Android/web) — see
+// tests/subscription-price-display.test.mjs, which guards it.
+check(welcome.includes('detail="Monthly subscription, cancel anytime"') && !/£\s?\d/.test(code(welcome)), 'mobile welcome: Membership step states no amount');
+check(complete.includes('Your membership renews monthly. You can cancel anytime.') && !/£\s?\d/.test(code(complete)), 'mobile complete: price note states no amount');
+check(subscribe.includes('subscribePriceLine(displayPrice)') && !/£\s?\d/.test(code(subscribe)), 'Subscribe: the price line comes from the billing system, never a hard-coded amount');
 for (const [file, src] of [['routes/mobileApi.js', read('routes', 'mobileApi.js')], ['server.js', read('server.js')]]) {
-  check(src.includes('priceLabel: "£4.99 per month including VAT",') && !src.includes('priceLabel: "£4.99 per month",'), `${file}: Membership priceLabel is "£4.99 per month including VAT" (display string only)`);
+  check(src.includes('priceLabel: await resolveMembershipPriceLabel({') && !/priceLabel:\s*"£/.test(src), `${file}: Membership priceLabel is the household's own price, not a hard-coded string`);
 }
-check(!/4\.99/.test(code(read('services', 'checkoutSession.js')).replace(/You'll be charged £4\.99 today, then £4\.99 every month[^"]*/, '')), 'Stripe checkout session code: only its existing custom_text message mentions the price — no price or config value was changed');
+check(!/£\s?\d/.test(code(read('services', 'checkoutSession.js'))), 'Stripe checkout session code: no hard-coded amount');
 
 // ---- 3. Guarantee removed from welcome / complete (and not replaced) ----
 for (const [name, src] of [['welcome.tsx', welcome], ['complete.tsx', complete]]) {

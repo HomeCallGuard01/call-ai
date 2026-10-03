@@ -22,13 +22,14 @@
 // reinstall. Behaviour when the local record already exists is
 // completely unchanged.
 import { useCallback, useState } from "react";
-import { Text, View, ActivityIndicator, StyleSheet } from "react-native";
+import { Text, View, ActivityIndicator, StyleSheet, Platform } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Screen } from "../../../components/Screen";
 import { Banner } from "../../../components/Banner";
 import { fetchActivationInstructions, fetchActivationDevice } from "../../../lib/api";
 import { useAuth } from "../../../lib/AuthContext";
 import { loadActivationDevice, saveActivationDevice, StoredActivationDevice } from "../../../lib/activationDeviceStorage";
+import { settingsForwardingNote } from "../../../lib/forwardingSettingsCopy";
 import { colors, spacing, typography } from "../../../lib/theme";
 
 type ScreenState = "loading" | "ready" | "no_device_on_record" | "unavailable";
@@ -149,7 +150,7 @@ export default function TurnOffProtection() {
       ) : cancelCodeMethod === "native_settings" ? (
         <Banner
           variant="notice"
-          message={cancelCodeNote || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network."}
+          message={settingsForwardingNote("deactivate", cancelCodeNote, Platform.OS) || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this off — a dial code isn't reliable on this network."}
         />
       ) : (
         <Banner

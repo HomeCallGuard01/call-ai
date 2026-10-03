@@ -23,6 +23,7 @@ const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require(".
 const { renderGoPage } = require("./services/goLanding");
 const { getContacts, insertContacts, updateContact, deleteContact } = require("./database/contacts");
 const { getActiveEntitlement, getSubscriptionByHouseholdId } = require("./database/billing");
+const { resolveMembershipPriceLabel, getSharedStripePriceLookup } = require("./services/subscriptionPricing");
 const { findExistingAuthUser, decideRegistrationAction } = require("./services/registrationFlow");
 const { ensureHouseholdAndRole } = require("./services/householdBootstrap");
 const {
@@ -103,9 +104,48 @@ const customerAllowanceDb = require("./database/customerAllowance");
 const { createNoticeEnqueuer, processAllowanceNotices, enabledChannels: enabledNoticeChannels } = require("./services/allowance/allowanceNotices");
 const { allowanceNoticeWorkerDeps } = require("./services/allowance/allowanceDeps");
 const allowanceRoutes = require("./routes/allowance");
+const { evaluateAfterDeliveryOutcome, startPushFailurePolling } = require("./services/deliveryHealthMonitor");
+const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("./services/callDeliveryEvents");
+const { isVoiceSdkClientOriginated } = require("./services/voiceWebhookGuards");
+
+// Structured call-delivery telemetry (2026-09-30, release readiness P3) —
+// services/callDeliveryEvents.js. Fire-and-forget by construction: never
+// awaited in a TwiML path, never throws, content-free (per-event allow-list;
+// no caller number, name or transcript can be recorded). DB write only
+// with CALL_DELIVERY_EVENTS_DB=on (after migration 064); always one
+// HCG_CALL_DELIVERY log line.
+//
+// persist=false (a request that is not validly Twilio-signed): log line only,
+// no database write — forged POSTs must not be able to grow this table for
+// free. (Since security/voice-surface-p0 these routes are behind the
+// signature guard; an unsigned request only reaches here in report mode.)
+function deliveryEvent(args, { persist = true } = {}) {
+  recordDeliveryEvent(args, { supabase: persist ? supabaseAdmin : null }).catch(() => {});
+}
+
+// Integration 2026-10-03: one signature verdict per request — the guard's
+// (see isSignedTwilioRequest); never an APP_URL-only recompute.
+function requestSignedByTwilio(req) {
+  return isSignedTwilioRequest(req);
+}
+
+function classifyCallerPresentation(from) {
+  const value = typeof from === "string" ? from.trim() : "";
+  if (!value || /anonymous|restricted|unknown|private|unavailable/i.test(value)) return "withheld";
+  return /\d{5,}/.test(value.replace(/\D/g, "")) ? null : "withheld";
+}
+const { getHouseholdDeliveryHealth } = require("./database/deliveryEvidence");
+const {
+  MODES: FALLBACK_MODES,
+  VOICEMAIL_COMPLETE_PATH,
+  resolveFallbackMode,
+  buildDeliveryFailedResponse,
+} = require("./services/callDeliveryFallback");
+const CALL_DELIVERY_FALLBACK_MODE = resolveFallbackMode();
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
+const adminDeliveryTimelineRoutes = require("./routes/adminDeliveryTimeline");
 const mobileApiRoutes = require("./routes/mobileApi");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
@@ -218,6 +258,7 @@ app.use(express.static("public"));
 app.use(billingRoutes);
 app.use(adminRoutes);
 app.use(adminBusinessRoutes);
+app.use(adminDeliveryTimelineRoutes);
 app.use(mobileApiRoutes);
 // Customer allowance: mobile read endpoint, web top-up checkout (off unless
 // ALLOWANCE_TOPUPS_ENABLED=true), audited admin adjustment.
@@ -265,6 +306,79 @@ const openai = new OpenAI({
 
 function normaliseNumber(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
+}
+
+// Routing telemetry (2026-09-30, release readiness P3). Called right after
+// dialHouseholdOrFailClosed at each /voice call site; recomputes the same
+// pure, side-effect-free decision (hasVoiceClientRegistrationHistory +
+// decideCallDeliveryPlan) purely to record it, so dialHouseholdOrFailClosed
+// itself stays byte-for-byte unchanged. Never affects TwiML or routing.
+function recordRoutingTelemetry(household, { callSid, monitoring = false, entitled, signed = true } = {}) {
+  const persist = { persist: signed };
+  try {
+    const clientIdentity = household ? buildVoiceClientIdentity(household.id) : null;
+    const voiceClientReachable = hasVoiceClientRegistrationHistory(household && household.voice_client_registered_at);
+    const plan = decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable });
+    const registeredMs = household && household.voice_client_registered_at
+      ? new Date(household.voice_client_registered_at).getTime() : NaN;
+    const base = { householdId: household && household.id, callSid };
+    deliveryEvent({
+      ...base,
+      event: DELIVERY_EVENTS.ROUTING_DECISION,
+      detail: {
+        mode: plan.mode,
+        monitoring: Boolean(monitoring),
+        entitled: entitled === undefined ? undefined : Boolean(entitled),
+        endpointRegistered: voiceClientReachable,
+        registrationAgeHours: Number.isFinite(registeredMs) ? Math.max(0, Math.floor((Date.now() - registeredMs) / 3600000)) : undefined,
+      },
+    }, persist);
+    const willDialClient = plan.mode === "client-only";
+    if (willDialClient) {
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.PUSH_REQUESTED, detail: { timeoutSeconds: 20 } }, persist);
+      return;
+    }
+    deliveryEvent({
+      ...base,
+      event: DELIVERY_EVENTS.DELIVERY_FAILED,
+      detail: { reason: plan.mode === "self-protecting-unreachable" ? "no_registered_endpoint" : "no_household" },
+    }, persist);
+    if (plan.mode === "self-protecting-unreachable") {
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.FALLBACK_TRIGGERED, detail: { type: "unavailable_message" } }, persist);
+    }
+  } catch (err) {
+    console.error("ROUTING TELEMETRY FAILED:", err.message);
+  }
+  // Endpoint health costs database reads: only for genuine Twilio requests.
+  if (signed) recordEndpointHealthTelemetry(household, callSid);
+}
+
+// "App endpoint health" stage of the trace (2026-09-30): the household's
+// current reachability as HCG understood it when the call arrived. Off the
+// response path (three small reads, bounded by real inbound calls); never
+// affects routing.
+function recordEndpointHealthTelemetry(household, callSid) {
+  if (!household || !supabaseAdmin) return;
+  getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household })
+    .then(health => {
+      if (!health) return;
+      const readiness = health.deviceReadiness;
+      const deviceReady = !readiness ? "unknown"
+        : (readiness.microphone === "denied" || readiness.notifications === "denied") ? "not_ready"
+        : (readiness.microphone === "granted" || readiness.notifications === "granted") ? "ready" : "unknown";
+      deliveryEvent({
+        householdId: household.id,
+        callSid,
+        event: DELIVERY_EVENTS.ENDPOINT_HEALTH,
+        detail: {
+          reachability: health.reachability,
+          deliveryHealth: health.state,
+          deviceReady,
+          registrationAgeDays: health.registrationAgeDays === null ? undefined : health.registrationAgeDays,
+        },
+      });
+    })
+    .catch(err => console.error("ENDPOINT HEALTH TELEMETRY FAILED:", err.message));
 }
 
 // Shared by both /voice branches (known-contact bypass and, since the
@@ -851,11 +965,14 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
 
   // A Voice SDK client-originated request (TwiML App pointed here) must never
   // be treated as an inbound call to a household: unbilled <Reject> before
-  // any lookup, write or paid step.
-  if (typeof req.body.From === "string" && req.body.From.startsWith("client:")) {
+  // any lookup, write or paid step. Integration 2026-10-03: ONE check — the
+  // release-readiness predicate (From OR Caller, case-insensitive, trimmed),
+  // which is strictly broader than the abuse layer's original From-only test
+  // (the abuse layer's own step 1 remains as defence in depth).
+  if (isVoiceSdkClientOriginated(req.body)) {
+    console.error("VOICE: rejected a Voice SDK client-originated request (not an inbound PSTN call)");
     twiml.reject();
-    const rejectXml = twiml.toString();
-    return res.type("text/xml").send(rejectXml);
+    return sendVoiceTwiml(req, res, twiml);
   }
 
   const household = await getHouseholdByTwilioNumber(req.body.To);
@@ -863,6 +980,20 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
   if (!household) {
     console.error("CALL ROUTING ERROR: no household matches dialled number", req.body.To);
   }
+
+  const telemetrySigned = requestSignedByTwilio(req);
+  const telemetryPersist = { persist: telemetrySigned };
+  deliveryEvent({
+    householdId: household && household.id,
+    callSid: req.body.CallSid,
+    event: DELIVERY_EVENTS.INBOUND_RECEIVED,
+    detail: { signatureValid: telemetrySigned },
+  }, telemetryPersist);
+  deliveryEvent({
+    householdId: household && household.id,
+    callSid: req.body.CallSid,
+    event: household ? DELIVERY_EVENTS.HOUSEHOLD_IDENTIFIED : DELIVERY_EVENTS.HOUSEHOLD_NOT_FOUND,
+  }, telemetryPersist);
 
   // P0 Batch 1, component C: automatic activation_verified_at stamp —
   // corrected 2026-09-10 to close a real contradiction a review caught:
@@ -998,6 +1129,15 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
   }
   const dialOptions = { timeLimit: Math.min(admission.maxCallSeconds, containmentDecision.timeLimitSeconds) };
 
+  if (household) {
+    deliveryEvent({
+      householdId: household.id,
+      callSid: req.body.CallSid,
+      event: DELIVERY_EVENTS.CALLER_CLASSIFIED,
+      detail: { classification: isKnown ? "known_contact" : (classifyCallerPresentation(caller) || "unknown") },
+    }, telemetryPersist);
+  }
+
   if (isKnown) {
     console.log("Known contact → bypass AI");
 
@@ -1016,6 +1156,7 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
     }
 
     dialHouseholdOrFailClosed(twiml, household, dialOptions);
+    recordRoutingTelemetry(household, { callSid: req.body.CallSid, monitoring: false, signed: telemetrySigned });
 
     return sendVoiceTwiml(req, res, twiml, { household, correlationId, settleIfNoDial: req.body.CallSid });
   }
@@ -1164,6 +1305,14 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
   }
 
   dialHouseholdOrFailClosed(twiml, household, dialOptions);
+  recordRoutingTelemetry(household, {
+    callSid: req.body.CallSid,
+    // Integration 2026-10-03: the ACTUAL monitoring decision (financial gate
+    // ∧ abuse decision ∧ not duplicate), not merely "entitled".
+    monitoring: Boolean(monitoringDecision.monitor && abuseDecision.monitor && req.twilioDuplicate !== true),
+    entitled: Boolean(activeEntitlement),
+    signed: telemetrySigned,
+  });
 
   return sendVoiceTwiml(req, res, twiml, { household, correlationId, settleIfNoDial: req.body.CallSid });
 });
@@ -1203,6 +1352,19 @@ app.post("/webhooks/provider-usage-alert", (req, res) => {
     details: context,
   }).catch(() => {});
   return res.status(204).end();
+});
+
+// VOICE SDK OUTGOING CALLS (2026-09-30, release readiness P5)
+//
+// The route the Voice SDK's TwiML App was configured with in August 2026
+// (HANDOVER_2026-08-15 §14) never reached main. The app never places
+// outgoing calls, so any request here is either a misconfiguration or abuse
+// of an app access token: reject it, unbilled, with no side effects.
+app.post("/voice-sdk-outbound-not-supported", (req, res) => {
+  console.error("VOICE SDK OUTGOING CALL ATTEMPT rejected");
+  const rejectResponse = new VoiceResponse();
+  rejectResponse.reject();
+  return res.type("text/xml").send(rejectResponse.toString());
 });
 
 // PROCESS UNKNOWN CALL
@@ -1411,31 +1573,99 @@ app.post("/call-delivery-failed", twilioSignatureGuard, twilioWebhookIntegrity, 
   // rather than inventing a number. Fire-and-forget, exactly like every
   // other calls-table write in this file — never allowed to affect the
   // TwiML response already being built below.
-  recordApprovedCallDeliveryOutcome(
+  // Delivery-health evaluation (2026-09-29, P0 call-delivery resilience)
+  // is chained AFTER the outcome is written so it sees this attempt:
+  // stores Twilio's DialCallSid (the client leg — the key for push-
+  // failure evidence and the app's own invite reports) and alerts
+  // internally only when the household's health degrades. Fire-and-
+  // forget and fail-open like the write it follows; never affects the
+  // TwiML below. See services/deliveryHealthMonitor.js.
+  // Integration 2026-10-03: evidence writes and the delivery-failure alert
+  // follow the same rule as settlement — a verified, non-duplicate request
+  // only. (A forged callback could otherwise stamp duration/delivery
+  // evidence onto any CallSid, or page the operator; reachable only in the
+  // emergency report mode now that the guard enforces signatures.)
+  const verifiedCallback = isSignedTwilioRequest(req);
+  if (verifiedCallback) recordApprovedCallDeliveryOutcome(
     req.body.CallSid,
     dialCallStatus,
     Number(req.body.DialCallDuration) || 0
-  ).catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
+  )
+    .then(() => evaluateAfterDeliveryOutcome({
+      supabase: supabaseAdmin,
+      callSid: req.body.CallSid,
+      dialCallSid: req.body.DialCallSid,
+      alert: sendCriticalAlert,
+    }))
+    .catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
+
+  // Telemetry only (release readiness P3). Household resolved from the
+  // dialled HCG number off the response path; never affects the TwiML.
+  (async () => {
+    const persist = { persist: requestSignedByTwilio(req) };
+    if (!persist.persist) {
+      // Forged/unsigned: one log line, no household lookup, no DB write.
+      deliveryEvent({ callSid: req.body.CallSid, clientCallSid: req.body.DialCallSid, event: DELIVERY_EVENTS.DIAL_OUTCOME, detail: { dialCallStatus } }, persist);
+      return;
+    }
+    const hh = await getHouseholdByTwilioNumber(req.body.To).catch(() => null);
+    const base = { householdId: hh && hh.id, callSid: req.body.CallSid, clientCallSid: req.body.DialCallSid };
+    const durationSeconds = Number(req.body.DialCallDuration) || 0;
+    deliveryEvent({ ...base, event: DELIVERY_EVENTS.DIAL_OUTCOME, detail: { dialCallStatus, durationSeconds } });
+    if (dialCallStatus === "completed" || dialCallStatus === "answered") {
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.DELIVERED, detail: { durationSeconds } });
+    } else {
+      const reason = { "no-answer": "no_answer", busy: "busy", failed: "dial_failed", canceled: "caller_hung_up" }[dialCallStatus] || "unknown";
+      deliveryEvent({ ...base, event: DELIVERY_EVENTS.DELIVERY_FAILED, detail: { reason } });
+      if (dialCallStatus !== "canceled") {
+        deliveryEvent({
+          ...base,
+          event: DELIVERY_EVENTS.FALLBACK_TRIGGERED,
+          detail: { type: CALL_DELIVERY_FALLBACK_MODE === FALLBACK_MODES.VOICEMAIL_PROTOTYPE ? "voicemail_prototype" : "apology_message" },
+        });
+      }
+    }
+  })().catch(() => {});
 
   if (dialCallStatus !== "completed") {
     console.error("CALL DELIVERY FAILED: household's Voice SDK Client did not answer", {
       dialCallStatus,
       callSid: req.body.CallSid,
+      verified: verifiedCallback,
     });
-    sendCriticalAlert(
+    if (verifiedCallback) sendCriticalAlert(
       "approved_call_delivery_failed",
       `An approved call could not be delivered — Client did not answer (${dialCallStatus})`,
       { dialCallStatus, callSid: req.body.CallSid }
     ).catch(() => {});
-    twiml.say(
-      { voice: "Polly.Amy", language: "en-GB" },
-      "We're sorry, this call cannot be connected right now. Please try again later."
-    );
   }
 
-  twiml.hangup();
+  // Caller-facing response (2026-09-29): services/callDeliveryFallback.js.
+  // Mode "off" (always, in production) is byte-identical to the previous
+  // inline Say + Hangup — see tests/call-delivery-fallback.test.mjs.
+  buildDeliveryFailedResponse(twiml, { dialCallStatus, mode: CALL_DELIVERY_FALLBACK_MODE });
   return sendVoiceTwiml(req, res, twiml);
 });
+
+// Voicemail fallback PROTOTYPE completion (2026-09-29) — registered only
+// when resolveFallbackMode() selects the prototype, which it never does
+// with NODE_ENV=production. Logs recording metadata only (no URL, no
+// caller number) and ends the call. No storage, no customer delivery:
+// those are open product decisions (docs/launch/CALL_DELIVERY_RESILIENCE.md).
+if (CALL_DELIVERY_FALLBACK_MODE === FALLBACK_MODES.VOICEMAIL_PROTOTYPE) {
+  // Integration 2026-10-03: behind the same signature guard + integrity
+  // layer as every other Twilio webhook (it was unauthenticated).
+  app.post(VOICEMAIL_COMPLETE_PATH, twilioSignatureGuard, twilioWebhookIntegrity, (req, res) => {
+    console.error("VOICEMAIL PROTOTYPE: message recorded", {
+      callSid: req.body.CallSid,
+      recordingSid: req.body.RecordingSid,
+      recordingDuration: req.body.RecordingDuration,
+    });
+    const twiml = new VoiceResponse();
+    twiml.hangup();
+    return sendVoiceTwiml(req, res, twiml);
+  });
+}
 
 // CALL STATUS (two-number households only)
 //
@@ -1462,13 +1692,12 @@ app.post("/call-status", twilioSignatureGuard, twilioWebhookIntegrity, (req, res
     telephonyAbuse.inboundGuard.release(req.body.CallSid);
     callAdmission.end({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
     containment.settleCall({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+    recordApprovedCallDeliveryOutcome(
+      req.body.CallSid,
+      req.body.DialCallStatus,
+      Number(req.body.DialCallDuration) || 0
+    ).catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
   }
-
-  recordApprovedCallDeliveryOutcome(
-    req.body.CallSid,
-    req.body.DialCallStatus,
-    Number(req.body.DialCallDuration) || 0
-  ).catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
 
   twiml.hangup();
   return sendVoiceTwiml(req, res, twiml);
@@ -1540,7 +1769,14 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
   // callRouting.js) is the one field the UI must use for that claim now;
   // activationVerifiedAt itself is left exactly as-is for whatever else
   // already reasonably depends on its original, narrower meaning.
-  const protection = computeProtectionStatus(req.household, new Date());
+  // Delivery health (2026-09-29) — same evidence-based input the mobile
+  // dashboard uses, so web and app never disagree about "protected". A
+  // read failure falls back to the previous behaviour.
+  const deliveryHealth = await getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household: req.household }).catch(err => {
+    console.error("DELIVERY HEALTH READ FAILED:", err.message);
+    return null;
+  });
+  const protection = computeProtectionStatus(req.household, new Date(), deliveryHealth);
 
   res.json({
     // req.household already carries this — requireAuth's
@@ -1604,14 +1840,19 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
       // support. Not a credential. null until 062 is applied.
       accountNumber: req.household.account_number || null,
     },
-    // Membership card (Stage 4). planName/priceLabel are hardcoded,
-    // matching this project's existing single-price-point convention
-    // (Decision 009) — not a live Stripe Price lookup. Every date/status
-    // value here comes from the real subscriptions/entitlements rows the
-    // webhook wrote; never invented client-side.
+    // Membership card (Stage 4). Every date/status value here comes from
+    // the real subscriptions/entitlements rows the webhook wrote; never
+    // invented client-side. 2026-09-30: priceLabel is THIS household's own
+    // price (its own Stripe subscription's Price), or no amount for
+    // Apple-billed / non-charged memberships — never one global list price
+    // (services/subscriptionPricing.js).
     membership: {
       planName: "Home Call Guard Standard",
-      priceLabel: "£4.99 per month including VAT",
+      priceLabel: await resolveMembershipPriceLabel({
+        entitlement: req.entitlement,
+        subscription,
+        lookupStripePrice: getSharedStripePriceLookup(),
+      }),
       status: membershipStatus,
       nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
       accessUntil: subscription ? subscription.current_period_end : null,
@@ -1722,6 +1963,11 @@ app.get("/activation-instructions", requireAuth, requireEntitlement, async (req,
       code: instructions.code,
       activationMethod: instructions.activationMethod,
       activationNote: instructions.activationNote,
+      // The customer's own HCG number, UK national format (2026-09-26) —
+      // the number to type into Phone Settings for a native_settings
+      // carrier (code is null there), and the same number the dial code
+      // embeds otherwise. Clients read this directly; no code parsing.
+      forwardingNumber: instructions.forwardingNumber,
       cancelCode: instructions.cancelCode,
       cancelCodeMethod: instructions.cancelCodeMethod,
       cancelCodeConfidence: instructions.cancelCodeConfidence,
@@ -2900,6 +3146,13 @@ if (process.env.ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE === "true" && numberLifec
 } else {
   console.log(`NUMBER LIFECYCLE SWEEP: schedule disabled (${numberLifecycleJobsDecision.run ? "ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE is not \"true\"" : `environment guard: ${numberLifecycleJobsDecision.reason}`})`);
 }
+
+// Push-failure ingestion (2026-09-29) — OFF unless
+// DELIVERY_PUSH_FAILURE_POLLING=on. Read-only against Twilio Monitor
+// alerts; writes only calls.push_failure (migration 055). See
+// services/deliveryHealthMonitor.js for cadence and rationale.
+startPushFailurePolling({ supabase: supabaseAdmin, twilioClient: twilioRestClient, alert: sendCriticalAlert });
+
 
 // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint
 // Twilio's <Start><Stream> (attachLiveMonitoring, above) connects to.

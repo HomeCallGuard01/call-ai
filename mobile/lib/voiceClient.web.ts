@@ -17,3 +17,8 @@ export function getActiveCall(): null {
 export function resetVoiceRegistrationState(): void {
   // no-op on web
 }
+
+export async function unregisterForIncomingCalls(): Promise<boolean> {
+  // no-op on web — there is no push binding to remove
+  return false;
+}

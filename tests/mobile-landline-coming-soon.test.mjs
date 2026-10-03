@@ -234,7 +234,10 @@ check(
 );
 check(
   pickerSource.includes('{ type: "android", label: "Android phone", iconSource: require("../../assets/android-device-mark.png") }') &&
-    /if \(type === "iphone"\) \{[\s\S]{0,200}return;\s*\}\s*setStep\(\{ name: "carrier" \}\);/.test(selectDeviceBody),
+    // 2026-09-30: the iPhone guard now also checks the platform (inside the
+    // iOS app the iPhone card is the normal path — tests/ios-iphone-signup-path
+    // .test.mjs); on Android it behaves exactly as before.
+    /if \(type === "iphone"(?: && !isIphoneOnboardingAvailable\(Platform\.OS\))?\) \{[\s\S]{0,200}return;\s*\}\s*setStep\(\{ name: "carrier" \}\);/.test(selectDeviceBody),
   'Android is unchanged: same card, and it still proceeds to the mobile-network check'
 );
 

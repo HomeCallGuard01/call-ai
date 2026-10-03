@@ -3,10 +3,10 @@
 // forwarding). Copy lives in lib/landlineAvailability.ts so every place that
 // says it says exactly the same thing. No form, no waiting-list capture —
 // nothing here can start setup or payment.
-import { Text, StyleSheet } from "react-native";
+import { Text, StyleSheet, Platform } from "react-native";
 import { PrimaryButton } from "./PrimaryButton";
 import { colors, spacing, typography } from "../lib/theme";
-import { LANDLINE_COMING_SOON_TITLE, LANDLINE_COMING_SOON_BODY } from "../lib/landlineAvailability";
+import { LANDLINE_COMING_SOON_TITLE, LANDLINE_COMING_SOON_BODY, LANDLINE_COMING_SOON_BODY_IOS } from "../lib/landlineAvailability";
 
 interface Props {
   actionLabel?: string;
@@ -17,7 +17,7 @@ export function LandlineComingSoon({ actionLabel, onAction }: Props) {
   return (
     <>
       <Text style={styles.title} accessibilityRole="header">{LANDLINE_COMING_SOON_TITLE}</Text>
-      <Text style={styles.body}>{LANDLINE_COMING_SOON_BODY}</Text>
+      <Text style={styles.body}>{Platform.OS === "ios" ? LANDLINE_COMING_SOON_BODY_IOS : LANDLINE_COMING_SOON_BODY}</Text>
       {actionLabel && onAction ? <PrimaryButton label={actionLabel} onPress={onAction} /> : null}
     </>
   );

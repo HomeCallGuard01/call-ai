@@ -189,6 +189,20 @@ export interface NotEntitledResponse {
   error: "not_entitled";
 }
 
+// GET /api/v1/billing/offer (services/subscriptionPricing.js). Describes the
+// current Stripe price for the Android/web purchase path; `available: false`
+// means "show no amount". Validated again client-side in
+// lib/subscriptionPrice.ts before anything is displayed.
+export interface StripeOfferResponse {
+  available: boolean;
+  channel: "stripe";
+  amountMinor?: number;
+  currency?: string;
+  interval?: string;
+  amountLabel?: string;
+  priceLabel?: string;
+}
+
 export interface CheckoutSessionResponse {
   url: string;
 }
@@ -269,6 +283,10 @@ export interface ActivationInstructionsResponse {
   code: string | null;
   activationMethod: "mmi" | "native_settings";
   activationNote: string | null;
+  // The customer's HCG forwarding number, UK national format ("0...").
+  // Optional: absent from responses by backends older than 2026-09-26 —
+  // see lib/forwardingNumber.ts's resolveForwardingNumber fallback.
+  forwardingNumber?: string | null;
   cancelCode: string | null;
   cancelCodeMethod: "mmi" | "native_settings" | "unknown";
   cancelCodeConfidence: "high" | "medium" | null;

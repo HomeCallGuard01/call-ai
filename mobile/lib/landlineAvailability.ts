@@ -29,6 +29,11 @@ export const LANDLINE_CARD_LABEL_COMING_SOON = "Landline — Coming soon";
 
 export const LANDLINE_COMING_SOON_TITLE = "Home Call Guard for landline is coming soon";
 
+// iOS variant (2026-09-30): the iOS app must not mention Android (App Review
+// 2.3.10). Same wording otherwise.
+export const LANDLINE_COMING_SOON_BODY_IOS =
+  "Landline support isn't available yet, so we can't set up or take payment for a landline at the moment.\n\nHome Call Guard is available for mobile phones.";
+
 export const LANDLINE_COMING_SOON_BODY =
   "Landline support isn't available yet, so we can't set up or take payment for a landline at the moment.\n\nHome Call Guard is available now for Android phones.";
 
@@ -43,6 +48,9 @@ export function resolveLandlineComingSoon(flags: unknown): boolean {
 
 export interface LandlineFlagStoreOptions {
   fetchFlags: () => Promise<unknown>;
+  // 2026-09-30: which launch flag this store tracks (default: landline).
+  // Kept generic so another launch flag can reuse the same fail-closed store.
+  resolve?: (flags: unknown) => boolean;
   // A launch-flags request that hasn't answered by this point counts as a
   // failure (=> Coming soon), so a hung connection can never leave landline
   // open, and never leaves the store waiting forever either.
@@ -100,7 +108,7 @@ export function createLandlineFlagStore(options: LandlineFlagStoreOptions): Land
           if (settled) return;
           settled = true;
           clearTimeout(timer);
-          const value = resolveLandlineComingSoon(flags);
+          const value = (options.resolve ?? resolveLandlineComingSoon)(flags);
           fetchedAt = now();
           set(value);
           resolve(value);

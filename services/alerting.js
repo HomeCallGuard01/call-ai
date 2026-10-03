@@ -90,11 +90,16 @@ function postToResend(payload) {
 // deps.post is injectable (defaults to the real Resend call) so this is
 // unit-testable without a real network call or Resend credentials —
 // same pattern as services/voiceAccessToken.js and services/phone.js.
+// deps.dedupeKey (optional, 2026-09-29): rate-limit per type AND key
+// (e.g. a household id) instead of per type alone. Per-household
+// conditions such as repeated app-delivery failure must not be
+// suppressed for every other household because one household alerted
+// first. Callers that omit it keep the original per-type behaviour.
 async function sendCriticalAlert(type, message, context = {}, deps = {}) {
   const post = deps.post || postToResend;
 
   try {
-    if (!shouldSend(type)) {
+    if (!shouldSend(deps.dedupeKey ? `${type}:${deps.dedupeKey}` : type)) {
       console.error(`ALERTING: suppressed (rate-limited) — ${type}: ${message}`);
       return false;
     }

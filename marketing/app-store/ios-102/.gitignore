@@ -1,0 +1,4 @@
+# Real iPhone captures (may show real numbers/names) are inputs, not source.
+captures/
+# Placeholder frames must never be committed or uploaded.
+out/**/DRAFT-*

@@ -167,8 +167,8 @@ check(
 // --- The allocated HCG number is shown as its own plain value (2026-09-12) ---
 
 check(
-  source.includes('extractForwardingNumberFromCode') && source.includes('formatUkPhoneForDisplay'),
-  'the screen derives and displays the plain HCG forwarding number from the activation code, rather than only ever showing it embedded in the raw MMI string'
+  source.includes('resolveForwardingNumber(instructions)') && source.includes('formatUkPhoneForDisplay'),
+  'the screen displays the plain HCG forwarding number (the API\'s forwardingNumber, code extraction only as a fallback — see lib/forwardingNumber.ts), rather than only ever showing it embedded in the raw MMI string'
 );
 
 check(

@@ -3,6 +3,7 @@
 // Bearer header — requireAuthApi.js verifies it server-side. Deliberately
 // not a generic "wrap every possible endpoint" client: only the specific
 // calls the V1 app actually makes, matching the Launch Feature Matrix.
+import type { DeviceCallReadiness } from "./callReadinessModel";
 import { Platform } from "react-native";
 import { supabase } from "./supabase";
 import { resolveAuthToken } from "./resolveAuthToken";
@@ -16,6 +17,7 @@ import type {
   ActivationDeviceResponse,
   ContactResponse,
   CheckoutSessionResponse,
+  StripeOfferResponse,
   PortalSessionResponse,
   ApiErrorResponse,
   DeviceType,
@@ -205,14 +207,17 @@ export async function verifyConfirmationToken(tokenHash: string): Promise<Verify
 // once the customer has answered. Persists the raw selection server-side
 // on every call (see services/providerPolicy.js), so re-calling with a
 // corrected answer is always safe.
+// deviceType (2026-09-30, iOS parity): "iphone" records the carrier on an
+// iPhone household exactly as "mobile" does for Android.
 export async function checkCarrierCompatibility(
   provider: MobileCarrierKey,
   tariffType?: TariffType,
-  accessToken?: string
+  accessToken?: string,
+  deviceType: "mobile" | "iphone" = "mobile"
 ): Promise<CarrierCompatibilityResponse> {
   const response = await authorizedFetch(
     "/api/v1/onboarding/carrier-compatibility",
-    { method: "POST", body: JSON.stringify({ deviceType: "mobile", provider, tariffType }) },
+    { method: "POST", body: JSON.stringify({ deviceType, provider, tariffType }) },
     accessToken
   );
   return parseJsonOrThrow<CarrierCompatibilityResponse>(response);
@@ -317,6 +322,13 @@ export async function acceptTerms(accessToken?: string): Promise<TermsAcceptance
 // device) — surfaced as a distinct error code rather than a generic
 // failure so B2 can show "you're already protected" instead of a scary
 // error banner.
+// GET /api/v1/billing/offer — the current Stripe price, Android only (iOS
+// shows StoreKit's own price). Never cached here: the server is the source.
+export async function fetchStripeOffer(accessToken?: string): Promise<StripeOfferResponse> {
+  const response = await authorizedFetch("/api/v1/billing/offer", {}, accessToken);
+  return parseJsonOrThrow<StripeOfferResponse>(response);
+}
+
 export async function createCheckoutSession(accessToken?: string): Promise<CheckoutSessionResponse> {
   const response = await authorizedFetch("/api/v1/billing/create-checkout-session", { method: "POST" }, accessToken);
   return parseJsonOrThrow<CheckoutSessionResponse>(response);
@@ -388,7 +400,13 @@ export async function fetchVoiceToken(accessToken?: string): Promise<VoiceTokenR
 // routes/mobileApi.js's own optional handling of it server-side.
 export async function reportVoiceRegistered(
   accessToken?: string,
-  appInfo?: { appVersion?: string | null; appBuildVersion?: string | null; appPlatform?: string | null }
+  appInfo?: {
+    appVersion?: string | null;
+    appBuildVersion?: string | null;
+    appPlatform?: string | null;
+    // 2026-09-30: whether this phone can present a call (lib/callReadinessModel.ts).
+    readiness?: DeviceCallReadiness | null;
+  }
 ): Promise<VoiceRegisteredResponse> {
   const response = await authorizedFetch(
     "/api/v1/voice/registered",
@@ -403,20 +421,44 @@ export async function reportVoiceRegistered(
 // listeners, same established pattern as reportVoiceRegistered: never
 // awaited into the real registration/call-handling flow, a reporting
 // failure can never affect it.
-export async function reportCallInviteReceived(callSid: string, accessToken?: string): Promise<void> {
+// `extra` (2026-09-30): platform, and whether the incoming-call UI could be
+// presented (i.e. the phone is ringing) — older backends ignore it. The
+// module-level CallInvite listener never has a token to pass (it relies on
+// authorizedFetch's own session fallback), so the token is last.
+export async function reportCallInviteReceived(
+  callSid: string,
+  extra?: { platform?: string; presented?: boolean },
+  accessToken?: string
+): Promise<void> {
   await authorizedFetch(
     "/api/v1/voice/call-invite-received",
-    { method: "POST", body: JSON.stringify({ callSid }) },
+    { method: "POST", body: JSON.stringify({ callSid, ...(extra || {}) }) },
     accessToken
   );
 }
 
-export type CallInviteOutcome = "accepted" | "rejected" | "cancelled";
+// "connected" (2026-09-30): media is up on the device. Backends before this
+// change reject it with 400, which the fire-and-forget caller ignores.
+export type CallInviteOutcome = "accepted" | "rejected" | "cancelled" | "connected";
 
 export async function reportCallInviteOutcome(callSid: string, outcome: CallInviteOutcome, accessToken?: string): Promise<void> {
   await authorizedFetch(
     "/api/v1/voice/call-invite-outcome",
     { method: "POST", body: JSON.stringify({ callSid, outcome }) },
+    accessToken
+  );
+}
+
+// Device call-readiness (2026-09-30, release readiness): permission state,
+// and presentationBlocked when the Twilio SDK raised 31401 (it dropped an
+// incoming call because a permission was missing). Authenticated.
+export async function reportDeviceReadiness(
+  body: { readiness: DeviceCallReadiness | null; trigger?: "foreground" | "registration"; presentationBlocked?: boolean; errorCode?: string },
+  accessToken?: string
+): Promise<void> {
+  await authorizedFetch(
+    "/api/v1/voice/device-readiness",
+    { method: "POST", body: JSON.stringify(body) },
     accessToken
   );
 }

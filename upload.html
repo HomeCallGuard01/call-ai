@@ -1458,8 +1458,12 @@
          landline). Recorded via POST /billing/terms-acceptance
          immediately before the real Stripe redirect, never earlier. -->
     <div id="termsConsentSection" hidden>
-      <p class="price-note" id="priceNote">£4.99/month, including VAT. This is a recurring monthly subscription
-        that renews automatically every month until you cancel — cancel anytime.</p>
+      <!-- 2026-09-30: no amount in the markup. The real Stripe price is filled
+           in from GET /billing/offer (services/subscriptionPricing.js); if it
+           can't be read, this price-free wording stays and Stripe Checkout
+           shows the amount before any payment. -->
+      <p class="price-note" id="priceNote">This is a recurring monthly subscription that renews automatically
+        every month until you cancel — cancel anytime. You'll see the monthly price, including VAT, before you pay.</p>
 
       <p class="legal-links">
         <a href="/terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a>
@@ -1475,7 +1479,7 @@
 
     <form class="subscribe-button" id="subscribeForm" action="/billing/create-checkout-session" method="POST" hidden>
       <button type="submit">
-        Subscribe &amp; pay £4.99/month now
+        Subscribe &amp; pay now
       </button>
     </form>
 
@@ -1615,10 +1619,21 @@
             </div>
             <p id="copyCodeConfirmation" class="copy-confirmation" role="status" hidden>Copied.</p>
             <p class="field-hint">This does not change your phone number — it only turns on call protection.</p>
-            <p class="field-hint">To turn protection off again later, dial:<br><span id="forwardingCancelCode" class="forwarding-code"></span></p>
+            <p class="field-hint" id="forwardingCancelLine">To turn protection off again later, dial:<br><span id="forwardingCancelCode" class="forwarding-code"></span></p>
+            <p class="field-hint" id="forwardingCancelNote" hidden></p>
           </div>
 
+          <!-- Native Settings (2026-09-26): the customer types their HCG
+               number into Phone Settings, so it is shown here, prominently,
+               BEFORE the Settings instructions — from the API's explicit
+               forwardingNumber field, never parsed out of a dial code. -->
           <div id="callForwardingNativeSettingsBlock" hidden>
+            <p class="field-hint-heading">Enter this Home Call Guard number:</p>
+            <div class="activation-code-row">
+              <span id="nativeSettingsForwardingNumber" class="forwarding-code"></span>
+              <button type="button" class="copy-code-button" id="copyForwardingNumberButton" hidden>Copy number</button>
+            </div>
+            <p id="copyForwardingNumberConfirmation" class="copy-confirmation" role="status" hidden>Copied.</p>
             <p id="nativeSettingsNote" class="field-hint"></p>
             <p id="nativeSettingsCancelNote" class="field-hint"></p>
           </div>
@@ -2614,6 +2629,22 @@
     });
   }
 
+  // Native Settings: copies the plain national number (no spaces) — the
+  // form a Phone Settings "Forward to" field accepts.
+  const copyForwardingNumberButtonEl = document.getElementById("copyForwardingNumberButton");
+  if (copyForwardingNumberButtonEl) {
+    copyForwardingNumberButtonEl.addEventListener("click", async function () {
+      const numberEl = document.getElementById("nativeSettingsForwardingNumber");
+      const confirmationEl = document.getElementById("copyForwardingNumberConfirmation");
+      try {
+        await navigator.clipboard.writeText(numberEl ? (numberEl.dataset.copyValue || "") : "");
+        if (confirmationEl) confirmationEl.hidden = false;
+      } catch (err) {
+        // The number is still visible on-screen to read and type in.
+      }
+    });
+  }
+
   if (deviceTypeSelectEl) {
     deviceTypeSelectEl.addEventListener("change", function () {
       if (landlineProviderRowEl) {
@@ -2688,7 +2719,37 @@
         if (mmiBlockEl) mmiBlockEl.hidden = isNativeSettings;
         if (nativeSettingsBlockEl) nativeSettingsBlockEl.hidden = !isNativeSettings;
 
+        // TEST-EXTRACT-START: nativeSettingsForwardingNumber
+        // forwardingNumber is UK national ("0" + 9–10 digits). Without it a
+        // native-Settings customer can't do this step at all — so show an
+        // error and no instructions rather than "enter the number" with no
+        // number.
+        const nativeForwardingNumber =
+          typeof instructions.forwardingNumber === "string" && /^0\d{9,10}$/.test(instructions.forwardingNumber)
+            ? instructions.forwardingNumber
+            : null;
+        if (isNativeSettings && !nativeForwardingNumber) {
+          if (callForwardingInstructionsEl) callForwardingInstructionsEl.hidden = true;
+          if (callForwardingErrorEl) {
+            callForwardingErrorEl.textContent = "We couldn't load your Home Call Guard number just now. Please try again, or contact support@homecallguard.co.uk.";
+            callForwardingErrorEl.hidden = false;
+          }
+          return;
+        }
+        // TEST-EXTRACT-END: nativeSettingsForwardingNumber
+
         if (isNativeSettings) {
+          const nativeNumberEl = document.getElementById("nativeSettingsForwardingNumber");
+          if (nativeNumberEl) {
+            nativeNumberEl.textContent = nativeForwardingNumber.length === 11
+              ? nativeForwardingNumber.slice(0, 5) + " " + nativeForwardingNumber.slice(5)
+              : nativeForwardingNumber;
+            nativeNumberEl.dataset.copyValue = nativeForwardingNumber;
+          }
+          const copyNumberButtonEl = document.getElementById("copyForwardingNumberButton");
+          if (copyNumberButtonEl) copyNumberButtonEl.hidden = !navigator.clipboard;
+          const copyNumberConfirmationEl = document.getElementById("copyForwardingNumberConfirmation");
+          if (copyNumberConfirmationEl) copyNumberConfirmationEl.hidden = true;
           if (nativeSettingsNoteEl) {
             nativeSettingsNoteEl.textContent = instructions.activationNote ||
               "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this on — a dial code isn't reliable on this network.";
@@ -2698,7 +2759,18 @@
           }
         } else {
           if (forwardingCodeEl) forwardingCodeEl.textContent = instructions.code;
-          if (forwardingCancelCodeEl) forwardingCancelCodeEl.textContent = instructions.cancelCode;
+          if (forwardingCancelCodeEl) forwardingCancelCodeEl.textContent = instructions.cancelCode || "";
+          // No confirmed cancel code (e.g. Sky, whose #61# was withdrawn
+          // 2026-09-26, or an unconfirmed network): show the network's own
+          // guidance instead of "dial:" followed by nothing.
+          const cancelLineEl = document.getElementById("forwardingCancelLine");
+          const cancelNoteEl = document.getElementById("forwardingCancelNote");
+          if (cancelLineEl) cancelLineEl.hidden = !instructions.cancelCode;
+          if (cancelNoteEl) {
+            cancelNoteEl.textContent = instructions.cancelCode ? "" : (instructions.cancelCodeNote ||
+              "To turn protection off again later, use your phone's own call forwarding settings, or contact support@homecallguard.co.uk.");
+            cancelNoteEl.hidden = !!instructions.cancelCode;
+          }
         }
         if (copyCodeButtonEl) copyCodeButtonEl.hidden = isNativeSettings || !navigator.clipboard;
         if (copyCodeConfirmationEl) copyCodeConfirmationEl.hidden = true;
@@ -4027,6 +4099,33 @@
     });
   }
 
+  // Subscription price (2026-09-30). Shown ONLY when the server returns a
+  // well-formed Stripe offer; anything else keeps the price-free wording
+  // already in the markup. Never a remembered or default figure.
+  let subscribeButtonText = "Subscribe & pay now";
+  const OFFER_AMOUNT_PATTERN = /^£\d{1,3}(,\d{3})*\.\d{2}$/;
+  function applySubscriptionOffer(offer) {
+    if (!offer || offer.available !== true || offer.channel !== "stripe" || offer.interval !== "month" ||
+        typeof offer.amountLabel !== "string" || !OFFER_AMOUNT_PATTERN.test(offer.amountLabel)) {
+      return;
+    }
+    const priceNoteEl = document.getElementById("priceNote");
+    if (priceNoteEl) {
+      priceNoteEl.textContent = offer.amountLabel + "/month, including VAT. This is a recurring monthly subscription " +
+        "that renews automatically every month until you cancel — cancel anytime.";
+    }
+    subscribeButtonText = "Subscribe & pay " + offer.amountLabel + "/month now";
+    const btn = subscribeFormEl && subscribeFormEl.querySelector("button[type=submit]");
+    if (btn && !btn.disabled) btn.textContent = subscribeButtonText;
+  }
+  fetch("/billing/offer", { credentials: "same-origin" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("offer " + r.status);
+      return r.json();
+    })
+    .then(applySubscriptionOffer)
+    .catch(function () { /* keep the price-free wording */ });
+
   // FAILS CLOSED. Landline is treated as available ONLY when this response
   // is a 2xx object containing landlineComingSoon === false (boolean false).
   // A failed, timed-out, non-2xx, malformed or field-less response — or an
@@ -4057,7 +4156,7 @@
     const btn = subscribeFormEl && subscribeFormEl.querySelector("button[type=submit]");
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Subscribe & pay £4.99/month now";
+      btn.textContent = subscribeButtonText;
     }
   }
 

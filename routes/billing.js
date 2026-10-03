@@ -24,6 +24,7 @@ const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPo
 const { LANDLINE_PROVIDERS } = require("../services/activationInstructions");
 const { setHouseholdCarrierCompatibility, recordTermsAcceptance } = require("../database/households");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
+const { CHECKOUT_SUBMIT_MESSAGE, createOfferHandler } = require("../services/subscriptionPricing");
 
 const router = express.Router();
 
@@ -133,10 +134,12 @@ function buildCheckoutSessionParams({ customer, priceId, householdId, appUrl }) 
     // Stripe Dashboard first (not settable via the API) — see
     // docs/PROJECT_STATUS.md. Until then, the custom_text.submit message
     // below is the only ToS/recurring-billing disclosure shown.
+    // 2026-09-30: price-agnostic (services/subscriptionPricing.js). Stripe
+    // Checkout shows the real amount of the Price being charged on the
+    // same page, so this text never repeats (and can never contradict) it.
     custom_text: {
       submit: {
-        message:
-          "You'll be charged £4.99 today, then £4.99 every month until you cancel. By continuing, you agree to Home Call Guard's Terms and Conditions and Privacy Policy.",
+        message: CHECKOUT_SUBMIT_MESSAGE,
       },
     },
     success_url: `${appUrl}/dashboard?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
@@ -293,6 +296,11 @@ router.get("/billing/carrier-compatibility", requireAuth, async (req, res) => {
 // own POST /api/v1/onboarding/terms-acceptance. Same reasoning: durable,
 // append-only evidence (migration 039), server-derived version strings
 // only, no client input beyond auth.
+// CURRENT STRIPE PRICE (requires auth, not entitlement: shown on the
+// subscribe step before payment). Describes the Price STRIPE_PRICE_ID points
+// at; `available: false` means "show no amount" (services/subscriptionPricing.js).
+router.get("/billing/offer", requireAuth, createOfferHandler());
+
 router.post("/billing/terms-acceptance", requireAuth, async (req, res) => {
   try {
     const acceptedAt = await recordTermsAcceptance(

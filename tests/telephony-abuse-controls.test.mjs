@@ -370,7 +370,9 @@ const household = (i, extra = {}) => ({ id: `hh-${i}`, twilio_number: null, twil
   const serverSrc = readFileSync(path.join(ROOT, 'server.js'), 'utf8');
   const tokenRoute = mobileSrc.slice(mobileSrc.indexOf('router.get("/api/v1/voice/token"'), mobileSrc.indexOf('router.post("/api/v1/voice/registered"'));
   check(/householdId: req\.household\.id/.test(tokenRoute) && !/req\.(query|body)\.(identity|householdId)/.test(tokenRoute), 'voice token identity is derived from the authenticated household only — a client cannot choose another household\'s Client identity');
-  check(/startsWith\("client:"\)/.test(serverSrc) && /twiml\.reject\(\)/.test(serverSrc), 'client-originated calls (outgoing grant) are rejected — a mobile client cannot place PSTN calls through HCG');
+  // Integration 2026-10-03: one client-origin check in /voice — the release-
+// readiness predicate (From OR Caller), strictly broader than From-only.
+check(/if \(isVoiceSdkClientOriginated\(req\.body\)\) \{[\s\S]{0,400}twiml\.reject\(\);[\s\S]{0,80}return sendVoiceTwiml\(req, res, twiml\);/.test(serverSrc), 'client-originated calls (outgoing grant) are rejected — a mobile client cannot place PSTN calls through HCG');
   check(!/req\.body\.(household_id|householdId)/.test(mobileSrc) && /setHouseholdPhoneNumber\(req\.household\.id, req\.body\.number\)/.test(mobileSrc), 'mobile routes never take a household id from the request body (no cross-household provisioning or destination writes)');
   check(!/req\.body\.(trusted|isKnown|monitor|provider|route)/.test(serverSrc + mobileSrc), 'no request field can mark a call trusted, skip monitoring or pick provider routing');
   check(/insertContacts\(req\.household\.id, \[\{ name, number, customer_id: null \}\]\)/.test(mobileSrc), 'contact writes are scoped to the authenticated household with server-built rows');

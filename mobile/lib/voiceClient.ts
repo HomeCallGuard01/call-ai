@@ -13,6 +13,10 @@ import { Voice, CallInvite, Call, AudioDevice } from "@twilio/voice-react-native
 import { Platform, AppState } from "react-native";
 import * as Application from "expo-application";
 import { fetchVoiceToken, reportVoiceRegistered, reportCallInviteReceived, reportCallInviteOutcome } from "./api";
+import { reportDeviceReadiness } from "./api";
+import { getCallReadiness } from "./callReadiness";
+import { canPresentCalls, readinessKey } from "./callReadinessModel";
+import { isRegistrationOverdue, isInviteForIdentity, withTimeout, hasDeviceTokenChanged } from "./registrationFreshness";
 
 // Diagnostic instrumentation (2026-09-24, migration 045) — read once at
 // module load, not per-call: these are static facts about the installed
@@ -54,7 +58,28 @@ const voice = new Voice();
 
 let activeCall: Call | null = null;
 let registered = false;
+// Wall-clock time of the last successful voice.register() and the TTL it
+// was issued with (2026-09-29, P0 call-delivery resilience) — lets the
+// foreground check below decide "overdue" from the clock rather than
+// trusting that the refresh timer ran while the app was backgrounded.
+let lastRegisteredAtMs = 0;
+let lastRegistrationTtlSeconds = 0;
+// The access token and Voice identity of the last successful registration
+// (2026-09-29) — retained so sign-out can unregister this device's push
+// binding (unregisterForIncomingCalls, below) and so an invite addressed
+// to a different household's identity is never presented here.
+let lastRegistrationToken: string | null = null;
+let registeredIdentity: string | null = null;
+// Upper bound on the best-effort unregister step before sign-out.
+const UNREGISTER_TIMEOUT_MS = 4000;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+// Last device-readiness state sent to the backend (2026-09-30) — foreground
+// checks report only when it changes.
+let lastReportedReadinessKey: string | null = null;
+// The device push token (FCM on Android, PushKit on iOS) in use when the
+// last registration succeeded (2026-09-30). Never logged or sent anywhere:
+// only compared on foreground to detect a rotation (hasDeviceTokenChanged).
+let registeredDeviceToken: string | null = null;
 
 // Establishes the native PKPushRegistry + delegate as early as possible in
 // the app's lifecycle (2026-09-09) — triggered purely by importing this
@@ -292,6 +317,7 @@ export async function registerForIncomingCalls(accessToken?: string): Promise<vo
 
 async function performRegistration(accessToken?: string): Promise<void> {
   let ttlSeconds: number;
+  let registeredWith: { token: string; identity: string } = { token: "", identity: "" };
   try {
     if (Platform.OS === "ios") {
       // Delegates PushKit device-token handling and incoming-push wake-up
@@ -316,7 +342,8 @@ async function performRegistration(accessToken?: string): Promise<void> {
     beacon("tokenFetch-start");
     const tokenResult = await fetchVoiceToken(accessToken);
     ttlSeconds = tokenResult.ttlSeconds;
-    const { token } = tokenResult;
+    const { token, identity } = tokenResult;
+    registeredWith = { token, identity };
     beacon("tokenFetch-done");
     console.log("VOICE DEBUG: fetchVoiceToken resolved, about to voice.register");
     beacon("voiceRegister-start");
@@ -328,6 +355,12 @@ async function performRegistration(accessToken?: string): Promise<void> {
     throw err;
   }
   registered = true;
+  // Bounded: a hung native call must never stall registration reporting.
+  registeredDeviceToken = await withTimeout(voice.getDeviceToken(), 2000).catch(() => null);
+  lastRegisteredAtMs = Date.now();
+  lastRegistrationTtlSeconds = ttlSeconds;
+  lastRegistrationToken = registeredWith.token;
+  registeredIdentity = registeredWith.identity || null;
 
   // Reports real, successful Voice SDK registration back to the backend
   // (migration 035, 2026-09-07) — the server-side signal services/
@@ -338,10 +371,15 @@ async function performRegistration(accessToken?: string): Promise<void> {
   // already succeeded above) — the backend simply won't see this
   // household as reachable until the next successful report, exactly the
   // same fail-safe direction as every other gap this signal covers.
+  // Device readiness (2026-09-30): lets the backend tell "registered" apart
+  // from "registered but this phone cannot ring" (see lib/callReadinessModel.ts).
+  const readiness = await getCallReadiness().catch(() => null);
+  lastReportedReadinessKey = readinessKey(readiness);
   reportVoiceRegistered(accessToken, {
     appVersion: APP_VERSION,
     appBuildVersion: APP_BUILD_VERSION,
     appPlatform: Platform.OS,
+    readiness,
   }).catch((err) => {
     console.error("VOICE REGISTERED REPORT FAILED:", err);
   });
@@ -373,8 +411,49 @@ initializePushKitEarly();
 // silently sit unrefreshed through a long background period. Cheap no-op
 // when already registered and well within TTL (registerForIncomingCalls
 // only does real work when `registered` is false).
+//
+// 2026-09-29: also re-register when the last successful registration is
+// older than the scheduled refresh point, even if `registered` is still
+// true. voice.register() re-reads the device's CURRENT push token, so
+// this is also what repairs a token the OS rotated while the app was in
+// the background (the Twilio SDK's Android onNewToken only logs — it
+// never re-registers — which is how a household ends up with a dead
+// binding and Twilio error 52103 'NotRegistered'). Costs one token fetch
+// + one register per foreground at most once per refresh period; no
+// polling, no background work.
 AppState.addEventListener("change", (state) => {
-  if (state === "active" && !registered) {
+  if (state !== "active") return;
+  // Device readiness (2026-09-30): if the customer changed the microphone or
+  // notification permission while away, tell the backend once. Only after a
+  // registration exists (there is a signed-in household to report for).
+  if (lastRegistrationToken) {
+    getCallReadiness()
+      .then((readiness) => {
+        const key = readinessKey(readiness);
+        if (!readiness || key === lastReportedReadinessKey) return;
+        lastReportedReadinessKey = key;
+        return reportDeviceReadiness({ readiness, trigger: "foreground" });
+      })
+      .catch(() => {});
+  }
+  if (registered && isRegistrationOverdue(Date.now(), lastRegisteredAtMs, lastRegistrationTtlSeconds, REFRESH_MARGIN_SECONDS)) {
+    registered = false;
+  }
+  // Push-token rotation (2026-09-30): if the OS rotated the device token
+  // while the app was away, the Twilio binding points at a dead token.
+  // Re-register now instead of waiting for the refresh point.
+  if (registered && registeredDeviceToken) {
+    voice.getDeviceToken()
+      .then((current) => {
+        if (registered && hasDeviceTokenChanged(registeredDeviceToken, current)) {
+          console.warn("VOICE DEBUG: device push token changed since registration, re-registering");
+          registered = false;
+          return registerForIncomingCalls();
+        }
+      })
+      .catch(() => {});
+  }
+  if (!registered) {
     registerForIncomingCalls().catch((err) => {
       console.error("VOICE REGISTRATION ON FOREGROUND FAILED:", err);
     });
@@ -397,6 +476,21 @@ AppState.addEventListener("change", (state) => {
 // (original TODO) once this is proven, not to this auto-accept shortcut.
 voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   const callSid = callInvite.getCallSid();
+
+  // Wrong-household guard (2026-09-29). Before sign-out unregistered the
+  // push binding (unregisterForIncomingCalls), a phone that had ever been
+  // signed into household A stayed bound to A's identity after signing
+  // into B — so A's protected calls, caller number included, could ring
+  // on B's phone. Only rejects when both identities are positively known
+  // (see isInviteForIdentity): a cold-start invite is never rejected.
+  if (!isInviteForIdentity(callInvite.getTo(), registeredIdentity)) {
+    console.warn("VOICE DEBUG: CallInvite for a different household identity, rejecting", callSid);
+    beacon("wrong-identity-call-invite-rejected", callSid);
+    callInvite.reject().catch((err) => {
+      console.error("VOICE DEBUG: failed to reject wrong-identity CallInvite", err);
+    });
+    return;
+  }
 
   // Defense in depth (2026-08-23, see inFlightRegistration's own comment
   // for the actual root cause this was found alongside): one underlying
@@ -429,9 +523,20 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // presentation or a genuine no-answer instead. Fire-and-forget, same
   // established pattern as reportVoiceRegistered — never blocks or
   // delays presenting the real incoming call.
-  reportWithRetry(() => reportCallInviteReceived(callSid)).catch((err) => {
-    console.error("CALL INVITE RECEIVED REPORT FAILED (after retry):", err);
-  });
+  // 2026-09-30: `presented` tells the backend the incoming-call UI could be
+  // shown (on Android this JS event fires only after the SDK has posted its
+  // notification and started the ringtone; a denied notification
+  // permission means that notification was suppressed).
+  getCallReadiness()
+    .catch(() => null)
+    .then((readiness) =>
+      reportWithRetry(() =>
+        reportCallInviteReceived(callSid, { platform: Platform.OS, presented: canPresentCalls(readiness) })
+      )
+    )
+    .catch((err) => {
+      console.error("CALL INVITE RECEIVED REPORT FAILED (after retry):", err);
+    });
   callInvite.on(CallInvite.Event.Rejected, () => {
     reportWithRetry(() => reportCallInviteOutcome(callSid, "rejected")).catch(() => {});
   });
@@ -453,8 +558,14 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // Android-only, matching selectSpeakerForRinging's own scoping and its
   // comment on why iOS's CallKit-owned audio routing must not be
   // touched here.
-  callInvite.on(CallInvite.Event.Accepted, () => {
+  callInvite.on(CallInvite.Event.Accepted, (acceptedCall: Call) => {
     reportWithRetry(() => reportCallInviteOutcome(callSid, "accepted")).catch(() => {});
+    // 2026-09-30: media is up on the device — the last stage of the
+    // delivery timeline (both platforms). Separate from the Android-only
+    // Earpiece switch below, which is untouched.
+    acceptedCall.on(Call.Event.Connected, () => {
+      reportWithRetry(() => reportCallInviteOutcome(callSid, "connected")).catch(() => {});
+    });
   });
   if (Platform.OS === "android") {
     callInvite.on(CallInvite.Event.Accepted, (call: Call) => {
@@ -474,8 +585,26 @@ voice.on(Voice.Event.Unregistered, () => {
   registered = false;
 });
 
-voice.on(Voice.Event.Error, (error) => {
+// Twilio SDK error 31401 "Missing permissions" (2026-09-30): on Android the
+// SDK raises this INSTEAD of presenting an incoming call when the microphone
+// permission is missing — the call is dropped with no notification or ring
+// and Twilio records no-answer. Report it (with the current permission
+// state) so the backend marks the household as unable to receive calls
+// instead of assuming the customer just didn't answer.
+const MISSING_PERMISSIONS_ERROR_CODE = 31401;
+voice.on(Voice.Event.Error, (error: any) => {
   console.error("VOICE SDK ERROR:", error);
+  if (error && Number(error.code) === MISSING_PERMISSIONS_ERROR_CODE && lastRegistrationToken) {
+    getCallReadiness()
+      .catch(() => null)
+      .then((readiness) => {
+        lastReportedReadinessKey = readinessKey(readiness);
+        return reportWithRetry(() =>
+          reportDeviceReadiness({ readiness, presentationBlocked: true, errorCode: String(MISSING_PERMISSIONS_ERROR_CODE) })
+        );
+      })
+      .catch(() => {});
+  }
 });
 
 export function getActiveCall(): Call | null {
@@ -492,10 +621,13 @@ export function getActiveCall(): Call | null {
 // permanently unreachable with no error anywhere. Called from
 // app/(tabs)/account/index.tsx's sign-out handler.
 //
-// Deliberately does not also call the SDK's own voice.unregister(token) —
-// that call requires the exact token that was originally registered with,
-// which this module doesn't retain past performRegistration() completing
-// (never stored, matching this file's existing minimal-state design).
+// Does not itself call the SDK's voice.unregister() — that is async and
+// network-bound, so it lives in unregisterForIncomingCalls() (bottom of
+// this file, 2026-09-29), which every sign-out path now awaits (bounded)
+// BEFORE calling this. (The earlier note here — that unregister needs the
+// exact originally-registered token — is not what the SDK's documented
+// signature says: unregister(token) takes "A Twilio Access Token"; the
+// retained registration token is used first anyway.)
 // Simply resetting `registered` is sufficient and matches this file's own
 // established precedent: scheduleRefresh's ordinary token-refresh path
 // (above) already does exactly this — reset the flag, then re-register —
@@ -506,8 +638,56 @@ export function getActiveCall(): Call | null {
 // registration on the SDK/Twilio side.
 export function resetVoiceRegistrationState(): void {
   registered = false;
+  lastRegisteredAtMs = 0;
+  lastRegistrationTtlSeconds = 0;
+  lastRegistrationToken = null;
+  registeredIdentity = null;
+  lastReportedReadinessKey = null;
+  registeredDeviceToken = null;
   if (refreshTimer) {
     clearTimeout(refreshTimer);
     refreshTimer = null;
+  }
+}
+
+// Unregisters this device's push binding for the currently registered
+// household (2026-09-29, P0 call-delivery resilience). Call BEFORE
+// resetVoiceRegistrationState() and the Supabase sign-out.
+//
+// Why: sign-out used to reset only local state, leaving Twilio's binding
+// for the old household's identity live on this phone's push token — so
+// that household's calls kept ringing here (or went nowhere useful) after
+// the customer signed out or switched accounts. The
+// retained registration token is tried first (no network round trip to
+// HCG, works even if the session already expired), then a freshly fetched
+// one. (SDK signature: unregister(token) takes "A Twilio Access Token";
+// verify on a device that the old household stops ringing — Build 20.) Best-effort and bounded by UNREGISTER_TIMEOUT_MS: a failure is
+// logged, never blocks sign-out.
+export async function unregisterForIncomingCalls(): Promise<boolean> {
+  const retained = lastRegistrationToken;
+  if (!retained && !registered) return false;
+
+  const attempt = async (): Promise<boolean> => {
+    if (retained) {
+      try {
+        await voice.unregister(retained);
+        return true;
+      } catch (err) {
+        console.warn("VOICE UNREGISTER with retained token failed, trying a fresh token", err);
+      }
+    }
+    const fresh = await fetchVoiceToken();
+    await voice.unregister(fresh.token);
+    return true;
+  };
+
+  try {
+    const ok = await withTimeout(attempt(), UNREGISTER_TIMEOUT_MS);
+    beacon("unregistered");
+    return ok;
+  } catch (err) {
+    console.error("VOICE UNREGISTER FAILED:", err);
+    beacon("unregister-failed", err instanceof Error ? err.message : String(err));
+    return false;
   }
 }

@@ -1273,9 +1273,11 @@ async function main() {
     `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
     [householdId, 'mobile', 'giffgaff', null]
   );
+  // 2026-09-30 (migration 065, drafted as 061): the iPhone coming-soon path passes no
+  // provider — stale mobile-carrier data must still be cleared.
   await db.query(
     `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
-    [householdId, 'iphone', 'this-should-be-cleared', 'this-too']
+    [householdId, 'iphone', null, null]
   );
   const { rows: [afterIphoneSwitch] } = await db.query(
     `select device_type, carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
@@ -1284,7 +1286,36 @@ async function main() {
   assert(afterIphoneSwitch.device_type === 'iphone', 'after migration 041, device_type can be set to iphone via the RPC');
   assert(
     afterIphoneSwitch.carrier_provider_key === null && afterIphoneSwitch.carrier_tariff_type === null,
-    'switching to iphone atomically clears carrier_provider_key/carrier_tariff_type, same as landline — no stale mobile-carrier data survives the switch'
+    'switching to iphone with no carrier (coming-soon/waiting-list path) clears carrier_provider_key/carrier_tariff_type — no stale mobile-carrier data survives the switch'
+  );
+  // 061: an iPhone household onboarded through the iOS app's carrier step
+  // keeps its carrier, so checkout eligibility can evaluate it once
+  // IOS_COMING_SOON is off (before 061 it was always NULL → unverified →
+  // no iPhone customer could ever pay).
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'iphone', 'o2', 'pay_monthly']
+  );
+  const { rows: [iphoneWithCarrier] } = await db.query(
+    `select device_type, carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(
+    iphoneWithCarrier.device_type === 'iphone' && iphoneWithCarrier.carrier_provider_key === 'o2' && iphoneWithCarrier.carrier_tariff_type === 'pay_monthly',
+    'migration 065: an iPhone household stores the carrier and tariff it is given (was always NULL under 041)'
+  );
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'landline', 'bt', 'ignored']
+  );
+  const { rows: [landlineAfter061] } = await db.query(
+    `select carrier_provider_key, carrier_tariff_type from public.households where id = $1`,
+    [householdId]
+  );
+  assert(landlineAfter061.carrier_provider_key === 'bt' && landlineAfter061.carrier_tariff_type === null, 'migration 065 leaves landline unchanged (043): provider persisted, tariff cleared');
+  await db.query(
+    `select public.set_household_carrier_compatibility($1, $2, $3, $4)`,
+    [householdId, 'iphone', null, null]
   );
 
   // reset role (the full bootstrap superuser, same technique the

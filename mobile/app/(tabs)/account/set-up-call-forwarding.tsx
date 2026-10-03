@@ -10,8 +10,9 @@
 // auto-advance-on-return — this is a reference/reminder screen for an
 // account that's already active, not the onboarding wizard.
 import { useCallback, useState } from "react";
-import { Text, View, ActivityIndicator, Linking, StyleSheet } from "react-native";
+import { Text, View, ActivityIndicator, Linking, Pressable, StyleSheet, Platform } from "react-native";
 import { useFocusEffect } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { Screen } from "../../../components/Screen";
 import { Banner } from "../../../components/Banner";
 import { PrimaryButton } from "../../../components/PrimaryButton";
@@ -20,8 +21,9 @@ import { useAuth } from "../../../lib/AuthContext";
 import { loadActivationDevice } from "../../../lib/activationDeviceStorage";
 import { isLandlineComingSoon, useLandlineComingSoon } from "../../../lib/landlineFlag";
 import { LandlineComingSoon } from "../../../components/LandlineComingSoon";
-import { canAutoOpenDialer, buildDialerUrl } from "../../../lib/dialerLink";
-import { extractForwardingNumberFromCode, formatUkPhoneForDisplay } from "../../../lib/forwardingNumber";
+import { canAutoOpenDialer, buildDialerUrl, IOS_MANUAL_DIAL_HINT } from "../../../lib/dialerLink";
+import { resolveForwardingNumber, formatUkPhoneForDisplay } from "../../../lib/forwardingNumber";
+import { settingsForwardingNote } from "../../../lib/forwardingSettingsCopy";
 import type { ActivationInstructionsResponse } from "../../../lib/types";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -35,6 +37,7 @@ export default function SetUpCallForwarding() {
   const [instructions, setInstructions] = useState<ActivationInstructionsResponse | null>(null);
   const [deviceType, setDeviceType] = useState<string | null>(null);
   const [dialerError, setDialerError] = useState(false);
+  const [numberCopied, setNumberCopied] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -131,12 +134,32 @@ export default function SetUpCallForwarding() {
   }
 
   const canAutoDial = canAutoOpenDialer(deviceType ?? "");
-  // 2026-09-12 fix (physical-test finding): the actual HCG number was
-  // previously only ever visible embedded inside the MMI code below —
-  // never as a plain value the customer could recognise or reference
-  // without parsing a technical string. Derived client-side from the
-  // same code already returned; no backend change needed.
-  const forwardingNumber = instructions ? extractForwardingNumberFromCode(instructions.code) : null;
+  // The HCG number as its own plain value (2026-09-12 physical-test
+  // finding), now from the API's explicit forwardingNumber (2026-09-26);
+  // extracting it from the code is only a fallback for an older backend.
+  const forwardingNumber = resolveForwardingNumber(instructions);
+  const isNativeSettings = instructions?.activationMethod === "native_settings";
+
+  async function handleCopyNumber() {
+    if (!forwardingNumber) return;
+    await Clipboard.setStringAsync(forwardingNumber);
+    setNumberCopied(true);
+  }
+
+  // Native Settings needs the customer to type the number in — without it
+  // the step is impossible, so show the retryable "couldn't load" notice
+  // rather than instructions that can't be followed.
+  if (isNativeSettings && !forwardingNumber) {
+    return (
+      <Screen>
+        <Text style={styles.title}>Set up call forwarding</Text>
+        <Banner
+          variant="notice"
+          message="We couldn't load your Home Call Guard number right now. Please try again, or contact support and we'll help you turn on call forwarding."
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -146,10 +169,15 @@ export default function SetUpCallForwarding() {
       </Text>
 
       {forwardingNumber && (
-        <View style={styles.numberBox}>
-          <Text style={styles.numberLabel}>Your Home Call Guard number</Text>
+        <View style={styles.numberBox} accessibilityRole="text" accessibilityLabel={`${isNativeSettings ? "Enter this Home Call Guard number" : "Your Home Call Guard number"}: ${forwardingNumber}`}>
+          <Text style={styles.numberLabel}>{isNativeSettings ? "Enter this Home Call Guard number:" : "Your Home Call Guard number"}</Text>
           <Text style={styles.numberValue} selectable>{formatUkPhoneForDisplay(forwardingNumber)}</Text>
         </View>
+      )}
+      {isNativeSettings && forwardingNumber && (
+        <Pressable onPress={handleCopyNumber} accessibilityRole="button" style={styles.copyLink}>
+          <Text style={styles.copyLinkText}>{numberCopied ? "Copied!" : "Copy number"}</Text>
+        </Pressable>
       )}
 
       {/* Carrier-instruction correction (2026-09-24): the exact same
@@ -157,11 +185,11 @@ export default function SetUpCallForwarding() {
           existed here too — genuinely relevant to this specific screen,
           which its own header comment says exists for exactly this kind
           of case ("carrier reset it"). */}
-      {instructions?.activationMethod === "native_settings" ? (
+      {isNativeSettings && instructions ? (
         <>
           <Banner
             variant="notice"
-            message={instructions.activationNote || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this on — a dial code isn't reliable on this network."}
+            message={settingsForwardingNote("activate", instructions.activationNote, Platform.OS) || "Use your phone's native call forwarding settings (Phone app settings, or Settings > Phone/Calls) to turn this on — a dial code isn't reliable on this network."}
           />
           {instructions.cancelCodeMethod === "native_settings" && (
             <Text style={styles.explanation}>To turn protection off again later, use the same settings screen.</Text>
@@ -197,6 +225,7 @@ export default function SetUpCallForwarding() {
           )}
 
           {canAutoDial && <PrimaryButton label="Open Phone app" onPress={handleOpenPhone} />}
+          {canAutoDial && Platform.OS === "ios" && <Text style={styles.step}>{IOS_MANUAL_DIAL_HINT}</Text>}
         </>
       )}
     </Screen>
@@ -204,6 +233,18 @@ export default function SetUpCallForwarding() {
 }
 
 const styles = StyleSheet.create({
+  copyLink: {
+    alignSelf: "center",
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  copyLinkText: {
+    color: colors.accent,
+    fontWeight: "600",
+    fontSize: 14,
+  },
   centered: {
     flex: 1,
     alignItems: "center",

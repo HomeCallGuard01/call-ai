@@ -55,6 +55,17 @@ function resolveEventEnvironment(event) {
 const { sendCriticalAlert } = require("../services/alerting");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
+const { getHouseholdDeliveryHealth } = require("../database/deliveryEvidence");
+const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("../services/callDeliveryEvents");
+const { parseDeviceReadiness } = require("../services/deviceReadiness");
+const { createHouseholdRateLimiter, LIMITS } = require("../middleware/householdRateLimit");
+
+// Per-household limits on app registration/telemetry routes (2026-09-30,
+// release readiness P5 — denial-of-wallet / Twilio REST amplification).
+const voiceTokenLimiter = createHouseholdRateLimiter({ name: "voice_token", ...LIMITS.voiceToken }).middleware;
+const voiceRegisteredLimiter = createHouseholdRateLimiter({ name: "voice_registered", ...LIMITS.voiceRegistered }).middleware;
+const callInviteReportLimiter = createHouseholdRateLimiter({ name: "call_invite_reports", ...LIMITS.callInviteReports }).middleware;
+const deviceReadinessLimiter = createHouseholdRateLimiter({ name: "device_readiness", ...LIMITS.deviceReadiness }).middleware;
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
@@ -66,6 +77,7 @@ const { normaliseNumber, wouldCreateForwardingLoop, normaliseContactNumber, isVa
 const { MAX_SYNC_CONTACTS, buildSyncPlan, buildSyncResultMessage } = require("../services/contactsSync");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 const { stripe } = require("../services/stripeClient");
+const { createOfferHandler, resolveMembershipPriceLabel, getSharedStripePriceLookup } = require("../services/subscriptionPricing");
 const {
   hasQualifyingStripeSubscription,
   findReusableOpenCheckoutSession,
@@ -183,8 +195,18 @@ router.post("/api/v1/onboarding/carrier-compatibility", requireAuthApi, async (r
     });
   }
 
-  const normalisedProvider = deviceType === "iphone" ? null : provider;
-  const normalisedTariffType = deviceType === "mobile" && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
+  // iOS technical parity (2026-09-30): an iPhone household records its
+  // carrier exactly like an Android one when the app sends it (the iOS app's
+  // carrier step, once IOS_COMING_SOON is off). Previously "iphone" always
+  // stored provider=null, so with IOS_COMING_SOON=false checkout eligibility
+  // fell through to evaluateProviderCompatibility(null) = unverified, and an
+  // iPhone customer could never pay. The coming-soon waiting-list write
+  // (no provider) is unchanged, and the IOS_COMING_SOON block still applies
+  // first in evaluateHouseholdCheckoutEligibility.
+  const iphoneProvider = deviceType === "iphone" && typeof provider === "string" && provider.trim() ? provider : null;
+  const normalisedProvider = deviceType === "iphone" ? iphoneProvider : provider;
+  const carriesTariff = deviceType === "mobile" || (deviceType === "iphone" && iphoneProvider !== null);
+  const normalisedTariffType = carriesTariff && typeof tariffType === "string" && tariffType.trim() ? tariffType : null;
 
   try {
     await setHouseholdCarrierCompatibility(req.household.id, deviceType, normalisedProvider, normalisedTariffType);
@@ -362,6 +384,12 @@ router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (re
 // redirect, and a homecallguard:// return_url instead of the web
 // dashboard, matching D1's in-app-browser handoff
 // (APP_VISUAL_SPECIFICATION.md).
+// GET /api/v1/billing/offer — the current Stripe price for the Android/web
+// purchase path (requireAuthApi, not requireEntitlement: the Subscribe step
+// runs before payment). iOS never uses this: it shows StoreKit's own price
+// (mobile/lib/subscriptionPrice.ts). `available: false` = show no amount.
+router.get("/api/v1/billing/offer", requireAuthApi, createOfferHandler());
+
 router.post("/api/v1/billing/manage-membership", requireAuthApi, async (req, res) => {
   if (!stripe) {
     console.error("MOBILE PORTAL SESSION ERROR: STRIPE_SECRET_KEY not configured");
@@ -547,12 +575,19 @@ router.post("/api/v1/me/bootstrap", async (req, res) => {
 // contract (APP_VISUAL_SPECIFICATION.md) rather than inventing a new one.
 router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (req, res) => {
   try {
-    const [callsToday, recentCalls, contacts, subscription, mostRecentDialOutcome] = await Promise.all([
+    const [callsToday, recentCalls, contacts, subscription, mostRecentDialOutcome, deliveryHealth] = await Promise.all([
       getCallsToday(req.household.id),
       getRecentCalls(req.household.id, 30),
       getContacts(req.household.id),
       getSubscriptionByHouseholdId(req.household.id),
       getMostRecentDialOutcome(req.household.id),
+      // Delivery health from real call evidence (2026-09-29,
+      // services/deliveryHealth.js). Never fails the dashboard: a read
+      // error yields null and the previous behaviour.
+      getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household: req.household }).catch(err => {
+        console.error("DELIVERY HEALTH READ FAILED:", err.message);
+        return null;
+      }),
     ]);
     // Monitored-minute allowance (056) for Build 20 — never throws; an
     // unreadable allowance is state 'unavailable' with monitoringActive:
@@ -604,7 +639,7 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // fullyProtected now, shared with the web dashboard's GET
     // /dashboard-data — the app must use fullyProtected for any
     // "You're protected" claim, not activationVerifiedAt alone.
-    const protectionStatus = computeProtectionStatus(req.household, new Date());
+    const protectionStatus = computeProtectionStatus(req.household, new Date(), deliveryHealth);
     // 5-step customer-facing protection checklist (2026-09-27) — a pure
     // presentation layer over the exact same protectionStatus computed
     // just above (plus hasProvisionedNumber for step 1); see
@@ -612,7 +647,7 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // introduces zero new verification logic. Additive: existing
     // deliveryReady/endToEndDeliveryVerified/fullyProtected fields below
     // are completely unchanged.
-    const customerProtectionSteps = buildCustomerProtectionSteps(req.household, new Date());
+    const customerProtectionSteps = buildCustomerProtectionSteps(req.household, new Date(), deliveryHealth);
     // Diagnostic instrumentation (2026-09-24) — see services/callRouting.js's
     // hasRecentDeliveryProblem and migration 044's own comment. A real,
     // observed delivery failure more recent than the last confirmed
@@ -646,6 +681,19 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         guidance: customerProtectionSteps.guidance,
         recentDeliveryProblem,
         lastConfirmedProtectedAt,
+        // Additive (2026-09-29). status is the customer-facing summary —
+        // "active" | "needs_attention" | "unavailable" — and never
+        // exposes provider terms. Existing app builds ignore it; they
+        // already react to fullyProtected/deliveryReady above, which an
+        // UNREACHABLE health now makes false (→ "reconnect_needed").
+        deliveryHealth: deliveryHealth
+          ? {
+              status: deliveryHealth.customerStatus,
+              needsAttention: deliveryHealth.needsAttention,
+              lastSuccessAt: deliveryHealth.lastSuccessAt,
+              lastFailureAt: deliveryHealth.lastFailureAt,
+            }
+          : null,
         // Server-authoritative Mobile/Landline (households.device_type,
         // migration 040) — parity with web's /dashboard-data. Lets the
         // app prefer this over any client-remembered device category for
@@ -656,7 +704,16 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       },
       membership: {
         planName: "Home Call Guard Standard",
-        priceLabel: "£4.99 per month including VAT",
+        // 2026-09-30: THIS household's own price (its own Stripe
+        // subscription's Price), or no amount at all for Apple-billed and
+        // non-charged memberships — never one global list price, so a
+        // customer kept on an earlier price is never shown a newer one.
+        // See services/subscriptionPricing.js.
+        priceLabel: await resolveMembershipPriceLabel({
+          entitlement: req.entitlement,
+          subscription,
+          lookupStripePrice: getSharedStripePriceLookup(),
+        }),
         status: membershipStatus,
         nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
         accessUntil: subscription ? subscription.current_period_end : null,
@@ -782,8 +839,10 @@ router.get("/api/v1/me/activation-device", requireAuthApi, requireEntitlement, a
 // welcome email, no SMS, nothing — see the conversation record this
 // endpoint was approved in). GET /api/v1/me/dashboard and the existing
 // web /dashboard-data route are both completely unchanged by this;
-// this route's response never includes a bare `twilioNumber` field —
-// only the fully-formed, ready-to-dial code and plain-language framing
+// this route's response never includes the raw E.164 `twilioNumber` —
+// only `forwardingNumber` (the same number in UK national format, which
+// the dial code already exposed; added 2026-09-26 so native-Settings
+// carriers can be shown it), the ready-to-dial code and plain-language framing
 // (services/activationInstructions.js generates it server-side so
 // per-provider formatting/caveats — Virgin's extra zero, Sky/Virgin's
 // preliminary 150 call — live in exactly one place, never duplicated in
@@ -855,6 +914,11 @@ router.get("/api/v1/activation/instructions", requireAuthApi, requireEntitlement
       code: instructions.code,
       activationMethod: instructions.activationMethod,
       activationNote: instructions.activationNote,
+      // The customer's own HCG number, UK national format (2026-09-26) —
+      // the number to type into Phone Settings for a native_settings
+      // carrier (code is null there), and the same number the dial code
+      // embeds otherwise. Clients read this directly; no code parsing.
+      forwardingNumber: instructions.forwardingNumber,
       cancelCode: instructions.cancelCode,
       cancelCodeMethod: instructions.cancelCodeMethod,
       cancelCodeConfidence: instructions.cancelCodeConfidence,
@@ -954,7 +1018,7 @@ router.post("/api/v1/household/phone-number", requireAuthApi, requireEntitlement
 // route in this file — never a partial/malformed token. Also fails
 // closed (400) if the caller's ?platform= query param is missing or
 // unrecognised — see resolvePushCredentialSid below.
-router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req, res) => {
+router.get("/api/v1/voice/token", requireAuthApi, voiceTokenLimiter, requireEntitlement, async (req, res) => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const apiKeySid = process.env.TWILIO_VOICE_API_KEY_SID;
   const apiKeySecret = process.env.TWILIO_VOICE_API_KEY_SECRET;
@@ -1021,9 +1085,9 @@ router.get("/api/v1/voice/token", requireAuthApi, requireEntitlement, async (req
 // it, or a request with no body at all, behaves exactly as before this
 // change — markHouseholdAppVersion is fire-and-forget and never affects
 // the response.
-router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, express.json(), async (req, res) => {
+router.post("/api/v1/voice/registered", requireAuthApi, voiceRegisteredLimiter, requireEntitlement, express.json(), async (req, res) => {
   try {
-    const { appVersion, appBuildVersion, appPlatform } = req.body || {};
+    const { appVersion, appBuildVersion, appPlatform, readiness } = req.body || {};
     // Registration-history observability (2026-09-27, migration 046) —
     // the same optional diagnostic fields already sent here are now also
     // passed through to the history-recording RPC, not just the separate
@@ -1031,6 +1095,17 @@ router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, expr
     const registeredAt = await markVoiceClientRegistered(req.household.id, { appPlatform, appVersion, appBuildVersion });
     if (appVersion || appBuildVersion || appPlatform) {
       markHouseholdAppVersion(req.household.id, appVersion, appBuildVersion, appPlatform).catch(() => {});
+    }
+    // Device readiness (2026-09-30, release readiness): optional, sent by
+    // builds from Build 20. Older builds omit it; nothing changes for them.
+    const parsedReadiness = parseDeviceReadiness(readiness, { trigger: "registration" });
+    if (parsedReadiness) {
+      recordDeliveryEvent({
+        event: DELIVERY_EVENTS.DEVICE_READINESS,
+        source: "app",
+        householdId: req.household.id,
+        detail: parsedReadiness,
+      }, { supabase: supabaseAdmin }).catch(() => {});
     }
     res.json({ ok: true, registeredAt });
   } catch (err) {
@@ -1048,17 +1123,34 @@ router.post("/api/v1/voice/registered", requireAuthApi, requireEntitlement, expr
 // follow. No entitlement gate: a call invite can genuinely arrive in the
 // narrow window around an entitlement lapsing, and this is diagnostics-
 // only, never a capability grant.
-router.post("/api/v1/voice/call-invite-received", requireAuthApi, express.json(), async (req, res) => {
-  const { callSid } = req.body || {};
+router.post("/api/v1/voice/call-invite-received", requireAuthApi, callInviteReportLimiter, express.json(), async (req, res) => {
+  const { callSid, presented, platform } = req.body || {};
   if (typeof callSid !== "string" || !callSid.trim()) {
     return res.status(400).json({ error: "invalid_input", message: "callSid is required" });
   }
   await recordClientCallInviteReceived(callSid.trim(), req.household.id);
+  // Timeline (migration 064): the app reports the client-leg SID.
+  // `presented` (Build 20+) says the incoming-call UI could be shown, i.e.
+  // the phone is ringing; older builds omit it.
+  const base = { source: "app", householdId: req.household.id, clientCallSid: callSid.trim() };
+  recordDeliveryEvent({ ...base, event: DELIVERY_EVENTS.APP_INVITE_RECEIVED, detail: { platform, presented } }, { supabase: supabaseAdmin }).catch(() => {});
+  if (presented === true) {
+    recordDeliveryEvent({ ...base, event: DELIVERY_EVENTS.APP_RINGING, detail: { platform } }, { supabase: supabaseAdmin }).catch(() => {});
+  }
   res.json({ ok: true });
 });
 
-const CALL_OUTCOME_VALUES = new Set(["accepted", "rejected", "cancelled"]);
-router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(), async (req, res) => {
+// "connected" (2026-09-30): the app's Call Connected event — media is up on
+// the device. Recorded only as a timeline event; client_outcome keeps its
+// original three values so existing health logic is unchanged.
+const CALL_OUTCOME_VALUES = new Set(["accepted", "rejected", "cancelled", "connected"]);
+const OUTCOME_EVENTS = {
+  accepted: DELIVERY_EVENTS.APP_ANSWERED,
+  rejected: DELIVERY_EVENTS.APP_DECLINED,
+  cancelled: DELIVERY_EVENTS.APP_INVITE_CANCELLED,
+  connected: DELIVERY_EVENTS.APP_MEDIA_CONNECTED,
+};
+router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, callInviteReportLimiter, express.json(), async (req, res) => {
   const { callSid, outcome } = req.body || {};
   if (typeof callSid !== "string" || !callSid.trim() || !CALL_OUTCOME_VALUES.has(outcome)) {
     return res.status(400).json({
@@ -1066,7 +1158,49 @@ router.post("/api/v1/voice/call-invite-outcome", requireAuthApi, express.json(),
       message: `callSid is required and outcome must be one of: ${[...CALL_OUTCOME_VALUES].join(", ")}`,
     });
   }
-  await recordClientCallOutcome(callSid.trim(), req.household.id, outcome);
+  if (outcome !== "connected") {
+    await recordClientCallOutcome(callSid.trim(), req.household.id, outcome);
+  }
+  recordDeliveryEvent({
+    event: OUTCOME_EVENTS[outcome],
+    source: "app",
+    householdId: req.household.id,
+    clientCallSid: callSid.trim(),
+    detail: { platform: req.body.platform },
+  }, { supabase: supabaseAdmin }).catch(() => {});
+  res.json({ ok: true });
+});
+
+// POST /api/v1/voice/device-readiness (2026-09-30, release readiness)
+//
+// The app reports whether this phone can actually present an incoming call:
+// microphone and notification permission state, and any Twilio SDK 31401
+// ("Missing permissions") error — which on Android means the SDK dropped an
+// incoming call before posting any notification or ringtone, so Twilio only
+// ever sees no-answer. Authenticated (requireAuthApi — never the
+// unauthenticated /debug beacon pattern); household resolved from the token,
+// never the body. No entitlement gate, matching the invite-report routes:
+// diagnostics only. Enum-only payload; anything else is rejected.
+router.post("/api/v1/voice/device-readiness", requireAuthApi, deviceReadinessLimiter, express.json(), async (req, res) => {
+  const body = req.body || {};
+  const blocked = body.presentationBlocked === true;
+  const parsed = parseDeviceReadiness(body.readiness, { trigger: blocked ? "sdk_error" : (body.trigger === "foreground" ? "foreground" : "registration") });
+  if (!parsed && !blocked) {
+    return res.status(400).json({ error: "invalid_input", message: "readiness or presentationBlocked is required" });
+  }
+  const base = { source: "app", householdId: req.household.id };
+  if (parsed) {
+    await recordDeliveryEvent({ ...base, event: DELIVERY_EVENTS.DEVICE_READINESS, detail: parsed }, { supabase: supabaseAdmin });
+  }
+  if (blocked) {
+    const cause = parsed && parsed.microphone === "denied" ? "microphone"
+      : parsed && parsed.notifications === "denied" ? "notifications" : "unknown";
+    await recordDeliveryEvent({
+      ...base,
+      event: DELIVERY_EVENTS.APP_PRESENTATION_BLOCKED,
+      detail: { platform: parsed ? parsed.platform : undefined, errorCode: String(body.errorCode || "31401"), cause },
+    }, { supabase: supabaseAdmin });
+  }
   res.json({ ok: true });
 });
 
