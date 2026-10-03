@@ -278,7 +278,7 @@ the trade-off of rejecting financial fail-open, and it is listed as decision D2.
 
 | Failure | Behaviour | Bound |
 |---|---|---|
-| Authorisation RPC errors or times out at `/voice` | Degraded envelope (per instance): ≤ `degradedMaxConcurrent` live calls, ≤ `degradedMaxCallsPerHour`, `timeLimit = degradedMaxCallSeconds`, unmonitored. After `degradedMaxOutageSeconds` of continuous failure: reject. Calls admitted this way are adopted into the ledger when the DB returns | per instance: `degradedMaxCallsPerHour × telephony(degradedMaxCallSeconds)` (defaults: 20 × 11 min × c·u ≈ £2.84/h, at most 15 min of outage ≈ £0.71) |
+| Authorisation RPC errors or times out at `/voice` | Degraded envelope (per instance): ≤ `degradedMaxConcurrent` live calls, ≤ `degradedMaxCallsPerHour`, `timeLimit = degradedMaxCallSeconds`, unmonitored. After `degradedMaxOutageSeconds` of continuous failure: reject. Calls admitted this way are adopted into the ledger when the DB returns | per instance: `degradedMaxCallsPerHour × telephony(degradedMaxCallSeconds + grace)` (defaults: 20 × 11 started min × c·u ≈ £2.61 per instance per outage; the 20/h cap spans the whole 15-min window) |
 | `FC_DEGRADED_MODE=reject` | Every call refused while authorisation is unavailable | £0 |
 | Renewal RPC fails | Local lease copy; terminate when `lease end + grace` has passed | one lease + grace |
 | Provider REST hang-up fails | Retried each sweep. Provider `timeLimit` backstop | backstop |
