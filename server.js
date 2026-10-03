@@ -41,8 +41,18 @@ const { insertWaitingListSignup } = require("./database/waitingList");
 const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
 const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
 const { findConfirmedUnreleasedQuarantine } = require("./database/twilioQuarantine");
-const { buildWebhookUrl, isGenuineTwilioRequest } = require("./services/twilioWebhookAuth");
-const { wouldCreateForwardingLoop } = require("./services/phone");
+// P0 voice-surface remediation (2026-10-01): fail-closed Twilio signature
+// enforcement on every Twilio webhook, and /media-stream bound to signed
+// /voice requests. See docs/security/VOICE_SURFACE_P0_REMEDIATION.md.
+const { createTwilioWebhookGuard } = require("./services/twilioWebhookGuard");
+const { createStreamAuthRegistry } = require("./services/liveMonitoring/streamAuth");
+const { wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber } = require("./services/phone");
+// Telephony abuse P0 (2026-10-03): fraud/abuse layer — ordered inbound-call
+// screening, webhook replay/pollution checks, TwiML egress guard, incident
+// mode, provisioning guard. See docs/security/TELEPHONY_ABUSE_THREAT_MODEL.md.
+const { createTelephonyAbuseLayer } = require("./services/abuse");
+const { newCorrelationId } = require("./services/abuse/abuseAudit");
+const { configureProvisioningAbuseGuard } = require("./services/twilioProvisioning");
 const {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
@@ -371,20 +381,32 @@ function buildRedLineTerminateUrl(appUrl) {
   return appUrl + "/red-line-terminate";
 }
 
-function attachLiveMonitoring(twiml, { household, twilioNumber }) {
+// P0 remediation (2026-10-01): the stream carries ONLY a single-use token
+// bound to this CallSid (streamAuth.js). Household, SMS destination and
+// sender stay server-side and are recovered from the token when the
+// stream starts — nothing the /media-stream client sends is trusted, and
+// the customer's mobile number no longer appears in TwiML.
+function attachLiveMonitoring(twiml, { household, twilioNumber, callSid }) {
   if (!household) return;
 
   const destination = resolveForwardingDestination(household);
+  if (!destination.canForward) {
+    console.error("LIVE MONITORING: no valid destination — SMS warning will be skipped", household.id);
+  }
+  const streamToken = streamAuth.issue({
+    callSid,
+    householdId: household.id,
+    toNumber: destination.canForward ? destination.number : null,
+    fromNumber: twilioNumber || null,
+  });
+  if (!streamToken) {
+    console.error("LIVE MONITORING: no stream token (missing CallSid) — call connects without monitoring", household.id);
+    return;
+  }
 
   const start = twiml.start();
   const stream = start.stream({ url: buildMediaStreamUrl(APP_URL) });
-  stream.parameter({ name: "householdId", value: household.id });
-  if (destination.canForward) {
-    stream.parameter({ name: "toNumber", value: destination.number });
-  } else {
-    console.error("LIVE MONITORING: no valid destination — SMS warning will be skipped", household.id);
-  }
-  stream.parameter({ name: "protectedNumber", value: twilioNumber });
+  stream.parameter({ name: "streamToken", value: streamToken });
 }
 
 async function getCallsToday(householdId) {
@@ -638,8 +660,59 @@ function toClientCall(call) {
 
 // VOICE CALL ENTRY
 
-app.post("/voice", async (req, res) => {
+const twilioSignatureGuard = createTwilioWebhookGuard({
+  authToken: process.env.TWILIO_AUTH_TOKEN,
+  appUrl: APP_URL,
+  allowedHosts: process.env.TWILIO_WEBHOOK_ALLOWED_HOSTS,
+  mode: process.env.TWILIO_WEBHOOK_AUTH_MODE === "report" ? "report" : "enforce",
+});
+if (process.env.TWILIO_WEBHOOK_AUTH_MODE === "report") {
+  console.error("SECURITY: TWILIO_WEBHOOK_AUTH_MODE=report — unsigned Twilio webhooks are being ALLOWED (emergency setting)");
+  sendCriticalAlert("twilio_webhook_auth_report_mode", "Twilio webhook signature enforcement is OFF (TWILIO_WEBHOOK_AUTH_MODE=report)", {}).catch(() => {});
+}
+const streamAuth = createStreamAuthRegistry();
+
+// Telephony abuse P0: one instance per process. The financial port and
+// breaker are Claude 1's (Financial Fortress) to supply; until integrated
+// the port reports "not integrated" and the abuse layer's own controls apply.
+const telephonyAbuse = createTelephonyAbuseLayer({
+  supabaseAdmin,
+  twilioRestClient,
+  sendAlert: sendCriticalAlert,
+  appUrl: APP_URL,
+  financialAuthorization: null,
+  financialBreaker: null,
+});
+configureProvisioningAbuseGuard(telephonyAbuse.provisioningGuard);
+const twilioWebhookIntegrity = telephonyAbuse.webhookIntegrity.middleware;
+
+// Every Twilio voice response leaves through here: the egress guard turns
+// anything outside product scope (PSTN/SIP/conference legs, foreign
+// callback hosts, another household's Client) into an unbilled <Reject>,
+// and the response is remembered so an exact duplicate webhook gets the
+// identical TwiML back (services/abuse/webhookIntegrity.js).
+function sendVoiceTwiml(req, res, twiml, { household = null, correlationId = null } = {}) {
+  const xml = telephonyAbuse.guardTwiml(twiml.toString(), {
+    expectedClientIdentity: household ? buildVoiceClientIdentity(household.id) : null,
+    householdId: household ? household.id : null,
+    correlationId,
+    route: req.path,
+  });
+  if (typeof req.rememberTwimlResponse === "function") req.rememberTwimlResponse(xml);
+  return res.type("text/xml").send(xml);
+}
+
+app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res) => {
   const twiml = new VoiceResponse();
+
+  // A Voice SDK client-originated request (TwiML App pointed here) must never
+  // be treated as an inbound call to a household: unbilled <Reject> before
+  // any lookup, write or paid step.
+  if (typeof req.body.From === "string" && req.body.From.startsWith("client:")) {
+    twiml.reject();
+    const rejectXml = twiml.toString();
+    return res.type("text/xml").send(rejectXml);
+  }
 
   const household = await getHouseholdByTwilioNumber(req.body.To);
 
@@ -669,12 +742,9 @@ app.post("/voice", async (req, res) => {
   // never be triggered by client activity alone (only ever called from
   // here, and now only when the signature genuinely validates).
   if (household) {
-    const genuineTwilioRequest = isGenuineTwilioRequest({
-      authToken: process.env.TWILIO_AUTH_TOKEN,
-      signature: req.get("X-Twilio-Signature"),
-      url: buildWebhookUrl(APP_URL, req.originalUrl),
-      params: req.body,
-    });
+    // Verified by twilioSignatureGuard (which also accepts allowlisted
+    // alternate hosts); false only in the emergency report mode.
+    const genuineTwilioRequest = req.twilioVerified === true;
 
     if (genuineTwilioRequest) {
       stampActivationVerifiedOnRealCall(household, { markActivationVerified }).catch(err =>
@@ -690,11 +760,39 @@ app.post("/voice", async (req, res) => {
 
   const contacts = household ? await getContacts(household.id) : [];
   const caller = req.body.From;
-  const callerNorm = normaliseNumber(caller);
 
-  const isKnown = contacts.some(
-    c => c.number && normaliseNumber(c.number) === callerNorm
-  );
+  // Telephony abuse P0: every check that can refuse or degrade a call —
+  // incident mode, account hold, loops, caller velocity, concurrency,
+  // financial authorisation — runs HERE, before the trusted-contact
+  // decision and before any billable TwiML. The trusted match is now
+  // full-E.164 (the old last-10-digit match let +33 7700 900123 pass as
+  // UK 07700 900123) and is only a monitoring decision. Order and
+  // reasoning: services/abuse/inboundCallGuard.js.
+  const correlationId = newCorrelationId("call");
+  let abuseDecision;
+  try {
+    abuseDecision = await telephonyAbuse.inboundGuard.screen({
+      params: req.body,
+      household,
+      contacts,
+      duplicate: req.twilioDuplicate === true,
+      correlationId,
+    });
+  } catch (err) {
+    // Abuse layer failure must not stop delivery: connect, never trusted
+    // (so never unmonitored on an unverified basis), egress guard still on.
+    console.error("ABUSE LAYER ERROR — call delivered without abuse screening:", err.message);
+    sendCriticalAlert("abuse_layer_error", "The telephony abuse layer threw; calls are being delivered without abuse screening", { correlationId }).catch(() => {});
+    abuseDecision = { action: "connect", monitor: true, trusted: false, trustedMatched: false, flags: ["abuse_layer_error"], correlationId };
+  }
+
+  if (abuseDecision.action === "reject") {
+    // <Reject> as the first verb is unbilled.
+    twiml.reject();
+    return sendVoiceTwiml(req, res, twiml, { household, correlationId });
+  }
+
+  const isKnown = abuseDecision.trusted;
 
   if (isKnown) {
     console.log("Known contact → bypass AI");
@@ -715,7 +813,7 @@ app.post("/voice", async (req, res) => {
 
     dialHouseholdOrFailClosed(twiml, household);
 
-    return res.type("text/xml").send(twiml.toString());
+    return sendVoiceTwiml(req, res, twiml, { household, correlationId });
   }
 
   // Unknown caller — pre-call speech screening removed (2026-08-2X): the
@@ -805,13 +903,16 @@ app.post("/voice", async (req, res) => {
   // no monitoring is actually about to happen.
   const activeEntitlement = household ? await getActiveEntitlement(household.id) : null;
 
-  if (shouldStartPaidMonitoring(household, activeEntitlement)) {
+  // abuseDecision.monitor is false only under incident suspend_paid, a
+  // financial monitoring denial, global-concurrency degrade, or a
+  // duplicate webhook (which must never mint a second stream token).
+  if (shouldStartPaidMonitoring(household, activeEntitlement) && abuseDecision.monitor && req.twilioDuplicate !== true) {
     twiml.say(
       { voice: "Polly.Amy", language: "en-GB" },
       "This number is monitored and protected by Home Call Guard."
     );
 
-    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To, callSid: req.body.CallSid });
   } else if (household) {
     // Expected, steady-state behaviour for a lapsed/cancelled/never-
     // subscribed household — not a fault, so no sendCriticalAlert (that's
@@ -819,14 +920,14 @@ app.post("/voice", async (req, res) => {
     // Logged so it's visible in server logs without being treated as an
     // incident.
     console.error(
-      "MONITORING SKIPPED: no active entitlement for household — call will still connect, without paid AI monitoring",
+      "MONITORING SKIPPED: no active entitlement for household, or new paid monitoring suspended by the abuse/incident/financial controls — call will still connect, without paid AI monitoring",
       household.id
     );
   }
 
   dialHouseholdOrFailClosed(twiml, household);
 
-  return res.type("text/xml").send(twiml.toString());
+  return sendVoiceTwiml(req, res, twiml, { household, correlationId });
 });
 
 // PROCESS UNKNOWN CALL
@@ -840,7 +941,7 @@ app.post("/voice", async (req, res) => {
 // from git history. Do not delete without an explicit decision to drop
 // pre-call screening permanently.
 
-app.post("/process", async (req, res) => {
+app.post("/process", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res) => {
   const twiml = new VoiceResponse();
   const processingStart = Date.now();
 
@@ -863,7 +964,7 @@ app.post("/process", async (req, res) => {
 
   if (!speech || speech.length < 2) {
     twiml.say("Sorry, I didn't catch that. Please try again.");
-    return res.type("text/xml").send(twiml.toString());
+    return sendVoiceTwiml(req, res, twiml, { household });
   }
 
   // Legacy keyword pre-filter — removed (Decision 012, restored
@@ -951,12 +1052,12 @@ app.post("/process", async (req, res) => {
 
     twiml.pause({ length: 1 });
 
-    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+    attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To, callSid: req.body.CallSid });
 
     dialHouseholdOrFailClosed(twiml, household);
   }
 
-  return res.type("text/xml").send(twiml.toString());
+  return sendVoiceTwiml(req, res, twiml, { household });
 });
 
 // RED-LINE TERMINATION
@@ -967,14 +1068,15 @@ app.post("/process", async (req, res) => {
 // handling of its own. Deliberately generic wording: no detail about
 // which specific behaviour triggered it, so a real caller doesn't get a
 // coaching signal on what to avoid saying next time.
-app.post("/red-line-terminate", (req, res) => {
+app.post("/red-line-terminate", twilioSignatureGuard, twilioWebhookIntegrity, (req, res) => {
   const twiml = new VoiceResponse();
+  telephonyAbuse.inboundGuard.release(req.body.CallSid);
   twiml.say(
     { voice: "Polly.Amy", language: "en-GB" },
     "This call has been identified as high risk and is being ended for the safety of the person you called."
   );
   twiml.hangup();
-  return res.type("text/xml").send(twiml.toString());
+  return sendVoiceTwiml(req, res, twiml);
 });
 
 // CALL DELIVERY FAILED (client-only Voice SDK delivery)
@@ -993,9 +1095,17 @@ app.post("/red-line-terminate", (req, res) => {
 // console.error) so "approved call, app unreachable" is identifiable on
 // its own — a real customer-notification gap (voicemail/SMS) flagged for
 // later, not built here today.
-app.post("/call-delivery-failed", (req, res) => {
+app.post("/call-delivery-failed", twilioSignatureGuard, twilioWebhookIntegrity, (req, res) => {
   const twiml = new VoiceResponse();
   const dialCallStatus = req.body.DialCallStatus;
+
+  // Telephony abuse P0: the <Dial> ended — free this call's concurrency
+  // leases. A duplicate delivery of this callback changes nothing.
+  telephonyAbuse.inboundGuard.release(req.body.CallSid);
+  if (req.twilioDuplicate === true) {
+    twiml.hangup();
+    return sendVoiceTwiml(req, res, twiml);
+  }
 
   // duration_seconds + delivery-verified capture (cost-protection
   // safeguard, and now the sole source of real end-to-end delivery
@@ -1028,7 +1138,7 @@ app.post("/call-delivery-failed", (req, res) => {
   }
 
   twiml.hangup();
-  return res.type("text/xml").send(twiml.toString());
+  return sendVoiceTwiml(req, res, twiml);
 });
 
 // CALL STATUS (two-number households only)
@@ -1044,8 +1154,14 @@ app.post("/call-delivery-failed", (req, res) => {
 // rather than a separate implementation, so this route is correct by
 // construction if it's ever wired up again — never landline-specific,
 // this helper knows nothing about device classification.
-app.post("/call-status", (req, res) => {
+app.post("/call-status", twilioSignatureGuard, twilioWebhookIntegrity, (req, res) => {
   const twiml = new VoiceResponse();
+
+  telephonyAbuse.inboundGuard.release(req.body.CallSid);
+  if (req.twilioDuplicate === true) {
+    twiml.hangup();
+    return sendVoiceTwiml(req, res, twiml);
+  }
 
   recordApprovedCallDeliveryOutcome(
     req.body.CallSid,
@@ -1054,7 +1170,7 @@ app.post("/call-status", (req, res) => {
   ).catch(err => console.error("CALL DURATION RECORD FAILED:", err.message));
 
   twiml.hangup();
-  return res.type("text/xml").send(twiml.toString());
+  return sendVoiceTwiml(req, res, twiml);
 });
 
 // DASHBOARD API
@@ -1401,7 +1517,7 @@ function parseContactsCsv(text) {
     .filter(line => line.length > 0)
     .map(line => {
       const parts = line.split(",");
-      return { name: parts[0]?.trim() || "Unknown", number: normaliseNumber(parts[1]) };
+      return { name: parts[0]?.trim() || "Unknown", number: normaliseContactNumber(parts[1]) };
     });
 }
 
@@ -1431,7 +1547,7 @@ function parseContactsVcf(text) {
       }
     }
 
-    return { name: name || "Unknown", number: normaliseNumber(number) };
+    return { name: name || "Unknown", number: normaliseContactNumber(number) };
   });
 }
 
@@ -1451,7 +1567,7 @@ app.post("/upload-contacts", requireAuth, uploadContactsFile, async (req, res) =
     const isVcf = /\.(vcf|vcard)$/i.test(req.file.originalname || "");
 
     const rawContacts = isVcf ? parseContactsVcf(data) : parseContactsCsv(data);
-    const validContacts = rawContacts.filter(c => c.number.length === 10);
+    const validContacts = rawContacts.filter(c => isValidContactNumber(c.number));
 
     if (validContacts.length === 0) {
       return res.status(400).json({ error: "no_valid_contacts", message: "We could not import that contacts file. Please check the file and try again." });
@@ -1465,7 +1581,7 @@ app.post("/upload-contacts", requireAuth, uploadContactsFile, async (req, res) =
     // and within the file itself — same normalised-number comparison as
     // the single-contact add/edit routes.
     const existing = await getContacts(req.household.id);
-    const seen = new Set(existing.map(c => normaliseNumber(c.number)));
+    const seen = new Set(existing.map(c => normaliseContactNumber(c.number)));
     const toInsert = [];
     let skippedDuplicates = 0;
 
@@ -1503,14 +1619,14 @@ app.post("/upload-contacts", requireAuth, uploadContactsFile, async (req, res) =
 app.post("/contacts", requireAuth, requireEntitlement, async (req, res) => {
   try {
     const name = (req.body.name || "").trim();
-    const number = normaliseNumber(req.body.number);
+    const number = normaliseContactNumber(req.body.number);
 
-    if (!name || number.length !== 10) {
+    if (!name || !isValidContactNumber(number)) {
       return res.status(400).json({ error: "invalid_input" });
     }
 
     const existing = await getContacts(req.household.id);
-    if (existing.some(c => normaliseNumber(c.number) === number)) {
+    if (existing.some(c => normaliseContactNumber(c.number) === number)) {
       return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
     }
 
@@ -1525,14 +1641,14 @@ app.post("/contacts", requireAuth, requireEntitlement, async (req, res) => {
 app.put("/contacts/:id", requireAuth, requireEntitlement, async (req, res) => {
   try {
     const name = (req.body.name || "").trim();
-    const number = normaliseNumber(req.body.number);
+    const number = normaliseContactNumber(req.body.number);
 
-    if (!name || number.length !== 10) {
+    if (!name || !isValidContactNumber(number)) {
       return res.status(400).json({ error: "invalid_input" });
     }
 
     const existing = await getContacts(req.household.id);
-    if (existing.some(c => c.id !== req.params.id && normaliseNumber(c.number) === number)) {
+    if (existing.some(c => c.id !== req.params.id && normaliseContactNumber(c.number) === number)) {
       return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
     }
 
@@ -2380,12 +2496,20 @@ setTimeout(() => {
 // unaffected either way, since <Start><Stream> is fire-and-forget
 // relative to <Dial>).
 attachMediaStreamServer(httpServer, {
+  // P0 remediation: only streams bound to a Twilio-signed /voice are monitored.
+  authorizeStream: (args) => streamAuth.authorize(args),
+  // Telephony abuse P0: incident mode can stop new SMS without a deploy.
+  paidActionGate: telephonyAbuse.paidActionGate,
   transcribeClient: openai ? createOpenAiTranscribeClient(openai) : null,
   smsClient: twilioRestClient,
   fromNumber: null,
   twilioRestClient,
   redLineRedirectUrl: buildRedLineTerminateUrl(APP_URL),
-  recordOutcome: recordMonitoringOutcome,
+  // Stream ended → the call's concurrency leases are freed too.
+  recordOutcome: (outcome) => {
+    if (outcome && outcome.callSid) telephonyAbuse.inboundGuard.release(outcome.callSid);
+    return recordMonitoringOutcome(outcome);
+  },
   // Shadow-mode Twilio signature check only (see mediaStreamServer.js and
   // services/twilioWebhookAuth.js) — observes and logs, never rejects a
   // connection. Same APP_URL/TWILIO_AUTH_TOKEN already used for /voice.

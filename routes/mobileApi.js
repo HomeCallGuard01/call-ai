@@ -46,7 +46,7 @@ const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, r
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
-const { normaliseNumber, wouldCreateForwardingLoop } = require("../services/phone");
+const { normaliseNumber, wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber } = require("../services/phone");
 const { MAX_SYNC_CONTACTS, buildSyncPlan, buildSyncResultMessage } = require("../services/contactsSync");
 const { isCallWithinVerificationWindow } = require("../services/activationVerification");
 const { stripe } = require("../services/stripeClient");
@@ -1074,14 +1074,14 @@ router.post("/api/v1/activation/verify", requireAuthApi, async (req, res) => {
 router.post("/api/v1/contacts", requireAuthApi, requireEntitlement, async (req, res) => {
   try {
     const name = (req.body.name || "").trim();
-    const number = normaliseNumber(req.body.number);
+    const number = normaliseContactNumber(req.body.number);
 
-    if (!name || number.length !== 10) {
+    if (!name || !isValidContactNumber(number)) {
       return res.status(400).json({ error: "invalid_input" });
     }
 
     const existing = await getContacts(req.household.id);
-    if (existing.some(c => normaliseNumber(c.number) === number)) {
+    if (existing.some(c => normaliseContactNumber(c.number) === number)) {
       return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
     }
 
@@ -1096,14 +1096,14 @@ router.post("/api/v1/contacts", requireAuthApi, requireEntitlement, async (req, 
 router.put("/api/v1/contacts/:id", requireAuthApi, requireEntitlement, async (req, res) => {
   try {
     const name = (req.body.name || "").trim();
-    const number = normaliseNumber(req.body.number);
+    const number = normaliseContactNumber(req.body.number);
 
-    if (!name || number.length !== 10) {
+    if (!name || !isValidContactNumber(number)) {
       return res.status(400).json({ error: "invalid_input" });
     }
 
     const existing = await getContacts(req.household.id);
-    if (existing.some(c => c.id !== req.params.id && normaliseNumber(c.number) === number)) {
+    if (existing.some(c => c.id !== req.params.id && normaliseContactNumber(c.number) === number)) {
       return res.status(409).json({ error: "duplicate", message: "This number is already in your trusted contacts." });
     }
 

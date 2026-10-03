@@ -35,6 +35,11 @@ const { THRESHOLDS } = require('../services/liveMonitoring/scoring/thresholds.js
 const { createCallMonitor } = require('../services/liveMonitoring/riskMonitor.js');
 const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaStreamHandler.js');
 
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let failures = 0;
@@ -132,11 +137,15 @@ async function run() {
     check(Boolean(processRouteMatch), 'sanity check: the dead/unreachable /process route handler is still present in server.js (rollback code, not deleted)');
 
     const voiceSrc = voiceRouteMatch ? voiceRouteMatch[0] : '';
-    const EARLY_RETURN = 'return res.type("text/xml").send(twiml.toString());';
-    const firstReturnIdx = voiceSrc.indexOf(EARLY_RETURN);
+    // Telephony abuse P0 (2026-10-03): responses leave through
+    // sendVoiceTwiml, and an abuse-refusal return precedes the known-contact
+    // branch, so the branch is located from its own `if (isKnown) {`.
+    const EARLY_RETURN = 'return sendVoiceTwiml(req, res, twiml, { household, correlationId });';
+    const knownStartIdx = voiceSrc.indexOf('if (isKnown) {');
+    const firstReturnIdx = knownStartIdx === -1 ? -1 : voiceSrc.indexOf(EARLY_RETURN, knownStartIdx);
     check(firstReturnIdx !== -1, 'sanity check: /voice contains the known-contact branch\'s early return');
 
-    const knownContactBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(0, firstReturnIdx);
+    const knownContactBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(knownStartIdx, firstReturnIdx);
     const unknownCallerBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(firstReturnIdx);
 
     check(
@@ -211,7 +220,7 @@ async function run() {
       throw new Error('simulated database outage');
     };
 
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient,
       smsClient,
       fromNumber: '+441615700779',

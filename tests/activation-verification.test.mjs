@@ -21,6 +21,7 @@ const {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const mobileApiSource = readFileSync(path.join(__dirname, '..', 'routes', 'mobileApi.js'), 'utf8');
+const guardSrc = readFileSync(path.join(__dirname, '..', 'services', 'twilioWebhookGuard.js'), 'utf8');
 
 let failures = 0;
 
@@ -124,7 +125,7 @@ await (async () => {
 // this is checked directly against the real server.js source.
 
 {
-  const voiceAnchor = 'app.post("/voice", async (req, res) => {';
+  const voiceAnchor = 'app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res) => {';
   const voiceIdx = serverSource.indexOf(voiceAnchor);
   check(voiceIdx !== -1, 'POST /voice is declared in server.js');
 
@@ -140,14 +141,19 @@ await (async () => {
       block.includes('stampActivationVerifiedOnRealCall('),
       '/voice calls the automatic activation stamp'
     );
+    // P0 remediation (2026-10-01): the signature is now enforced by the
+    // twilioSignatureGuard middleware on the route itself (an unsigned request
+    // never reaches the handler), and the stamp is still gated on the
+    // guard's verified flag (false only in the emergency report mode).
     check(
-      block.includes('isGenuineTwilioRequest(') && block.includes('genuineTwilioRequest') &&
-        block.indexOf('isGenuineTwilioRequest(') < block.indexOf('stampActivationVerifiedOnRealCall('),
-      '/voice checks isGenuineTwilioRequest BEFORE calling the auto-stamp — an unsigned/invalid request can never stamp activation, closing the "unauthenticated webhook as authoritative evidence" contradiction'
+      serverSource.includes('app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res) => {') &&
+        block.includes('req.twilioVerified === true') &&
+        block.indexOf('req.twilioVerified === true') < block.indexOf('stampActivationVerifiedOnRealCall('),
+      '/voice is behind twilioSignatureGuard and gates the auto-stamp on the verified flag — an unsigned/invalid request can never stamp activation, closing the "unauthenticated webhook as authoritative evidence" contradiction'
     );
     check(
-      block.includes('buildWebhookUrl(APP_URL,'),
-      '/voice builds the signature-check URL from APP_URL, not from req.protocol/req.hostname (unreliable behind Railway\'s proxy with no trust proxy configured)'
+      guardSrc.includes('url: `https://${host}${req.originalUrl}`') && guardSrc.includes('hostsFrom(appUrl, allowedHosts)') && !/req\.hostname|req\.protocol|req\.get\(['"]host/i.test(guardSrc),
+      'the signature-check URL is built only from APP_URL and allowlisted hosts, never from req.protocol/req.hostname/Host (unreliable behind Railway\'s proxy, and attacker-controlled)'
     );
   }
 }

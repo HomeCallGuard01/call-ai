@@ -1,0 +1,28 @@
+✗ unsigned /voice is refused with 403 (got 200)
+✗ unsigned /voice response contains no customer mobile number or household id
+✗ unsigned /voice performs no database access (saw 6)
+✗ unsigned /voice does not progress into the call flow (no Dial/Stream/Client TwiML)
+✗ unsigned /voice responses are identical for a trusted and an unknown caller (no contact-list oracle)
+✗ a /voice request with an invalid signature is refused
+✗ a signature computed for a non-allowlisted host is refused
+✓ a genuinely signed /voice for an unknown caller is delivered (Dial/Client)
+✗ the signed /voice attaches monitoring with a server-issued stream token
+✗ the /voice TwiML no longer carries the customer's mobile number in stream parameters
+✓ a request signed for an allowlisted alternate host (e.g. www/apex) is accepted
+✓ a signed trusted-contact call is delivered without monitoring
+✗ a signed client:-originated /voice request is rejected (no paid monitoring, no ring)
+✗ unsigned /call-delivery-failed is refused and writes nothing (no fake delivery verification)
+✗ unsigned /call-status is refused and writes nothing
+✓ a signed /call-delivery-failed is still handled
+✗ unsigned /process is refused before any database work
+✗ unsigned /process makes no AI call (saw 1)
+✗ unsigned /red-line-terminate is refused
+✗ a forged /media-stream start (no stream token) is closed by the server
+✗ a forged stream never reaches media_stream_started (no monitor, transcription or SMS path)
+✗ a forged stream causes no transcription request (saw 1)
+✗ a valid token presented for a different CallSid is refused
+✓ the genuine stream (token + matching CallSid) starts monitoring
+✓ control: an authorised stream does reach transcription (so the no-AI checks above are meaningful)
+✗ replaying a used stream token is refused
+✗ repeated signature failures from one IP are throttled (429 seen 0×)
+✓ no customer or attacker-supplied phone number appears in server logs

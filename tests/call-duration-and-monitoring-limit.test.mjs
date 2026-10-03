@@ -47,6 +47,11 @@ const {
 const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaStreamHandler.js');
 const { MONITORING_LIMIT_ENDED_BODY } = require('../services/liveMonitoring/smsWarning.js');
 
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
+
 let failures = 0;
 
 function check(condition, message) {
@@ -192,7 +197,7 @@ async function run() {
     // without a real wait.
     let currentTime = new Date('2026-09-06T12:00:00.000Z');
 
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient,
       smsClient,
       fromNumber: '+441615700779',
@@ -278,7 +283,7 @@ async function run() {
     const recordedOutcomes = [];
     let closeCallCount = 0;
 
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient,
       smsClient,
       fromNumber: '+441615700779',
@@ -315,7 +320,7 @@ async function run() {
     let closeCallCount = 0;
     let currentTime = new Date('2026-09-06T12:00:00.000Z');
 
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient,
       smsClient,
       fromNumber: '+441615700779',
@@ -358,7 +363,7 @@ async function run() {
     const recordedOutcomes = [];
     let currentTime = new Date('2026-09-06T12:00:00.000Z');
 
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient,
       smsClient,
       fromNumber: '+441615700779',

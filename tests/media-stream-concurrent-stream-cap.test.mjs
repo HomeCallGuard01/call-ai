@@ -19,6 +19,11 @@ const require = createRequire(import.meta.url);
 const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaStreamHandler');
 const { DEFAULT_MAX_CONCURRENT_MEDIA_STREAMS, resolveMaxConcurrentStreams } = require('../services/liveMonitoring/monitoringLimit');
 
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
+
 let failures = 0;
 function check(condition, message) {
   if (condition) {
@@ -48,7 +53,7 @@ async function main() {
   {
     const closedConnections = [];
     const alerts = [];
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient: null,
       smsClient: null,
       fromNumber: '+441000000000',
@@ -86,7 +91,7 @@ async function main() {
 
   // --- once a stream legitimately ends, capacity is freed for a new one ---
   {
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient: null,
       smsClient: null,
       fromNumber: '+441000000000',
@@ -106,7 +111,7 @@ async function main() {
   // --- default behaviour: the cap is generous enough that ordinary,
   // realistic test traffic never comes close to it ---
   {
-    const handler = createMediaStreamHandler({ transcribeClient: null, smsClient: null, fromNumber: '+441000000000' });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient: null, smsClient: null, fromNumber: '+441000000000' });
     for (let i = 0; i < 10; i++) {
       await handler.handleMessage(startMessage(`MZ-normal-${i}`));
     }

@@ -28,7 +28,28 @@ function attachMediaStreamServer(httpServer, deps) {
   const handler = createMediaStreamHandler(deps);
   const wss = new WebSocketServer({ server: httpServer, path: MEDIA_STREAM_PATH });
 
+  // P0 remediation (2026-10-01): bound unauthenticated sockets. A socket
+  // that has not sent a "start" event within startTimeoutMs is closed, and
+  // connections beyond maxSockets are refused outright. Authentication
+  // itself is the stream token checked in mediaStreamHandler (streamAuth.js).
+  const maxSockets = deps.maxSockets || 400;
+  const startTimeoutMs = deps.startTimeoutMs || 10000;
+
   wss.on('connection', (ws, req) => {
+    if (wss.clients.size > maxSockets) {
+      logEvent('media_stream_socket_limit_reached', { sockets: wss.clients.size, maxSockets });
+      try { ws.close(1013); } catch { /* already closing */ }
+      return;
+    }
+    let sawStart = false;
+    const startTimer = setTimeout(() => {
+      if (!sawStart) {
+        logEvent('media_stream_no_start_timeout', {});
+        try { ws.close(); } catch { /* already closing */ }
+      }
+    }, startTimeoutMs);
+    ws.on('close', () => clearTimeout(startTimer));
+
     // Shadow-mode Twilio signature check (2026-09-27) — observes and
     // logs only, NEVER rejects or closes a connection. See
     // services/twilioWebhookAuth.js's describeMediaStreamSignatureCheck
@@ -50,6 +71,7 @@ function attachMediaStreamServer(httpServer, deps) {
     }
 
     ws.on('message', data => {
+      if (!sawStart && /"event"\s*:\s*"start"/.test(String(data).slice(0, 200))) sawStart = true;
       // closeConnection lets handleMessage stop this specific stream's
       // WebSocket once the per-call monitoring safety limit is reached
       // (services/liveMonitoring/monitoringLimit.js) — closing our end

@@ -12,6 +12,11 @@ const require = createRequire(import.meta.url);
 const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaStreamHandler.js');
 const { createWindowBuffer } = require('../services/liveMonitoring/audioWindow.js');
 
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
+
 let failures = 0;
 
 function check(condition, message) {
@@ -70,7 +75,7 @@ async function run() {
   {
     const smsClient = makeFakeSmsClient();
     const transcribeClient = makeScriptedTranscribeClient(['hi it is your neighbour returning your ladder']);
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient, fromNumber: '+441615700779' });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient, fromNumber: '+441615700779' });
 
     await handler.handleMessage(JSON.stringify({
       event: 'start',
@@ -95,7 +100,7 @@ async function run() {
   {
     const smsClient = makeFakeSmsClient();
     const transcribeClient = makeScriptedTranscribeClient(['please confirm your one time passcode urgently']);
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient, fromNumber: '+441615700779' });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient, fromNumber: '+441615700779' });
 
     await handler.handleMessage(JSON.stringify({
       event: 'start',
@@ -118,7 +123,7 @@ async function run() {
   {
     const smsClient = makeFakeSmsClient();
     const transcribeClient = makeScriptedTranscribeClient([]);
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient, fromNumber: '+441615700779' });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient, fromNumber: '+441615700779' });
 
     let threw = false;
     try {
@@ -133,7 +138,7 @@ async function run() {
   {
     const smsClient = makeFakeSmsClient();
     const transcribeClient = makeScriptedTranscribeClient([]);
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient, fromNumber: '+441615700779' });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient, fromNumber: '+441615700779' });
 
     let threw = false;
     try {
@@ -151,7 +156,7 @@ async function run() {
   {
     const smsClient = makeFakeSmsClient();
     const transcribeClient = makeScriptedTranscribeClient(['please confirm your one time passcode urgently']);
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient, fromNumber: '+441615700779' });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient, fromNumber: '+441615700779' });
 
     await handler.handleMessage(JSON.stringify({
       event: 'start',

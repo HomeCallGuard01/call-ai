@@ -83,9 +83,14 @@ function run() {
   const voiceRouteMatch = serverSrc.match(/app\.post\("\/voice",[\s\S]*?\n\}\);/);
   check(Boolean(voiceRouteMatch), 'sanity check: the /voice route handler is found in server.js');
   const voiceSrc = voiceRouteMatch ? voiceRouteMatch[0] : '';
-  const EARLY_RETURN = 'return res.type("text/xml").send(twiml.toString());';
-  const firstReturnIdx = voiceSrc.indexOf(EARLY_RETURN);
-  const knownContactBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(0, firstReturnIdx);
+  // Telephony abuse P0 (2026-10-03): responses now leave through
+  // sendVoiceTwiml (TwiML egress guard), and an abuse-refusal return now
+  // precedes the known-contact branch — so the branch is located by its
+  // own `if (isKnown) {` opener rather than by "first return in /voice".
+  const EARLY_RETURN = 'return sendVoiceTwiml(req, res, twiml, { household, correlationId });';
+  const knownStartIdx = voiceSrc.indexOf('if (isKnown) {');
+  const firstReturnIdx = knownStartIdx === -1 ? -1 : voiceSrc.indexOf(EARLY_RETURN, knownStartIdx);
+  const knownContactBranch = firstReturnIdx === -1 ? '' : voiceSrc.slice(knownStartIdx, firstReturnIdx);
   check(
     knownContactBranch.includes('dialHouseholdOrFailClosed(twiml, household);') &&
       !knownContactBranch.includes('hasVoiceClientRegistrationHistory') &&
@@ -96,7 +101,7 @@ function run() {
   // --- attachLiveMonitoring (screened-call routing) has no reference to
   // the reachability check either — genuinely separate concerns ---
   const attachLiveMonitoringMatch = serverSrc.match(
-    /function attachLiveMonitoring\(twiml, \{ household, twilioNumber \}\) \{[\s\S]*?\n\}/
+    /function attachLiveMonitoring\(twiml, \{ household, twilioNumber(?:, callSid)? \}\) \{[\s\S]*?\n\}/
   );
   check(
     Boolean(attachLiveMonitoringMatch) && !attachLiveMonitoringMatch[0].includes('hasVoiceClientRegistrationHistory'),

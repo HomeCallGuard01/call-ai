@@ -40,6 +40,11 @@ const { createMediaStreamHandler } = require('../services/liveMonitoring/mediaSt
 const { createCallMonitor } = require('../services/liveMonitoring/riskMonitor.js');
 const { RED_LINE_WARNING_BODY, MONITORING_LIMIT_ENDED_BODY } = require('../services/liveMonitoring/smsWarning.js');
 
+// Test-only: trusts the stream's own parameters. Production uses
+// streamAuth.js, which never does (P0 remediation, 2026-10-01).
+const trustingTestAuthorizer = ({ callSid, customParameters = {} } = {}) => ({ householdId: customParameters.householdId || `test-household-${callSid}`, toNumber: customParameters.toNumber || null, fromNumber: customParameters.protectedNumber || null });
+
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let failures = 0;
@@ -269,7 +274,7 @@ async function run() {
     const lines = ['Hello, this is the fraud team.', 'We have seen activity on your card.', 'Nothing to worry about yet.'];
     let i = 0;
     const transcribeClient = { transcribe: async (_wav, prompt) => { prompts.push(prompt); return lines[i++] ?? null; } };
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient: makeFakeSmsClient(), fromNumber: '+441615700779', sendAlert: async () => true });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient: makeFakeSmsClient(), fromNumber: '+441615700779', sendAlert: async () => true });
     await handler.handleMessage(startMessage('MZ-ctx', 'CA-ctx'));
     // 3 segments of silence at the 3s minimum = 450 frames
     for (let n = 0; n < 450; n++) await handler.handleMessage(mediaMessage('MZ-ctx', makeFrame(false).frame));
@@ -299,7 +304,7 @@ async function run() {
     const resolvers = [];
     const deferredClient = { transcribe: () => new Promise(resolve => resolvers.push(resolve)) };
     const sms6 = makeFakeSmsClient();
-    const handler6 = createMediaStreamHandler({ transcribeClient: deferredClient, smsClient: sms6, fromNumber: '+441615700779', sendAlert: async () => true });
+    const handler6 = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient: deferredClient, smsClient: sms6, fromNumber: '+441615700779', sendAlert: async () => true });
     await handler6.handleMessage(startMessage('MZ-ooo', 'CA-ooo2'));
     const pending = [];
     for (let n = 0; n < 300; n++) pending.push(handler6.handleMessage(mediaMessage('MZ-ooo', makeFrame(false).frame)));
@@ -354,7 +359,8 @@ async function run() {
     const server = readFileSync(join(__dirname, '..', 'server.js'), 'utf8');
     const voiceStart = server.indexOf('app.post("/voice"');
     const knownStart = server.indexOf('if (isKnown) {', voiceStart);
-    const knownEnd = server.indexOf('return res', knownStart);
+    // (Telephony abuse P0: the branch now returns via sendVoiceTwiml.)
+    const knownEnd = server.indexOf('return sendVoiceTwiml', knownStart);
     const knownBranch = server.slice(knownStart, knownEnd);
     check(voiceStart > 0 && knownStart > voiceStart && knownEnd > knownStart, 'located /voice\'s known-contact branch in server.js');
     check(!/attachLiveMonitoring|\.stream\(/.test(knownBranch), 'known-contact branch attaches no Media Stream — trusted calls are never transcribed');
@@ -372,7 +378,7 @@ async function run() {
     const sms = makeFakeSmsClient();
     const alerts = [];
     let closed = 0;
-    const handler = createMediaStreamHandler({
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer,
       transcribeClient, smsClient: sms, fromNumber: '+441615700779', now,
       sendAlert: async (type) => { alerts.push(type); return true; },
     });
@@ -405,7 +411,7 @@ async function run() {
       },
     };
     const sms = makeFakeSmsClient();
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient: sms, fromNumber: '+441615700779', sendAlert: async () => true });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient: sms, fromNumber: '+441615700779', sendAlert: async () => true });
     await handler.handleMessage(startMessage('MZ-fail', 'CA-fail'));
     for (let n = 0; n < 450; n++) await handler.handleMessage(mediaMessage('MZ-fail', makeFrame(false).frame));
     check(call === 3, `3 segments -> exactly 3 transcription requests, including the failed one (got ${call}) — the pipeline adds no retry of its own (the OpenAI SDK's own retries happen inside a single request)`);
@@ -474,7 +480,7 @@ async function run() {
     let submittedAudioBytes = 0;
     let requests = 0;
     const transcribeClient = { transcribe: async (wav) => { requests++; submittedAudioBytes += wav.length - headerBytes; return 'hello'; } };
-    const handler = createMediaStreamHandler({ transcribeClient, smsClient: makeFakeSmsClient(), fromNumber: '+441615700779', sendAlert: async () => true });
+    const handler = createMediaStreamHandler({ authorizeStream: trustingTestAuthorizer, transcribeClient, smsClient: makeFakeSmsClient(), fromNumber: '+441615700779', sendAlert: async () => true });
     await handler.handleMessage(startMessage('MZ-e2e', 'CA-e2e'));
     const fed = speech({ words: 100, wordFrames: 20, gapFrames: 12 }); // 64s of speech with real pauses
     for (const f of fed) await handler.handleMessage(mediaMessage('MZ-e2e', f.frame));

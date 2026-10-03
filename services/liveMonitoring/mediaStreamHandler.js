@@ -30,6 +30,7 @@ const { createCallMonitor } = require('./riskMonitor');
 const { logEvent } = require('./structuredLog');
 const { sendCriticalAlert } = require('../alerting');
 const { resolveMonitoringMaxDurationMs, hasReachedDurationThreshold, elapsedSeconds, resolveMaxConcurrentStreams } = require('./monitoringLimit');
+const { createCostCaps, resolveCostCapConfig, guardSmsClient } = require('./costCaps');
 const { MONITORING_LIMIT_ENDED_BODY } = require('./smsWarning');
 
 const DEFAULT_FINALIZE_WAIT_MS = 15000;
@@ -90,11 +91,29 @@ function createMediaStreamHandler({
   sendAlert = sendCriticalAlert,
   finalizeWaitMs = DEFAULT_FINALIZE_WAIT_MS,
   maxConcurrentStreams = resolveMaxConcurrentStreams(),
+  // P0 remediation (2026-10-01). authorizeStream({ callSid, streamToken, customParameters })
+  // returns the SERVER-derived { householdId, toNumber, fromNumber } for a
+  // stream bound to a Twilio-signed /voice (streamAuth.js ignores
+  // customParameters entirely; only tests' explicit trusting authoriser
+  // reads them), or null. When it is not supplied, every stream is
+  // refused (fail closed).
+  authorizeStream = null,
+  costCaps = null,
+  // Telephony abuse P0: async (action, ctx) => boolean — global incident
+  // mode for new paid actions (SMS here). Absent = no extra gate.
+  paidActionGate = null,
 }) {
   // Per-stream state, keyed by Twilio's streamSid — one entry per active
   // call being monitored. Cleaned up on "stop" (or when the monitoring
   // limit is reached, below).
   const streams = new Map();
+  const caps = costCaps || createCostCaps(resolveCostCapConfig(), {
+    now: () => now().getTime(),
+    onLimit: (rule, householdId) => {
+      logEvent('media_stream_cost_cap_reached', { rule, householdId: householdId || null });
+      sendAlert(`media_stream_${rule}`, `Live monitoring cost cap reached (${rule}); the expensive step was skipped, calls unaffected.`, { rule }).catch(() => {});
+    },
+  });
 
   // Shared finalize path — the ONE place recordOutcome is called from,
   // whether the stream ended because Twilio genuinely sent "stop" (the
@@ -107,6 +126,7 @@ function createMediaStreamHandler({
   // call's monitored duration/outcome is never double-recorded or
   // silently dropped regardless of which path ends it.
   function finalizeStream(streamSid, entry, { monitoringLimitReached }) {
+    if (!entry.capReleased) { entry.capReleased = true; caps.endStream(entry.householdId); }
     const summary = entry.monitor.getSummary();
     const monitoredDurationSeconds = elapsedSeconds(entry.startedAt, now());
 
@@ -160,7 +180,11 @@ function createMediaStreamHandler({
     const sequence = entry.nextSequence;
     entry.nextSequence += 1;
 
-    const promise = transcribeChunk(segment, { client: transcribeClient, callSid: entry.callSid, promptContext: entry.lastTranscript })
+    // Hard cost cap (costCaps.js): over a ceiling, the segment is skipped —
+    // no paid transcription — and the call is untouched.
+    const promise = (caps.allowTranscription(entry.householdId)
+      ? transcribeChunk(segment, { client: transcribeClient, callSid: entry.callSid, promptContext: entry.lastTranscript })
+      : Promise.resolve(null))
       .then(text => {
         if (text) entry.lastTranscript = text;
         return entry.monitor.handleTranscribedChunk(text, { sequence });
@@ -275,23 +299,45 @@ function createMediaStreamHandler({
       // would otherwise set customParameters to null and crash the very
       // next line. Same class of bug as the guards above, closed the same way.
       const customParameters = isPlainObject(message.start.customParameters) ? message.start.customParameters : {};
-      const householdId = customParameters.householdId || null;
+
+      // P0 remediation: the stream must present the single-use token issued
+      // by a Twilio-signed /voice for THIS CallSid. Household, SMS
+      // destination and sender come only from that server-side record —
+      // nothing the WebSocket client sends is trusted. Unauthorised: no
+      // monitor, no transcription, no SMS; the socket is closed.
+      const auth = typeof authorizeStream === 'function' && typeof streamSid === 'string'
+        ? authorizeStream({ callSid, streamToken: customParameters.streamToken, customParameters })
+        : null;
+      if (!auth || !auth.householdId) {
+        logEvent('media_stream_unauthorised_start', { streamSid: typeof streamSid === 'string' ? streamSid : null });
+        if (typeof closeConnection === 'function') {
+          try { closeConnection(); } catch (err) { logEvent('media_stream_close_failed', { error: err.message }); }
+        }
+        return Promise.resolve();
+      }
+      const householdId = auth.householdId;
+      if (!caps.tryStartStream(householdId)) {
+        if (typeof closeConnection === 'function') {
+          try { closeConnection(); } catch (err) { logEvent('media_stream_close_failed', { error: err.message }); }
+        }
+        return Promise.resolve();
+      }
       const windowBuffer = createSpeechSegmenter();
       const monitor = createCallMonitor({
         callSid,
         householdId,
-        smsClient,
+        smsClient: smsClient ? guardSmsClient(smsClient, caps, householdId, paidActionGate) : smsClient,
         // No fallback here: the household's own number and the protected
         // Twilio number are different things, and silently warning "to"
         // the Twilio number itself would make no sense. A missing
-        // customParameters.toNumber means server.js found no valid
-        // household.phone_number — riskMonitor treats that as
+        // auth.toNumber (from the signed /voice's server-side record) means
+        // server.js found no valid household.phone_number — riskMonitor treats that as
         // "no valid destination" and skips the SMS, never the call.
-        toNumber: customParameters.toNumber || null,
+        toNumber: auth.toNumber || null,
         // Per-call protected number takes priority over the server-wide
         // default, so the warning SMS is sent "from" the same number the
         // household actually recognises as their protected line.
-        fromNumber: customParameters.protectedNumber || fromNumber,
+        fromNumber: auth.fromNumber || fromNumber,
         twilioRestClient,
         redLineRedirectUrl,
       });
