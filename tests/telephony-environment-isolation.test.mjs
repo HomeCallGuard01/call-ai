@@ -124,7 +124,9 @@ const row = { id: 'q1', household_id: 'h1', twilio_number: '+447000000001', twil
 {
   const client = fakeClient();
   const marked = [];
-  const r = await releaseQuarantinedTwilioNumber(row, { client, enforceGuard: true, guardEnv: PRODUCTION, markReleased: async (id) => marked.push(id), sendAlert: async () => {} });
+  // Integration 2026-10-03: the 047 entitlement re-read also runs before release; this
+  // test isolates the ENVIRONMENT guard, so it states the household is not entitled.
+  const r = await releaseQuarantinedTwilioNumber(row, { client, enforceGuard: true, guardEnv: PRODUCTION, markReleased: async (id) => marked.push(id), sendAlert: async () => {}, blocksRelease: async () => false });
   check(r.released === true && client.calls.includes('remove:PN_row') && marked[0] === 'q1', 'release: production behaves exactly as before');
 }
 {

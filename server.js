@@ -54,6 +54,12 @@ const { wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber 
 const { createTelephonyAbuseLayer } = require("./services/abuse");
 const { newCorrelationId } = require("./services/abuse/abuseAudit");
 const { configureProvisioningAbuseGuard } = require("./services/twilioProvisioning");
+const { runNumberLifecycleSweepScheduled } = require("./services/numberLifecycleSweepScheduler");
+// Integration 2026-10-03: restored. security/voice-surface-p0 dropped this
+// import when signature checking moved into twilioWebhookGuard, but the
+// Financial Fortress (isSignedTwilioRequest fallback, provider-usage-alert)
+// still calls both — without it those paths threw ReferenceError.
+const { buildWebhookUrl, isGenuineTwilioRequest } = require("./services/twilioWebhookAuth");
 const {
   DEVICE_TYPES,
   LANDLINE_PROVIDERS,
@@ -2847,6 +2853,52 @@ if (enabledNoticeChannels().length) {
     .then((results) => { if (results.length) console.log("ALLOWANCE NOTICES", results.map(r => `${r.kind}/${r.channel}:${r.status}`).join(", ")); })
     .catch((err) => console.error("ALLOWANCE NOTICE RUN FAILED:", err.message));
   setInterval(runAllowanceNotices, 60 * 1000);
+}
+
+// Daily number-lifecycle sweep scheduler (Priority 4, 2026-09-27, Step
+// 2 of the number-lifecycle work — services/numberLifecycleSweep.js /
+// numberLifecycleSweepRunner.js / numberLifecycleSweepScheduler.js).
+// Mirrors the exact setTimeout-then-setInterval pattern immediately
+// above (runTwilioNumberReleaseCheck) — same existing infrastructure,
+// no new scheduling mechanism invented.
+//
+// EXPLICITLY OFF BY DEFAULT — unlike the release checks above, this is
+// gated behind an env var that defaults to disabled. This is a
+// deliberate extra safety margin beyond "just don't merge/deploy yet":
+// once this branch does merge and deploy, a bare setInterval here would
+// start actually running in production the moment the process starts,
+// with no further human action. Requiring an explicit
+// ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE=true keeps the schedule off
+// even after deploy, until a human deliberately turns it on — matching
+// tonight's own instruction: "Implement/test everything possible
+// without enabling the production schedule. Stop before actually
+// turning the production scheduler on."
+//
+// The sweep's own actions are safe regardless (every write is already
+// idempotent and goes through 047's guarded RPCs — see
+// numberLifecycleSweepScheduler.js's own header) — this flag exists for
+// deliberate, staged rollout control, not because running it would be
+// unsafe.
+const NUMBER_LIFECYCLE_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const NUMBER_LIFECYCLE_SWEEP_FIRST_RUN_DELAY_MS = 90 * 1000;
+
+// Integration 2026-10-03: the sweep is a number-lifecycle job, so it also
+// needs the environment guard's verdict (decideLifecycleJobs, above) — a
+// mixed/unidentifiable environment never runs it, flag or no flag.
+if (process.env.ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE === "true" && numberLifecycleJobsDecision.run) {
+  setTimeout(() => {
+    runNumberLifecycleSweepScheduled().catch(() => {
+      // Already logged and alerted inside runNumberLifecycleSweepScheduled
+      // itself — caught here only so a rejected promise from this
+      // fire-and-forget scheduled call can never become an unhandled
+      // rejection that takes down the whole process.
+    });
+    setInterval(() => {
+      runNumberLifecycleSweepScheduled().catch(() => {});
+    }, NUMBER_LIFECYCLE_SWEEP_INTERVAL_MS);
+  }, NUMBER_LIFECYCLE_SWEEP_FIRST_RUN_DELAY_MS);
+} else {
+  console.log(`NUMBER LIFECYCLE SWEEP: schedule disabled (${numberLifecycleJobsDecision.run ? "ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE is not \"true\"" : `environment guard: ${numberLifecycleJobsDecision.reason}`})`);
 }
 
 // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint

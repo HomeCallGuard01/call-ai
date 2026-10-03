@@ -209,6 +209,24 @@ async function releaseHouseholdTwilioNumber(householdId, expectedNumber) {
   return data === true;
 }
 
+// Migration 047: true when the household has an entitlement that is active
+// or scheduled and has not ended — i.e. it must keep its number. Every
+// release step checks this immediately before acting (the SQL release
+// functions re-check it under their own row lock as well). Fails CLOSED:
+// if the check itself errors, the caller is told the household is
+// protected, so an unknown state can never lead to a release.
+async function householdBlocksNumberRelease(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+  const { data, error } = await supabaseAdmin.rpc("household_blocks_number_release", {
+    p_household_id: householdId,
+  });
+  if (error) {
+    console.error("NUMBER RELEASE ENTITLEMENT CHECK ERROR (treating household as protected):", error);
+    return true;
+  }
+  return data === true;
+}
+
 // Unconditional release, no grace period — intended for a future account
 // deletion feature, not called from anywhere in this codebase yet (see
 // the RPC's own comment). Returns the released number (for the caller to
@@ -448,6 +466,7 @@ module.exports = {
   cancelTwilioNumberPendingRelease,
   releaseHouseholdTwilioNumber,
   releaseHouseholdTwilioNumberImmediately,
+  householdBlocksNumberRelease,
   setHouseholdCarrierCompatibility,
   setUserRole,
   getUserRole,
