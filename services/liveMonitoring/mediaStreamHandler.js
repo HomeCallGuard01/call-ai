@@ -99,6 +99,9 @@ function createMediaStreamHandler({
   // refused (fail closed).
   authorizeStream = null,
   costCaps = null,
+  // Telephony abuse P0: async (action, ctx) => boolean — global incident
+  // mode for new paid actions (SMS here). Absent = no extra gate.
+  paidActionGate = null,
 }) {
   // Per-stream state, keyed by Twilio's streamSid — one entry per active
   // call being monitored. Cleaned up on "stop" (or when the monitoring
@@ -323,7 +326,7 @@ function createMediaStreamHandler({
       const monitor = createCallMonitor({
         callSid,
         householdId,
-        smsClient: smsClient ? guardSmsClient(smsClient, caps, householdId) : smsClient,
+        smsClient: smsClient ? guardSmsClient(smsClient, caps, householdId, paidActionGate) : smsClient,
         // No fallback here: the household's own number and the protected
         // Twilio number are different things, and silently warning "to"
         // the Twilio number itself would make no sense. A missing

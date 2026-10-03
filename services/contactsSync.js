@@ -1,4 +1,4 @@
-const { normaliseNumber } = require("./phone");
+const { normaliseContactNumber, isValidContactNumber } = require("./phone");
 
 // Comfortably above the ~2,000 device contacts this must support — a
 // sanity/DoS ceiling, not a real expected limit (unlike server.js's
@@ -18,11 +18,11 @@ function buildSyncPlan(rawContacts, existingContacts) {
   const validContacts = rawContacts
     .map(c => ({
       name: (c && c.name ? String(c.name).trim() : "") || "Unnamed contact",
-      number: normaliseNumber(c && c.number),
+      number: normaliseContactNumber(c && c.number),
     }))
-    .filter(c => c.number.length === 10);
+    .filter(c => isValidContactNumber(c.number));
 
-  const seen = new Set(existingContacts.map(c => normaliseNumber(c.number)));
+  const seen = new Set(existingContacts.map(c => normaliseContactNumber(c.number)));
   const toInsert = [];
   let skippedDuplicates = 0;
 

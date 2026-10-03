@@ -148,7 +148,10 @@ router.post("/admin/api/households/:id/retry-provisioning", requireAuth, require
     return res.status(404).json({ error: "household_not_found" });
   }
 
-  const result = await ensureTwilioNumberProvisioned(household);
+  // Telephony abuse P0: an admin retry may clear an account-risk hold
+  // (audited as account_risk_admin_override). It does NOT bypass incident
+  // mode, global purchase velocity, single-flight or provider idempotency.
+  const result = await ensureTwilioNumberProvisioned(household, { abuseOverride: "admin" });
 
   recordAdminAction({
     type: "retry_provisioning",

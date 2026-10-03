@@ -77,7 +77,47 @@ function buildIncomingPhoneNumberParams({ phoneNumber, appUrl, addressSid, bundl
 // Accepts its collaborators as `deps` so tests can inject a fake Twilio
 // client and fake database functions instead of hitting real network
 // services — everything defaults to the real ones for production use.
+// Telephony abuse P0 (2026-10-03): every purchase now passes the
+// provisioning abuse guard (services/abuse/provisioningGuard.js) —
+// single-flight per household, incident mode, global purchase velocity,
+// account-risk hold, provider-side idempotency (friendlyName tag + adopt
+// before buy) and a provider-response check. server.js configures the guard
+// at boot. With no guard configured, production REFUSES to buy (fail
+// closed); non-production keeps the legacy behaviour so the existing unit
+// tests of the purchase mechanics run unchanged.
+let configuredAbuseGuard = null;
+function configureProvisioningAbuseGuard(guard) {
+  configuredAbuseGuard = guard || null;
+}
+
 async function ensureTwilioNumberProvisioned(household, deps = {}) {
+  const guard = deps.abuseGuard !== undefined ? deps.abuseGuard : configuredAbuseGuard;
+  const env = deps.env || process.env;
+
+  if (!shouldAttemptProvisioning(household, { maxAttempts: deps.maxAttempts || DEFAULT_MAX_ATTEMPTS })) {
+    return { attempted: false };
+  }
+
+  if (!guard) {
+    if (env.NODE_ENV === "production") {
+      console.error("TWILIO PROVISIONING REFUSED: abuse guard not configured", household.id);
+      return { attempted: false, held: true, reason: "abuse_guard_not_configured" };
+    }
+    return purchaseTwilioNumber(household, deps, null);
+  }
+
+  return guard.singleFlight(household.id, async () => {
+    const admission = await guard.admit(household, { override: deps.abuseOverride || null });
+    if (!admission.allowed) {
+      console.error("TWILIO PROVISIONING HELD:", household.id, admission.reason);
+      return { attempted: false, held: true, reason: admission.reason };
+    }
+    return purchaseTwilioNumber(household, deps, guard);
+  });
+}
+
+// The purchase mechanics. `guard` null = legacy (non-production unit tests).
+async function purchaseTwilioNumber(household, deps, guard) {
   const {
     client = twilioRestClient,
     assign = assignHouseholdTwilioNumber,
@@ -94,12 +134,8 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     appUrl = process.env.APP_URL,
     addressSid = process.env.TWILIO_ADDRESS_SID,
     bundleSid = process.env.TWILIO_BUNDLE_SID,
-    maxAttempts = DEFAULT_MAX_ATTEMPTS,
+    isQuarantinedNumber = isNumberInUnreleasedQuarantine,
   } = deps;
-
-  if (!shouldAttemptProvisioning(household, { maxAttempts })) {
-    return { attempted: false };
-  }
 
   if (!client) {
     const message = "TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN not configured";
@@ -111,6 +147,33 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
   }
 
   try {
+    let friendlyName = null;
+    if (guard) {
+      // Provider-side idempotency: a number already bought for this
+      // household (create() timed out but succeeded, or the DB assign
+      // failed after a purchase) is adopted, never bought twice. A number
+      // still in quarantine keeps its tag and must NOT be adopted (its
+      // pending release would later remove a number in use).
+      friendlyName = guard.friendlyNameFor(household.id);
+      const tagged = await client.incomingPhoneNumbers.list({ friendlyName, limit: 20 });
+      const adoptable = [];
+      for (const n of tagged || []) {
+        if (n.friendlyName !== friendlyName) continue;
+        if (await isQuarantinedNumber(n.phoneNumber)) continue;
+        adoptable.push(n);
+      }
+      if (adoptable.length) {
+        const adopt = adoptable[0];
+        if (adoptable.length > 1) {
+          sendAlert("twilio_provisioning_duplicate_tagged_numbers", "More than one unassigned number is tagged for one household — extra numbers need review", { householdId: household.id, count: adoptable.length }).catch(() => {});
+        }
+        const adoptedAssigned = await assign(household.id, adopt.phoneNumber);
+        if (!adoptedAssigned) return { attempted: true, success: false, error: "race: household already provisioned" };
+        console.log("TWILIO PROVISIONING ADOPTED existing tagged number:", household.id);
+        return { attempted: true, success: true, twilioNumber: adopt.phoneNumber, adopted: true };
+      }
+    }
+
     const available = await client.availablePhoneNumbers("GB").local.list({
       limit: 1,
       voiceEnabled: true,
@@ -122,9 +185,23 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
       throw new Error("No available GB Twilio numbers found");
     }
 
-    const purchased = await client.incomingPhoneNumbers.create(
-      buildIncomingPhoneNumberParams({ phoneNumber: candidate.phoneNumber, appUrl, addressSid, bundleSid })
-    );
+    const params = buildIncomingPhoneNumberParams({ phoneNumber: candidate.phoneNumber, appUrl, addressSid, bundleSid });
+    if (friendlyName) params.friendlyName = friendlyName;
+    const purchased = await client.incomingPhoneNumbers.create(params);
+
+    if (guard) {
+      guard.noteSuccessfulPurchase();
+      const mismatch = guard.checkPurchased(candidate.phoneNumber, purchased);
+      if (mismatch) {
+        // Never assign a number we did not ask for (or that is not a UK
+        // geographic number). Nothing points at it yet, so releasing now
+        // is safe and stops the monthly charge.
+        await client.incomingPhoneNumbers(purchased.sid).remove().catch(err =>
+          console.error("TWILIO NUMBER RELEASE ERROR:", err.message)
+        );
+        throw new Error(`provider response rejected: ${mismatch}`);
+      }
+    }
 
     const assigned = await assign(household.id, purchased.phoneNumber);
 
@@ -155,6 +232,22 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     );
     return { attempted: true, success: false, error: err.message };
   }
+}
+
+// Fail closed: if the quarantine table cannot be read, treat the number as
+// quarantined (not adoptable) — the purchase path then buys nothing new
+// either, because an unreadable state also fails the tagged lookup above.
+async function isNumberInUnreleasedQuarantine(phoneNumber) {
+  const { supabaseAdmin } = require("./supabaseClients");
+  if (!supabaseAdmin) throw new Error("quarantine state unavailable");
+  const { data, error } = await supabaseAdmin
+    .from("twilio_number_quarantine")
+    .select("id")
+    .eq("twilio_number", phoneNumber)
+    .is("released_at", null)
+    .limit(1);
+  if (error) throw new Error("quarantine state unavailable");
+  return Array.isArray(data) && data.length > 0;
 }
 
 // Pure — the one place that decides which of a number's matching Twilio
@@ -496,6 +589,8 @@ async function handleProcessedWebhookEvent(processWebhookEventResult, decisionIn
 }
 
 module.exports = {
+  configureProvisioningAbuseGuard,
+  isNumberInUnreleasedQuarantine,
   shouldAttemptProvisioning,
   pickAvailableNumber,
   buildIncomingPhoneNumberParams,

@@ -29,7 +29,12 @@ function resolveCostCapConfig(env = process.env) {
   };
 }
 
-const UK_MOBILE = /^\+447\d{9}$/;
+// Telephony abuse P0 (2026-10-03): the SMS destination rule now comes from
+// the central number policy (services/abuse/numberPolicy.js, purpose
+// SMS_WARNING = genuine UK mobile only). The old /^\+447\d{9}$/ also let
+// through 070 personal numbers, 076 pagers and 07624 Isle of Man mobiles —
+// all classic premium/IRSF destinations.
+const { evaluateNumberForPurpose, PURPOSES } = require('../abuse/numberPolicy');
 const UK_NUMBER = /^\+44\d{9,10}$/;
 
 function createCostCaps(config = resolveCostCapConfig(), { now = () => Date.now(), onLimit = () => {} } = {}) {
@@ -74,7 +79,8 @@ function createCostCaps(config = resolveCostCapConfig(), { now = () => Date.now(
     },
     allowSms(householdId, { to, from }) {
       prune();
-      if (!UK_MOBILE.test(String(to || '')) || !UK_NUMBER.test(String(from || '')) || to === from) return limit('sms_destination_invalid', householdId);
+      const dest = evaluateNumberForPurpose(PURPOSES.SMS_WARNING, String(to || ''));
+      if (!dest.allowed || dest.number.e164 !== to || !UK_NUMBER.test(String(from || '')) || to === from) return limit('sms_destination_invalid', householdId);
       if ((hourly.get(`${hour()}|s`) || 0) >= config.maxSmsPerHour) return limit('global_sms_limit', null);
       if ((daily.get(`${day()}|${householdId}|s`) || 0) >= config.maxSmsPerHouseholdPerDay) return limit('household_sms_limit', householdId);
       bump(hourly, `${hour()}|s`); bump(daily, `${day()}|${householdId}|s`);
@@ -84,11 +90,18 @@ function createCostCaps(config = resolveCostCapConfig(), { now = () => Date.now(
 }
 
 // Wraps the Twilio client handed to riskMonitor so every SMS passes the caps.
-function guardSmsClient(client, caps, householdId) {
+// paidActionGate (optional, async): the telephony-abuse global incident
+// mode — contain/suspend levels stop new SMS without a deploy.
+function guardSmsClient(client, caps, householdId, paidActionGate = null) {
   return {
     messages: {
-      create(params) {
-        if (!caps.allowSms(householdId, params)) return Promise.reject(new Error('SMS not sent: cost/destination cap'));
+      async create(params) {
+        if (typeof paidActionGate === 'function') {
+          let ok = false;
+          try { ok = await paidActionGate('sms', { householdId }); } catch { ok = false; }
+          if (!ok) throw new Error('SMS not sent: incident mode');
+        }
+        if (!caps.allowSms(householdId, params)) throw new Error('SMS not sent: cost/destination cap');
         return client.messages.create(params);
       },
     },

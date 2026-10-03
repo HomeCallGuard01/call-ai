@@ -51,4 +51,22 @@ function wouldCreateForwardingLoop(protectedNumber, destinationNumber) {
   return !!a && !!b && a === b;
 }
 
-module.exports = { normaliseNumber, normaliseUkPhoneToE164, wouldCreateForwardingLoop };
+// Telephony abuse P0 (2026-10-03): trusted-contact STORAGE form. UK numbers
+// keep the legacy 10-digit form (unchanged for every existing row and
+// client); a genuinely international number is stored as full E.164.
+// Before this, "+33 6 12 34 56 78" was stored as "3612345678", and the
+// last-10-digit caller match meant ANY caller ending in those 10 digits
+// (any country) was treated as trusted. /voice now matches on full E.164
+// (services/abuse/inboundCallGuard.js), which reads a 10-digit row as UK.
+function normaliseContactNumber(rawInput) {
+  const { parsePhoneNumber } = require("./abuse/numberPolicy");
+  const parsed = parsePhoneNumber(typeof rawInput === "string" ? rawInput : String(rawInput || ""));
+  if (parsed.e164 && parsed.countryCode !== "44" && parsed.class === "international") return parsed.e164;
+  return normaliseNumber(rawInput);
+}
+
+function isValidContactNumber(stored) {
+  return /^\d{10}$/.test(stored) || /^\+[1-9]\d{6,14}$/.test(stored);
+}
+
+module.exports = { normaliseNumber, normaliseUkPhoneToE164, wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber };
