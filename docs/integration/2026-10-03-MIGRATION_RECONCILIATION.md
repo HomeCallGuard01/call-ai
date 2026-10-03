@@ -64,6 +64,7 @@ Numbers 047, 051, 052, 053, 054, 056, 057, 059 have no collision and keep their 
 | 067 | financial_containment_authorization_ledger (**was provisional**) | Fortress | no | no | households, entitlements (011), account_classifications (031); reads 056 `plan_code` defensively | DRAFT |
 | 068 | allowance_economic_credit_bridge (**new**) | this integration | no | no | 063, 067 | DRAFT |
 | 069 | account_classification_history (**was admin 055**) | admin #51 | no | no | 031 | DRAFT |
+| 070 | stripe_entitlement_canonical_decision (**new**) | this integration | no | no | 027 (replaces its `process_stripe_webhook_event`; 027 is applied, so it is replaced, not edited) | DRAFT |
 
 ### Environment ordering consequences
 
@@ -78,10 +79,11 @@ Numbers 047, 051, 052, 053, 054, 056, 057, 059 have no collision and keep their 
 
 ## 5. Rollback order and safety
 
-Roll back strictly in reverse (069 → 047). Rollback files live in `supabase/migrations/_rollbacks/`.
+Roll back strictly in reverse (070 → 047). Rollback files live in `supabase/migrations/_rollbacks/`.
 
 | No. | Rollback safe once customer-visible data exists? | Why |
 |---|---|---|
+| 070 | yes — restores 027's function exactly | the three canonical-decision fixes are lost (stale rows block Stripe again, complimentary→Stripe customers lose access when the grant ends) |
 | 069 | yes (loses classification audit trail only) | admin-only data |
 | 068 | **only with traffic stopped**; reverting re-creates 063's minutes-only `credit_allowance` | after rollback, a paid top-up would credit minutes Fortress will not fund |
 | 067 | **NO while live calls exist.** Requires the kill switch / maintenance first | drops reservations, leases and the authorisation ledger; code expecting `fc_*` RPCs would fail closed (degraded envelope → refusal) |
@@ -111,3 +113,17 @@ Roll back strictly in reverse (069 → 047). Rollback files live in `supabase/mi
 1. Production apply order for 057–061 relative to 047–056 (launch-gate plan §5 a/b/c).
 2. Staging `migration repair --status applied 052`.
 3. Approval to apply anything at all (this document applies nothing).
+
+## 8. Changes made to drafts after the first version of this document
+
+- **066:** functions now `set search_path = ''` and grant EXECUTE to service_role (repo grants
+  check); `abuse_hit` validates its window before dividing (zero window raised division_by_zero).
+- **067:** paid profiles' delivery reserve scope `trusted_only` (was `all`; £ unchanged — decision
+  flagged); new unfunded `sandbox` profile and `fc_resolve_profile` maps an explicit
+  `revenuecat_environment = 'sandbox'` entitlement to it (internal_test classification wins);
+  `fc_household_status` exposes `deliveryReserveScope`.
+- **056 (draft, edited in place):** household burst is opt-in and never refuses a trusted caller;
+  `fs_close_call` ends a monitoring session that never attached a stream.
+- **070 (new):** see §4.
+- Production ordering is still monotonic (046 → 070). Staging still needs `--include-all` for 053–056.
+- `tests/migration-allocation.test.mjs` pins 046–070, burned 048–050, and a rollback for 062–070.

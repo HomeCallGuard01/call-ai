@@ -115,3 +115,11 @@ Security precedes Finance deliberately: Finance's 056 admission admits unsigned 
 `services/twilioProvisioning.js` (4), `upload.html` (3), `services/liveMonitoring/mediaStreamHandler.js` (3),
 `database/calls.js` (3), `tests/subscription-enforcement-voice-gate.test.mjs` (3),
 `tests/voice-client-reachability-integration.test.mjs` (3), `tests/live-monitoring-transcription-efficiency.test.mjs` (3).
+
+## 7. As integrated (post-merge record)
+
+All twelve planned merges were made, in the order of §5, each as a `--no-ff` merge commit on
+`integration/launch-fortress-2026-10-03`, followed by integration commits. Commit list and
+reasons: `docs/handovers/2026-10-03-launch-fortress-integration-handover.md` §8; every conflict:
+`2026-10-03-CONFLICT_DECISIONS.md`. `fix/process-endpoint-webhook-auth` was verified superseded
+(`/process` is behind `twilioSignatureGuard` + `twilioWebhookIntegrity` + a Fortress AI gate).
