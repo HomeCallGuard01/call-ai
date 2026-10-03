@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
-import { applyAll, rpcs, at, num, POLICY } from './financial-containment-harness.mjs';
+import { applyAll, pinTestProfiles, rpcs, at, num, POLICY } from './financial-containment-harness.mjs';
 
 const modules = process.env.FC_REALPG_MODULES;
 if (!modules) {
@@ -43,6 +43,7 @@ async function main() {
   const adminDb = { exec: (sql) => admin.query(sql), query: (sql, p) => admin.query(sql, p) };
   try {
     await applyAll(adminDb);
+    await pinTestProfiles(async (sql, p) => (await admin.query(sql, p)).rows);
     check(true, `provisional SQL applies on real ${(await admin.query('select version()')).rows[0].version.split(' on ')[0]}`);
 
     const mk = async (email) => {

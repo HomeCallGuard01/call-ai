@@ -72,6 +72,14 @@ const { createUsageMeter } = require("./services/usage/usageMeter");
 const { createSmsBudget } = require("./services/usage/smsBudget");
 const { createSafetyEventRecorder } = require("./services/usage/safetyEvents");
 const { getHouseholdAllowance } = require("./services/usage/householdAllowance");
+// Financial containment P0 (2026-10-03) — reservation/lease authorisation
+// ledger + global breaker on top of 056. PROVISIONAL schema (not applied
+// anywhere). See docs/finance/FINANCIAL_CONTAINMENT_P0.md.
+const { getContainment } = require("./services/containment");
+const { createLeaseSweeper } = require("./services/containment/leaseSweeper");
+const { createTwilioCallControl } = require("./services/containment/twilioCallControl");
+const financialContainmentDb = require("./database/financialContainment");
+const { resolveEntitlementPeriod } = require("./services/usage/billingPeriod");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
@@ -692,8 +700,19 @@ const callAdmission = createCallAdmission({
   isHcgNumber: async (number) => Boolean(await getHouseholdByTwilioNumber(number)),
   countEntitledHouseholds: () => financialSafetyDb.countActiveEntitledHouseholds(),
 });
+const containment = getContainment();
 const usageMeter = createUsageMeter({
-  attachMonitoringStream: financialSafetyDb.attachMonitoringStream,
+  // A stream is metered (056) AND must be authorised for monitoring by the
+  // containment ledger; otherwise the handler stops it before any paid
+  // transcription (attach failure → safetyStop). Fail-closed.
+  attachMonitoringStream: async (params) => {
+    const attached = await financialSafetyDb.attachMonitoringStream(params);
+    if (!attached || !attached.ok) return attached;
+    if (!(await containment.markMonitoringStarted(params.callSid))) {
+      return { ok: false, reason: "containment_monitoring_not_authorized" };
+    }
+    return attached;
+  },
   recordMonitoringProgress: financialSafetyDb.recordMonitoringProgress,
   claimUsageNotification: financialSafetyDb.claimUsageNotification,
   recordIntervention: recordFinancialSafetyIntervention,
@@ -701,14 +720,30 @@ const usageMeter = createUsageMeter({
 const smsBudget = createSmsBudget({
   client: twilioRestClient,
   claimSmsSend: financialSafetyDb.claimSmsSend,
+  containment,
   recordIntervention: recordFinancialSafetyIntervention,
 });
+// SMS from a stream with no household id used to go out on the raw client,
+// unmetered; it now needs a (global) containment authorisation too.
+const containedSmsClient = smsBudget.forHousehold(null, () => null);
+
+// Twilio-signed request? (Callbacks that release or settle money must be
+// genuine: a forged "call ended" would free a live call from its lease.)
+function isSignedTwilioRequest(req) {
+  return isGenuineTwilioRequest({
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    signature: req.get("X-Twilio-Signature"),
+    url: buildWebhookUrl(APP_URL, req.originalUrl),
+    params: req.body,
+  });
+}
 
 // A /voice response with no <Dial> ends the call immediately: close its
 // admission session now (there will be no <Dial> action callback).
 function endAdmissionIfNoDial(twiml, callSid) {
   if (!twiml.toString().includes("<Dial")) {
     callAdmission.end({ callSid, source: "no_dial" }).catch(() => {});
+    containment.settleCall({ callSid, source: "no_dial" }).catch(() => {});
   }
 }
 
@@ -744,15 +779,16 @@ app.post("/voice", async (req, res) => {
   // services/activationVerification.js's own comment for why this can
   // never be triggered by client activity alone (only ever called from
   // here, and now only when the signature genuinely validates).
-  let genuineTwilioRequest = false;
+  // Financial containment needs the signature for EVERY request (a call to
+  // a number with no household still costs money), so it is computed
+  // unconditionally; activation stamping below still needs a household.
+  const genuineTwilioRequest = isGenuineTwilioRequest({
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    signature: req.get("X-Twilio-Signature"),
+    url: buildWebhookUrl(APP_URL, req.originalUrl),
+    params: req.body,
+  });
   if (household) {
-    genuineTwilioRequest = isGenuineTwilioRequest({
-      authToken: process.env.TWILIO_AUTH_TOKEN,
-      signature: req.get("X-Twilio-Signature"),
-      url: buildWebhookUrl(APP_URL, req.originalUrl),
-      params: req.body,
-    });
-
     if (genuineTwilioRequest) {
       stampActivationVerifiedOnRealCall(household, { markActivationVerified }).catch(err =>
         console.error("ACTIVATION VERIFIED AUTO-STAMP ERROR:", household.id, err.message)
@@ -800,7 +836,31 @@ app.post("/voice", async (req, res) => {
     const rejectXml = twiml.toString();
     return res.type("text/xml").send(rejectXml);
   }
-  const dialOptions = { timeLimit: admission.maxCallSeconds };
+  // FINANCIAL CONTAINMENT — reserve before any HCG-funded spend (I1/I2).
+  // Refused → <Reject> as the first verb (unbilled). Allowed → the Dial
+  // time limit is the call's provider-enforced backstop (I4), and the lease
+  // sweeper renews or ends the call while it runs (I3). Monitoring only if
+  // the reservation covers it.
+  const wantsMonitoring = Boolean(household && !isKnown && shouldStartPaidMonitoring(household, activeEntitlement));
+  const containmentDecision = await containment.authorizeCall({
+    household,
+    callSid: req.body.CallSid,
+    from: caller,
+    isKnown,
+    wantsMonitoring,
+    signatureValid: genuineTwilioRequest,
+    period: activeEntitlement || stripeSubscription
+      ? resolveEntitlementPeriod({ entitlement: activeEntitlement, subscription: stripeSubscription, now: new Date() })
+      : null,
+  });
+  if (!containmentDecision.allowed) {
+    console.error("CALL REFUSED BY FINANCIAL CONTAINMENT:", household && household.id, containmentDecision.reason);
+    callAdmission.end({ callSid: req.body.CallSid, source: "containment_refused" }).catch(() => {});
+    twiml.reject({ reason: "busy" });
+    const containmentRejectXml = twiml.toString();
+    return res.type("text/xml").send(containmentRejectXml);
+  }
+  const dialOptions = { timeLimit: Math.min(admission.maxCallSeconds, containmentDecision.timeLimitSeconds) };
 
   if (isKnown) {
     console.log("Known contact → bypass AI");
@@ -853,7 +913,9 @@ app.post("/voice", async (req, res) => {
   // ceilings), BEFORE any paid monitoring starts. Only for households whose
   // entitlement allows paid monitoring at all (shouldStartPaidMonitoring,
   // below). Can't be established → no monitoring; the call connects either way.
-  const monitoringDecision = household && shouldStartPaidMonitoring(household, activeEntitlement)
+  const monitoringDecision = wantsMonitoring && !containmentDecision.monitoring
+    ? { monitor: false, reason: `containment_${containmentDecision.monitoringDeniedReason || "not_authorized"}`, monitoringStatus: MONITORING_STATUS.SAFETY_LIMIT }
+    : household && shouldStartPaidMonitoring(household, activeEntitlement)
     ? await requestMonitoring({
       household,
       callSid: req.body.CallSid,
@@ -1053,7 +1115,17 @@ app.post("/process", async (req, res) => {
   let result = "SAFE";
   let aiModel = null;
 
-  if (openai && speech.length > 5) {
+  // Financial containment: the paid AI call needs a genuine Twilio request
+  // AND a one-shot authorisation (idempotent per CallSid). Fail-closed:
+  // otherwise no AI call is made (the caller is still handled below).
+  const aiAuthorized = openai && speech.length > 5 && isSignedTwilioRequest(req)
+    ? (await containment.authorizeSpend({ category: "ai", key: `process:${callSid}`, householdId: household ? household.id : null })).allowed
+    : false;
+  if (openai && speech.length > 5 && !aiAuthorized) {
+    console.error("/process AI CLASSIFICATION NOT AUTHORISED (unsigned request or financial containment)", callSid);
+  }
+
+  if (aiAuthorized) {
     try {
       const aiResponse = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -1172,8 +1244,16 @@ app.post("/call-delivery-failed", (req, res) => {
   const dialCallStatus = req.body.DialCallStatus;
 
   // Financial safety: the <Dial> has ended (answered-and-finished, no
-  // answer, or the per-call timeLimit) — close the admission session.
-  callAdmission.end({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+  // answer, or the per-call timeLimit) — close the admission session and
+  // settle the containment reservation. ONLY for a genuine Twilio request:
+  // a forged "ended" would release a live call's lease. Unsigned → left to
+  // the lease sweeper, which settles from the provider's own call status.
+  if (isSignedTwilioRequest(req)) {
+    callAdmission.end({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+    containment.settleCall({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+  } else {
+    console.error("DIAL CALLBACK NOT TRUSTED FOR SETTLEMENT: Twilio signature did not validate", req.body.CallSid);
+  }
 
   // duration_seconds + delivery-verified capture (cost-protection
   // safeguard, and now the sole source of real end-to-end delivery
@@ -1225,8 +1305,12 @@ app.post("/call-delivery-failed", (req, res) => {
 app.post("/call-status", (req, res) => {
   const twiml = new VoiceResponse();
 
-  // Financial safety: the <Dial> has ended — close the admission session.
-  callAdmission.end({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+  // Financial safety: the <Dial> has ended — close the admission session
+  // and settle containment (signed requests only; see /call-delivery-failed).
+  if (isSignedTwilioRequest(req)) {
+    callAdmission.end({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+    containment.settleCall({ callSid: req.body.CallSid, source: "dial_action" }).catch(() => {});
+  }
 
   recordApprovedCallDeliveryOutcome(
     req.body.CallSid,
@@ -2555,6 +2639,28 @@ async function runQuarantinedNumberReleaseCheck() {
   }
 }
 
+// FINANCIAL CONTAINMENT lease sweeper (every instance): renews live calls'
+// leases, ends the ones HCG can no longer pay for at the end of their paid
+// lease, repairs lost Dial callbacks from provider status, and — if the
+// database is unreachable — ends this instance's own calls once their
+// lease + grace has passed (fail closed).
+const containmentSweeper = createLeaseSweeper({
+  containment,
+  db: financialContainmentDb,
+  callControl: createTwilioCallControl({
+    client: twilioRestClient,
+    mode: containment.config.terminationMode,
+    announcement: process.env.FC_TERMINATION_ANNOUNCEMENT || null,
+  }),
+  recordEvent: async (e) => recordFinancialSafetyIntervention({ ...e, action: `financial containment: ${e.rule}` }),
+  log: (name, fields) => console.log("FINANCIAL CONTAINMENT:", name, JSON.stringify(fields)),
+});
+if (twilioRestClient) {
+  containmentSweeper.start();
+} else {
+  console.error("FINANCIAL CONTAINMENT: Twilio client not configured — lease sweeper NOT started (provider time limits still bound every call)");
+}
+
 setTimeout(() => {
   runTwilioNumberReleaseCheck();
   runQuarantinedNumberReleaseCheck();
@@ -2572,7 +2678,8 @@ setTimeout(() => {
 // relative to <Dial>).
 attachMediaStreamServer(httpServer, {
   transcribeClient: openai ? createOpenAiTranscribeClient(openai) : null,
-  smsClient: twilioRestClient,
+  // Never the raw client: every SMS needs a containment authorisation.
+  smsClient: containedSmsClient,
   fromNumber: null,
   twilioRestClient,
   redLineRedirectUrl: buildRedLineTerminateUrl(APP_URL),

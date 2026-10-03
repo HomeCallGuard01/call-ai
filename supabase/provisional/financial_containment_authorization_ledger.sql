@@ -82,7 +82,14 @@ create table if not exists public.fc_policy (
 insert into public.fc_policy (id) values (1) on conflict (id) do nothing;
 
 -- Per-profile household budgets (GBP per billing period). DECISION REQUIRED
--- (D1): defaults derived in services/containment/economicPolicy.js.
+-- (D1). Seeds = the conservative derivation in
+-- services/containment/economicPolicy.js at £5.99 inc. VAT: total HCG-funded
+-- variable spend per customer per month (budget + delivery reserve +
+-- essential pool + lease-overrun allowance) must fit inside
+--   60% × net revenue − number rental − worst platform fee − infrastructure
+--   allowance, less a 15% safety reserve  ≈ £0.86.
+-- 'plus' is not on sale (no price exists), so it gets the standard figures;
+-- complimentary/test accounts earn no revenue and get the same caps.
 create table if not exists public.fc_budget_profiles (
   profile text primary key check (profile ~ '^[a-z_]{1,32}$'),
   period_budget_gbp numeric(12, 4) not null check (period_budget_gbp >= 0 and period_budget_gbp <= 100),
@@ -94,11 +101,11 @@ create table if not exists public.fc_budget_profiles (
   updated_by text
 );
 insert into public.fc_budget_profiles (profile, period_budget_gbp, delivery_reserve_gbp, delivery_reserve_scope, essential_reserve_gbp, monitoring_allowed) values
-  ('standard',      1.00, 0.60, 'all', 0.50, true),
-  ('plus',          2.00, 0.60, 'all', 0.50, true),
-  ('complimentary', 1.00, 0.60, 'all', 0.50, true),
-  ('internal_test', 1.00, 0.60, 'all', 0.50, true),
-  ('unentitled',    0.00, 0.25, 'all', 0.50, false)
+  ('standard',      0.50, 0.25, 'all', 0.10, true),
+  ('plus',          0.50, 0.25, 'all', 0.10, true),
+  ('complimentary', 0.50, 0.25, 'all', 0.10, true),
+  ('internal_test', 0.50, 0.25, 'all', 0.10, true),
+  ('unentitled',    0.00, 0.10, 'all', 0.10, false)
 on conflict (profile) do nothing;
 
 create table if not exists public.fc_policy_audit (

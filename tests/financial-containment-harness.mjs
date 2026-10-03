@@ -51,6 +51,17 @@ export const at = (sec) => new Date(T0 + sec * 1000).toISOString();
 export const num = (v) => Number(v);
 export const near = (a, b, eps = 1e-6) => Math.abs(Number(a) - Number(b)) < eps;
 
+// Test profiles: fixed figures so the DB tests don't depend on the
+// commercial seeds (which are a DECISION, D1). £1.00 budget + £0.60
+// delivery reserve + £0.50 essential pool.
+export const TEST_PROFILE = { budget: 1.0, reserve: 0.6, essential: 0.5 };
+export async function pinTestProfiles(q) {
+  for (const [profile, b, r, e, mon] of [['standard', 1.0, 0.6, 0.5, true], ['complimentary', 1.0, 0.6, 0.5, true],
+    ['internal_test', 1.0, 0.6, 0.5, true], ['unentitled', 0, 0.25, 0.5, false]]) {
+    await q('select public.fc_set_budget_profile($1,$2,$3,$4,$5,$6,$7,$8)', [profile, b, r, 'all', e, mon, 'pin test profile', 'tester']);
+  }
+}
+
 // Thin RPC helpers; `q` is (sql, params) => rows.
 export function rpcs(q) {
   const one = async (sql, params) => (await q(sql, params))[0].r;
@@ -80,5 +91,27 @@ export function rpcs(q) {
     invariants: () => one('select public.fc_check_invariants() as r', []),
     account: async (hh) => (await q('select * from public.fc_budget_accounts where household_id = $1 order by period_start desc limit 1', [hh]))[0],
     reservation: async (sid) => (await q("select * from public.fc_reservations where idempotency_key = 'call:' || $1", [sid]))[0],
+  };
+}
+
+// A supabase-js-shaped client ({ rpc(name, params) → { data, error } }) over
+// any engine, using Postgres named-argument notation — lets the REAL
+// database/financialContainment.js adapter run against PGlite.
+export function rpcClient(q) {
+  return {
+    async rpc(name, params) {
+      const keys = Object.keys(params || {});
+      const args = keys.map((k, i) => `${k} => $${i + 1}`).join(', ');
+      const values = keys.map((k) => {
+        const v = params[k];
+        return v !== null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : v;
+      });
+      try {
+        const rows = await q(`select public.${name}(${args}) as r`, values);
+        return { data: rows[0].r, error: null };
+      } catch (err) {
+        return { data: null, error: { message: err.message } };
+      }
+    },
   };
 }

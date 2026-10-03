@@ -11,7 +11,7 @@
 
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
-import { applyAll, rpcs, callCost, monWindowCost, POLICY, PERIOD, at, num, near, PROVISIONAL_SQL, PROVISIONAL_ROLLBACK_SQL } from './financial-containment-harness.mjs';
+import { applyAll, pinTestProfiles, rpcs, callCost, monWindowCost, POLICY, PERIOD, at, num, near, PROVISIONAL_SQL, PROVISIONAL_ROLLBACK_SQL } from './financial-containment-harness.mjs';
 
 let failures = 0;
 const check = (c, m) => { if (c) console.log(`✓ ${m}`); else { console.error(`✗ ${m}`); failures++; } };
@@ -37,6 +37,9 @@ async function main() {
     for (const { call_sid: sid } of live) await R.settle(sid, 10, now, { source: 'test_cleanup' });
   };
 
+  const seeded = await q("select profile, period_budget_gbp::float b, delivery_reserve_gbp::float r, essential_reserve_gbp::float e from public.fc_budget_profiles where profile = 'standard'");
+  check(seeded[0].b + seeded[0].r + seeded[0].e <= 0.86 + 1e-9, `seeded standard profile (£${seeded[0].b}+£${seeded[0].r}+£${seeded[0].e}) fits the derived £0.86 variable envelope at £5.99`);
+  await pinTestProfiles(q);
   // ---------------- fixtures (as the bootstrap superuser) ----------------
   const mk = async (email, kind) => {
     const id = (await q('insert into public.households (auth_user_id, email) values (null, $1) returning id', [email]))[0].id;
