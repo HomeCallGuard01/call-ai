@@ -1579,7 +1579,15 @@ async function main() {
   const usdRow = contrib.filter((r) => r.native_currency === 'USD');
   const nullRows = contrib.filter((r) => r.native_currency === null);
   const gbpRows = contrib.filter((r) => r.native_currency === 'GBP');
-  assert(usdRow.some((r) => Number(r.direct_service_costs) === -0.0295) && usdRow.every((r) => Number(r.revenue) === 0)
+  // Integration 2026-10-03: the original assertion was date-dependent — the
+  // transcription estimate is stamped "now" while the USD channel fixture is
+  // October 2026, so once "now" reached October both shared one USD row
+  // (-150.0295) and the check failed (also on the untouched 30d454c base).
+  // The invariant itself — currencies are never added together — is checked
+  // independent of today's date: USD rows sum to exactly the USD fixtures'
+  // direct costs, carry no revenue, and the single GBP row holds only GBP.
+  const usdDirect = usdRow.reduce((a, r) => a + Number(r.direct_service_costs), 0);
+  assert(Math.abs(usdDirect - (-150.0295)) < 1e-9 && usdRow.every((r) => Number(r.revenue) === 0)
       && gbpRows.length === 1 && Number(gbpRows[0].revenue) === 4.99 && Number(gbpRows[0].direct_service_costs) === -0.04686,
     '051 contribution view keeps each currency on its own row (USD transcription and USD channel fees never added to GBP)');
   assert(nullRows.every((r) => Number(r.revenue) === 0 && Number(r.direct_service_costs) === 0 && Number(r.unknown_items) > 0),
