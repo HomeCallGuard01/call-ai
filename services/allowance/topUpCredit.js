@@ -25,7 +25,7 @@
 //     period, which is the one the customer can still use).
 'use strict';
 
-const { findTopUpByProviderProduct } = require('./productCatalog');
+const { findTopUpByProviderProduct, resolveEconomics, maxBudgetForPrice, MAX_TOPUP_BUDGET_GBP } = require('./productCatalog');
 const { resolveEntitlementPeriod } = require('../usage/billingPeriod');
 
 const TOPUP_PURPOSE = 'allowance_topup';
@@ -65,6 +65,9 @@ function interpretStripeTopUpEvent(event) {
     productCode: md.product_code || null,
     transactionId: obj.payment_intent || null,
     minutes: Number(md.topup_minutes),
+    // Integration 2026-10-03: the £ capacity stamped server-side at checkout.
+    budgetGbp: md.topup_budget_gbp !== undefined ? Number(md.topup_budget_gbp) : null,
+    channel: 'stripe',
     amountMinor: Number.isInteger(obj.amount_total) ? obj.amount_total : null,
     currency: obj.currency || null,
   };
@@ -85,7 +88,8 @@ function interpretRevenueCatTopUpEvent(event, env = process.env) {
   const environment = String(event.environment || '').toUpperCase() === 'PRODUCTION' ? 'production' : 'sandbox';
   const base = {
     source: channel, environment, eventId: event.id || null,
-    productCode: product.code, minutes: product.minutes,
+    productCode: product.code, minutes: product.minutes, budgetGbp: product.budgetGbp, channel,
+    configuredPriceGbp: product.priceGbpInclVat,
     transactionId: event.transaction_id || null,
     amountMinor: Number.isFinite(event.price_in_purchased_currency) ? Math.round(event.price_in_purchased_currency * 100) : null,
     currency: event.currency || null,
@@ -128,9 +132,29 @@ async function applyTopUpEvent(intent, { householdId = intent.householdId, deps,
     await alert('ALLOWANCE TOP-UP UNMATCHED', { source: intent.source, transactionId: intent.transactionId });
     return { outcome: 'rejected', reason: 'no_household' };
   }
-  if (!Number.isInteger(intent.minutes) || intent.minutes <= 0 || intent.minutes > MAX_TOPUP_MINUTES) {
+  if (!Number.isInteger(intent.minutes) || intent.minutes <= 0 || intent.minutes > MAX_TOPUP_MINUTES
+      || !Number.isFinite(intent.budgetGbp) || intent.budgetGbp <= 0 || intent.budgetGbp > MAX_TOPUP_BUDGET_GBP) {
     await alert('ALLOWANCE TOP-UP INVALID QUANTITY', { source: intent.source, transactionId: intent.transactionId });
     return { outcome: 'rejected', reason: 'invalid_quantity' };
+  }
+  // Integration 2026-10-03 — margin guard at CREDIT time. The £ added to the
+  // Fortress budget never exceeds what the price actually paid permits on
+  // this channel (afterFees × (1 − margin) ÷ (1 + reserve)); the minute
+  // equivalent never exceeds what that £ funds. A cap is alerted for a
+  // manual decision (the customer paid), never silently over-credited.
+  const economics = resolveEconomics(env);
+  const paidGbp = intent.currency && String(intent.currency).toLowerCase() === 'gbp' && Number.isInteger(intent.amountMinor)
+    ? intent.amountMinor / 100
+    : (Number.isFinite(intent.configuredPriceGbp) ? intent.configuredPriceGbp : 0);
+  const maxBudget = maxBudgetForPrice({ priceGbpInclVat: paidGbp, channel: intent.channel || intent.source }, economics);
+  const budgetGbp = Math.floor(Math.min(intent.budgetGbp, maxBudget) * 1e4) / 1e4;
+  const creditMinutes = Math.min(intent.minutes, Math.floor(budgetGbp / economics.costPerMinuteGbp));
+  if (budgetGbp < intent.budgetGbp) {
+    await alert('ALLOWANCE TOP-UP CAPPED BY MARGIN GUARD', { householdId, transactionId: intent.transactionId, requestedGbp: intent.budgetGbp, creditedGbp: budgetGbp });
+  }
+  if (!(budgetGbp > 0) || creditMinutes <= 0) {
+    await alert('ALLOWANCE TOP-UP NOT CREDITABLE UNDER MARGIN GUARD', { householdId, transactionId: intent.transactionId, paidGbp });
+    return { outcome: 'rejected', reason: 'margin_guard' };
   }
 
   // A paid top-up for a household with no current entitlement is still
@@ -143,7 +167,7 @@ async function applyTopUpEvent(intent, { householdId = intent.householdId, deps,
 
   const result = await deps.creditAllowance({
     householdId, periodStart: period.periodStart, periodEnd: period.periodEnd,
-    kind: 'topup', seconds: intent.minutes * 60, source: intent.source, environment: intent.environment,
+    kind: 'topup', seconds: creditMinutes * 60, budgetGbp, source: intent.source, environment: intent.environment,
     transactionId: intent.transactionId, eventId: intent.eventId, productCode: intent.productCode,
     amountMinor: intent.amountMinor, currency: intent.currency, actor: null, reason: null,
     allowNonProduction: nonProdOk,
@@ -160,7 +184,7 @@ async function applyTopUpEvent(intent, { householdId = intent.householdId, deps,
  * webhook credits exactly those minutes.
  */
 function buildTopUpCheckoutParams({ householdId, stripeCustomerId, product, appUrl }) {
-  const metadata = { hcg_purpose: TOPUP_PURPOSE, household_id: householdId, product_code: product.code, topup_minutes: String(product.minutes) };
+  const metadata = { hcg_purpose: TOPUP_PURPOSE, household_id: householdId, product_code: product.code, topup_minutes: String(product.minutes), topup_budget_gbp: String(product.budgetGbp) };
   return {
     mode: 'payment',
     customer: stripeCustomerId || undefined,

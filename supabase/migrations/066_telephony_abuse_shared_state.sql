@@ -1,4 +1,11 @@
--- PROVISIONAL — Telephony abuse P0 shared state (2026-10-03)
+-- 066 — Telephony abuse P0 shared state (2026-10-03)
+--
+-- STATUS: DRAFT — NOT APPLIED ANYWHERE. NUMBERED 066 at integration
+-- (integration/launch-fortress-2026-10-03; was the unnumbered
+-- docs/security/provisional-migrations/PROVISIONAL_telephony_abuse_controls.sql).
+-- Rollback: _rollbacks/066_rollback_telephony_abuse_shared_state.sql.
+--
+-- Original provisional note follows.
 --
 -- STATUS: DRAFT. NOT APPLIED ANYWHERE (not local, not staging, not
 -- production). Deliberately kept OUT of supabase/migrations/ and UNNUMBERED:
@@ -59,15 +66,18 @@ create or replace function public.abuse_hit(p_key text, p_window_seconds integer
 returns integer
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 declare
-  v_window timestamptz := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+  v_window timestamptz;
   v_count integer;
 begin
   if p_window_seconds is null or p_window_seconds <= 0 or p_key is null or length(p_key) > 200 then
     raise exception 'abuse_hit: invalid arguments';
   end if;
+  -- Integration 2026-10-03: computed AFTER validation (it was in DECLARE,
+  -- so a zero window raised division_by_zero before the check ran).
+  v_window := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
   insert into public.abuse_counters as c (key, window_start, count)
   values (p_key, v_window, 1)
   on conflict (key, window_start) do update set count = c.count + 1
@@ -121,7 +131,7 @@ create or replace function public.claim_number_provisioning(p_household_id uuid,
 returns boolean
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 declare
   v_ok boolean;
@@ -147,6 +157,10 @@ revoke all on public.abuse_decisions, public.abuse_counters, public.abuse_cooldo
 revoke all on sequence public.abuse_decisions_id_seq from anon, authenticated;
 revoke execute on function public.abuse_hit(text, integer) from public, anon, authenticated;
 revoke execute on function public.claim_number_provisioning(uuid, integer) from public, anon, authenticated;
+-- Integration 2026-10-03: the server (service_role) is the only caller; the
+-- repo-wide grants check requires the explicit grant and an empty search_path.
+grant execute on function public.abuse_hit(text, integer) to service_role;
+grant execute on function public.claim_number_provisioning(uuid, integer) to service_role;
 
 commit;
 

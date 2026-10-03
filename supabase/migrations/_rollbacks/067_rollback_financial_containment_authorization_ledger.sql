@@ -1,4 +1,4 @@
--- Rollback for supabase/provisional/financial_containment_authorization_ledger.sql
+-- Rollback for 067_financial_containment_authorization_ledger.sql (was supabase/provisional/financial_containment_authorization_ledger.sql)
 -- STATUS: PROVISIONAL DRAFT — NOT APPLIED ANYWHERE.
 -- Drops every fc_* object. Destroys the authorisation ledger: export
 -- fc_ledger / fc_reservations / fc_events first if any of it matters.

@@ -1,6 +1,14 @@
 -- Financial containment P0 — authorisation ledger, reservations/leases,
 -- global breaker (2026-10-03).
 --
+-- STATUS: DRAFT — NOT APPLIED ANYWHERE (not staging, not production).
+-- NUMBERED 067 at integration (integration/launch-fortress-2026-10-03; see
+-- docs/integration/2026-10-03-MIGRATION_RECONCILIATION.md). Previously the
+-- unnumbered supabase/provisional/financial_containment_authorization_ledger.sql.
+-- Rollback: _rollbacks/067_rollback_financial_containment_authorization_ledger.sql
+-- — NOT safe while live calls exist (engage the kill switch first).
+--
+-- Original provisional note follows.
 -- STATUS: PROVISIONAL DRAFT — NOT APPLIED ANYWHERE (not staging, not
 -- production). Deliberately NOT in supabase/migrations/: no safe permanent
 -- number exists (046/055/058/060/061 are each claimed twice across branches,
@@ -101,10 +109,15 @@ create table if not exists public.fc_budget_profiles (
   updated_by text
 );
 insert into public.fc_budget_profiles (profile, period_budget_gbp, delivery_reserve_gbp, delivery_reserve_scope, essential_reserve_gbp, monitoring_allowed) values
-  ('standard',      0.50, 0.25, 'all', 0.10, true),
-  ('plus',          0.50, 0.25, 'all', 0.10, true),
-  ('complimentary', 0.50, 0.25, 'all', 0.10, true),
-  ('internal_test', 0.50, 0.25, 'all', 0.10, true),
+  -- Integration 2026-10-03: paid profiles' delivery reserve is 'trusted_only'
+  -- (was 'all'). With 'all', an unknown-caller flood drains the budget AND the
+  -- reserve, after which the household's trusted callers are refused too (a
+  -- victim lockout). The £ figures are unchanged placeholders (DECISION D1);
+  -- the scope is reversible through the audited fc_set_budget_profile.
+  ('standard',      0.50, 0.25, 'trusted_only', 0.10, true),
+  ('plus',          0.50, 0.25, 'trusted_only', 0.10, true),
+  ('complimentary', 0.50, 0.25, 'trusted_only', 0.10, true),
+  ('internal_test', 0.50, 0.25, 'trusted_only', 0.10, true),
   ('unentitled',    0.00, 0.10, 'all', 0.10, false)
 on conflict (profile) do nothing;
 

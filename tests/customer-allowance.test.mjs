@@ -238,7 +238,7 @@ const read = (deps, o = {}) => getCustomerAllowance({ household: HH, entitlement
 // ---------------------------------------------------------------------------
 {
   const session = (o = {}) => ({ mode: 'payment', payment_status: 'paid', payment_intent: 'pi_123', amount_total: 299, currency: 'gbp', client_reference_id: 'hh-1',
-    metadata: { hcg_purpose: 'allowance_topup', household_id: 'hh-1', product_code: 'topup_small', topup_minutes: '30' }, ...o });
+    metadata: { hcg_purpose: 'allowance_topup', household_id: 'hh-1', product_code: 'topup_small', topup_minutes: '30', topup_budget_gbp: '0.5637' }, ...o });
   const ev = (type, obj, livemode = true) => ({ id: `evt_${type}`, type, livemode, data: { object: obj } });
 
   const paid = topUp.interpretStripeTopUpEvent(ev('checkout.session.completed', session()));

@@ -32,6 +32,10 @@ async function creditAllowance(args, client) {
     p_actor: args.actor || null,
     p_reason: args.reason || null,
     p_allow_non_production: Boolean(args.allowNonProduction),
+    // Integration 2026-10-03 (migration 068): the £ capacity credited to the
+    // Financial Fortress budget in the same transaction. Ignored for reversals
+    // (the SQL reverses exactly what the original credited).
+    p_budget_gbp: Number.isFinite(args.budgetGbp) ? args.budgetGbp : 0,
   });
   if (error) throw new Error(`credit_allowance failed: ${error.message || error}`);
   return data;

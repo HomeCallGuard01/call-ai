@@ -55,9 +55,12 @@ async function main() {
 
   await db.exec('set role service_role;');
   const q1 = async (sql, p = []) => (await db.query(sql, p)).rows[0];
-  const credit = async (h, { kind = 'topup', seconds = 1800, source = 'stripe', env = 'production', txn, event = null, product = 'topup_small', actor = null, reason = null, allowNonProd = false, period = P1 } = {}) =>
-    (await db.query('select public.credit_allowance($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) as r',
-      [h, period[0], period[1], kind, seconds, source, env, txn, event, product, 299, 'gbp', actor, reason, allowNonProd])).rows[0].r;
+  // Integration 2026-10-03 (068): credit_allowance also takes the £ capacity
+  // (p_budget_gbp; £ assertions: tests/allowance-economic-bridge.pglite.test.mjs).
+  const credit = async (h, { kind = 'topup', seconds = 1800, source = 'stripe', env = 'production', txn, event = null, product = 'topup_small', actor = null, reason = null, allowNonProd = false, period = P1,
+    budget = kind === 'topup_reversal' ? 0 : Math.trunc((seconds / 60) * 0.018787 * 1e4) / 1e4 } = {}) =>
+    (await db.query('select public.credit_allowance($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) as r',
+      [h, period[0], period[1], kind, seconds, source, env, txn, event, product, 299, 'gbp', actor, reason, allowNonProd, budget])).rows[0].r;
   const bonus = async (h, period = P1) => (await q1('select coalesce(max(bonus_monitored_seconds),0)::int b from public.household_usage_periods where household_id=$1 and period_start=$2', [h, period[0]])).b;
 
   // 1. First paid top-up credits; the audit row records it.
@@ -143,8 +146,8 @@ async function main() {
     await db.exec(`reset role; set role ${role};`);
     try { await db.query(sql); return false; } catch { return true; } finally { await db.exec('reset role; set role service_role;'); }
   };
-  check(await denied('authenticated', `select public.credit_allowance('${hh.a}','2026-01-01','2026-02-01','topup',60,'stripe','production','forged',null,null,null,null,null,null,false)`), 'a signed-in customer cannot credit their own allowance');
-  check(await denied('anon', `select public.credit_allowance('${hh.a}','2026-01-01','2026-02-01','topup',60,'stripe','production','forged2',null,null,null,null,null,null,false)`), 'anon cannot credit an allowance');
+  check(await denied('authenticated', `select public.credit_allowance('${hh.a}','2026-01-01','2026-02-01','topup',60,'stripe','production','forged',null,null,null,null,null,null,false,0.5)`) && !(await denied('service_role', `select 1 from pg_proc where proname = 'credit_allowance' and pronargs = 16`)), 'a signed-in customer cannot credit their own allowance (the 16-argument function exists; the refusal is a permission refusal)');
+  check(await denied('anon', `select public.credit_allowance('${hh.a}','2026-01-01','2026-02-01','topup',60,'stripe','production','forged2',null,null,null,null,null,null,false,0.5)`), 'anon cannot credit an allowance');
   check(await denied('authenticated', 'select * from public.allowance_credits'), 'customers cannot read the credit ledger directly');
   check(await denied('service_role', `insert into public.allowance_credits (household_id, kind, requested_seconds, applied_seconds, period_start, period_end, source, environment, provider_transaction_id) values ('${hh.a}','topup',60,60,'2026-01-01','2026-02-01','stripe','production','direct')`), 'even service_role cannot write credits except through credit_allowance');
   check(await denied('service_role', `update public.household_usage_periods set bonus_monitored_seconds = 99999 where household_id = '${hh.a}'`), 'service_role cannot set the bonus directly');
@@ -156,12 +159,19 @@ async function main() {
 
   // 10. Rollback removes exactly 063's objects (056 counters and bonus kept); re-applies cleanly.
   const before = await bonus(hh.e);
+  // Integration 2026-10-03: reverse order — 068 (the £ bridge, which replaces
+  // credit_allowance) is rolled back before 063.
+  await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '068_rollback_allowance_economic_credit_bridge.sql'), 'utf8'));
   await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '063_rollback_customer_allowance_credits_and_notices.sql'), 'utf8'));
   const gone = await q1(`select to_regclass('public.allowance_credits') t, to_regproc('public.credit_allowance') f, to_regclass('public.usage_notifications') kept`);
   check(gone.t === null && gone.f === null && gone.kept !== null && (await bonus(hh.e)) === before, 'rollback drops 063 only; Fortress tables and already-applied bonus are untouched');
   let reapplied = true;
   try { await db.exec(await readFile(path.join(migrationsDir, '063_customer_allowance_credits_and_notices.sql'), 'utf8')); } catch { reapplied = false; }
   check(reapplied, '063 re-applies cleanly after its rollback');
+  let reapplied068 = true;
+  try { await db.exec(await readFile(path.join(migrationsDir, '068_allowance_economic_credit_bridge.sql'), 'utf8')); } catch { reapplied068 = false; }
+  const fn = await q1(`select count(*)::int n from pg_proc where proname = 'credit_allowance'`);
+  check(reapplied068 && fn.n === 1, '068 re-applies cleanly on top, leaving exactly one credit_allowance (the £-bridged one)');
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   process.exitCode = failures === 0 ? 0 : 1;

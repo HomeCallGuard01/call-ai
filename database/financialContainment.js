@@ -1,6 +1,6 @@
-// financialContainment.js — data access for the PROVISIONAL financial
-// containment ledger (supabase/provisional/financial_containment_
-// authorization_ledger.sql). Every write is a SECURITY DEFINER RPC; this
+// financialContainment.js — data access for the financial containment
+// ledger (migration 067_financial_containment_authorization_ledger.sql,
+// DRAFT; was supabase/provisional/ before integration 2026-10-03). Every write is a SECURITY DEFINER RPC; this
 // module never writes a table directly. Every function THROWS on failure —
 // services/containment/* decides the fail-closed behaviour. The client is
 // injectable so tests never need Supabase.

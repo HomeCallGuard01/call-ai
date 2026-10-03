@@ -80,7 +80,7 @@ const signedStripe = (event) => {
   return post('/billing/webhook', payload, { 'stripe-signature': stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET }) });
 };
 const session = (o = {}) => ({ id: 'cs_1', object: 'checkout.session', mode: 'payment', payment_status: 'paid', payment_intent: 'pi_live_1', amount_total: 299, currency: 'gbp', client_reference_id: HOUSEHOLD.id,
-  metadata: { hcg_purpose: 'allowance_topup', household_id: HOUSEHOLD.id, product_code: 'topup_small', topup_minutes: '30' }, ...o });
+  metadata: { hcg_purpose: 'allowance_topup', household_id: HOUSEHOLD.id, product_code: 'topup_small', topup_minutes: '30', topup_budget_gbp: '0.5637' }, ...o });
 
 try {
   // Stripe

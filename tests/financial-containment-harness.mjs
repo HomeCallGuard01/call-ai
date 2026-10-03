@@ -10,8 +10,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.join(__dirname, '..');
-export const PROVISIONAL_SQL = path.join(ROOT, 'supabase', 'provisional', 'financial_containment_authorization_ledger.sql');
-export const PROVISIONAL_ROLLBACK_SQL = path.join(ROOT, 'supabase', 'provisional', 'rollback_financial_containment_authorization_ledger.sql');
+// Integration 2026-10-03: the containment ledger is migration 067 (it was the
+// unnumbered supabase/provisional/ file). The names are kept for the tests.
+export const PROVISIONAL_SQL = path.join(ROOT, 'supabase', 'migrations', '067_financial_containment_authorization_ledger.sql');
+export const PROVISIONAL_ROLLBACK_SQL = path.join(ROOT, 'supabase', 'migrations', '_rollbacks', '067_rollback_financial_containment_authorization_ledger.sql');
 
 // Same Supabase platform shim as tests/migrations.pglite.test.mjs.
 export const BOOTSTRAP_SQL = `
@@ -31,8 +33,8 @@ export async function applyAll(db) {
   await db.exec(BOOTSTRAP_SQL);
   const dir = path.join(ROOT, 'supabase', 'migrations');
   const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
+  // 067 (the containment ledger) is part of the sequence now — applied once, in order.
   for (const f of files) await db.exec(await readFile(path.join(dir, f), 'utf8'));
-  await db.exec(await readFile(PROVISIONAL_SQL, 'utf8'));
   return files;
 }
 

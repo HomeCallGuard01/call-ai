@@ -1,5 +1,5 @@
 // Financial containment P0 — the PROVISIONAL authorisation ledger
-// (supabase/provisional/financial_containment_authorization_ledger.sql)
+// (migration 067; formerly supabase/provisional/financial_containment_authorization_ledger.sql)
 // against a real Postgres engine (PGlite), after every migration.
 //
 // PGlite is ONE connection: "simultaneous" requests here are issued together

@@ -8,6 +8,7 @@
 'use strict';
 
 const { resolveEntitlementPeriod } = require('../usage/billingPeriod');
+const { resolveEconomics } = require('./productCatalog');
 
 const MAX_ADJUSTMENT_MINUTES = 1000;
 
@@ -31,6 +32,10 @@ async function applyAdminAdjustment({ householdId, actor, minutes, reason, idemp
   const result = await deps.creditAllowance({
     householdId, periodStart: period.periodStart, periodEnd: period.periodEnd,
     kind: 'admin_adjustment', seconds: Number(minutes) * 60, source: 'admin', environment: 'production',
+    // Integration 2026-10-03 (migration 068): the same £ capacity Fortress
+    // enforces moves with the minutes (signed; cost per top-up minute), so an
+    // admin goodwill credit is funded — and a correction is clawed back — in £.
+    budgetGbp: Math.trunc(Number(minutes) * resolveEconomics(env).costPerMinuteGbp * 1e4) / 1e4,
     transactionId: `admin:${idempotencyKey}`, actor, reason: reason.trim(), allowNonProduction: false,
   });
   return { ok: true, ...result };
