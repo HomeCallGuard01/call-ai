@@ -27,7 +27,7 @@ const DEFAULTS = Object.freeze({
   terminationMode: 'hangup',          // 'hangup' | 'announce' (wording: Claude 3 / Andrew)
   entitledCountRefreshMs: 30 * 60 * 1000,
   invariantCheckMs: 10 * 60 * 1000,
-  allowShadow: false,                 // never send enforcement_mode=enforce? only if explicitly allowed
+  allowShadow: false,                 // true lets the DB policy's 'shadow' mode apply; otherwise every RPC forces 'enforce'
 });
 
 function parseBool(v, fallback) {

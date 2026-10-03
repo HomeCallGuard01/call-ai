@@ -28,6 +28,12 @@ function withTimeout(promise, ms, label) {
 
 const isObj = (v) => v && typeof v === 'object';
 
+// Errors that mean "the database answered and said no" rather than "the
+// database could not be reached": the fc_* functions' own raise messages,
+// constraint and input-syntax violations.
+const REJECTED = /fc_[a-z_]+: |violates (foreign key|check|not-null|unique) constraint|invalid input syntax/i;
+const isRejectedByAuthority = (err) => REJECTED.test(String((err && err.message) || err));
+
 function createContainment({ db, env = process.env, now = () => new Date(), recordEvent = async () => {} } = {}) {
   if (!db) throw new Error('createContainment: db is required');
   const config = resolveContainmentConfig(env);
@@ -118,6 +124,13 @@ function createContainment({ db, env = process.env, now = () => new Date(), reco
         funding: r.funding || null, profile: r.profile || null, existing: Boolean(r.existing), source: 'database',
       };
     } catch (err) {
+      // The authority ANSWERED but rejected the request (its own validation,
+      // a constraint, a missing household): that is a refusal, never a
+      // reason to fall back to the degraded envelope.
+      if (isRejectedByAuthority(err)) {
+        event('critical', 'call_refused_invalid_request', { error: String(err.message || err).slice(0, 200) }, { householdId: household && household.id, callSid });
+        return { allowed: false, reason: 'invalid_request', monitoring: false, timeLimitSeconds: null, source: 'database' };
+      }
       dbFailed(err, 'authorize_call');
       const d = degradedDecision({ household, callSid, period });
       event('critical', d.allowed ? 'call_admitted_degraded' : `call_refused_${d.reason}`, { error: String(err.message || err).slice(0, 200) },

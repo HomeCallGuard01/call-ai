@@ -10,6 +10,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
+// Existing modules (provisioning → Supabase client) need these to load;
+// dummies only — nothing here talks to a real service.
+process.env.SUPABASE_URL ||= 'http://127.0.0.1:9';
+process.env.SUPABASE_ANON_KEY ||= 'dummy';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { resolveContainmentConfig, isEssentialCaller } = require('../services/containment/policy');
 const { deriveVariableEnvelope, validateProfileAgainstEconomics } = require('../services/containment/economicPolicy');
@@ -90,6 +94,12 @@ async function main() {
     const noLimit = createContainment({ db: okDb({ authorizeCall: async () => ({ allowed: true, timeLimitSeconds: null }) }), env: { FC_DEGRADED_MODE: 'reject' } });
     const nl = await noLimit.authorizeCall({ household: hh, callSid: 'CA3', signatureValid: true });
     check(!nl.allowed, 'an "allowed" answer without a valid time limit is treated as no answer (never an unbounded Dial)');
+    const rejected = createContainment({ db: okDb({ authorizeCall: async () => { throw new Error('fc_authorize_call failed: fc_authorize_call: invalid call sid'); } }) });
+    const rj = await rejected.authorizeCall({ household: hh, callSid: 'CA-bad', signatureValid: true });
+    check(!rj.allowed && rj.reason === 'invalid_request' && rejected._state.degraded.admissions.length === 0,
+      'authority REJECTS the request (validation/constraint error) → refused, never the degraded envelope');
+    const fk = createContainment({ db: okDb({ authorizeCall: async () => { throw new Error('insert or update on table "fc_budget_accounts" violates foreign key constraint'); } }) });
+    check(!(await fk.authorizeCall({ household: hh, callSid: 'CA-fk', signatureValid: true })).allowed, 'unknown/deleted household (FK violation) → refused');
     const malformed = createContainment({ db: okDb({ authorizeCall: async () => 'yes' }), env: { FC_DEGRADED_MODE: 'reject' } });
     check(!(await malformed.authorizeCall({ household: hh, callSid: 'CA4', signatureValid: true })).allowed, 'malformed authority response → refused (reject mode)');
   }

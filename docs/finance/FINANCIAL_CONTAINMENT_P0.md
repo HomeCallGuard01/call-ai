@@ -68,10 +68,16 @@ Tested in `tests/financial-containment-*.test.mjs`.
 - **I4 — Provider-enforced backstop.** `<Dial timeLimit>` is the call's
   *backstop*: `min(policy max, what the household could afford at admission)`.
   Twilio ends the call there even if every HCG server is down.
-- **I5 — Worst case is bounded globally.** The sum over live calls of their
-  backstop cost (what they would cost if HCG crashed now and nothing renewed
-  or terminated) is capped (`global worst-case exposure`). A call that would
-  push it over the cap is refused.
+- **I5 — Worst case is bounded, per household and globally.** A call's
+  *worst case* is its backstop cost: what it would cost if HCG crashed now
+  and nothing renewed or terminated it.
+  - **Per household.** A call's backstop is sized from `backstop_share`
+    (0.5) of the headroom left after the reservations **and** the unreserved
+    worst cases of the household's other live calls. So
+    `consumed + Σ live worst cases ≤ budget + adjustments + reserve` holds at
+    all times.
+  - **Globally.** The sum of all live worst cases is capped. A call that
+    would push it over the cap is refused.
 - **I6 — Idempotency.** One reservation per idempotency key (`call:<CallSid>`,
   `sms:<…>`, …). A Twilio retry gets the original decision and the original
   time limit. Settlement, actual-cost records and adjustments each have
@@ -157,6 +163,26 @@ All of these are in `fc_policy`.
 
 When every source is exhausted the call is refused (`<Reject>`, unbilled).
 
+**Seeded figures (DECISION D1)**, £ per billing period:
+
+| Profile | Budget | Delivery reserve | Essential |
+|---|---|---|---|
+| standard / plus / complimentary / internal_test | 0.50 | 0.25 | 0.10 |
+| unentitled | 0 | 0.10 | 0.10 |
+
+**How the figures are derived** (`economicPolicy.js`), from £5.99 inc. VAT:
+
+- £4.99 net × 60% = £2.995 delivery ceiling;
+- less number rental (£0.87), the worst-channel platform fee (15%, £0.75) and
+  an infrastructure allowance (£0.25);
+- less a 15% safety reserve and a £0.10 overrun allowance;
+- = **£0.86** of HCG-funded variable spend per customer per month.
+
+That is roughly 70 connected minutes, or one monitored call reservation plus
+about 30 connected minutes. It is far below normal UK incoming-call use, so
+the commercial consequence has to be decided before deployment. The
+mechanism is unaffected by whatever figure is chosen.
+
 ## 5. Live-call cut-off
 
 - **Who ends the call.** The lease sweeper (`services/containment/leaseSweeper.js`)
@@ -201,14 +227,19 @@ Evaluated inside every authorisation, under the same lock.
 |---|---|---|
 | Kill switch (manual) | off | All authorisations and renewals refused. Live calls end at lease end |
 | Breaker (latched) | closed | Opened automatically by a spend-rate trip. Reset only by `fc_reset_breaker` (audited) |
-| Rolling-hour authorised £ | max(£4, N × £0.03) | Refuse; **latch** the breaker |
-| Rolling-24h authorised £ | max(£15, N × £0.20), absolute max £1000 | Refuse; **latch** the breaker |
+| Rolling-hour spend: committed estimate in the window + everything still reserved + this request | max(£4, N × £0.03) | Refuse; **latch** the breaker |
+| Rolling-24h spend (same measure) | max(£15, N × £0.20), absolute max £1000 | Refuse; **latch** the breaker |
 | Outstanding reservations £ | max(£5, N × £0.05) | Refuse this request (capacity; no latch) |
 | Worst-case exposure of live calls | max(£40, N × £0.50) | Refuse this request (no latch) |
 | Live reservations | max(20, N / 5) | Refuse this request (no latch) |
-| Monitoring £ / rolling hour (soft) | max(£1.50, N × £0.02) | New calls connect unmonitored |
+| Monitoring £ / rolling hour (soft): committed + live monitored windows | max(£1.50, N × £0.02) | New calls connect unmonitored |
 | Unattributed calls £ / day | £2 | Refuse unattributed calls |
 | Number purchases / 24 h | 10 | Refuse purchase |
+
+The spend-rate measure counts released reservations as **not** spent. A
+monitored call reserves its whole 30-minute monitoring window up front, so
+counting *authorised* £ would let a dozen short calls trip the breaker. All
+one-off spend (SMS, AI, number purchases) counts towards the breaker as well.
 
 `N` is the number of currently entitled households. The database counts it
 (`fc_refresh_entitled_count`), so a client can't supply it. A count older than
@@ -274,3 +305,78 @@ the trade-off of rejecting financial fail-open, and it is listed as decision D2.
   project budget stops them in £.
 - Number rental is billed monthly for every number held, whatever this layer
   decides. It is bounded by number-lifecycle work, not here.
+
+## 10. Integration contract
+
+### Customer allowance / billing (Claude 3)
+
+- **Read.** `services/containment/readModel.js`
+  `getCustomerAllowanceView(household)` returns:
+  - `state`: `ok` | `low` | `reserve` | `exhausted` | `unavailable`;
+  - `monitoringAvailable`;
+  - `callsDelivered`;
+  - `usedFraction`;
+  - period bounds;
+  - `lastRefusal`.
+
+  It shows no £ cost figures. It never reports "protected" when the data
+  can't be read.
+- **Write.** There is no customer-callable write. Top-ups and plan changes
+  are credited server-side only, from a *verified* payment webhook, by
+  `fc_admin_adjust(household, amount, reason, actor, idempotencyKey =
+  <payment id>, source = 'topup' | 'plan_change')`:
+  - each adjustment is capped at ±£50;
+  - it is idempotent per payment id, so a replayed webhook credits once;
+  - it is audited (`fc_ledger` `adjust` + `fc_events`).
+- **Plans and tiers.** `fc_budget_profiles` (via `fc_set_budget_profile`,
+  audited). The profile is resolved **server-side** from `entitlements` /
+  `account_classifications`, never from the app. A profile change applies to
+  billing periods opened afterwards. For the current period, use
+  `fc_admin_adjust`.
+
+### Admin Control Centre
+
+- `getAdminHouseholdView(id)` (`fc_household_status`) returns, for one
+  household:
+  - budget, adjustments, delivery and essential reserves;
+  - reserved, estimated consumed and actual reconciled;
+  - remaining, with and without the reserve;
+  - active exposure and worst-case exposure;
+  - its live leases;
+  - the last denial reason.
+- `getAdminGlobalView()` (`fc_global_status`) returns:
+  - kill switch and breaker (with reason);
+  - live count, reserved and worst-case exposure;
+  - caps for the current N;
+  - rolling windows;
+  - policy version and enforcement mode.
+- Admin actions available as database functions only:
+  - `fc_set_kill_switch`, `fc_reset_breaker`;
+  - `fc_set_policy`, `fc_set_budget_profile`;
+  - `fc_admin_adjust`.
+
+  Each requires an actor and a reason, and each is audited in
+  `fc_policy_audit` / `fc_ledger`. HTTP routes and the user interface belong
+  to the dashboard workstream.
+
+### Ledger 051 / reconciliation
+
+`fc_record_actual(provider, providerRef, callSid, category, amountGbp)` is
+the entry point for supplier-reconciled cost. It is idempotent per provider
+reference. **It is not wired yet.** The 051 reconciliation worker should call
+it for each priced Twilio leg once both are deployed. Until then
+`actual_gbp` stays 0 and every figure is an ESTIMATE, labelled as such.
+
+## 11. Decisions required before deployment
+
+| # | Decision | Default on this branch |
+|---|---|---|
+| D1 | Budget figures per profile, and therefore how much normal use stays monitored/delivered | £0.50 + £0.25 + £0.10 (derived envelope £0.86) |
+| D2 | Breaker latches on spend-rate trips (delivery stops for everyone until a human resets it) | latch on |
+| D3 | Degraded envelope while the authorisation database is down (`bounded`) vs refuse everything (`reject`) | bounded: 2 concurrent / 20 per hour per instance, 10-min calls, 15-min max outage |
+| D4 | Essential callers (emergency call-backs) and withheld numbers | `FC_ESSENTIAL_CALLERS` empty |
+| D5 | **Conflicts with the earlier requirement "never stop delivery while forwarding points at HCG"** (2026-09-30). This branch implements the 2026-10-03 instruction instead: no fail-open financially, so calls are refused or ended once authorisation is exhausted. Delivery is preserved only within the bounded reserves | refuse / end |
+| D6 | `terminationMode` `announce` and its wording | `hangup` |
+| D7 | Delivery-reserve scope `all` vs `trusted_only` | `all` |
+| D8 | The 056 £ ceilings stay underneath as defence in depth; they now overlap with this layer | kept |
+| D9 | Global caps' floors and per-household scaling (§6). They are sized for the current small base and scale with N | as §6 |

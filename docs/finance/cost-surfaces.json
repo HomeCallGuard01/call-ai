@@ -1,0 +1,203 @@
+{
+  "title": "HCG variable-cost surface inventory",
+  "asOf": "2026-10-03",
+  "branch": "security/financial-containment-p0",
+  "important": "Statuses describe THIS BRANCH once its provisional SQL is applied and it is deployed. Nothing here is deployed: production today has none of these controls (not even 056).",
+  "statusKey": {
+    "ENFORCED": "HCG code refuses or terminates the spend before it becomes unbounded, atomically, fail-closed, tested",
+    "PARTIAL": "enforced on some paths or for some failure modes; the gap is named",
+    "INDIRECTLY_BOUNDED": "not metered itself, but bounded by another enforced control",
+    "NOT_YET_BOUNDED": "no HCG control limits it",
+    "UNKNOWN": "cost or behaviour not established"
+  },
+  "surfaces": [
+    {
+      "id": "inbound_pstn_household",
+      "cost": "Twilio inbound minutes on the HCG number, billed for the whole call (incl. <Dial><Client>)",
+      "trigger": "PSTN call → POST /voice (server.js)",
+      "controls": [
+        "056 admit_call (concurrency/burst/flood/loop/£ ceilings)",
+        "fc_authorize_call reservation before any billable verb, <Reject> otherwise",
+        "lease renewal + REST hang-up at lease end",
+        "<Dial timeLimit> backstop sized so consumed + Σ live worst cases ≤ authorisation",
+        "global breaker / kill switch"
+      ],
+      "status": "ENFORCED",
+      "residual": "Calls that arrive while HCG is unreachable (~1 started minute each, provider-side only). Termination latency ≤ sweep interval + provider latency, covered by the 60 s termination grace in each reservation; any excess is committed as overrun_gbp, never hidden."
+    },
+    {
+      "id": "app_client_leg",
+      "cost": "<Dial><Client> minutes (billed £0 today; priced at list $0.004/min in every limit)",
+      "trigger": "/voice dial",
+      "controls": [
+        "same reservation as the inbound leg (connected rate = inbound + app leg)"
+      ],
+      "status": "ENFORCED"
+    },
+    {
+      "id": "inbound_pstn_unattributed",
+      "cost": "Inbound minutes + Polly for calls to an HCG number with no household",
+      "trigger": "/voice with no household",
+      "controls": [
+        "fc_authorize_call (unattributed) — global £/day cap, 120 s backstop, breaker"
+      ],
+      "status": "ENFORCED"
+    },
+    {
+      "id": "media_streams",
+      "cost": "Twilio Media Streams minutes",
+      "trigger": "<Start><Stream> in /voice",
+      "controls": [
+        "whole 30-min monitoring window reserved before the stream starts",
+        "stream attach refused unless the reservation covers monitoring (fail-closed)",
+        "056 monitoring gate + 30-min cap"
+      ],
+      "status": "ENFORCED"
+    },
+    {
+      "id": "transcription_whisper",
+      "cost": "OpenAI audio.transcriptions per speech segment",
+      "trigger": "/media-stream WebSocket media events",
+      "controls": [
+        "only streams attached to a containment-authorised reservation transcribe",
+        "056 rate-anomaly guard"
+      ],
+      "status": "PARTIAL",
+      "residual": "Bounded in MINUTES, not £: an OpenAI price change is invisible until the invoice (estimates reconciled only when actual costs are recorded via fc_record_actual — no OpenAI per-call cost source exists). /media-stream itself is still unauthenticated on this base (fixed on security/voice-surface-p0)."
+    },
+    {
+      "id": "ai_classifier_process",
+      "cost": "OpenAI chat.completions (gpt-4o-mini) in POST /process",
+      "trigger": "POST /process (public route, unreachable from Twilio today)",
+      "controls": [
+        "Twilio signature required",
+        "fc_authorize_spend('ai') per CallSid, fail-closed"
+      ],
+      "status": "ENFORCED",
+      "residual": "The route itself still answers unauthenticated requests with TwiML (no cost). Its <Dial> has no timeLimit if /process is ever re-enabled — re-enabling requires adding containment there."
+    },
+    {
+      "id": "polly_tts",
+      "cost": "Twilio Polly characters (greeting, apology, red-line message)",
+      "trigger": "TwiML <Say voice=Polly>",
+      "controls": [
+        "only executed inside an authorised call; call_fixed_fee_gbp in every reservation"
+      ],
+      "status": "INDIRECTLY_BOUNDED",
+      "residual": "Charged per call as a fixed fee inside the reservation; no separate meter."
+    },
+    {
+      "id": "sms",
+      "cost": "Twilio SMS per segment",
+      "trigger": "risk warnings, red-line, 30-min limit notice, safety-stop notice (live monitoring)",
+      "controls": [
+        "fc_authorize_spend('sms') on EVERY send incl. the former null-period and no-household bypasses; fail-closed; idempotent per (household, recipient, body, minute)",
+        "056 SMS counts"
+      ],
+      "status": "ENFORCED",
+      "residual": "Multi-segment messages are authorised as 1 unit (current messages are single-segment); geo-permissions are a provider setting."
+    },
+    {
+      "id": "number_purchase",
+      "cost": "Twilio number purchase + first month rental",
+      "trigger": "ensureTwilioNumberProvisioned (Stripe/RevenueCat webhooks, checkout reconcile, admin, invite redemption)",
+      "controls": [
+        "fc_authorize_spend('number_purchase'): company-wide 10/24 h cap + breaker/kill switch; fail-closed; default for the real Twilio client"
+      ],
+      "status": "ENFORCED",
+      "residual": "A purchase made directly with the Twilio master credentials (outside this code) bypasses it — provider-side restricted keys needed."
+    },
+    {
+      "id": "number_rental",
+      "cost": "£0.86917/number/month while held",
+      "trigger": "holding numbers",
+      "controls": [
+        "number lifecycle release jobs (other workstreams)",
+        "economic policy deducts it from the variable envelope"
+      ],
+      "status": "INDIRECTLY_BOUNDED",
+      "residual": "Fixed monthly cost, not a usage cost; bounded by number count (purchase cap) and lifecycle release."
+    },
+    {
+      "id": "red_line_termination_redirect",
+      "cost": "Twilio REST update + a few seconds of Polly before hang-up",
+      "trigger": "live-monitoring red line",
+      "controls": [
+        "inside an authorised call"
+      ],
+      "status": "INDIRECTLY_BOUNDED",
+      "residual": "A few seconds of Polly inside an already-authorised call."
+    },
+    {
+      "id": "provider_status_reads",
+      "cost": "Twilio REST call fetches by the sweeper",
+      "trigger": "lease sweeper",
+      "controls": [
+        "free API reads; throttled to one per call per 20 s"
+      ],
+      "status": "INDIRECTLY_BOUNDED",
+      "residual": "Twilio API rate limits, not money."
+    },
+    {
+      "id": "alert_email",
+      "cost": "Resend emails",
+      "trigger": "sendCriticalAlert from many paths incl. unauthenticated ones",
+      "controls": [
+        "per-type 30-min in-process rate limit",
+        "containment event de-duplication (5 min per rule/household)"
+      ],
+      "status": "PARTIAL",
+      "residual": "Per-process limiter resets on restart; Resend plan limits unknown to HCG."
+    },
+    {
+      "id": "supabase_auth_email",
+      "cost": "Confirmation / reset emails via Supabase's mailer",
+      "trigger": "public /register, /resend-confirmation, /forgot-password, /api/v1/register(/resend)",
+      "controls": [
+        "Supabase's own rate limits only"
+      ],
+      "status": "UNKNOWN",
+      "residual": "Whether this costs HCG anything depends on the SMTP provider configured in Supabase (not in the repo). No app-level rate limit. Out of this workstream (security/fraud)."
+    },
+    {
+      "id": "client_outbound_calls",
+      "cost": "Calls placed by a (modified) mobile client via the Voice SDK outgoing grant to the TwiML App",
+      "trigger": "voiceAccessToken outgoingApplicationSid",
+      "controls": [
+        "none in this branch"
+      ],
+      "status": "UNKNOWN",
+      "residual": "The TwiML App's Voice URL is configured in the Twilio console (unverified). If it points at /voice, containment applies; if elsewhere or unset, unknown. Needs provider confirmation (security workstream)."
+    },
+    {
+      "id": "openai_sdk_retries",
+      "cost": "Up to 3× OpenAI requests on transient errors (SDK default maxRetries=2)",
+      "trigger": "transcription / classifier",
+      "controls": [
+        "transcription bounded in minutes per authorised stream; classifier authorised once per CallSid"
+      ],
+      "status": "INDIRECTLY_BOUNDED",
+      "residual": "Retries multiply OpenAI requests within an authorised stream; £ per request not observable by HCG."
+    },
+    {
+      "id": "master_credential_abuse",
+      "cost": "Anything the Twilio master auth token can do (calls, numbers, geo permissions)",
+      "trigger": "compromised backend credentials",
+      "controls": [
+        "none possible in application code"
+      ],
+      "status": "NOT_YET_BOUNDED",
+      "residual": "Provider-side only: restricted API keys, subaccounts, prepaid balance with auto-recharge off (decision), usage triggers (notify only)."
+    },
+    {
+      "id": "hcg_unreachable_inbound",
+      "cost": "~1 started minute per call that arrives while HCG can't answer",
+      "trigger": "outage",
+      "controls": [
+        "none in HCG code"
+      ],
+      "status": "NOT_YET_BOUNDED",
+      "residual": "Provider-side: a voice fallback URL returning static <Reject> (unbilled)."
+    }
+  ]
+}

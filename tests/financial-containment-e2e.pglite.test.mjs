@@ -58,6 +58,12 @@ async function main() {
   const A = await mk('a@example.com');
   const B = await mk('b@example.com');
   const C = await mk('c@example.com');
+  const mk2 = async (email) => {
+    await pg.exec('reset role;');
+    const h = await mk(email);
+    await pg.exec('set role service_role;');
+    return h;
+  };
   await pg.exec('set role service_role;');
 
   // The real adapter, bound to PGlite through a supabase-shaped client,
@@ -153,8 +159,35 @@ async function main() {
   const lostRows = await q("select count(*)::int n from public.fc_reservations where call_sid = any($1) and state = 'settled' and settle_source = 'provider_status'", [lost]);
   check(lostRows[0].n === 3, 'no Dial callbacks at all: every reservation settled from provider status within one lease');
 
+  // 6. Server restart mid-call: a NEW instance (no local memory) takes over
+  //    the lease purely from the database and ends the call when it can no
+  //    longer be paid for.
+  const instance1 = createContainment({ db, now, recordEvent: async () => {} });
+  const r6 = await instance1.authorizeCall({ household: C, callSid: 'CA-e2e-restart', from: '+447700900001', isKnown: false, wantsMonitoring: false, signatureValid: true, period });
+  tw.start('CA-e2e-restart');
+  check(r6.allowed, 'call admitted by instance 1 (which then "crashes" — its memory is gone)');
+  const instance2 = createContainment({ db, now, recordEvent: async () => {} });
+  const sweeper2 = createLeaseSweeper({ containment: instance2, db, callControl: tw, now });
+  for (let s = 0; s < 300; s += 15) { now.advance(15); await sweeper2.sweepOnce(); }
+  check((await R.reservation('CA-e2e-restart')).extensions >= 1, 'after the restart the new instance renews the lease from the database alone');
+  await R.adjust(C.id, -1.6, 'e2e-drain-C', { now: now().toISOString() });
+  for (let s = 0; s < 420 && !tw.calls.get('CA-e2e-restart').terminatedByHcg; s += 15) { now.advance(15); await sweeper2.sweepOnce(); }
+  check(tw.calls.get('CA-e2e-restart').terminatedByHcg === true, '…and ends it via the provider when renewal is refused');
+
+  // 7. Provider status API failing: renew conservatively (assume live) and
+  //    still terminate when unaffordable — never "unknown ⇒ free".
+  const flaky = { ...tw, fetchCall: async () => { throw new Error('Twilio 503'); } };
+  const sweeper3 = createLeaseSweeper({ containment, db, callControl: flaky, now });
+  const A2 = await mk2('a2@example.com');
+  const r7 = await voice(A2, 'CA-e2e-flaky', { wantsMonitoring: false });
+  check(r7.allowed, 'call admitted while the provider status API is failing');
+  for (let s = 0; s < 300; s += 15) { now.advance(15); await sweeper3.sweepOnce(); }
+  check((await R.reservation('CA-e2e-flaky')).extensions >= 1, 'provider status unreadable → lease renewed (treated as live and paid for, not as ended)');
+
   const inv = await R.invariants();
   check(inv.ok === true, 'ledger invariants hold after the whole timeline');
+  tw.hangUpByCaller('CA-e2e-flaky');
+  await containment.settleCall({ callSid: 'CA-e2e-flaky', source: 'dial_action' });
   const gl = await readModel.getAdminGlobalView();
   check(gl.available && gl.activeCount === 0 && num(gl.activeReservedGbp) === 0, 'admin global view: nothing left live or reserved');
 

@@ -50,5 +50,11 @@ check(/markMonitoringStarted\(params\.callSid\)/.test(server), 'stream attach re
 check(/containmentSweeper\.start\(\)/.test(server), 'lease sweeper started in every instance');
 check(/createTwilioCallControl\(\{\s*client: twilioRestClient/.test(server), 'sweeper ends calls through the provider REST API (parent call)');
 
+const inventory = JSON.parse(readFileSync(path.join(__dirname, '..', 'docs', 'finance', 'cost-surfaces.json'), 'utf8'));
+const statuses = Object.keys(inventory.statusKey);
+check(inventory.surfaces.length >= 15 && inventory.surfaces.every((x) => statuses.includes(x.status) && x.id && x.cost && x.trigger),
+  `cost-surface inventory: ${inventory.surfaces.length} surfaces, every one has a valid status (${statuses.join('/')})`);
+check(inventory.surfaces.filter((x) => x.status !== 'ENFORCED').every((x) => x.residual), 'every surface that is not ENFORCED names its residual gap');
+
 if (failures) { console.error(`\n${failures} check(s) FAILED`); process.exit(1); }
 console.log('\nAll financial-containment wiring checks passed.');
