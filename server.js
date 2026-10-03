@@ -72,6 +72,12 @@ const { createUsageMeter } = require("./services/usage/usageMeter");
 const { createSmsBudget } = require("./services/usage/smsBudget");
 const { createSafetyEventRecorder } = require("./services/usage/safetyEvents");
 const { getHouseholdAllowance } = require("./services/usage/householdAllowance");
+const { getCustomerAllowance } = require("./services/allowance/customerAllowance");
+const { allowanceReadDeps } = require("./services/allowance/allowanceDeps");
+const customerAllowanceDb = require("./database/customerAllowance");
+const { createNoticeEnqueuer, processAllowanceNotices, enabledChannels: enabledNoticeChannels } = require("./services/allowance/allowanceNotices");
+const { allowanceNoticeWorkerDeps } = require("./services/allowance/allowanceDeps");
+const allowanceRoutes = require("./routes/allowance");
 const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
@@ -188,6 +194,9 @@ app.use(billingRoutes);
 app.use(adminRoutes);
 app.use(adminBusinessRoutes);
 app.use(mobileApiRoutes);
+// Customer allowance: mobile read endpoint, web top-up checkout (off unless
+// ALLOWANCE_TOPUPS_ENABLED=true), audited admin adjustment.
+app.use(allowanceRoutes);
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
@@ -696,6 +705,10 @@ const usageMeter = createUsageMeter({
   attachMonitoringStream: financialSafetyDb.attachMonitoringStream,
   recordMonitoringProgress: financialSafetyDb.recordMonitoringProgress,
   claimUsageNotification: financialSafetyDb.claimUsageNotification,
+  // Allowance warnings outside the app (062 outbox). Enqueues nothing
+  // unless ALLOWANCE_NOTICE_CHANNELS enables a channel; in-app warnings
+  // come from the read model's state, not from delivery.
+  deliverNotification: createNoticeEnqueuer({ enqueue: customerAllowanceDb.enqueueNoticeDeliveries }),
   recordIntervention: recordFinancialSafetyIntervention,
 });
 const smsBudget = createSmsBudget({
@@ -1254,6 +1267,17 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     subscription: req.entitlement && req.entitlement.source === "stripe" ? subscription : null,
     deps: financialSafetyDb,
   });
+  // Canonical customer allowance read model (services/allowance/
+  // customerAllowance.js) over the same Fortress read — drives the web
+  // "Monthly call checking" meter. Web only ever lists Stripe top-ups.
+  const customerAllowance = await getCustomerAllowance({
+    household: req.household,
+    entitlement: req.entitlement,
+    subscription: req.entitlement && req.entitlement.source === "stripe" ? subscription : null,
+    platform: "web",
+    monitoring: monitoringAllowance,
+    deps: allowanceReadDeps,
+  });
 
   // Membership status is always derived here, server-side, from the real
   // subscriptions/entitlements rows the Stripe webhook itself wrote — never
@@ -1336,6 +1360,7 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     // null = logged before monitoring_status existed (always monitored then).
     callsScreened: callsToday.filter(call => call.status === "Unknown" && (call.monitoring_status == null || call.monitoring_status === "monitored")).length,
     monitoringAllowance,
+    customerAllowance,
     suspectedScamsBlocked: callsToday.filter(call => call.result === "SCAM").length,
     trustedCallsRecognised: callsToday.filter(call => call.status === "Known").length,
     recentCalls: recentCalls.map(toClientCall),
@@ -2561,6 +2586,17 @@ setTimeout(() => {
   setInterval(runTwilioNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
   setInterval(runQuarantinedNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
 }, TWILIO_RELEASE_FIRST_RUN_DELAY_MS);
+
+// Allowance warning delivery (062 outbox; services/allowance/
+// allowanceNotices.js). Only runs when ALLOWANCE_NOTICE_CHANNELS enables
+// a channel — unset (the default) means in-app only and no timer at all.
+// Multiple instances are safe: rows are leased (FOR UPDATE SKIP LOCKED).
+if (enabledNoticeChannels().length) {
+  const runAllowanceNotices = () => processAllowanceNotices({ deps: allowanceNoticeWorkerDeps })
+    .then((results) => { if (results.length) console.log("ALLOWANCE NOTICES", results.map(r => `${r.kind}/${r.channel}:${r.status}`).join(", ")); })
+    .catch((err) => console.error("ALLOWANCE NOTICE RUN FAILED:", err.message));
+  setInterval(runAllowanceNotices, 60 * 1000);
+}
 
 // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint
 // Twilio's <Start><Stream> (attachLiveMonitoring, above) connects to.

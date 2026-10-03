@@ -29,6 +29,7 @@ import { Banner } from "../../components/Banner";
 import { BrandMark } from "../../components/BrandMark";
 import { OutcomeRow, type OutcomeTone } from "../../components/OutcomeRow";
 import { EmptyState } from "../../components/EmptyState";
+import { AllowanceMeter } from "../../components/AllowanceMeter";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchDashboard, fetchActivationDevice, NotEntitledError } from "../../lib/api";
 import { supabase } from "../../lib/supabase";
@@ -523,10 +524,31 @@ export default function Home() {
                 dashboard"). */}
             <Hero />
 
-            <Text style={styles.giantTitle} accessibilityRole="header">You're protected</Text>
-            <Text style={styles.reassurance}>
-              Home Call Guard is monitoring unknown callers and helping protect you from scams.
-            </Text>
+            {/* Customer allowance (2026-10-03): the server's
+                monitoringActive decides whether unknown callers are being
+                checked right now. When it is explicitly false (this
+                month's checking used up, or a safety pause), never claim
+                monitoring — calls still connect. A missing field (older
+                backend) keeps the previous wording. */}
+            {data!.customerAllowance?.monitoringActive === false && data!.customerAllowance.status !== "inactive" ? (
+              <>
+                <Text style={styles.giantTitle} accessibilityRole="header">
+                  {data!.customerAllowance.callsContinue === false ? "This month's allowance is used up" : "Your calls are connecting"}
+                </Text>
+                <Text style={styles.reassurance}>
+                  {data!.customerAllowance.callsContinue === false
+                    ? "Calls forwarded to Home Call Guard may not get through until your allowance resets."
+                    : "People you trust ring straight through. Calls from other numbers still reach you, but they aren't being checked for scams right now."}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.giantTitle} accessibilityRole="header">You're protected</Text>
+                <Text style={styles.reassurance}>
+                  Home Call Guard is monitoring unknown callers and helping protect you from scams.
+                </Text>
+              </>
+            )}
             {/* Protection-status wording precision (2026-09-24): a quiet,
                 honest "when was this last genuinely confirmed" fact —
                 never a claim that carrier forwarding is currently,
@@ -563,6 +585,8 @@ export default function Home() {
                 </Text>
               </View>
             </View>
+
+            <AllowanceMeter allowance={data!.customerAllowance} />
 
             {hasNoContacts && (
               <View style={styles.nudge}>

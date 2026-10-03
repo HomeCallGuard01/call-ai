@@ -123,11 +123,63 @@ export interface DashboardResponse {
     billingSource: string;
   };
   contacts: DashboardContact[];
+  // Canonical customer allowance read model (backend
+  // services/allowance/customerAllowance.js, 2026-10-03). Optional: older
+  // backends don't send it — treat missing as "show nothing", never as a
+  // number. Every figure is server-computed; the app only displays it.
+  customerAllowance?: CustomerAllowance;
   activity: DashboardActivityItem[];
   stats: {
     callsScreened: number;
     suspectedScamsBlocked: number;
     trustedCallsRecognised: number;
+  };
+}
+
+export type CustomerAllowanceStatus = "ok" | "low" | "very_low" | "used_up" | "calls_limited" | "paused" | "unavailable" | "inactive";
+
+export interface CustomerAllowance {
+  version: 1;
+  status: CustomerAllowanceStatus;
+  tone: "good" | "caution" | "critical" | "neutral";
+  // true only when unknown calls are being checked right now; null when
+  // unknown. The app must never say "monitoring unknown callers" unless
+  // this is exactly true.
+  monitoringActive: boolean | null;
+  // false only on the Fortress (£ budget) source once its budget and
+  // delivery reserve are both used — forwarded calls may then be refused.
+  callsContinue: boolean;
+  source: "monitoring_minutes" | "fortress";
+  enforced: boolean;
+  membership: {
+    state: "active" | "trial" | "complimentary" | "cancelling" | "payment_issue" | "expired" | "none";
+    channel: string | null;
+    planCode: string;
+    planName: string;
+    periodEndsAt: string | null;
+    renews: boolean;
+    testPurchase: boolean;
+  };
+  allowance: {
+    includedMinutes: number;
+    topUpMinutes: number;
+    adjustmentMinutes: number;
+    totalMinutes: number;
+    usedMinutes: number | null;
+    remainingMinutes: number | null;
+    usedPercent: number | null;
+    remainingPercent: number | null;
+    reservedPercent: number | null;
+    inProgressMonitoredCalls: number | null;
+    periodStartsAt: string | null;
+    resetsAt: string | null;
+  };
+  warning: { level: 75 | 90 | 100 | null; points: number[] };
+  topUp: {
+    available: boolean;
+    reason: string | null;
+    products: { code: string; minutes: number; priceGbpInclVat: number; channel: string; providerProductId: string }[];
+    expiresAtReset: true;
   };
 }
 

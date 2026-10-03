@@ -335,7 +335,9 @@ export async function createPortalSession(accessToken?: string): Promise<PortalS
 // (the Home screen, the setup flow) branch on that specifically, per
 // APP_VISUAL_SPECIFICATION.md's C1/B1 states.
 export async function fetchDashboard(accessToken?: string): Promise<DashboardResponse> {
-  const response = await authorizedFetch("/api/v1/me/dashboard", {}, accessToken);
+  // platform only selects which store's allowance top-ups the server may
+  // list (an iPhone is never offered a Google product); it changes no figure.
+  const response = await authorizedFetch(`/api/v1/me/dashboard?platform=${Platform.OS === "ios" ? "ios" : "android"}`, {}, accessToken);
   return parseJsonOrThrow<DashboardResponse>(response, true);
 }
 

@@ -9,7 +9,11 @@ const {
   claimWebhookEvent,
   processWebhookEvent,
   getActiveEntitlement,
+  getSubscriptionByHouseholdId,
 } = require("../database/billing");
+const customerAllowanceDb = require("../database/customerAllowance");
+const { interpretStripeTopUpEvent, applyTopUpEvent } = require("../services/allowance/topUpCredit");
+const { syncPlanCode } = require("../services/allowance/planSync");
 const { sendCriticalAlert } = require("../services/alerting");
 const {
   updateTwilioNumberForEntitlementChange,
@@ -569,6 +573,48 @@ router.post(
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
+    // Allowance top-ups (customer allowance workstream, 2026-10-03): a
+    // one-off Checkout payment HCG created with hcg_purpose=allowance_topup,
+    // or a refund of one. Credited only once paid (delayed methods on
+    // async_payment_succeeded), only for livemode in production, and at
+    // most once per PaymentIntent (credit_allowance, migration 062) — so a
+    // replayed or duplicated event credits nothing. Returns before the
+    // subscription handling below, which is unchanged.
+    const topUpIntent = interpretStripeTopUpEvent(event);
+    if (topUpIntent) {
+      const alert = (message, context) => sendCriticalAlert(`allowance_topup:${message}`, message, context).catch(() => {});
+      if (process.env.ALLOWANCE_TOPUPS_ENABLED !== "true") {
+        if (topUpIntent.action === "credit") {
+          // Paid while switched off (checkout is gated by the same flag, so
+          // this should not happen). Never silently drop a payment: alert
+          // and 500 so Stripe keeps retrying until it is switched on or
+          // refunded.
+          alert("Allowance top-up paid while top-ups are disabled", { stripeEventId: event.id });
+          return res.sendStatus(500);
+        }
+        // Refunds (every charge.refunded, including subscription refunds)
+        // and pending/failed payments: acknowledged exactly as before this
+        // change — no database access while the feature is off.
+        return res.sendStatus(200);
+      }
+      try {
+        const result = await applyTopUpEvent(topUpIntent, {
+          deps: {
+            creditAllowance: customerAllowanceDb.creditAllowance,
+            findTopUpCredit: customerAllowanceDb.findTopUpCredit,
+            getActiveEntitlement,
+            getSubscriptionByHouseholdId,
+            alert,
+          },
+        });
+        console.log("STRIPE TOP-UP EVENT", { id: event.id, type: event.type, outcome: result.outcome, reason: result.reason || null });
+        return res.sendStatus(200);
+      } catch (err) {
+        console.error("STRIPE TOP-UP EVENT ERROR:", err.message);
+        return res.sendStatus(500);
+      }
+    }
+
     const HANDLED_TYPES = new Set([
       "customer.subscription.created",
       "customer.subscription.updated",
@@ -642,6 +688,19 @@ router.post(
       // already mitigates, but never at zero probability for a fresh
       // process), a second insert attempt safely no-ops rather than
       // double-counting a single real conversion.
+      // Higher tier (customer allowance, 2026-10-03): only a fresh,
+      // non-stale event for a live subscription may set the plan — a
+      // stale delivery can never change the allowance. No-op until
+      // PLAN_PRODUCT_MAP is configured (services/allowance/planSync.js).
+      if (result === "processed" && householdId && QUALIFYING_SUBSCRIPTION_STATUSES.has(subscription.status)) {
+        await syncPlanCode({
+          householdId,
+          source: "stripe",
+          providerProductId: subscription.items?.data?.[0]?.price?.id || null,
+          setPlanCode: customerAllowanceDb.setActiveEntitlementPlanCode,
+        });
+      }
+
       if (event.type === "customer.subscription.created" && result === "processed" && PAID_CONVERSION_STATUSES.has(subscription.status)) {
         recordAcquisitionEvent("paid_conversion", { householdId, path: "/billing/webhook", externalEventId: event.id }).catch(() => {});
       }

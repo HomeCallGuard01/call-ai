@@ -725,6 +725,69 @@
     color: #64748b;
   }
 
+  /* Monthly call checking meter (customer allowance, 2026-10-03). One
+     number, one bar, one reset date — every figure comes from the
+     server's customerAllowance; nothing is calculated here. */
+  .allowance-headline {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 4px 0 10px;
+  }
+
+  .allowance-percent {
+    font-size: 34px;
+    font-weight: 700;
+    color: #22c55e;
+  }
+
+  .allowance-percent-label {
+    color: #94a3b8;
+    font-size: 15px;
+  }
+
+  .allowance-meter {
+    height: 12px;
+    border-radius: 6px;
+    background: #1e293b;
+    overflow: hidden;
+  }
+
+  .allowance-meter-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 6px;
+    background: #22c55e;
+    transition: width 0.4s ease;
+  }
+
+  .allowance-card[data-tone="caution"] .allowance-percent { color: #f59e0b; }
+  .allowance-card[data-tone="caution"] .allowance-meter-fill { background: #f59e0b; }
+  .allowance-card[data-tone="critical"] .allowance-percent { color: #f97316; }
+  .allowance-card[data-tone="critical"] .allowance-meter-fill { background: #f97316; }
+  .allowance-card[data-tone="neutral"] .allowance-percent { color: #94a3b8; }
+  .allowance-card[data-tone="neutral"] .allowance-meter-fill { background: #475569; }
+
+  .allowance-reset {
+    margin: 10px 0 0;
+    color: #94a3b8;
+    font-size: 14px;
+  }
+
+  .allowance-message {
+    margin: 12px 0 0;
+    color: #cbd5e1;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .allowance-topup {
+    margin-top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
   h2 {
     margin-top: 0;
     font-size: 20px;
@@ -1600,6 +1663,23 @@
       </div>
     </section>
 
+    <section class="card allowance-card" id="allowanceCard" data-tone="good" hidden aria-labelledby="allowanceHeading">
+      <h2 class="section-heading" id="allowanceHeading">
+        Call checking this month
+        <span class="help-hint" tabindex="0" aria-label="Your membership includes a monthly amount of time for Home Call Guard to listen to calls from unknown numbers for scam warning signs. Calls from people you trust don't use it." title="Your membership includes a monthly amount of time for Home Call Guard to listen to calls from unknown numbers for scam warning signs. Calls from people you trust don't use it.">?</span>
+      </h2>
+      <div class="allowance-headline">
+        <span class="allowance-percent" id="allowancePercent">—</span>
+        <span class="allowance-percent-label" id="allowancePercentLabel">left</span>
+      </div>
+      <div class="allowance-meter" role="meter" id="allowanceMeter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Call checking left this month">
+        <div class="allowance-meter-fill" id="allowanceMeterFill"></div>
+      </div>
+      <p class="allowance-reset" id="allowanceReset"></p>
+      <p class="allowance-message" id="allowanceMessage" hidden></p>
+      <div class="allowance-topup" id="allowanceTopUp" hidden></div>
+    </section>
+
     <section class="card">
       <h2 class="section-heading">
         Recent activity
@@ -1958,9 +2038,130 @@
   // customer step: fullyProtected becomes true automatically the next
   // time a real approved call connects, exactly like
   // callForwardingCompleted already does for activationVerifiedAt.
+  // Monthly call checking meter (customer allowance, 2026-10-03). Pure
+  // display of the server's customerAllowance read model
+  // (services/allowance/customerAllowance.js): the percentage, status,
+  // reset date and any top-up offer are all decided server-side. Hidden
+  // entirely when the server sends nothing (older backend) or the
+  // membership isn't active.
+  //
+  // DRAFT customer wording — needs Andrew's approval before release.
+  function formatAllowanceDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Europe/London" });
+  }
+
+  function allowanceMessage(a) {
+    const resets = formatAllowanceDate(a.allowance && a.allowance.resetsAt);
+    const until = resets ? " until it resets on " + resets : " until it resets";
+    switch (a.status) {
+      case "low":
+        return "You've used most of this month's call checking. Calls from people you trust don't use it.";
+      case "very_low":
+        return "You're nearly out of this month's call checking. Calls from people you trust don't use it.";
+      case "used_up":
+        return a.monitoringActive === false
+          ? "You've used this month's call checking. Your phone still works normally and every call still reaches you, but calls from unknown numbers won't be checked for scams" + until + "."
+          : "You've used this month's included call checking. We're still checking calls from unknown numbers for now.";
+      case "calls_limited":
+        return "You've used this month's protection allowance. Until it resets" + (resets ? " on " + resets : "") + ", calls forwarded to Home Call Guard may not get through. Please contact support@homecallguard.co.uk if you need help.";
+      case "paused":
+        return "Call checking is paused for a short while. Your phone still works normally and every call still reaches you.";
+      case "unavailable":
+        return "We can't show your usage right now. Please check back shortly.";
+      default:
+        return null;
+    }
+  }
+
+  function renderAllowance(a) {
+    const card = document.getElementById("allowanceCard");
+    if (!card) return;
+    if (!a || a.version !== 1 || a.status === "inactive" || !a.allowance) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    card.dataset.tone = a.tone || "neutral";
+
+    const remaining = a.allowance.remainingPercent;
+    const known = typeof remaining === "number";
+    const percentEl = document.getElementById("allowancePercent");
+    const labelEl = document.getElementById("allowancePercentLabel");
+    const meterEl = document.getElementById("allowanceMeter");
+    const fillEl = document.getElementById("allowanceMeterFill");
+    if (percentEl) percentEl.textContent = known ? remaining + "%" : "—";
+    if (labelEl) labelEl.textContent = known ? "left this month" : "";
+    if (fillEl) fillEl.style.width = (known ? Math.max(0, Math.min(100, remaining)) : 0) + "%";
+    if (meterEl) meterEl.setAttribute("aria-valuenow", String(known ? remaining : 0));
+
+    const resetEl = document.getElementById("allowanceReset");
+    const resets = formatAllowanceDate(a.allowance.resetsAt);
+    if (resetEl) resetEl.textContent = resets ? "Resets on " + resets : "";
+
+    const messageEl = document.getElementById("allowanceMessage");
+    const message = allowanceMessage(a);
+    if (messageEl) {
+      messageEl.hidden = !message;
+      messageEl.textContent = message || "";
+    }
+
+    // Top-ups: shown only when the server offers one for the web. The
+    // button submits only the product code; the server re-checks the
+    // offer and Stripe Checkout takes the payment.
+    const topUpEl = document.getElementById("allowanceTopUp");
+    if (topUpEl) {
+      topUpEl.innerHTML = "";
+      const offer = a.topUp;
+      const show = offer && offer.available && (a.status === "low" || a.status === "very_low" || a.status === "used_up" || a.status === "calls_limited");
+      topUpEl.hidden = !show;
+      if (show) {
+        offer.products.forEach(function (p) {
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = "/billing/topup-checkout";
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "product";
+          input.value = p.code;
+          const button = document.createElement("button");
+          button.type = "submit";
+          button.className = "secondary-action-button";
+          button.textContent = "Add " + p.minutes + " minutes · £" + Number(p.priceGbpInclVat).toFixed(2);
+          form.appendChild(input);
+          form.appendChild(button);
+          topUpEl.appendChild(form);
+        });
+        const note = document.createElement("p");
+        note.className = "account-support-note";
+        note.textContent = "Extra minutes last until your allowance resets" + (resets ? " on " + resets : "") + ".";
+        topUpEl.appendChild(note);
+      }
+    }
+  }
+
   function computeProtectionMessage(data, state) {
     const allStepsComplete = computeOnboardingStep(data) === "active";
     const fullyProtected = !!(data && data.protection && data.protection.fullyProtected);
+
+    // Customer allowance (2026-10-03): when the server says unknown calls
+    // are NOT being checked right now (allowance used and enforced, or a
+    // safety pause), never claim "monitored while you talk".
+    const allowanceState = data && data.customerAllowance;
+    if (state === "active" && allStepsComplete && fullyProtected && allowanceState && allowanceState.monitoringActive === false && allowanceState.status !== "inactive") {
+      const resets = formatAllowanceDate(allowanceState.allowance && allowanceState.allowance.resetsAt);
+      return {
+        variant: "confirming-delivery",
+        title: allowanceState.status === "calls_limited" ? "This month's allowance is used up" : "Your calls are connecting normally",
+        sub: allowanceState.status === "calls_limited"
+          ? "This month's protection allowance is used up" + (resets ? " until " + resets : "") + ", so calls forwarded to Home Call Guard may not get through. Please contact support@homecallguard.co.uk if you need help."
+          : allowanceState.status === "paused"
+          ? "People you trust ring straight through. Calls from other numbers still connect; scam checking is paused for a short while."
+          : "People you trust ring straight through. Calls from other numbers still connect, but this month's scam checking is used up" + (resets ? " — it resets on " + resets : "") + ".",
+      };
+    }
 
     if (state === "active" && allStepsComplete && fullyProtected) {
       return {
@@ -4100,6 +4301,7 @@
       renderTrustedContacts(data.contacts);
       renderAccountDetails(data.account);
       renderMembership(data);
+      renderAllowance(data.customerAllowance);
 
       const adminNavLink = document.getElementById("adminNavLink");
       if (adminNavLink) {

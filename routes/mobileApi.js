@@ -39,6 +39,18 @@ const {
 const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPolicy");
 const { getHouseholdAllowance } = require("../services/usage/householdAllowance");
 const financialSafetyDb = require("../database/financialSafety");
+const customerAllowanceDb = require("../database/customerAllowance");
+const { getCustomerAllowance } = require("../services/allowance/customerAllowance");
+const { allowanceReadDeps } = require("../services/allowance/allowanceDeps");
+const { interpretRevenueCatTopUpEvent, applyTopUpEvent } = require("../services/allowance/topUpCredit");
+const { syncPlanCode } = require("../services/allowance/planSync");
+
+// RevenueCat environment, failing closed: anything but PRODUCTION is
+// treated as sandbox (same rule as fix/revenuecat-sandbox-environment-guard).
+function resolveEventEnvironment(event) {
+  return String((event && event.environment) || "").toUpperCase() === "PRODUCTION" ? "production" : "sandbox";
+}
+const { sendCriticalAlert } = require("../services/alerting");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
 const { buildCustomerProtectionSteps } = require("../services/customerProtectionSteps");
@@ -550,6 +562,18 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       subscription: req.entitlement && req.entitlement.source === "stripe" ? subscription : null,
       deps: financialSafetyDb,
     });
+    // Canonical customer allowance read model (customer allowance
+    // workstream, 2026-10-03) built on the same Fortress read above.
+    // platform only selects which store's top-ups may be listed; an
+    // unrecognised value lists none.
+    const customerAllowance = await getCustomerAllowance({
+      household: req.household,
+      entitlement: req.entitlement,
+      subscription: req.entitlement && req.entitlement.source === "stripe" ? subscription : null,
+      platform: ["ios", "android"].includes(req.query.platform) ? req.query.platform : "unknown",
+      monitoring: monitoringAllowance,
+      deps: allowanceReadDeps,
+    });
 
     // Same membership-status derivation as /dashboard-data (server.js) —
     // always from the real subscriptions/entitlements rows the webhook
@@ -650,6 +674,9 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       // monitored right now. The app must never show "monitoring unknown
       // callers" unless monitoringAllowance.monitoringActive is true.
       monitoringAllowance,
+      // Simple customer usage meter (0–100%), reset date, status and
+      // top-up offer — additive; Build 19/20 ignore it.
+      customerAllowance,
       activity: recentCalls.map(toClientCall),
       stats: {
         // Only unknown calls HCG actually monitored count as screened (056).
@@ -1265,6 +1292,29 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
   try {
     const household = await getHouseholdByAuthUserId(appUserId);
 
+    // Allowance top-ups (customer allowance workstream, 2026-10-03): a
+    // consumable store purchase (NON_RENEWING_PURCHASE) of a configured
+    // top-up product, or its refund (CANCELLATION of that product). Only
+    // PRODUCTION-environment events credit in production; at most once per
+    // store transaction (credit_allowance, migration 062), so RevenueCat
+    // retries and replays credit nothing twice. Anything that is not a
+    // configured top-up product falls through to the handling below,
+    // unchanged.
+    const topUpIntent = process.env.ALLOWANCE_TOPUPS_ENABLED === "true" ? interpretRevenueCatTopUpEvent(event) : null;
+    if (topUpIntent) {
+      const result = await applyTopUpEvent(topUpIntent, {
+        householdId: household ? household.id : null,
+        deps: {
+          creditAllowance: customerAllowanceDb.creditAllowance,
+          findTopUpCredit: customerAllowanceDb.findTopUpCredit,
+          getActiveEntitlement,
+          getSubscriptionByHouseholdId,
+          alert: (message, context) => sendCriticalAlert(`allowance_topup:${message}`, message, context).catch(() => {}),
+        },
+      });
+      return res.json({ ok: true, topUp: result.outcome, reason: result.reason || null });
+    }
+
     if (!household) {
       // Acknowledge (200) rather than error — an unmappable app_user_id
       // (e.g. a RevenueCat anonymous ID from before login, or a sandbox
@@ -1310,6 +1360,15 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
         originalTransactionId,
         expiresAtMs: event.expiration_at_ms,
       });
+      // Higher tier (customer allowance, 2026-10-03): plan follows the
+      // product the store says is CURRENTLY billed (event.product_id). A
+      // PRODUCT_CHANGE's new_product_id is deliberately ignored — on Apple a
+      // downgrade only applies at the next renewal, which then arrives with
+      // the new product_id. No-op until PLAN_PRODUCT_MAP is configured;
+      // sandbox events never change a plan.
+      if (resolveEventEnvironment(event) === "production") {
+        await syncPlanCode({ householdId: household.id, source: "apple_revenuecat", providerProductId: event.product_id, setPlanCode: customerAllowanceDb.setActiveEntitlementPlanCode });
+      }
       await updateTwilioNumberForEntitlementChange(household, true).catch(err =>
         console.error("REVENUECAT WEBHOOK: Twilio provisioning update failed:", err.message)
       );
