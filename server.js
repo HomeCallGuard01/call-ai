@@ -40,6 +40,7 @@ const { isIosComingSoon, isLandlineComingSoon } = require("./services/featureFla
 const { insertWaitingListSignup } = require("./database/waitingList");
 const { releaseExpiredTwilioNumber, releaseQuarantinedTwilioNumber } = require("./services/twilioProvisioning");
 const { runExpiredTwilioNumberRelease, runConfirmedQuarantineRelease } = require("./services/twilioNumberReleaseRunner");
+const { decideLifecycleJobs } = require("./services/telephony/provisioningGuard");
 const { findConfirmedUnreleasedQuarantine } = require("./database/twilioQuarantine");
 // P0 voice-surface remediation (2026-10-01): fail-closed Twilio signature
 // enforcement on every Twilio webhook, and /media-stream bound to signed
@@ -2480,12 +2481,21 @@ async function runQuarantinedNumberReleaseCheck() {
   }
 }
 
-setTimeout(() => {
-  runTwilioNumberReleaseCheck();
-  runQuarantinedNumberReleaseCheck();
-  setInterval(runTwilioNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
-  setInterval(runQuarantinedNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
-}, TWILIO_RELEASE_FIRST_RUN_DELAY_MS);
+// Environment guard: a mixed or unidentifiable environment (e.g. a laptop
+// on localhost with the default .env → the PRODUCTION database) never runs
+// the number-lifecycle jobs. services/telephony/provisioningGuard.js.
+const numberLifecycleJobsDecision = decideLifecycleJobs(process.env);
+console.log(`NUMBER LIFECYCLE JOBS: ${numberLifecycleJobsDecision.run ? "enabled" : "NOT STARTED"} (${numberLifecycleJobsDecision.environment}: ${numberLifecycleJobsDecision.reason})`);
+if (numberLifecycleJobsDecision.run) {
+  setTimeout(() => {
+    runTwilioNumberReleaseCheck();
+    runQuarantinedNumberReleaseCheck();
+    setInterval(runTwilioNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
+    setInterval(runQuarantinedNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
+  }, TWILIO_RELEASE_FIRST_RUN_DELAY_MS);
+} else if (process.env.NODE_ENV === "production") {
+  sendCriticalAlert("number_lifecycle_jobs_not_started", `Number-lifecycle jobs not started in a production process: ${numberLifecycleJobsDecision.reason}`, {}).catch(() => {});
+}
 
 // Restoring progressive monitoring (2026-08-11): the WebSocket endpoint
 // Twilio's <Start><Stream> (attachLiveMonitoring, above) connects to.
