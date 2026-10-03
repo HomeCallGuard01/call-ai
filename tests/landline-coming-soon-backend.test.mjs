@@ -24,6 +24,7 @@
 // Run with: node tests/landline-coming-soon-backend.test.mjs
 
 import { createRequire } from 'node:module';
+import { npmTestRuns } from './helpers/npmTestRuns.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -373,8 +374,8 @@ check(
 );
 check(existsSync(path.join(root, 'docs', 'launch', 'LANDLINE_COMING_SOON_LAUNCH_FLAG.md')), 'the flag is documented: docs/launch/LANDLINE_COMING_SOON_LAUNCH_FLAG.md');
 check(
-  JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).scripts.test.includes('node tests/landline-coming-soon-backend.test.mjs'),
-  'this test is part of the root `npm test` chain'
+  npmTestRuns('tests/landline-coming-soon-backend.test.mjs'),
+  'this test is run by the root `npm test`'
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

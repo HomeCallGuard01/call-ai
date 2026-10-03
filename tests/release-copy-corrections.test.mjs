@@ -18,6 +18,7 @@
 //
 // Run with: node tests/release-copy-corrections.test.mjs
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { npmTestRuns } from './helpers/npmTestRuns.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -121,7 +122,7 @@ check(/£4\.99 a month including VAT/.test(fullDesc), 'Play description: price s
 check(/App Store \(iOS\) section is NOT updated/.test(listing.split('## App Store Connect (iOS)')[0]), 'the draft warns that the App Store (iOS) section is outdated and must not be used as-is');
 
 // ---- wiring ----
-check(JSON.parse(read('package.json')).scripts.test.includes('node tests/release-copy-corrections.test.mjs'), 'this test is part of the npm test chain');
+check(npmTestRuns('tests/release-copy-corrections.test.mjs'), 'this test is run by npm test');
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

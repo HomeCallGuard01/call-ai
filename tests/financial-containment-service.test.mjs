@@ -62,8 +62,9 @@ async function main() {
       `£5.99 inc VAT → net £${d.netRevenueGbp}, 60% delivery ceiling £${d.deliveryCostCeilingGbp}`);
     check(d.variableEnvelopeGbp < d.deliveryCostCeilingGbp && Math.abs(d.variableEnvelopeGbp - 0.858) < 0.01,
       `the safe variable envelope (£${d.variableEnvelopeGbp}) is far below the £2.995 ceiling once rental, fees, infrastructure, reserve and overrun are taken out`);
-    const seedsSql = readFileSync(path.join(__dirname, '..', 'supabase', 'provisional', 'financial_containment_authorization_ledger.sql'), 'utf8');
-    const m = seedsSql.match(/\('standard',\s*([\d.]+),\s*([\d.]+),\s*'all',\s*([\d.]+),/);
+    const seedsSql = readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '067_financial_containment_authorization_ledger.sql'), 'utf8');
+    // Integration 2026-10-03: the paid profiles' reserve scope is 'trusted_only'; any scope is accepted here (the check is the £).
+    const m = seedsSql.match(/\('standard',\s*([\d.]+),\s*([\d.]+),\s*'(?:all|trusted_only|none)',\s*([\d.]+),/);
     const v = validateProfileAgainstEconomics({ periodBudgetGbp: m[1], deliveryReserveGbp: m[2], essentialReserveGbp: m[3] });
     check(v.ok, `seeded standard profile (£${v.totalAuthorisationGbp}) fits the derived envelope (£${v.variableEnvelopeGbp})`);
     check(!validateProfileAgainstEconomics({ periodBudgetGbp: 2.995, deliveryReserveGbp: 0, essentialReserveGbp: 0 }).ok,

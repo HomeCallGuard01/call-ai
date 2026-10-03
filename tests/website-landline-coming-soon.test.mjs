@@ -23,6 +23,7 @@
 // Run with: node tests/website-landline-coming-soon.test.mjs
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { npmTestRuns } from './helpers/npmTestRuns.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -176,11 +177,10 @@ const migrations = readdirSync(path.join(root, 'supabase', 'migrations')).filter
 check(!migrations.some((f) => /landline_coming_soon/i.test(readFileSync(path.join(root, 'supabase', 'migrations', f), 'utf8'))) && migrations.filter((f) => /waiting/i.test(f)).length === 1, 'no waiting-list schema/migration change for landline (reason is open text; migration 042 is the only waiting-list migration)');
 check(!existsSync(path.join(root, 'docs', 'launch', 'LANDLINE_COMING_SOON_FLAG.md')) && existsSync(path.join(root, 'docs', 'launch', 'LANDLINE_COMING_SOON_LAUNCH_FLAG.md')), 'exactly one flag doc: LANDLINE_COMING_SOON_LAUNCH_FLAG.md (the superseded duplicate is not present)');
 
-const chain = JSON.parse(read('package.json')).scripts.test.split('&&').map((s) => s.trim());
-check(new Set(chain).size === chain.length, `npm test chain has no duplicate entries (${chain.length} files)`);
-check(chain.every((c) => existsSync(path.join(root, c.replace(/^node /, '')))), 'every test named in the npm test chain exists');
+// Integration 2026-10-03: npm test runs every tests/*.test.mjs (scripts/run-all-tests.mjs).
+check(JSON.parse(read('package.json')).scripts.test === 'node scripts/run-all-tests.mjs', 'npm test runs every tests/*.test.mjs (no hand-maintained chain to drift)');
 for (const t of ['landline-coming-soon-backend', 'mobile-landline-coming-soon', 'website-landline-coming-soon', 'go-landing-page']) {
-  check(chain.includes(`node tests/${t}.test.mjs`), `npm test runs tests/${t}.test.mjs`);
+  check(npmTestRuns(`tests/${t}.test.mjs`), `npm test runs tests/${t}.test.mjs`);
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

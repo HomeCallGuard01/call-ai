@@ -352,15 +352,6 @@ async function grantComplimentaryEntitlement(householdId, { grantedByAuthUserId,
     };
   }
 
-  if (existingActive && inEffect(existingActive)) {
-    if (sandbox) {
-      return { action: "sandbox_kept_existing", entitlementId: existingActive.id, environment };
-    }
-    if (existingActive.entitlement_type === "paid_subscription" && existingActive.source !== "apple_revenuecat") {
-      return { action: "parallel_paid_kept_existing", entitlementId: existingActive.id, existingSource: existingActive.source, environment };
-    }
-  }
-
   if (existingActive) {
     const { error: expireError } = await client
       .from("entitlements")

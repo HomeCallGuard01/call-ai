@@ -23,6 +23,7 @@
 // Run with: node tests/mobile-landline-coming-soon.test.mjs
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { npmTestRuns } from './helpers/npmTestRuns.mjs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -344,7 +345,7 @@ check(
 // ============================================================
 // 10. Wiring
 // ============================================================
-check(rootPackage.scripts.test.includes('node tests/mobile-landline-coming-soon.test.mjs'), 'this test is part of the root `npm test` chain');
+check(npmTestRuns('tests/mobile-landline-coming-soon.test.mjs'), 'this test is run by the root `npm test`');
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
