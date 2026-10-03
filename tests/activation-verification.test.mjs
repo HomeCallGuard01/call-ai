@@ -125,7 +125,7 @@ await (async () => {
 // this is checked directly against the real server.js source.
 
 {
-  const voiceAnchor = 'app.post("/voice", twilioSignatureGuard, async (req, res) => {';
+  const voiceAnchor = 'app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res) => {';
   const voiceIdx = serverSource.indexOf(voiceAnchor);
   check(voiceIdx !== -1, 'POST /voice is declared in server.js');
 
@@ -146,7 +146,7 @@ await (async () => {
     // never reaches the handler), and the stamp is still gated on the
     // guard's verified flag (false only in the emergency report mode).
     check(
-      serverSource.includes('app.post("/voice", twilioSignatureGuard, async (req, res) => {') &&
+      serverSource.includes('app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res) => {') &&
         block.includes('req.twilioVerified === true') &&
         block.indexOf('req.twilioVerified === true') < block.indexOf('stampActivationVerifiedOnRealCall('),
       '/voice is behind twilioSignatureGuard and gates the auto-stamp on the verified flag — an unsigned/invalid request can never stamp activation, closing the "unauthenticated webhook as authoritative evidence" contradiction'

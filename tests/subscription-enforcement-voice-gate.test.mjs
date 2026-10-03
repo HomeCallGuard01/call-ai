@@ -46,7 +46,9 @@ check(
 // a coincidental match elsewhere in the file (e.g. in /process, the
 // deliberately-dead pre-call-screening route) can never produce a false
 // pass.
-const voiceRouteMatch = serverSrc.match(/app\.post\("\/voice", (?:twilioSignatureGuard, )?async \(req, res\) => \{[\s\S]*?\n\}\);\n/);
+// (Telephony abuse P0, 2026-10-03: the route now also carries
+// twilioWebhookIntegrity after the signature guard.)
+const voiceRouteMatch = serverSrc.match(/app\.post\("\/voice", (?:twilioSignatureGuard, )?(?:twilioWebhookIntegrity, )?async \(req, res\) => \{[\s\S]*?\n\}\);\n/);
 check(Boolean(voiceRouteMatch), 'sanity check: the /voice route handler body is found in server.js');
 const voiceBody = voiceRouteMatch ? voiceRouteMatch[0] : '';
 
@@ -56,14 +58,16 @@ check(
 );
 
 check(
-  /if \(shouldStartPaidMonitoring\(household, activeEntitlement\)\) \{/.test(voiceBody),
+  // The telephony-abuse decision may only NARROW this gate (incident mode,
+  // financial monitoring denial, duplicate webhook) — never widen it.
+  /if \(shouldStartPaidMonitoring\(household, activeEntitlement\)(?: && abuseDecision\.monitor && req\.twilioDuplicate !== true)?\) \{/.test(voiceBody),
   '/voice gates on shouldStartPaidMonitoring(household, activeEntitlement) — not a re-implemented inline check'
 );
 
 // --- both the announcement AND attachLiveMonitoring must be inside the
 // gated branch — the announcement must never claim "monitored and
 // protected" when monitoring is not actually about to happen ---
-const gatedBranchMatch = voiceBody.match(/if \(shouldStartPaidMonitoring\(household, activeEntitlement\)\) \{([\s\S]*?)\} else if \(household\) \{/);
+const gatedBranchMatch = voiceBody.match(/if \(shouldStartPaidMonitoring\(household, activeEntitlement\)(?: && abuseDecision\.monitor && req\.twilioDuplicate !== true)?\) \{([\s\S]*?)\} else if \(household\) \{/);
 check(Boolean(gatedBranchMatch), 'sanity check: the shouldStartPaidMonitoring branch body is found');
 const gatedBranch = gatedBranchMatch ? gatedBranchMatch[1] : '';
 

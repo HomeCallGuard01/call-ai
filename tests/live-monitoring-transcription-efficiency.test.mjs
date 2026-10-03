@@ -359,7 +359,8 @@ async function run() {
     const server = readFileSync(join(__dirname, '..', 'server.js'), 'utf8');
     const voiceStart = server.indexOf('app.post("/voice"');
     const knownStart = server.indexOf('if (isKnown) {', voiceStart);
-    const knownEnd = server.indexOf('return res', knownStart);
+    // (Telephony abuse P0: the branch now returns via sendVoiceTwiml.)
+    const knownEnd = server.indexOf('return sendVoiceTwiml', knownStart);
     const knownBranch = server.slice(knownStart, knownEnd);
     check(voiceStart > 0 && knownStart > voiceStart && knownEnd > knownStart, 'located /voice\'s known-contact branch in server.js');
     check(!/attachLiveMonitoring|\.stream\(/.test(knownBranch), 'known-contact branch attaches no Media Stream — trusted calls are never transcribed');
