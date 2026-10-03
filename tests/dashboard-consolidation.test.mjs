@@ -206,7 +206,11 @@ check(/aria-current="page"\]\s*\{[^}]*background:\s*#22d3ee/.test(dashboardHtml)
 check(/Log out|Logout/.test(dashboardHtml), 'admin-business.html: a logout control is present');
 check(dashboardHtml.includes('action="/logout"'), 'admin-business.html: logout submits to the real /logout route, not a fake/local-only control');
 
-for (const tabId of ['business', 'customers', 'operations', 'systemhealth']) {
+// 2026-09-28: nine tabs consolidated into five; System Health is a
+// section of Operations (id="systemhealth" kept), Business is superseded
+// by Overview + Money.
+check(dashboardHtml.includes('id="systemhealth"'), 'admin-business.html: the single System Health section still exists (inside Operations)');
+for (const tabId of ['overview', 'customers', 'numbers', 'money', 'operations']) {
   check(dashboardHtml.includes(`id="${tabId}"`), `admin-business.html: the ${tabId} tab panel exists`);
   check(dashboardHtml.includes(`id="tabBtn-${tabId}"`), `admin-business.html: the ${tabId} tab button exists`);
 }

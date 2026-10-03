@@ -77,6 +77,7 @@ const TEST_CLASSIFICATION_LABELS = {
   admin: 'Admin',
   reviewer: 'Reviewer',
   qa_automation: 'QA',
+  other_non_customer: 'Non-customer',
 };
 
 const PAID_ENTITLEMENT_TYPES = new Set(['paid_subscription']);

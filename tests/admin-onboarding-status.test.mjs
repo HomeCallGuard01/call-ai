@@ -335,7 +335,9 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
 
   const allowedRowKeys = ['householdId', 'email', 'signedUpAt', 'classification', 'membershipStatus', 'provisioningStatus', 'state', 'reason', 'forwardingProven', 'appRegistered', 'deliveryVerified', 'fullyProtected', 'setupClock', 'lastCallAt',
     // admin control centre (2026-09-25)
-    'health', 'healthReason', 'account', 'subscriptionIssue', 'setupLabel', 'network', 'device', 'app', 'lastConfirmed', 'latestCall', 'lastDelivery', 'deletedAccount'];
+    'health', 'healthReason', 'account', 'subscriptionIssue', 'setupLabel', 'network', 'device', 'app', 'lastConfirmed', 'latestCall', 'lastDelivery', 'deletedAccount',
+    // payment history (2026-09-28) — a boolean, no payment detail
+    'everPaid'];
   check(monitor.rows.every((r) => Object.keys(r).every((k) => allowedRowKeys.includes(k))), 'list rows contain only the allow-listed fields');
   const serialized = JSON.stringify(monitor);
   check(!/cus_SECRET|PN_SECRET|auth-uuid|\+447700900999/.test(serialized), 'list response never contains Stripe/Twilio SIDs, auth IDs or the customer’s own phone number');

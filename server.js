@@ -146,6 +146,8 @@ const billingRoutes = require("./routes/billing");
 const adminRoutes = require("./routes/admin");
 const adminBusinessRoutes = require("./routes/adminBusiness");
 const adminDeliveryTimelineRoutes = require("./routes/adminDeliveryTimeline");
+const adminBusinessControlRoutes = require("./routes/adminBusinessControl");
+const adminClassificationRoutes = require("./routes/adminClassification");
 const mobileApiRoutes = require("./routes/mobileApi");
 const { resolvePort, validateProductionEnv } = require("./services/serverConfig");
 
@@ -259,6 +261,8 @@ app.use(billingRoutes);
 app.use(adminRoutes);
 app.use(adminBusinessRoutes);
 app.use(adminDeliveryTimelineRoutes);
+app.use(adminBusinessControlRoutes);
+app.use(adminClassificationRoutes);
 app.use(mobileApiRoutes);
 // Customer allowance: mobile read endpoint, web top-up checkout (off unless
 // ALLOWANCE_TOPUPS_ENABLED=true), audited admin adjustment.
