@@ -21,23 +21,85 @@ async function getHouseholdByAuthUserId(authUserId) {
 // Resolves which household owns an inbound call from the Twilio "To" number.
 // Falls back to null (unmatched) rather than throwing — /voice and /process
 // must keep working even for a number that isn't registered to a household yet.
-async function getHouseholdByTwilioNumber(twilioNumber) {
-  if (!supabaseAdmin) return null;
+//
+// Integration 2026-10-03 (launch-gate PR-09 / G1, E1): this used to read
+// EVERY household (select("*") with no filter) and match in JS — O(n) per
+// inbound call and silently capped by the Data API row limit (Supabase
+// default 1000), so beyond that some households would stop receiving calls.
+// Now:
+//   1. an indexed .in() lookup over the To number's storage-format variants
+//      (E.164, 0-national, 44-prefixed, bare 10-digit), verified with the
+//      same matching key as before (normaliseNumber);
+//   2. more than one household holding the number → null + critical log
+//      (never guess: ringing the wrong household's app is a privacy breach);
+//   3. a miss → a PAGINATED safety-net scan (correct past the row cap) that
+//      logs any legacy-format row found so the data can be fixed, behind a
+//      short negative cache so repeated calls to an unassigned/quarantined
+//      number cannot drive repeated scans.
+const HOUSEHOLD_LOOKUP_NEGATIVE_TTL_MS = 60 * 1000;
+const HOUSEHOLD_SCAN_PAGE = 1000;
+const householdLookupMisses = new Map(); // matching key -> expiry ms
 
-  const { data, error } = await supabaseAdmin.from("households").select("*");
+function twilioNumberLookupVariants(twilioNumber) {
+  const raw = String(twilioNumber || "").trim();
+  const key = normaliseNumber(raw);
+  if (!key) return [];
+  if (key.startsWith("+")) return [...new Set([key, key.slice(1), raw])];
+  return [...new Set([`+44${key}`, `0${key}`, `44${key}`, key, raw])];
+}
 
+async function getHouseholdByTwilioNumber(twilioNumber, { admin = supabaseAdmin, now = () => Date.now() } = {}) {
+  if (!admin) return null;
+  const targetNorm = normaliseNumber(twilioNumber);
+  if (!targetNorm) return null;
+  const matchesTarget = (h) => h && h.twilio_number && normaliseNumber(h.twilio_number) === targetNorm;
+
+  const { data, error } = await admin
+    .from("households")
+    .select("*")
+    .in("twilio_number", twilioNumberLookupVariants(twilioNumber))
+    .limit(10);
   if (error) {
     console.error("SUPABASE HOUSEHOLD READ ERROR:", error);
     return null;
   }
+  const direct = (data || []).filter(matchesTarget);
+  if (direct.length > 1) {
+    console.error("HOUSEHOLD LOOKUP AMBIGUOUS: more than one household holds the dialled number — call not attributed", { count: direct.length });
+    return null;
+  }
+  if (direct.length === 1) return direct[0];
 
-  const targetNorm = normaliseNumber(twilioNumber);
-
-  return (
-    (data || []).find(
-      h => h.twilio_number && normaliseNumber(h.twilio_number) === targetNorm
-    ) || null
-  );
+  // Safety net for a number stored in a non-standard format.
+  const t = now();
+  const missUntil = householdLookupMisses.get(targetNorm);
+  if (missUntil && missUntil > t) return null;
+  const found = [];
+  for (let from = 0; ; from += HOUSEHOLD_SCAN_PAGE) {
+    const page = await admin
+      .from("households")
+      .select("*")
+      .not("twilio_number", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + HOUSEHOLD_SCAN_PAGE - 1);
+    if (page.error) {
+      console.error("SUPABASE HOUSEHOLD READ ERROR:", page.error);
+      return null;
+    }
+    for (const h of page.data || []) if (matchesTarget(h)) found.push(h);
+    if (!page.data || page.data.length < HOUSEHOLD_SCAN_PAGE) break;
+  }
+  if (found.length === 1) {
+    console.error("HOUSEHOLD LOOKUP: matched only by the safety-net scan — households.twilio_number is stored in a non-standard format; normalise it to E.164", { householdId: found[0].id });
+    return found[0];
+  }
+  if (found.length > 1) {
+    console.error("HOUSEHOLD LOOKUP AMBIGUOUS: more than one household holds the dialled number — call not attributed", { count: found.length });
+    return null;
+  }
+  householdLookupMisses.set(targetNorm, t + HOUSEHOLD_LOOKUP_NEGATIVE_TTL_MS);
+  if (householdLookupMisses.size > 5000) householdLookupMisses.clear();
+  return null;
 }
 
 // Registration bootstrap: before Sprint 7, one placeholder household exists
@@ -453,6 +515,7 @@ async function recordTermsAcceptance(householdId, termsVersion, privacyVersion, 
 }
 
 module.exports = {
+  twilioNumberLookupVariants,
   getHouseholdByAuthUserId,
   getHouseholdByTwilioNumber,
   claimOrCreateHousehold,

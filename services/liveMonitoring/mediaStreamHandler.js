@@ -578,8 +578,12 @@ function createMediaStreamHandler({
         monitoringStopped: false,
         // Financial safety (2026-09-26) — see the file header.
         safetyStopped: false,
-        toNumber: customParameters.toNumber || null,
-        fromNumber: customParameters.protectedNumber || fromNumber,
+        // Integration 2026-10-03: from the server-side stream authorisation
+        // (signed /voice record), never the WebSocket client's
+        // customParameters — the 056 entry fields predated voice-p0's
+        // stream tokens and were re-introduced by the merge (launch-gate PR-02).
+        toNumber: auth.toNumber || null,
+        fromNumber: auth.fromNumber || fromNumber,
         closeConnection,
         framesReceived: 0,
         requestCount: 0,

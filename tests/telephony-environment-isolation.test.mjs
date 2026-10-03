@@ -177,7 +177,7 @@ const removeCalls = code.match(/incomingPhoneNumbers\([^)]*\)\.remove\(\)/g) || 
 const postPurchase = removeCalls.filter((c) => /incomingPhoneNumbers\(purchased\.sid\)/.test(c));
 const otherRemoves = removeCalls.filter((c) => !/incomingPhoneNumbers\(purchased\.sid\)/.test(c));
 check(otherRemoves.length === 1, 'exactly one non-post-purchase .remove() call site exists (the guarded confirmed-quarantine release) — a new one must add a guard and update this test');
-check(postPurchase.length === 2, 'post-purchase cleanups (race loser; provider response rejected) release only purchased.sid — a new one must be justified here');
+check(postPurchase.length === 3, 'post-purchase cleanups (race loser; provider response rejected; assignment confirmed failed) release only purchased.sid — a new one must be justified here');
 check(!/incomingPhoneNumbers\([^)]*\)\.update\(/.test(code), 'no provider number .update() exists (if one is added it must use decideTelephonyMutation)');
 
 console.log(failures === 0 ? '\nAll telephony environment isolation checks passed.' : `\n${failures} check(s) failed.`);

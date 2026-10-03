@@ -1,5 +1,26 @@
-function normaliseNumber(number) {
+// Legacy matching key: the last 10 digits. Kept ONLY for UK numbers (every
+// stored UK contact row and HCG number compares exactly as before).
+function legacyLast10(number) {
   return (number || "").replace(/\D/g, "").slice(-10);
+}
+
+// Integration 2026-10-03 (launch-gate PR-03 / C3): the matching key is now
+// country-aware. A genuinely international number keeps its full E.164, so
+// +1 770 090 0123 or +33 7 70 09 00 12 3 can never equal the UK key of
+// 07700 900123 anywhere this helper is still used (inbound To routing,
+// rapid-abuse alerts, contact de-duplication, the legacy /process match).
+// The trusted-contact DECISION itself already uses full-E.164 matching
+// (services/abuse/inboundCallGuard.js → numberPolicy.sameNumber). Anything
+// that does not parse as international keeps the legacy UK key, so no
+// existing UK row changes meaning.
+function normaliseNumber(number) {
+  const raw = typeof number === "string" ? number : String(number || "");
+  if (/^\s*(\+|00)/.test(raw)) {
+    const { parsePhoneNumber } = require("./abuse/numberPolicy");
+    const parsed = parsePhoneNumber(raw);
+    if (parsed.e164 && parsed.countryCode && parsed.countryCode !== "44") return parsed.e164;
+  }
+  return legacyLast10(raw);
 }
 
 // Distinct from normaliseNumber above: that one produces a bare 10-digit
@@ -32,7 +53,18 @@ function normaliseUkPhoneToE164(rawInput) {
     return null;
   }
 
-  return `+44${national}`;
+  // Integration 2026-10-03 (launch-gate PR-04 / C1, C2): this normaliser's
+  // only purpose is a HOUSEHOLD destination, so it applies the same
+  // destination policy as setHouseholdPhoneNumber (numberPolicy
+  // HOUSEHOLD_PHONE: UK mobile or geographic only). Premium-rate (09),
+  // revenue-share (084/087), personal (070), paging (076), Isle of Man
+  // mobile and other non-allowed classes return null here too — defence in
+  // depth; the write path re-checks.
+  const e164 = `+44${national}`;
+  const { evaluateNumberForPurpose, PURPOSES } = require("./abuse/numberPolicy");
+  const verdict = evaluateNumberForPurpose(PURPOSES.HOUSEHOLD_PHONE, e164);
+  if (!verdict.allowed) return null;
+  return e164;
 }
 
 // A real iPhone E2E test (2026-08-08/09) found that setting the
@@ -62,7 +94,7 @@ function normaliseContactNumber(rawInput) {
   const { parsePhoneNumber } = require("./abuse/numberPolicy");
   const parsed = parsePhoneNumber(typeof rawInput === "string" ? rawInput : String(rawInput || ""));
   if (parsed.e164 && parsed.countryCode !== "44" && parsed.class === "international") return parsed.e164;
-  return normaliseNumber(rawInput);
+  return legacyLast10(rawInput);
 }
 
 function isValidContactNumber(stored) {

@@ -137,6 +137,7 @@ async function purchaseTwilioNumber(household, deps, guard) {
     addressSid = process.env.TWILIO_ADDRESS_SID,
     bundleSid = process.env.TWILIO_BUNDLE_SID,
     isQuarantinedNumber = isNumberInUnreleasedQuarantine,
+    readHouseholdNumber = readHouseholdTwilioNumber,
     // Environment guard dep keeps its historical key `guard`, but is bound
     // to a different local name: `guard` is this function's abuse-guard
     // parameter (integration 2026-10-03). shouldAttemptProvisioning already
@@ -268,7 +269,37 @@ async function purchaseTwilioNumber(household, deps, guard) {
       }
     }
 
-    const assigned = await assign(household.id, purchased.phoneNumber);
+    // Integration 2026-10-03 (launch-gate PR-07 / C7): the purchase has
+    // SUCCEEDED; if the DB assignment then throws or times out, its outcome
+    // is unknown. Re-read the household before deciding:
+    //   - it now holds this number → the write committed: success;
+    //   - it confirmably does NOT → nothing points at the number: release it
+    //     now (stops the rental) — same safe class as the race-loser release;
+    //   - unreadable → KEEP it (never release a number that may be live for a
+    //     customer whose forwarding already points at it) and raise a critical
+    //     alert; a tagged number is adopted on the next attempt, never bought twice.
+    let assigned;
+    try {
+      assigned = await assign(household.id, purchased.phoneNumber);
+    } catch (assignErr) {
+      let holder;
+      try { holder = await readHouseholdNumber(household.id); } catch { holder = undefined; }
+      if (holder === purchased.phoneNumber) {
+        console.warn("TWILIO PROVISIONING: assignment reported an error but committed:", household.id);
+        return { attempted: true, success: true, twilioNumber: purchased.phoneNumber, assignErrorRecovered: true };
+      }
+      if (holder !== undefined) {
+        console.error("TWILIO PROVISIONING: assignment failed after purchase — releasing the unassigned number", household.id);
+        await client.incomingPhoneNumbers(purchased.sid).remove().catch(err =>
+          console.error("TWILIO NUMBER RELEASE ERROR:", err.message)
+        );
+        throw new Error(`assignment failed after purchase; number released: ${assignErr.message}`);
+      }
+      sendAlert("twilio_provisioning_orphan_risk", "A number was purchased but its assignment outcome is unknown (database unreadable) — kept, tagged for adoption; verify and reconcile", {
+        householdId: household.id, tagged: Boolean(friendlyName),
+      }).catch(() => {});
+      throw new Error(`assignment outcome unknown after purchase; number kept${friendlyName ? " (tagged for adoption)" : ""}: ${assignErr.message}`);
+    }
 
     if (!assigned) {
       // Another attempt already assigned a different number to this
@@ -297,6 +328,17 @@ async function purchaseTwilioNumber(household, deps, guard) {
     );
     return { attempted: true, success: false, error: err.message };
   }
+}
+
+// Integration 2026-10-03: the household's current number, for deciding what
+// to do with a purchase whose assignment threw. THROWS when unreadable (the
+// caller then keeps the number rather than guessing).
+async function readHouseholdTwilioNumber(householdId) {
+  const { supabaseAdmin } = require("./supabaseClients");
+  if (!supabaseAdmin) throw new Error("household state unavailable");
+  const { data, error } = await supabaseAdmin.from("households").select("twilio_number").eq("id", householdId).maybeSingle();
+  if (error) throw new Error(`household read failed: ${error.message}`);
+  return data ? data.twilio_number || null : null;
 }
 
 // Fail closed: if the quarantine table cannot be read, treat the number as
