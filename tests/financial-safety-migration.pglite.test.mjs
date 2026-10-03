@@ -219,7 +219,7 @@ async function main() {
   check(rls.rows.length === 0, 'RLS is enabled on every 056 table');
 
   // 13. Rollback removes exactly 056's objects; 056 re-applies cleanly afterwards.
-  // Later migrations that depend on 056 (062 customer allowance: an FK to
+  // Later migrations that depend on 056 (063 customer allowance: an FK to
   // usage_notifications) are rolled back first, in reverse order — the
   // same order production would use.
   const dependents = files.filter((f) => /^06[2-9]_/.test(f)).sort().reverse();

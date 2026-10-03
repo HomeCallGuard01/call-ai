@@ -1,7 +1,7 @@
 // topUpCredit.js — turns a VERIFIED provider payment event into at most one
 // allowance credit (customer allowance workstream, 2026-10-03).
 //
-// Rules (all enforced here AND/OR in credit_allowance, migration 062):
+// Rules (all enforced here AND/OR in credit_allowance, migration 063):
 //   * Credit only when the payment is authoritative:
 //       Stripe   checkout.session.completed with payment_status 'paid', or
 //                checkout.session.async_payment_succeeded (delayed methods).

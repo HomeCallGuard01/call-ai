@@ -705,7 +705,7 @@ const usageMeter = createUsageMeter({
   attachMonitoringStream: financialSafetyDb.attachMonitoringStream,
   recordMonitoringProgress: financialSafetyDb.recordMonitoringProgress,
   claimUsageNotification: financialSafetyDb.claimUsageNotification,
-  // Allowance warnings outside the app (062 outbox). Enqueues nothing
+  // Allowance warnings outside the app (063 outbox). Enqueues nothing
   // unless ALLOWANCE_NOTICE_CHANNELS enables a channel; in-app warnings
   // come from the read model's state, not from delivery.
   deliverNotification: createNoticeEnqueuer({ enqueue: customerAllowanceDb.enqueueNoticeDeliveries }),
@@ -2587,7 +2587,7 @@ setTimeout(() => {
   setInterval(runQuarantinedNumberReleaseCheck, TWILIO_RELEASE_CHECK_INTERVAL_MS);
 }, TWILIO_RELEASE_FIRST_RUN_DELAY_MS);
 
-// Allowance warning delivery (062 outbox; services/allowance/
+// Allowance warning delivery (063 outbox; services/allowance/
 // allowanceNotices.js). Only runs when ALLOWANCE_NOTICE_CHANNELS enables
 // a channel — unset (the default) means in-app only and no timer at all.
 // Multiple instances are safe: rows are leased (FOR UPDATE SKIP LOCKED).

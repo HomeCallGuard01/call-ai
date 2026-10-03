@@ -1,4 +1,4 @@
--- Rollback for 062_customer_allowance_credits_and_notices.sql.
+-- Rollback for 063_customer_allowance_credits_and_notices.sql.
 -- DESTRUCTIVE to the allowance credit audit trail (paid top-up records):
 -- export allowance_credits first if anything has been written. Deploy
 -- application code that no longer calls these RPCs BEFORE running this.

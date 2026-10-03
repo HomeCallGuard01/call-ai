@@ -8,7 +8,7 @@
 // `deliver` hook. This module is that hook plus a sender:
 //
 //   deliver()  enqueues one allowance_notice_deliveries row per enabled
-//              channel (062; PK = household, period, point, channel, and an
+//              channel (063; PK = household, period, point, channel, and an
 //              FK to the claim), so a channel can't send the same warning
 //              twice even across restarts and concurrent calls.
 //   process()  leases due rows, re-checks they still matter (same period,

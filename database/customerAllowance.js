@@ -1,4 +1,4 @@
-// customerAllowance.js — data access for migration 062 (allowance credits
+// customerAllowance.js — data access for migration 063 (allowance credits
 // and warning delivery). Allowance changes go ONLY through the
 // credit_allowance RPC (idempotent, audited, same lock as Fortress's
 // monitoring admission). Every function THROWS on failure; the caller
@@ -113,7 +113,7 @@ module.exports = {
   completeNoticeDelivery,
 };
 
-// Higher tier (062 workstream): set plan_code on the household's ACTIVE
+// Higher tier (063 workstream): set plan_code on the household's ACTIVE
 // entitlement row only. Fortress reads entitlements.plan_code (056) for the
 // allowance; nothing else changes. Returns whether a row changed.
 // Scoped to the entitlement SOURCE that sent the event, so a Stripe event

@@ -8,7 +8,7 @@
 // getHouseholdAllowance (services/usage/householdAllowance.js), which
 // reads the same counters begin_monitoring_session enforces on. Nothing
 // here can loosen enforcement — it only describes it. Top-up and
-// adjustment credits (062) are already inside Fortress's allowance total
+// adjustment credits (063) are already inside Fortress's allowance total
 // (bonus_monitored_seconds); this model only breaks them out for display.
 //
 // Never throws. If anything can't be read, status is 'unavailable' and
@@ -81,7 +81,7 @@ function sumCredits(credits) {
  * @param {'web'|'ios'|'android'} [args.platform]
  * @param {object} [args.monitoring] Fortress monitoringAllowance already read this request
  * @param {object} args.deps  Fortress reads (database/financialSafety.js) + optional
- *                            listAllowanceCredits / countLiveMonitoringSessions (062)
+ *                            listAllowanceCredits / countLiveMonitoringSessions (063)
  */
 async function getCustomerAllowance({ household, entitlement, subscription = null, platform = 'web', deps, monitoring: precomputed = null, now = new Date(), env = process.env }) {
   const membership = resolveEntitlementState({ entitlement, subscription, now });

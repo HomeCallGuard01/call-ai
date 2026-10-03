@@ -7,9 +7,12 @@
 -- seconds and usage_notifications rather than adding a second allowance
 -- counter. Apply 056 first.
 --
--- Numbered 062: the highest number in use on any branch on 2026-10-03 is
--- 061 (claimed twice). 048–050 are unused but 050 objects exist on staging
--- without a file, so they are avoided. Re-check before applying.
+-- Numbered 063: on 2026-10-03, 057–061 are claimed (some twice) and 062 is
+-- taken by feature/customer-identity-carrier-abstraction
+-- (062_customer_identity_and_routing_assignments.sql). This file was first
+-- pushed as 062 and renumbered the same day to avoid that clash. 048–050
+-- are unused but 050 objects exist on staging without a file, so they are
+-- avoided. Re-check before applying.
 --
 -- Design (docs/handovers/2026-10-03-customer-allowance-billing-handover.md):
 --   * Financial Fortress (056 and successors) stays the ONLY enforcement

@@ -1,7 +1,7 @@
 // allowanceAdjustments.js — administrative allowance adjustments (goodwill
 // minutes, corrections) with a mandatory audit trail (customer allowance
 // workstream, 2026-10-03). Written through the same credit_allowance RPC
-// as paid top-ups (062): one row per adjustment in allowance_credits with
+// as paid top-ups (063): one row per adjustment in allowance_credits with
 // the admin's identity and reason, applied to the CURRENT period only, and
 // idempotent per admin-supplied key (a double-click or retried request
 // applies once).

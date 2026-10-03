@@ -1,6 +1,6 @@
 // allowanceDeps.js — the production data dependencies for the customer
 // allowance read model and the warning sender: Financial Fortress reads
-// (056) plus the 062 credit, live-session and delivery tables. One place,
+// (056) plus the 063 credit, live-session and delivery tables. One place,
 // so every surface reads identically.
 'use strict';
 

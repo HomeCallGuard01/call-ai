@@ -577,7 +577,7 @@ router.post(
     // one-off Checkout payment HCG created with hcg_purpose=allowance_topup,
     // or a refund of one. Credited only once paid (delayed methods on
     // async_payment_succeeded), only for livemode in production, and at
-    // most once per PaymentIntent (credit_allowance, migration 062) — so a
+    // most once per PaymentIntent (credit_allowance, migration 063) — so a
     // replayed or duplicated event credits nothing. Returns before the
     // subscription handling below, which is unchanged.
     const topUpIntent = interpretStripeTopUpEvent(event);

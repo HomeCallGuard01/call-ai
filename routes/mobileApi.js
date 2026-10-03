@@ -1296,7 +1296,7 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
     // consumable store purchase (NON_RENEWING_PURCHASE) of a configured
     // top-up product, or its refund (CANCELLATION of that product). Only
     // PRODUCTION-environment events credit in production; at most once per
-    // store transaction (credit_allowance, migration 062), so RevenueCat
+    // store transaction (credit_allowance, migration 063), so RevenueCat
     // retries and replays credit nothing twice. Anything that is not a
     // configured top-up product falls through to the handling below,
     // unchanged.

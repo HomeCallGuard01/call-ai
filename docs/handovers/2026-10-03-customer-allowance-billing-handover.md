@@ -9,7 +9,7 @@
 | Branch | `feature/customer-allowance` (pushed to `origin`) |
 | Worktree | `/Users/ad/call-ai-customer-allowance` |
 | Base | `feature/financial-safety-hard-limits` @ `30d454c` (056 = Financial Fortress Layer A/B). It is **not** based on `main` (`eb43368`), because the allowance consumes 056. |
-| Implementation commit | `7f2e068`; this handover is the commit after it |
+| Commits | `7f2e068` implementation; `c71d8fd` first handover; then a same-day renumbering commit (migration 062 → **063**, see §15) carrying this updated handover |
 | State | Clean, pushed. `node_modules` is a local symlink to `/Users/ad/call-ai/node_modules` (untracked, not committed). |
 | Fortress (Claude 1) | `security/financial-containment-p0`, worktree `/Users/ad/call-ai-financial-containment-p0`, same base `30d454c`. Its £-budget ledger is **uncommitted and provisional** (`supabase/provisional/…`). I only read it. |
 
@@ -67,14 +67,14 @@
 | `services/allowance/allowanceNotices.js` | Warning delivery: enqueue hook and sender (email via Resend; push recorded as suppressed) |
 | `services/allowance/planSync.js` | Higher tier: `entitlements.plan_code` follows the paid product |
 | `services/allowance/allowanceDeps.js` | Production data dependencies, in one place |
-| `database/customerAllowance.js` | 062 data access; Fortress status RPC call |
+| `database/customerAllowance.js` | 063 data access; Fortress status RPC call |
 | `routes/allowance.js` | `GET /api/v1/me/allowance`, `POST /billing/topup-checkout`, `POST /admin/api/households/:id/allowance-adjustment` |
 | `routes/billing.js` | Stripe top-up and refund handling, placed *after* signature verification and *before* the unchanged subscription path; plan sync |
 | `routes/mobileApi.js` | RevenueCat consumable top-up and refund, placed *after* the Authorization check; plan sync (production events only); `customerAllowance` on the dashboard |
 | `server.js` | `customerAllowance` on `/dashboard-data`; warning enqueue hook; sender loop (only when channels are enabled) |
 | `services/usage/usageNotifier.js` | **One-line Fortress change:** passes `periodStart` to the `deliver` hook |
-| `tests/financial-safety-migration.pglite.test.mjs` | **Fortress test change:** rolls back dependent migrations (062) before 056's rollback |
-| `supabase/migrations/062_customer_allowance_credits_and_notices.sql` (+ rollback) | DRAFT (§10) |
+| `tests/financial-safety-migration.pglite.test.mjs` | **Fortress test change:** rolls back dependent migrations (063) before 056's rollback |
+| `supabase/migrations/063_customer_allowance_credits_and_notices.sql` (+ rollback) | DRAFT (§15) |
 | `upload.html`, `mobile/components/AllowanceMeter.tsx`, `mobile/app/(tabs)/index.tsx`, `mobile/lib/{types,api}.ts` | Customer UI (§7) |
 
 ## 4. Configuration (all backend env; no app release needed)
@@ -306,12 +306,13 @@ The UI follows the brief: one percentage, one bar, one reset date, and one sente
 
 ## 15. Migrations
 
-- **062 is new and DRAFT; it is not applied anywhere.**
-- 062 depends on 056 (DRAFT). 056 depends on 051.
+- **063 is new and DRAFT; it is not applied anywhere.**
+- It was first pushed as 062. The identity workstream (`feature/customer-identity-carrier-abstraction`, `062_customer_identity_and_routing_assignments.sql`) claimed 062 the same day, so this branch renumbered to **063**.
+- 063 depends on 056 (DRAFT). 056 depends on 051.
 - Inventory on 2026-10-03:
   - prod has 000–046;
   - staging also has 047, 051 and 057–061;
-  - 062 and above are unused on every branch; 050 is avoided because of untracked staging objects.
+  - 062 is now the identity branch's; 063 and above are otherwise unused; 050 is avoided because of untracked staging objects.
 - **Number conflicts on other branches:**
 
   | No. | Branches with different files |
@@ -323,9 +324,9 @@ The UI follows the brief: one percentage, one bar, one reset date, and one sente
   | 061 | `household_iphone_carrier` vs the security 061 |
 
   The security branch's 057–061 are applied on staging, so the call-delivery and iPhone-carrier files are the ones to renumber.
-- **Re-check 062 before applying:** Fortress's provisional ledger is unnumbered.
-- **Apply order** (staging first): 047 → 051 → … → 056 → (Fortress ledger) → 062.
-- **Rollback order:** 062 before 056, because of the FK to `usage_notifications`.
+- **Re-check 063 before applying:** Fortress's provisional ledger is unnumbered.
+- **Apply order** (staging first): 047 → 051 → … → 056 → (Fortress ledger) → 062 (identity) → 063.
+- **Rollback order:** 063 before 056, because of the FK to `usage_notifications`.
 
 ## 16. Unresolved cost assumptions (DECISION REQUIRED)
 
@@ -350,7 +351,7 @@ The UI follows the brief: one percentage, one bar, one reset date, and one sente
 
 1. Fortress (Claude 1) settles 056 vs the £ ledger.
 2. Rebase this branch onto Fortress's merged branch and re-check migration numbers.
-3. Apply 056 (+ Fortress) then 062 on **staging**; run `tests/customer-allowance-*.mjs`.
+3. Apply 056 (+ Fortress) then 063 on **staging**; run `tests/customer-allowance-*.mjs`.
 4. Deploy the backend to staging with every flag off. The read model then appears on the dashboards with no behaviour change.
 5. Approve wording; enable `ALLOWANCE_NOTICE_CHANNELS=email` on staging; verify one real email.
 6. Configure one top-up product in Stripe **test** mode on staging (`APP_ENV=staging`, `ALLOWANCE_ALLOW_SANDBOX_CREDITS=true`), then buy, refund and replay it.

@@ -1,4 +1,4 @@
-// Migration 062 (customer allowance credits + warning delivery) against a
+// Migration 063 (customer allowance credits + warning delivery) against a
 // real Postgres engine (PGlite), after every earlier migration including
 // Financial Fortress's 056. Proves top-up / adjustment credits are
 // idempotent, auditable, refuse non-production purchases, and are seen by
@@ -47,7 +47,7 @@ async function main() {
   for (const f of files) {
     try { await db.exec(await readFile(path.join(migrationsDir, f), 'utf8')); } catch (err) { console.error(`✗ ${f}: ${err.message}`); process.exitCode = 1; return; }
   }
-  check(files.includes('062_customer_allowance_credits_and_notices.sql'), 'migration 062 applies cleanly after every earlier migration (incl. 056)');
+  check(files.includes('063_customer_allowance_credits_and_notices.sql'), 'migration 063 applies cleanly after every earlier migration (incl. 056)');
 
   const mk = async (email) => (await db.query('insert into public.households (auth_user_id, email) values (null, $1) returning id', [email])).rows[0].id;
   const hh = {};
@@ -150,18 +150,18 @@ async function main() {
   check(await denied('service_role', `update public.household_usage_periods set bonus_monitored_seconds = 99999 where household_id = '${hh.a}'`), 'service_role cannot set the bonus directly');
   await db.exec('reset role;');
   const rls = await db.query(`select relname from pg_class where relname in ('allowance_credits','allowance_notice_deliveries') and not relrowsecurity`);
-  check(rls.rows.length === 0, 'RLS is enabled on every 062 table');
+  check(rls.rows.length === 0, 'RLS is enabled on every 063 table');
   const sec = await db.query(`select proname, proconfig from pg_proc where proname in ('credit_allowance','claim_allowance_notice_batch') and prosecdef`);
-  check(sec.rows.length === 2 && sec.rows.every((r) => String(r.proconfig).includes('search_path=')), '062 RPCs are SECURITY DEFINER with a pinned search_path');
+  check(sec.rows.length === 2 && sec.rows.every((r) => String(r.proconfig).includes('search_path=')), '063 RPCs are SECURITY DEFINER with a pinned search_path');
 
-  // 10. Rollback removes exactly 062's objects (056 counters and bonus kept); re-applies cleanly.
+  // 10. Rollback removes exactly 063's objects (056 counters and bonus kept); re-applies cleanly.
   const before = await bonus(hh.e);
-  await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '062_rollback_customer_allowance_credits_and_notices.sql'), 'utf8'));
+  await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '063_rollback_customer_allowance_credits_and_notices.sql'), 'utf8'));
   const gone = await q1(`select to_regclass('public.allowance_credits') t, to_regproc('public.credit_allowance') f, to_regclass('public.usage_notifications') kept`);
-  check(gone.t === null && gone.f === null && gone.kept !== null && (await bonus(hh.e)) === before, 'rollback drops 062 only; Fortress tables and already-applied bonus are untouched');
+  check(gone.t === null && gone.f === null && gone.kept !== null && (await bonus(hh.e)) === before, 'rollback drops 063 only; Fortress tables and already-applied bonus are untouched');
   let reapplied = true;
-  try { await db.exec(await readFile(path.join(migrationsDir, '062_customer_allowance_credits_and_notices.sql'), 'utf8')); } catch { reapplied = false; }
-  check(reapplied, '062 re-applies cleanly after its rollback');
+  try { await db.exec(await readFile(path.join(migrationsDir, '063_customer_allowance_credits_and_notices.sql'), 'utf8')); } catch { reapplied = false; }
+  check(reapplied, '063 re-applies cleanly after its rollback');
 
   console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   process.exitCode = failures === 0 ? 0 : 1;
