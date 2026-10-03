@@ -671,6 +671,12 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         // the app which portal actually applies to this membership.
         billingSource: req.entitlement.source,
       },
+      // Permanent HCG account number (migration 062) — additive field for
+      // the app's account screen; null until 062 is applied. Display and
+      // support reference only, never a credential.
+      account: {
+        accountNumber: req.household.account_number || null,
+      },
       contacts: contacts.map(c => ({ id: c.id, name: c.name, number: c.number })),
       // Monitored-minute allowance + whether new unknown calls are being
       // monitored right now. The app must never show "monitoring unknown
