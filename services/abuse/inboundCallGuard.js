@@ -208,29 +208,41 @@ function createInboundCallGuard(deps) {
     }
 
     // 8. concurrency
+    //
+    // Integration 2026-10-03 — check-and-claim is ATOMIC within the process:
+    // the counts are read and the leases claimed with no `await` in between
+    // (JS is single-threaded), THEN an over-limit decision is verified against
+    // the provider and the claim released if refused. Previously the count was
+    // read, the verification awaited, and the lease claimed afterwards — ten
+    // simultaneous calls from one caller all read the same count and all
+    // passed (found by tests/launch-fortress-integration.test.mjs, S2).
     const callSid = params.CallSid;
     if (!duplicate) {
       const hhKey = `conc:hh:${household.id}`;
-      if (await verifiedOverLimit({ to: to.e164 || params.To }, velocity.activeLeases(hhKey), config.maxConcurrentPerHousehold, hhKey)) {
+      const cKey = callerKey ? `conc:caller:${callerKey}` : null;
+      const hhCount = velocity.activeLeases(hhKey);
+      const cCount = cKey ? velocity.activeLeases(cKey) : 0;
+      const globalCount = velocity.activeLeases('conc:global');
+      const leaseIds = [`${callSid}|hh`, `${callSid}|g`];
+      velocity.acquireLease(hhKey, leaseIds[0], config.leaseTtlMs);
+      velocity.acquireLease('conc:global', leaseIds[1], config.leaseTtlMs);
+      if (cKey) { leaseIds.push(`${callSid}|c`); velocity.acquireLease(cKey, leaseIds[2], config.leaseTtlMs); }
+      reservations.set(callSid, { leaseIds, reservationId: null });
+      if (reservations.size > 20000) reservations.delete(reservations.keys().next().value);
+
+      if (await verifiedOverLimit({ to: to.e164 || params.To }, hhCount, config.maxConcurrentPerHousehold, hhKey)) {
+        release(callSid);
         return reject('household_concurrency', ctx, { limit: config.maxConcurrentPerHousehold });
       }
-      if (callerKey) {
-        const cKey = `conc:caller:${callerKey}`;
-        if (await verifiedOverLimit({ from: callerKey }, velocity.activeLeases(cKey), config.maxConcurrentPerCaller, cKey)) {
-          return reject('caller_concurrency', ctx, { limit: config.maxConcurrentPerCaller });
-        }
+      if (cKey && await verifiedOverLimit({ from: callerKey }, cCount, config.maxConcurrentPerCaller, cKey)) {
+        release(callSid);
+        return reject('caller_concurrency', ctx, { limit: config.maxConcurrentPerCaller });
       }
-      if (velocity.activeLeases('conc:global') >= config.maxConcurrentGlobal) {
+      if (globalCount >= config.maxConcurrentGlobal) {
         flags.push('global_concurrency_degraded');
         incident.trip('global_concurrency', config.incidentAutoTripMs);
         alert('abuse_global_concurrency', 'Global concurrent inbound calls at limit — new calls delivered without new paid monitoring; contain mode', {});
       }
-      const leaseIds = [`${callSid}|hh`, `${callSid}|g`];
-      velocity.acquireLease(hhKey, leaseIds[0], config.leaseTtlMs);
-      velocity.acquireLease('conc:global', leaseIds[1], config.leaseTtlMs);
-      if (callerKey) { leaseIds.push(`${callSid}|c`); velocity.acquireLease(`conc:caller:${callerKey}`, leaseIds[2], config.leaseTtlMs); }
-      reservations.set(callSid, { leaseIds, reservationId: null });
-      if (reservations.size > 20000) reservations.delete(reservations.keys().next().value);
     }
 
     // 9. financial authorisation (Claude 1)
@@ -252,15 +264,33 @@ function createInboundCallGuard(deps) {
     if (!financialMonitoringOk) flags.push(`financial_monitoring_denied:${fin.reason || 'unavailable'}`);
 
     // 10. trusted-contact bypass — last, monitoring-only
+    //
+    // Integration 2026-10-03: two different questions, answered separately.
+    //   trusted            — may this call SKIP monitoring? (suspended by any
+    //                        spoofing indicator, incl. flood/burst context)
+    //   deliveryTrusted    — may this call draw on the household's
+    //                        trusted-only DELIVERY RESERVE (Financial Fortress)?
+    //                        Lost only to identity defects (withheld/malformed,
+    //                        untrustable class, failed STIR) — NOT to flood or
+    //                        burst context. Otherwise a spoofed many-caller
+    //                        flood would suspend trust and lock the victim's
+    //                        family out of the reserve kept for them (found by
+    //                        tests/launch-fortress-integration.test.mjs, S4).
+    //                        Such a call is still MONITORED; the reserve is
+    //                        small and bounded; per-caller limits still apply.
     let trusted = false;
+    let deliveryTrusted = false;
     if (trustedMatched) {
       const suspendReasons = [];
-      if (from.class === CLASSES.WITHHELD || from.class === CLASSES.MALFORMED) suspendReasons.push('caller_not_a_number');
+      const identityDefects = [];
+      if (from.class === CLASSES.WITHHELD || from.class === CLASSES.MALFORMED) identityDefects.push('caller_not_a_number');
       // Premium / 070 / paging / revenue-share / satellite CLIs never get the
       // bypass, whatever the contact list says (they do not originate
       // ordinary personal calls; presenting one is itself a spoofing signal).
-      else if (!PURPOSES.TRUSTED_CONTACT.allow.includes(from.class)) suspendReasons.push(`caller_class_not_trustable:${from.class}`);
-      if (typeof params.StirVerstat === 'string' && STIR_FAILED.test(params.StirVerstat)) suspendReasons.push('stir_verification_failed');
+      else if (!PURPOSES.TRUSTED_CONTACT.allow.includes(from.class)) identityDefects.push(`caller_class_not_trustable:${from.class}`);
+      if (typeof params.StirVerstat === 'string' && STIR_FAILED.test(params.StirVerstat)) identityDefects.push('stir_verification_failed');
+      suspendReasons.push(...identityDefects);
+      deliveryTrusted = identityDefects.length === 0;
       if (elevated) suspendReasons.push('household_elevated');
       if (pairCalls > config.trustedBypassBurst) suspendReasons.push('trusted_caller_burst');
       if (suspendReasons.length) {
@@ -276,7 +306,7 @@ function createInboundCallGuard(deps) {
       && financialMonitoringOk
       && !flags.includes('global_concurrency_degraded');
 
-    return { action: 'connect', reasonCode: null, monitor, trusted, trustedMatched, flags, correlationId };
+    return { action: 'connect', reasonCode: null, monitor, trusted, trustedMatched, deliveryTrusted, flags, correlationId };
   }
 
   /** Call ended (dial action / status callback / stream stop). Idempotent. */

@@ -935,16 +935,30 @@ if (process.env.TWILIO_WEBHOOK_AUTH_MODE === "report") {
 }
 const streamAuth = createStreamAuthRegistry();
 
-// Telephony abuse P0: one instance per process. The financial port and
-// breaker are Claude 1's (Financial Fortress) to supply; until integrated
-// the port reports "not integrated" and the abuse layer's own controls apply.
+// Telephony abuse P0: one instance per process.
+//
+// Integration 2026-10-03 — ONE financial authority:
+//   * financialAuthorization stays null ON PURPOSE. The abuse layer's port
+//     contract ("telephony reject only on a kill switch; unavailable ⇒ allow")
+//     contradicts the Financial Fortress's fail-closed reservation. Fortress
+//     (containment.authorizeCall in /voice) is the single financial authority;
+//     it runs after abuse screening and before the trusted decision takes
+//     effect (docs/integration/2026-10-03-SAFETY_PIPELINE.md).
+//   * financialBreaker IS wired: the Fortress kill switch or latched breaker
+//     raises incident mode to full_stop, so abuse screening refuses at step 2,
+//     purchases/SMS stop, and the audit shows one incident state. If Fortress
+//     state is unreadable for > 60 s incident mode degrades to `contain`
+//     (no purchases, no SMS) — Fortress itself fails closed on those too.
 const telephonyAbuse = createTelephonyAbuseLayer({
   supabaseAdmin,
   twilioRestClient,
   sendAlert: sendCriticalAlert,
   appUrl: APP_URL,
   financialAuthorization: null,
-  financialBreaker: null,
+  financialBreaker: async () => {
+    const g = await financialContainmentDb.globalStatus({ now: new Date() });
+    return { level: g && (g.killSwitch === true || g.breakerOpen === true) ? "full_stop" : "normal" };
+  },
 });
 configureProvisioningAbuseGuard(telephonyAbuse.provisioningGuard);
 const twilioWebhookIntegrity = telephonyAbuse.webhookIntegrity.middleware;
@@ -1085,7 +1099,13 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
     return sendVoiceTwiml(req, res, twiml, { household, correlationId });
   }
 
+  // isKnown — the MONITORING bypass (abuse layer step 10: any spoofing
+  // indicator suspends it). deliveryTrusted — eligibility for the trusted-only
+  // protections (Fortress delivery reserve, 056's unknown-caller-only blocks):
+  // lost only to identity defects, not to flood context, so a spoofed flood
+  // cannot lock a household's trusted callers out (integration 2026-10-03).
   const isKnown = abuseDecision.trusted;
+  const deliveryTrusted = Boolean(abuseDecision.deliveryTrusted);
 
   // FINANCIAL SAFETY — Layer B call admission, BEFORE any billable TwiML.
   // A refused call gets <Reject> as the first verb (not billed). Never
@@ -1103,7 +1123,7 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
     callSid: req.body.CallSid,
     from: caller,
     to: req.body.To,
-    isKnown,
+    isKnown: deliveryTrusted,
     entitlement: activeEntitlement,
     subscription: stripeSubscription,
     signatureValid: genuineTwilioRequest,
@@ -1124,7 +1144,7 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
     household,
     callSid: req.body.CallSid,
     from: caller,
-    isKnown,
+    isKnown: deliveryTrusted,
     wantsMonitoring,
     signatureValid: genuineTwilioRequest,
     period: activeEntitlement || stripeSubscription
