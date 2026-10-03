@@ -219,6 +219,14 @@ async function main() {
   check(rls.rows.length === 0, 'RLS is enabled on every 056 table');
 
   // 13. Rollback removes exactly 056's objects; 056 re-applies cleanly afterwards.
+  // Later migrations that depend on 056 (063 customer allowance: an FK to
+  // usage_notifications) are rolled back first, in reverse order — the
+  // same order production would use.
+  const dependents = files.filter((f) => /^06[2-9]_/.test(f)).sort().reverse();
+  for (const f of dependents) {
+    const rb = (await readdir(path.join(migrationsDir, '_rollbacks'))).find((r) => r.startsWith(`${f.slice(0, 3)}_rollback`));
+    await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', rb), 'utf8'));
+  }
   await db.exec(await readFile(path.join(migrationsDir, '_rollbacks', '056_rollback_financial_safety_allowance_and_admission.sql'), 'utf8'));
   const gone = await q1(`select to_regclass('public.telephony_call_sessions') t, to_regproc('public.admit_call') f,
     (select count(*)::int from information_schema.columns where table_name = 'calls' and column_name = 'monitoring_status') c`);

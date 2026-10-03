@@ -35,7 +35,7 @@ async function notifyUsageThresholds({ householdId, periodStart, usedSeconds, al
     if (await claim({ householdId, periodStart, kind })) highest = kind;
   }
   if (highest && typeof deliver === 'function') {
-    await Promise.resolve().then(() => deliver({ householdId, kind: highest, usedSeconds, allowanceSeconds })).catch(() => {});
+    await Promise.resolve().then(() => deliver({ householdId, periodStart, kind: highest, usedSeconds, allowanceSeconds })).catch(() => {});
   }
   return { claimed: highest };
 }
