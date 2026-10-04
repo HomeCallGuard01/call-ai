@@ -106,17 +106,23 @@ async function sendCriticalAlert(type, message, context = {}, deps = {}) {
 
     const timestamp = new Date().toISOString();
     const env = process.env.NODE_ENV || "development";
+    // 2026-10-04 (staging readiness): label by DEPLOYMENT, not NODE_ENV —
+    // staging deliberately runs NODE_ENV=production, so its alerts must
+    // never look like production ones in the shared support inbox.
+    let deployment = env === "production" ? "production" : "development";
+    try { deployment = require("./config/launchConfig").resolveDeployment(process.env).deployment; } catch { /* keep the NODE_ENV-based label */ }
+    const tag = deployment === "production" ? "" : ` ${deployment.toUpperCase()}`;
     // Presentation only (2026-09) — this used to hardcode "production
     // alert" regardless of the real environment, directly contradicting
     // the Environment: line a few rows below whenever NODE_ENV wasn't
     // actually "production" (e.g. every local/dev run). Routing,
     // recipients, and the rate-limit/dedup behavior above are unchanged.
     const lines = [
-      `Home Call Guard — ${env === "production" ? "production" : "development"} alert`,
+      `Home Call Guard — ${deployment} alert`,
       ``,
       `Type: ${type}`,
       `Time: ${timestamp}`,
-      `Environment: ${env}`,
+      `Environment: ${deployment} (NODE_ENV=${env})`,
       `Message: ${message}`,
       ``,
       `Context:`,
@@ -126,7 +132,7 @@ async function sendCriticalAlert(type, message, context = {}, deps = {}) {
     ];
 
     return await post({
-      subject: `[HCG ALERT] ${type}`,
+      subject: `[HCG ALERT${tag}] ${type}`,
       text: lines.join("\n"),
     });
   } catch (err) {

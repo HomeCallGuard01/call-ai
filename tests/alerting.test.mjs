@@ -99,7 +99,24 @@ async function run() {
     check(!calls[0].text.includes('api_key') && !calls[0].text.includes('apiKey'), 'alert body never contains an api key field');
   }
 
-  console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
+  // 2026-10-04: alerts are labelled by deployment (staging runs NODE_ENV=production).
+{
+  const saved = { ...process.env };
+  const calls = [];
+  _resetForTests();
+  Object.assign(process.env, { NODE_ENV: 'production', HCG_DEPLOYMENT: 'staging', SUPABASE_URL: 'https://tigwgmayeuisrxjjykqd.supabase.co', APP_URL: 'https://staging.example' });
+  await sendCriticalAlert('label_check_staging', 'x', {}, { post: fakePost(calls) });
+  check(calls[0] && calls[0].subject === '[HCG ALERT STAGING] label_check_staging' && calls[0].text.includes('staging alert'), 'a staging process (NODE_ENV=production) is labelled STAGING, never "production"');
+  _resetForTests();
+  const prod = [];
+  Object.assign(process.env, { NODE_ENV: 'production', HCG_DEPLOYMENT: 'production', SUPABASE_URL: 'https://psbzynxplxfbyrbdidmn.supabase.co', APP_URL: 'https://www.homecallguard.co.uk' });
+  await sendCriticalAlert('label_check_prod', 'x', {}, { post: fakePost(prod) });
+  check(prod[0] && prod[0].subject === '[HCG ALERT] label_check_prod', 'production keeps the unchanged [HCG ALERT] subject');
+  for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+  Object.assign(process.env, saved);
+}
+
+console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   process.exitCode = failures === 0 ? 0 : 1;
 }
 
