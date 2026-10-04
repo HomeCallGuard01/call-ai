@@ -4272,6 +4272,16 @@
       el.textContent = "We can't take payment yet — your network hasn't been confirmed as compatible. Please check your network again below.";
       el.classList.add("checkout-banner-error");
       el.hidden = false;
+    } else if (kind === "new_memberships_paused") {
+      // Controlled launch (2026-10-05): NEW_SUBSCRIPTIONS_PAUSED. No payment taken.
+      el.textContent = "We're not taking new memberships just now — no payment was taken. Please try again later, or contact support@homecallguard.co.uk.";
+      el.classList.add("checkout-banner-error");
+      el.hidden = false;
+    } else if (kind === "not_invited") {
+      // Controlled launch (2026-10-05): invite-only cohort (NEW_SUBSCRIPTIONS_ALLOWLIST).
+      el.textContent = "Home Call Guard is open by invitation at the moment — no payment was taken. Contact support@homecallguard.co.uk if you'd like to join.";
+      el.classList.add("checkout-banner-error");
+      el.hidden = false;
     } else if (kind === "membership_error") {
       el.textContent = "We couldn't open your membership settings just now. Please try again.";
       el.classList.add("checkout-banner-error");

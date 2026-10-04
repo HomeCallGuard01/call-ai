@@ -26,6 +26,7 @@ const { evaluateHouseholdCheckoutEligibility } = require("../services/providerPo
 const { LANDLINE_PROVIDERS } = require("../services/activationInstructions");
 const { setHouseholdCarrierCompatibility, recordTermsAcceptance } = require("../database/households");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
+const { decideNewSubscription } = require("../services/acquisitionGate");
 const { CHECKOUT_SUBMIT_MESSAGE, createOfferHandler } = require("../services/subscriptionPricing");
 const { accountingCapture } = require("../services/accounting/capture");
 const { decideDeletedHouseholdEvent } = require("../services/stripeDeletedHousehold");
@@ -347,6 +348,13 @@ router.post("/billing/create-checkout-session", requireAuth, async (req, res) =>
   const eligibility = evaluateHouseholdCheckoutEligibility(req.household);
   if (!eligibility.canProceedToPayment) {
     return res.redirect("/dashboard?checkout=carrier_incompatible");
+  }
+
+  // Launch sprint 2026-10-05: controlled launch — stop-acquisition switch and
+  // invite-only cohort (services/acquisitionGate.js). New checkouts only.
+  const acquisition = decideNewSubscription({ household: req.household });
+  if (!acquisition.allowed) {
+    return res.redirect(`/dashboard?checkout=${acquisition.reason}`);
   }
 
   try {

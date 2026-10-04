@@ -57,6 +57,7 @@ function resolveEventEnvironment(event) {
 }
 const { sendCriticalAlert } = require("../services/alerting");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
+const { decideNewSubscription } = require("../services/acquisitionGate");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
 const { resolveCanonicalProtection } = require("../services/lifecycle/canonicalProtection");
 const { getHouseholdDeliveryHealth } = require("../database/deliveryEvidence");
@@ -325,6 +326,13 @@ router.post("/api/v1/billing/create-checkout-session", requireAuthApi, async (re
       status: eligibility.status,
       reason: eligibility.reason,
     });
+  }
+
+  // Launch sprint 2026-10-05: controlled launch — stop-acquisition switch and
+  // invite-only cohort (services/acquisitionGate.js). New checkouts only.
+  const acquisition = decideNewSubscription({ household: req.household });
+  if (!acquisition.allowed) {
+    return res.status(403).json({ error: acquisition.reason });
   }
 
   try {
