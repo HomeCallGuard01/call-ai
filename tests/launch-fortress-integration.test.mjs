@@ -272,14 +272,12 @@ try {
   check(connects(afterKill.text, H.kill), 'S50: after the audited reset, delivery resumes');
   await ended(port, afterKill.params.CallSid);
 
-  // ── 21: database outage at admission ──
+  // ── 21: database outage at admission — decision D3 = REJECT (2026-10-04) ──
   fault.rpcDown = true;
   const deg = await voice(port, H.outage, '+447700900801');
-  check(connects(deg.text, H.outage) && !monitored(deg.text) && timeLimit(deg.text) && timeLimit(deg.text) <= 600,
-    `S21: Fortress authority unreachable → bounded degraded envelope: delivered UNMONITORED with timeLimit ${timeLimit(deg.text)} s ≤ 600`);
-  const degMore = [];
-  for (let i = 0; i < 4; i++) degMore.push(await voice(port, H.outage, `+44770090082${i}`));
-  check(degMore.some((r) => isReject(r.text)), 'S21: the degraded envelope is bounded (per-instance concurrency) — further calls are refused');
+  const degT = await voice(port, H.outage, TRUSTED);
+  check(isReject(deg.text) && isReject(degT.text), 'S21: Fortress authority unreachable → <Reject> (unbilled) for every new call, trusted callers included — no HCG-funded admission without the authority (D3)');
+  check(/degraded mode = reject/.test(main.logs()), 'S21: the server logs the effective degraded mode (reject) at boot');
   fault.rpcDown = false;
   fault.allDown = true;
   const total = await voice(port, H.outage, '+447700900830');

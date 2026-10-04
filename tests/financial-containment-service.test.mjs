@@ -35,12 +35,24 @@ function clock(startIso = '2026-10-03T09:00:00Z') {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Test/local-only opt-in for the bounded degraded envelope (D3 = reject everywhere else).
+const BOUNDED_TEST_ENV = { NODE_ENV: 'test', FC_DEGRADED_MODE: 'bounded', FC_ALLOW_BOUNDED_DEGRADED_MODE: 'true' };
+
 async function main() {
   // ---------------- policy.js ----------------
   {
     const c = resolveContainmentConfig({});
-    check(c.requireSignedVoice === true && c.degradedMode === 'bounded' && c.overrides.enforcement_mode === 'enforce' && c.warnings.length === 0,
-      'defaults: signed /voice required, bounded degraded envelope, always ask the DB to ENFORCE');
+    check(c.requireSignedVoice === true && c.degradedMode === 'reject' && c.overrides.enforcement_mode === 'enforce' && c.warnings.length === 0,
+      'defaults: signed /voice required, D3 = REJECT when the authority is unreachable, always ask the DB to ENFORCE');
+    // D3 = reject (2026-10-04): 'bounded' can never become production behaviour.
+    for (const env of [{ FC_DEGRADED_MODE: 'bounded' }, { FC_DEGRADED_MODE: 'bounded', FC_ALLOW_BOUNDED_DEGRADED_MODE: 'true' },
+      { FC_DEGRADED_MODE: 'bounded', FC_ALLOW_BOUNDED_DEGRADED_MODE: 'true', NODE_ENV: 'production' },
+      { FC_DEGRADED_MODE: 'bounded', FC_ALLOW_BOUNDED_DEGRADED_MODE: 'true', NODE_ENV: 'staging' },
+      { FC_DEGRADED_MODE: 'bounded', NODE_ENV: 'test' }]) {
+      const r = resolveContainmentConfig(env);
+      check(r.degradedMode === 'reject' && r.warnings.some((w) => /bounded refused/.test(w)), `bounded refused → reject (${JSON.stringify(env)})`);
+    }
+    check(resolveContainmentConfig(BOUNDED_TEST_ENV).degradedMode === 'bounded', "bounded only with FC_ALLOW_BOUNDED_DEGRADED_MODE=true AND NODE_ENV=test|development (tests/local only)");
     const bad = resolveContainmentConfig({ FC_DEGRADED_MODE: 'yolo', FC_DEGRADED_MAX_CONCURRENT: '500', FC_DEGRADED_MAX_CALL_SECONDS: '99999',
       FC_REQUIRE_SIGNED_VOICE: 'maybe', FC_SWEEP_INTERVAL_MS: '600000', FC_MIN_CONNECTED_RATE_GBP_PER_MIN: '-3' });
     check(bad.degradedMode === 'reject', 'unknown degraded mode → reject (most conservative), never "bounded"');
@@ -105,10 +117,11 @@ async function main() {
     check(!(await malformed.authorizeCall({ household: hh, callSid: 'CA4', signatureValid: true })).allowed, 'malformed authority response → refused (reject mode)');
   }
   {
-    // DB timeout → degraded envelope, bounded per instance; then extended outage → reject
+    // DB timeout → degraded envelope, bounded per instance; then extended outage → reject.
+    // TEST-ONLY mode (BOUNDED_TEST_ENV): production policy is D3 = reject (checked below).
     const now = clock();
     const hang = () => new Promise(() => {});
-    const c = createContainment({ db: okDb({ authorizeCall: hang }), now, env: { FC_RPC_TIMEOUT_MS: '200', FC_DEGRADED_MAX_CONCURRENT: '2', FC_DEGRADED_MAX_CALLS_PER_HOUR: '3', FC_DEGRADED_MAX_OUTAGE_SECONDS: '600' } });
+    const c = createContainment({ db: okDb({ authorizeCall: hang }), now, env: { ...BOUNDED_TEST_ENV, FC_RPC_TIMEOUT_MS: '200', FC_DEGRADED_MAX_CONCURRENT: '2', FC_DEGRADED_MAX_CALLS_PER_HOUR: '3', FC_DEGRADED_MAX_OUTAGE_SECONDS: '600' } });
     const t0 = Date.now();
     const d1 = await c.authorizeCall({ household: hh, callSid: 'CD1', signatureValid: true, wantsMonitoring: true });
     check(Date.now() - t0 < 1000 && d1.allowed && d1.source === 'degraded' && d1.monitoring === false && d1.timeLimitSeconds === 600,
@@ -121,12 +134,15 @@ async function main() {
     now.advance(700);   // first calls ended by their provider limit; outage now 700 s
     const d4 = await c.authorizeCall({ household: hh, callSid: 'CD4', signatureValid: true });
     check(!d4.allowed && d4.reason === 'authorization_unavailable_extended', 'after degradedMaxOutageSeconds without the authority: every call refused');
-    const rej = createContainment({ db: okDb({ authorizeCall: async () => { throw new Error('ECONNREFUSED'); } }), env: { FC_DEGRADED_MODE: 'reject' } });
+    const rej = createContainment({ db: okDb({ authorizeCall: async () => { throw new Error('ECONNREFUSED'); } }) });
     const r1 = await rej.authorizeCall({ household: hh, callSid: 'CR1', signatureValid: true });
-    check(!r1.allowed && r1.reason === 'authorization_unavailable', 'FC_DEGRADED_MODE=reject: DB down → refuse (zero exposure)');
+    check(!r1.allowed && r1.reason === 'authorization_unavailable' && rej._state.degraded.admissions.length === 0, 'DEFAULT (D3 = reject): DB down → refuse, nothing admitted or journalled (zero exposure)');
+    const prodBounded = createContainment({ db: okDb({ authorizeCall: async () => { throw new Error('ECONNREFUSED'); } }), env: { NODE_ENV: 'production', FC_DEGRADED_MODE: 'bounded', FC_ALLOW_BOUNDED_DEGRADED_MODE: 'true' } });
+    const r2 = await prodBounded.authorizeCall({ household: hh, callSid: 'CR2', signatureValid: true });
+    check(!r2.allowed && r2.reason === 'authorization_unavailable', 'production process asking for bounded (with the opt-in) still refuses');
     // hourly cap
     const now2 = clock();
-    const c2 = createContainment({ db: okDb({ authorizeCall: async () => { throw new Error('down'); } }), now: now2, env: { FC_DEGRADED_MAX_CONCURRENT: '10', FC_DEGRADED_MAX_CALLS_PER_HOUR: '3', FC_DEGRADED_MAX_OUTAGE_SECONDS: '3600' } });
+    const c2 = createContainment({ db: okDb({ authorizeCall: async () => { throw new Error('down'); } }), now: now2, env: { ...BOUNDED_TEST_ENV, FC_DEGRADED_MAX_CONCURRENT: '10', FC_DEGRADED_MAX_CALLS_PER_HOUR: '3', FC_DEGRADED_MAX_OUTAGE_SECONDS: '3600' } });
     const res = [];
     for (let i = 0; i < 5; i++) res.push(await c2.authorizeCall({ household: hh, callSid: `CH${i}`, signatureValid: true }));
     check(res.filter((r) => r.allowed).length === 3 && res[4].reason === 'degraded_hourly_limit', 'degraded: per-instance hourly limit enforced');
@@ -136,7 +152,7 @@ async function main() {
     const c3 = createContainment({ db: okDb({
       authorizeCall: async () => { if (!up) throw new Error('down'); return { allowed: true, timeLimitSeconds: 600, leaseExpiresAt: '2026-10-03T09:05:00Z' }; },
       adoptDegradedCall: async (p) => { adopted.push(p.callSid); return { ok: true }; },
-    }) });
+    }), env: BOUNDED_TEST_ENV });
     await c3.authorizeCall({ household: hh, callSid: 'CJ1', signatureValid: true });
     up = true;
     await c3.settleCall({ callSid: 'CJ1', source: 'dial_action' });

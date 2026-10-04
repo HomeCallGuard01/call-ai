@@ -15,7 +15,11 @@
 const DEFAULTS = Object.freeze({
   requireSignedVoice: true,
   rpcTimeoutMs: 1500,
-  degradedMode: 'bounded',            // 'bounded' | 'reject'  (DECISION D3)
+  // DECISION D3 = REJECT (Andrew, 2026-10-04): if the financial authority
+  // cannot be reached, no new HCG-funded call is admitted. 'bounded' (a small
+  // per-instance envelope) exists ONLY for tests/local development and is
+  // refused in any other process — see resolveDegradedMode below.
+  degradedMode: 'reject',             // 'reject' | 'bounded' (test/development only)
   degradedMaxConcurrent: 2,           // per server instance
   degradedMaxCallsPerHour: 20,        // per server instance
   degradedMaxCallSeconds: 600,        // <Dial timeLimit> for degraded calls
@@ -60,11 +64,7 @@ function resolveContainmentConfig(env = process.env) {
 
   bool('FC_REQUIRE_SIGNED_VOICE', 'requireSignedVoice');
   intIn('FC_RPC_TIMEOUT_MS', 'rpcTimeoutMs', 200, 5000);
-  const mode = env.FC_DEGRADED_MODE;
-  if (mode !== undefined && mode !== '') {
-    if (mode === 'bounded' || mode === 'reject') c.degradedMode = mode;
-    else { warnings.push(`FC_DEGRADED_MODE=${mode} invalid; using reject (most conservative)`); c.degradedMode = 'reject'; }
-  }
+  c.degradedMode = resolveDegradedMode(env, warnings);
   // Degraded envelope: values above the cap are refused, not clamped up.
   intIn('FC_DEGRADED_MAX_CONCURRENT', 'degradedMaxConcurrent', 0, 10, { conservative: 'min' });
   intIn('FC_DEGRADED_MAX_CALLS_PER_HOUR', 'degradedMaxCallsPerHour', 0, 120, { conservative: 'min' });
@@ -88,6 +88,24 @@ function resolveContainmentConfig(env = process.env) {
   c.overrides = resolveTighteningOverrides(env, c, warnings);
   c.warnings = warnings;
   return Object.freeze(c);
+}
+
+// D3 = reject. 'bounded' needs ALL of: FC_DEGRADED_MODE=bounded, the explicit
+// opt-in FC_ALLOW_BOUNDED_DEGRADED_MODE=true, and NODE_ENV exactly 'test' or
+// 'development'. Production, staging and an UNSET NODE_ENV (treated as
+// possibly production) always get 'reject'; a refused request is reported in
+// `warnings` (recorded as a containment event and logged at boot).
+const BOUNDED_ALLOWED_NODE_ENVS = new Set(['test', 'development']);
+function resolveDegradedMode(env, warnings) {
+  const mode = env.FC_DEGRADED_MODE;
+  if (mode === undefined || mode === '' || mode === 'reject') return 'reject';
+  if (mode !== 'bounded') {
+    warnings.push(`FC_DEGRADED_MODE=${mode} invalid; using reject (D3)`);
+    return 'reject';
+  }
+  if (env.FC_ALLOW_BOUNDED_DEGRADED_MODE === 'true' && BOUNDED_ALLOWED_NODE_ENVS.has(env.NODE_ENV)) return 'bounded';
+  warnings.push(`FC_DEGRADED_MODE=bounded refused (D3 = reject; bounded needs FC_ALLOW_BOUNDED_DEGRADED_MODE=true and NODE_ENV=test|development, got NODE_ENV=${env.NODE_ENV || 'unset'}); using reject`);
+  return 'reject';
 }
 
 // Only tightening keys; the database ignores anything looser anyway.
@@ -139,4 +157,5 @@ function isEssentialCaller(config, from) {
   return config.essentialCallers.includes(normaliseDigits(from));
 }
 
-module.exports = { DEFAULTS, resolveContainmentConfig, isEssentialCaller, normaliseDigits };
+module.exports = {
+  resolveDegradedMode, DEFAULTS, resolveContainmentConfig, isEssentialCaller, normaliseDigits };

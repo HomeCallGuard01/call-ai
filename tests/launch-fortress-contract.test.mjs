@@ -2,8 +2,10 @@
 // Fortress (tests/launch-gate/adapters/fortress-pglite.mjs) — integration
 // 2026-10-03. Pins the honest outcome, so a regression in either direction is
 // visible, and turns the two non-PASS results into explained evidence:
-//   FC-6 FAIL under FC_DEGRADED_MODE=bounded (decision D3: a small bounded
-//        envelope is admitted while the database is down) — PASS under 'reject'.
+//   FC-6 PASS under the production policy, decision D3 = REJECT (2026-10-04).
+//        Asking for 'bounded' without the test-only opt-ins still yields reject
+//        (PASS); only the explicit test-only opt-in reproduces the bounded
+//        envelope, which fails FC-6 by design — kept to show what D3 rules out.
 //   FC-3 contract assertion FAIL: the contract measures allowance in seconds and
 //        assumes cost never affects it; Fortress enforces £ and charges
 //        max(estimate, actual) (invariant I7). Proven below: the duplicate
@@ -14,11 +16,11 @@ import { createSubject } from './launch-gate/adapters/fortress-pglite.mjs';
 let failures = 0;
 const check = (c, m) => { if (c) console.log(`✓ ${m}`); else { console.error(`✗ ${m}`); failures++; } };
 
-for (const mode of ['bounded', 'reject']) {
-  const res = await runFinancialContract(() => createSubject({ degradedMode: mode }));
+for (const mode of ['reject', 'bounded', 'bounded-test-only']) {
+  const res = await runFinancialContract(() => createSubject({ degradedMode: mode === 'bounded-test-only' ? 'bounded' : mode, allowBoundedForTests: mode === 'bounded-test-only' }));
   const st = Object.fromEntries(res.map((r) => [r.id, r.status]));
   for (const id of ['FC-1', 'FC-2', 'FC-4', 'FC-5', 'FC-7', 'FC-8']) check(st[id] === 'PASS', `[${mode}] ${id} PASS against the real Fortress (${res.find((r) => r.id === id).detail})`);
-  check(st['FC-6'] === (mode === 'bounded' ? 'FAIL' : 'PASS'), `[${mode}] FC-6 store outage: ${st['FC-6']} — ${mode === 'bounded' ? 'D3 bounded envelope admits (≤ 2 concurrent / 20 per hour / 10 min, unmonitored, per instance)' : 'fail-closed refusal'}`);
+  check(st['FC-6'] === (mode === 'bounded-test-only' ? 'FAIL' : 'PASS'), `[${mode}] FC-6 store outage: ${st['FC-6']} — ${mode === 'bounded-test-only' ? 'test-only bounded envelope admits (what D3 = reject rules out)' : mode === 'bounded' ? 'bounded requested without the test-only opt-in → refused (reject)' : 'D3 = reject: fail-closed refusal'}`);
   check(st['FC-3'] === 'FAIL', `[${mode}] FC-3 contract assertion FAIL is the seconds-vs-£ model mismatch (see evidence below), not a double charge`);
 }
 

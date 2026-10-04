@@ -864,6 +864,15 @@ const callAdmission = createCallAdmission({
   countEntitledHouseholds: () => financialSafetyDb.countActiveEntitledHouseholds(),
 });
 const containment = getContainment();
+// Decision D3 = reject (2026-10-04): with the financial authority
+// unreachable no new HCG-funded call is admitted. The effective mode and any
+// refused configuration are logged at boot so a misconfiguration is visible.
+console.log(`FINANCIAL CONTAINMENT: degraded mode = ${containment.config.degradedMode}`);
+for (const w of containment.config.warnings) console.error("FINANCIAL CONTAINMENT CONFIG:", w);
+if (containment.config.degradedMode !== "reject" && process.env.NODE_ENV === "production") {
+  // Unreachable by construction (policy.js refuses 'bounded' outside test/development); asserted anyway.
+  throw new Error("FINANCIAL CONTAINMENT: degraded mode must be 'reject' in production (D3)");
+}
 const usageMeter = createUsageMeter({
   // A stream is metered (056) AND must be authorised for monitoring by the
   // containment ledger; otherwise the handler stops it before any paid

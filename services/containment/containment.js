@@ -5,8 +5,11 @@
 //   - a hard timeout on every authorisation,
 //   - FAIL-CLOSED behaviour for HCG spend when the authority can't answer:
 //       * monitoring / SMS / AI / number purchase: refused;
-//       * calls: the small, per-instance DEGRADED ENVELOPE (or refusal when
-//         FC_DEGRADED_MODE=reject, or after degradedMaxOutageSeconds),
+//       * calls: REFUSED (decision D3 = reject, 2026-10-04 — the default and
+//         the only mode outside tests/local development). The small
+//         per-instance degraded envelope below runs only when policy.js
+//         allows 'bounded' (FC_ALLOW_BOUNDED_DEGRADED_MODE=true AND
+//         NODE_ENV=test|development); its journal/adoption code is then used,
 //   - a local memory of the leases this instance admitted, so the sweeper
 //     can end calls itself if the database stays unreachable,
 //   - a journal of degraded admissions, adopted into the ledger when the

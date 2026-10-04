@@ -132,12 +132,13 @@ async function main() {
   check(!killed.allowed && killed.reason === 'kill_switch', 'new calls refused while the kill switch is on');
   await q("select public.fc_set_kill_switch(false, 'e2e: drill over', 'tester')");
 
-  // 4. Database outage mid-call: degraded admission, local fail-closed termination, adoption on recovery.
+  // 4. Database outage mid-call (decision D3 = reject, 2026-10-04): new calls
+  //    REFUSED, live calls ended locally at lease + grace, settled on recovery.
   const c1 = await voice(C, 'CA-e2e-o1', { wantsMonitoring: false });
   check(c1.allowed && c1.source === 'database', 'call admitted before the outage');
   dbDown = true;
   const c2 = await voice(C, 'CA-e2e-o2');
-  check(c2.allowed && c2.source === 'degraded' && c2.monitoring === false && c2.timeLimitSeconds === 600, 'during the outage: degraded admission, unmonitored, 600 s provider limit');
+  check(!c2.allowed && c2.reason === 'authorization_unavailable' && c2.timeLimitSeconds === null, 'during the outage (D3 = reject): a new call is REFUSED — no HCG-funded admission without the authority');
   await tick(420);
   check(tw.calls.get('CA-e2e-o1').terminatedByHcg === true, 'outage outlasted the paid lease + grace → this instance ended the call itself (fail closed)');
   dbDown = false;
@@ -145,10 +146,7 @@ async function main() {
   const o1 = await R.reservation('CA-e2e-o1');
   const o2 = await R.reservation('CA-e2e-o2');
   check(o1.state === 'settled', 'after recovery the outage-terminated call is settled in the ledger');
-  check(o2 && o2.funding === 'degraded', 'the degraded admission is adopted into the ledger after recovery');
-  tw.hangUpByCaller('CA-e2e-o2');
-  await tick(400);
-  check((await R.reservation('CA-e2e-o2')).state === 'settled', 'adopted call settled from provider status');
+  check(!o2, 'nothing was reserved or adopted for the call refused during the outage');
 
   // 5. Lost callback for every call → the sweeper still settles them all.
   const lost = [];

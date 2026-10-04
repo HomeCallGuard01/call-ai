@@ -20,9 +20,10 @@
 //                         here: the real system never accepts a client-supplied
 //                         duration (settlement derives it from the provider or
 //                         the clock), so such an event is not representable.
-//   setStoreAvailable   → every database call fails; the APP LAYER decides
-//                         (FC_DEGRADED_MODE: 'bounded' (decision D3, default)
-//                         admits a small bounded envelope; 'reject' admits none)
+//   setStoreAvailable   → every database call fails; the APP LAYER decides —
+//                         decision D3 = REJECT (2026-10-04): nothing admitted.
+//                         The subject runs as NODE_ENV=production unless a
+//                         test explicitly opts in to the test-only bounded mode.
 //   setGlobalCeiling / addGlobalSpend → the hourly spend breaker (fc_policy) and
 //                         real unattributed one-shot spend counted in its window
 //   setRateLimit(n)     → the £ rate-of-spend breaker set to exactly n first
@@ -41,7 +42,7 @@ const { createContainment } = require('../../../services/containment/containment
 
 export const CAPABILITIES_DECLARED = ['global-ceiling', 'store-outage', 'rate-breaker'];
 
-export async function createSubject({ degradedMode = process.env.FC_DEGRADED_MODE || 'bounded' } = {}) {
+export async function createSubject({ degradedMode = process.env.FC_DEGRADED_MODE || 'reject', allowBoundedForTests = false } = {}) {
   const db = new PGlite();
   await applyAll(db);
   const q = async (sql, p = []) => (await db.query(sql, p)).rows;
@@ -54,7 +55,12 @@ export async function createSubject({ degradedMode = process.env.FC_DEGRADED_MOD
   const client = rpcClient(q);
   const gated = { rpc: (name, params) => (storeUp ? client.rpc(name, params) : Promise.resolve({ data: null, error: { message: 'database unavailable (simulated)' } })) };
   const bound = Object.fromEntries(Object.entries(fcDb).map(([k, fn]) => [k, typeof fn === 'function' ? (args) => fn(args, gated) : fn]));
-  const containment = createContainment({ db: bound, env: { FC_DEGRADED_MODE: degradedMode, FC_REQUIRE_SIGNED_VOICE: 'true' } });
+  // Production policy: D3 = reject. 'bounded' only takes effect with the
+  // test-only opt-in (policy.js) — never via FC_DEGRADED_MODE alone.
+  const containment = createContainment({ db: bound, env: {
+    FC_DEGRADED_MODE: degradedMode, FC_REQUIRE_SIGNED_VOICE: 'true',
+    ...(allowBoundedForTests ? { NODE_ENV: 'test', FC_ALLOW_BOUNDED_DEGRADED_MODE: 'true' } : { NODE_ENV: 'production' }),
+  } });
 
   const now = new Date();
   const period = { periodStart: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), periodEnd: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)) };
