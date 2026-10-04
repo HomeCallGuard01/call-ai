@@ -5,15 +5,12 @@ const { stripe } = require("../services/stripeClient");
 const { deriveAdminCustomerState, ONBOARDING_ATTENTION_THRESHOLD_MS } = require("../services/adminOnboardingStatus");
 const { deriveCustomerHealth, summariseCustomerHealth } = require("../services/adminCustomerHealth");
 
-// Entitlements with their store environment (migration 053). Before 053 is
-// applied the column does not exist: fall back to the base columns, and store
-// grants then classify as environment-unverified (never "Paying").
+// Entitlements with their store environment (migration 053) and Apple store
+// lifecycle state (073). Delegates to the ONE shared loader, which steps down
+// a migration at a time when a column does not exist yet (store grants then
+// classify as environment-unverified, never "Paying").
 async function selectEntitlementsWithEnvironment(columns) {
-  const withEnv = await supabaseAdmin.from("entitlements").select(`${columns}, revenuecat_environment`);
-  if (withEnv.error && /42703|revenuecat_environment|does not exist|Could not find/i.test(`${withEnv.error.code || ""} ${withEnv.error.message || ""}`)) {
-    return supabaseAdmin.from("entitlements").select(columns);
-  }
-  return withEnv;
+  return require("../services/commercial/householdCommercialIndex").selectEntitlementsWithEnvironment(supabaseAdmin, columns);
 }
 const { getClassificationMap, classifyHousehold } = require("../services/businessMetrics/accountClassification");
 

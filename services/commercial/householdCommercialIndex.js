@@ -15,7 +15,7 @@ const { currentEntitlementOf } = require('../lifecycle/exceptionQueue');
 const ENTITLEMENT_BASE_COLUMNS = 'household_id, entitlement_type, status, source, starts_at, ends_at, updated_at';
 
 function isMissingColumn(error) {
-  return /42703|revenuecat_environment|does not exist|Could not find/i.test(`${(error && error.code) || ''} ${(error && error.message) || ''}`);
+  return /42703|revenuecat_environment|store_will_renew|store_billing_issue_at|store_refunded_at|does not exist|Could not find/i.test(`${(error && error.code) || ''} ${(error && error.message) || ''}`);
 }
 
 /**
@@ -26,8 +26,15 @@ function isMissingColumn(error) {
  * @param {string} [columns]
  * @param {Function} [select] — optional (cols) => query builder, for pagination wrappers
  */
+// Apple store lifecycle state (migration 073, launch sprint 2026-10-05).
+const STORE_STATE_COLUMNS = 'store_will_renew, store_billing_issue_at, store_refunded_at';
+
 async function selectEntitlementsWithEnvironment(supabase, columns = ENTITLEMENT_BASE_COLUMNS, select = null) {
   const run = (cols) => (select ? select(cols) : supabase.from('entitlements').select(cols));
+  // Newest schema first; each missing-column error steps down one migration
+  // (073 → 053 → base) so admin keeps working before either is applied.
+  const withStore = await run(`${columns}, revenuecat_environment, ${STORE_STATE_COLUMNS}`);
+  if (!(withStore && withStore.error && isMissingColumn(withStore.error))) return withStore;
   const withEnv = await run(`${columns}, revenuecat_environment`);
   if (withEnv && withEnv.error && isMissingColumn(withEnv.error)) return run(columns);
   return withEnv;

@@ -539,6 +539,61 @@ async function expireEntitlementFromRevenueCat(householdId, originalTransactionI
   return { revoked: true };
 }
 
+// Apple / RevenueCat subscription lifecycle state (migration 073, launch
+// sprint 2026-10-05). Records CANCELLATION / UNCANCELLATION / BILLING_ISSUE /
+// recovery on the ONE entitlement row this event is about: same household,
+// source apple_revenuecat, same original transaction AND same RevenueCat
+// environment — a sandbox/TestFlight event can never alter a production row.
+// Never changes status or ends_at (no access is removed here). Out-of-order or
+// replayed events are ignored via store_state_event_at. Before 073 is applied
+// the columns do not exist: returns { applied: false, reason:
+// 'store_state_columns_missing' } and the webhook behaves exactly as before.
+// services/storeSubscriptionState.js decides the patch.
+function isMissingStoreStateColumn(error) {
+  return /42703|store_state_event_at|store_will_renew|does not exist|Could not find/i.test(`${(error && error.code) || ""} ${(error && error.message) || ""}`);
+}
+
+async function applyRevenueCatStoreState(householdId, { originalTransactionId, environment, eventAt, patch }, deps = {}) {
+  const { client = supabaseAdmin } = deps;
+  if (!client) throw new Error("Supabase admin client not configured");
+  if (!householdId || !originalTransactionId || !environment || !eventAt || !patch) {
+    return { applied: false, reason: "missing_input" };
+  }
+  const { isNewerThanRecorded } = require("../services/storeSubscriptionState");
+
+  const { data: rows, error: readError } = await client
+    .from("entitlements")
+    .select("id, status, ends_at, revenuecat_environment, store_state_event_at")
+    .eq("household_id", householdId)
+    .eq("source", "apple_revenuecat")
+    .eq("external_reference", originalTransactionId)
+    .eq("revenuecat_environment", environment)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (readError) {
+    if (isMissingStoreStateColumn(readError)) return { applied: false, reason: "store_state_columns_missing" };
+    console.error("SUPABASE ENTITLEMENT READ ERROR (revenuecat store state):", readError);
+    throw readError;
+  }
+  const row = rows && rows[0];
+  if (!row) return { applied: false, reason: "no_matching_entitlement" };
+  if (!isNewerThanRecorded(eventAt, row.store_state_event_at)) {
+    return { applied: false, reason: "older_or_replayed_event", entitlementId: row.id };
+  }
+
+  const { error: updateError } = await client
+    .from("entitlements")
+    .update({ ...patch, store_state_event_at: eventAt })
+    .eq("id", row.id);
+  if (updateError) {
+    if (isMissingStoreStateColumn(updateError)) return { applied: false, reason: "store_state_columns_missing" };
+    console.error("SUPABASE ENTITLEMENT STORE STATE UPDATE ERROR:", updateError);
+    throw updateError;
+  }
+  return { applied: true, entitlementId: row.id };
+}
+
 // Revokes a household's active Stripe-sourced entitlement, for
 // account-deletion use (services/accountDeletion.js). Every other
 // Stripe-driven entitlement change up to now has only ever happened via
@@ -601,6 +656,7 @@ module.exports = {
   getSubscriptionByHouseholdId,
   upsertActiveEntitlementFromRevenueCat,
   expireEntitlementFromRevenueCat,
+  applyRevenueCatStoreState,
   grantComplimentaryEntitlement,
   revokeComplimentaryEntitlement,
   revokeStripeEntitlementForDeletion,

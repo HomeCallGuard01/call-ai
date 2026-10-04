@@ -157,8 +157,15 @@ function classifyHouseholdForBusiness({ household, entitlements, subscriptions, 
     everPaid,
     formerPaying: everPaid && access !== 'paid',
     paidSources: [...new Set(paidEntitlements.map((e) => e.source || 'unknown'))],
-    cancellingAtPeriodEnd: !!(current && latestSubscription && latestSubscription.cancel_at_period_end && latestSubscription.status !== 'canceled'),
-    paymentIssue: !!(latestSubscription && (latestSubscription.status === 'past_due' || latestSubscription.status === 'unpaid')),
+    // Stripe from the subscription row; Apple from the store lifecycle state on
+    // the current entitlement (migration 073; absent columns → false, as before).
+    cancellingAtPeriodEnd: !!(current && (
+      (latestSubscription && latestSubscription.cancel_at_period_end && latestSubscription.status !== 'canceled')
+      || (current.source === 'apple_revenuecat' && (current.store_will_renew === false || !!current.store_refunded_at))
+    )),
+    paymentIssue: !!((latestSubscription && (latestSubscription.status === 'past_due' || latestSubscription.status === 'unpaid'))
+      || (current && current.source === 'apple_revenuecat' && current.store_billing_issue_at)),
+    storeRefunded: !!(current && current.source === 'apple_revenuecat' && current.store_refunded_at),
     protection,
     protectionStage: activation.stage,
     protectionBlockers: activation.blockers,

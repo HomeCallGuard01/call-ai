@@ -26,6 +26,7 @@ const {
   markHouseholdDeliveryVerified,
 } = require("./database/households");
 const { redeemInvite } = require("./services/complimentaryInvites");
+const { deriveMembershipStatus } = require("./services/membershipStatus");
 const { decidePostLoginRedirect, decideDashboardRouteRedirect } = require("./services/postLoginRouting");
 const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require("./services/acquisitionAnalytics");
 const { renderGoPage } = require("./services/goLanding");
@@ -1871,18 +1872,12 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
   // entitlements.entitlement_type already supports 'free_trial' (Decision
   // 009) even though nothing creates one yet; this makes the UI trial-
   // ready without a real trial-issuing flow existing.
-  let membershipStatus = "active";
-  if (req.entitlement.entitlement_type === "free_trial") {
-    membershipStatus = "trial";
-  } else if (subscription && subscription.status === "past_due") {
-    // Still an active entitlement (past_due qualifies — see
-    // process_stripe_webhook_event in migration 013) — protection
-    // continues while Stripe retries payment; this is a status to
-    // surface, not a reason to withdraw access.
-    membershipStatus = "payment_issue";
-  } else if (subscription && subscription.cancel_at_period_end) {
-    membershipStatus = "cancelled";
-  }
+  // Launch sprint 2026-10-05: ONE derivation shared with the app's
+  // /api/v1/me/dashboard (services/membershipStatus.js). Stripe logic is
+  // unchanged; Apple-billed memberships now read the store lifecycle state
+  // (migration 073) instead of always showing "active".
+  const membershipView = deriveMembershipStatus({ entitlement: req.entitlement, subscription });
+  const membershipStatus = membershipView.status;
 
   // Genuine backend state, not a client-only assumption — the checklist/
   // "You're protected" claim in upload.html is gated on both of these.
@@ -1990,8 +1985,8 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
         lookupStripePrice: getSharedStripePriceLookup(),
       }),
       status: membershipStatus,
-      nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
-      accessUntil: subscription ? subscription.current_period_end : null,
+      nextBillingDate: membershipView.nextBillingDate,
+      accessUntil: membershipView.accessUntil,
       trialEndDate: req.entitlement.entitlement_type === "free_trial" ? req.entitlement.ends_at : null,
       // False for complimentary/founding/promotional/staff access, which
       // has no real Stripe subscription behind it to manage in the portal.

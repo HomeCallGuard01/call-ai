@@ -19,7 +19,10 @@ const {
   getMostRecentRevenueCatEntitlement,
   upsertActiveEntitlementFromRevenueCat,
   expireEntitlementFromRevenueCat,
+  applyRevenueCatStoreState,
 } = require("../database/billing");
+const { deriveStoreStatePatch } = require("../services/storeSubscriptionState");
+const { deriveMembershipStatus } = require("../services/membershipStatus");
 const {
   getCallsToday,
   getRecentCalls,
@@ -623,14 +626,11 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // enough (req.entitlement shape, response shape) that a shared
     // function would need as much branching as just repeating the small
     // derivation itself — revisit if a third call site ever needs this.
-    let membershipStatus = "active";
-    if (req.entitlement.entitlement_type === "free_trial") {
-      membershipStatus = "trial";
-    } else if (subscription && subscription.status === "past_due") {
-      membershipStatus = "payment_issue";
-    } else if (subscription && subscription.cancel_at_period_end) {
-      membershipStatus = "cancelled";
-    }
+    // Launch sprint 2026-10-05: ONE derivation shared with /dashboard-data
+    // (services/membershipStatus.js). Stripe logic unchanged; Apple-billed
+    // memberships read the store lifecycle state (migration 073).
+    const membershipView = deriveMembershipStatus({ entitlement: req.entitlement, subscription });
+    const membershipStatus = membershipView.status;
 
     const activationRecentlyConfirmedByACall = isCallWithinVerificationWindow(recentCalls[0]);
 
@@ -727,8 +727,8 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
           lookupStripePrice: getSharedStripePriceLookup(),
         }),
         status: membershipStatus,
-        nextBillingDate: subscription && !subscription.cancel_at_period_end ? subscription.current_period_end : null,
-        accessUntil: subscription ? subscription.current_period_end : null,
+        nextBillingDate: membershipView.nextBillingDate,
+        accessUntil: membershipView.accessUntil,
         trialEndDate: req.entitlement.entitlement_type === "free_trial" ? req.entitlement.ends_at : null,
         manageable: !!(req.household.stripe_customer_id && subscription),
         // The active entitlement's own source (entitlements.source —
@@ -1581,6 +1581,19 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
           console.error("REVENUECAT WEBHOOK: Twilio provisioning update failed:", err.message)
         );
       }
+      // Migration 073 (launch sprint 2026-10-05): a RENEWAL / INITIAL_PURCHASE /
+      // UNCANCELLATION also records "will renew; billing problem resolved" on
+      // the same row. Best-effort: the grant above is already decided and is
+      // never changed by this; a failure here is logged, not surfaced.
+      const recoveryState = deriveStoreStatePatch(event);
+      if (recoveryState) {
+        await applyRevenueCatStoreState(household.id, {
+          originalTransactionId,
+          environment: isSandbox ? "sandbox" : "production",
+          eventAt: recoveryState.eventAt,
+          patch: recoveryState.patch,
+        }).catch(err => console.error("REVENUECAT WEBHOOK: store state (recovery) not recorded:", err.message));
+      }
       return res.json({ ok: true, ...result, sandbox: isSandbox });
     }
 
@@ -1598,9 +1611,34 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
     }
 
     // CANCELLATION, BILLING_ISSUE, TEST, and anything else RevenueCat
-    // might add later: acknowledged, no entitlement change — see
+    // might add later: no entitlement change (status/ends_at untouched) — see
     // services/revenuecatWebhook.js's own comment for why CANCELLATION
     // specifically must never revoke immediately.
+    //
+    // Migration 073 (launch sprint 2026-10-05): CANCELLATION and BILLING_ISSUE
+    // are now RECORDED on the matching entitlement (same transaction, same
+    // environment) so the membership read model can say "cancelled —
+    // protection continues until …" or "payment needs attention" truthfully.
+    // Before 073 is applied this records nothing and behaves as before. A DB
+    // error throws → 500 → RevenueCat retries (same as every other DB error).
+    const storeState = deriveStoreStatePatch(event);
+    if (storeState && originalTransactionId) {
+      const environment = resolveEventIsSandbox(event) ? "sandbox" : "production";
+      const recorded = await applyRevenueCatStoreState(household.id, {
+        originalTransactionId,
+        environment,
+        eventAt: storeState.eventAt,
+        patch: storeState.patch,
+      });
+      if (recorded.applied && storeState.kind === "refund") {
+        // Policy (Andrew, pending): access is NOT cut automatically on an
+        // Apple refund. Support decides; the alert carries no personal data.
+        sendCriticalAlert("revenuecat_refund_recorded", "An Apple subscription was refunded — access continues until support acts", {
+          householdId: household.id, environment,
+        }).catch(() => {});
+      }
+      return res.json({ ok: true, action: recorded.applied ? "store_state_recorded" : "acknowledged_no_change", storeState: storeState.kind, reason: recorded.reason || null });
+    }
     return res.json({ ok: true, action: "acknowledged_no_change" });
   } catch (err) {
     console.error("REVENUECAT WEBHOOK ERROR:", err.message);
