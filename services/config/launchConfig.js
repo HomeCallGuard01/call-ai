@@ -17,6 +17,10 @@
 //
 // Never prints, returns or logs a secret VALUE: findings carry key names and
 // problem codes only.
+//
+// Authoritative schema. services/serverConfig.js validateProductionEnv (the
+// original NODE_ENV=production minimum) still runs; this schema is a strict
+// superset of it (tests/launch-config-safety.test.mjs asserts that).
 'use strict';
 
 const { resolveEnvironment } = require('../telephony/provisioningGuard');
@@ -58,7 +62,11 @@ const RULES = [
     (e) => (present(e.SUPABASE_URL) && present(e.SUPABASE_ANON_KEY) && present(e.SUPABASE_SERVICE_ROLE_KEY) ? null : 'missing'),
     'Every financial authority (Fortress 067, 056 claims, entitlements) lives in Supabase.'),
   R('app_url_https', 'Platform', ['APP_URL'], REQ_BOTH,
-    (e) => (/^https:\/\/[^\s/]+/.test(String(e.APP_URL || '')) ? null : 'missing_or_not_https'),
+    (e) => {
+      if (!/^https:\/\/[^\s/]+/.test(String(e.APP_URL || ''))) return 'missing_or_not_https';
+      try { if (['localhost', '127.0.0.1'].includes(new URL(e.APP_URL).hostname)) return 'localhost'; } catch { return 'invalid_url'; }
+      return null;
+    },
     'Twilio signature validation and callback-host checks are computed from APP_URL.'),
   R('deployment_declared', 'Platform', ['HCG_DEPLOYMENT'], REC_BOTH,
     (e) => (present(e.HCG_DEPLOYMENT) ? null : 'not_declared'),

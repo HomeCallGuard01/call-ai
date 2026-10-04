@@ -13,12 +13,14 @@ function resolvePort(env) {
 // webhook signature check fails, silently blocking all future subscription
 // activations, not a crash anyone would notice quickly).
 //
-// Deliberately narrower than every env var the app reads. OPENAI_API_KEY
-// and Resend_API_Key are not included: the app already fails open around
-// them per-request/per-feature elsewhere in the codebase (matching this
-// project's existing fail-open convention for optional integrations), and
-// turning those into a hard boot-time failure would be a bigger behavioral
-// change than this fix calls for.
+// Deliberately narrower than every env var the app reads.
+// Soft-launch integration 2026-10-04: the AUTHORITATIVE launch-required
+// schema is services/config/launchConfig.js (production AND staging, hash
+// secrets, proxy hops, webhook/D3 safety, OpenAI, …), enforced first thing
+// in server.js; it is a strict superset of this list (asserted by
+// tests/launch-config-safety.test.mjs). Correction found there: OPENAI_API_KEY
+// does NOT fail open — server.js constructs the OpenAI client at boot and
+// crashes without it, so the launch schema requires it.
 const REQUIRED_IN_PRODUCTION = [
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",

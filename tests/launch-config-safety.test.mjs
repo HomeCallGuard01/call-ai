@@ -97,6 +97,14 @@ check(evaluateLaunchConfig({ NODE_ENV: 'test' }).ok, 'test/dev: nothing enforced
 }
 check(RULES.every((r) => r.id && r.keys.length && r.why), 'every rule names its keys and explains why');
 
+// ── One authoritative schema: the legacy NODE_ENV=production list is a subset ─
+{
+  const { REQUIRED_IN_PRODUCTION } = require('../services/serverConfig');
+  const uncovered = REQUIRED_IN_PRODUCTION.filter((name) => !fatalIds(ev({ [name]: undefined })).length);
+  check(uncovered.length === 0, `every legacy REQUIRED_IN_PRODUCTION variable is fatal in the launch schema (uncovered: ${uncovered.join(',') || 'none'})`);
+  check(fatalIds(ev({ APP_URL: 'https://localhost' })).includes('app_url_https'), 'localhost APP_URL is fatal (absorbed from the legacy check)');
+}
+
 // ── Comms OFF (brief §6 B10): the planner has no send path ─────────────
 {
   const src = readFileSync(path.join(ROOT, 'services/lifecycle/communicationsPlan.js'), 'utf8');
