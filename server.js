@@ -1002,6 +1002,8 @@ app.use(require("./routes/adminFortress").createAdminFortressRoutes({ supabaseAd
 app.use(require("./routes/adminAccounting").createAdminAccountingRoutes({ supabaseAdmin }));
 // Customer lifecycle (2026-10-04): read-only exception queue + per-household activation state.
 app.use(require("./routes/adminLifecycle").createAdminLifecycleRoutes({ supabaseAdmin, getDeliveryHealth: (household) => getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household }) }));
+// Operational events (2026-10-04): admin view of new-genuine-customer / protected / needs-attention events (503 until 072).
+app.use(require("./routes/adminOpsEvents").createAdminOpsEventRoutes({ supabaseAdmin }));
 
 // Integration 2026-10-03: the customer allowance describes the AUTHORITATIVE
 // £ budget (Financial Fortress) unless explicitly set otherwise, so the
