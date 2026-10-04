@@ -115,7 +115,7 @@ export const CONTROLS = [
 
   // -------------------------------------------------------------- D BILLING
   { id: 'D1', area: 'D', title: '£5.99 entitlement (price as approved, consistent across channels)', status: 'UNPROVEN', blocker: true, owner: 'WS-BILL / OPS',
-    evidence: [ci('£4.99 hard-coded in copy routes/billing.js:135, subscribe.tsx:277,323'), doc('£5.99 NOT approved per price audit 24cb3c3')] },
+    evidence: [ci('candidate: app + checkout + membership label read the price from StoreKit / the Stripe Price (no literal); website/terms/guides £5.99 in source (2026-10-05)'), doc('£5.99 APPROVED 2026-10-04; live Stripe Price + App Store IAP still £4.99 — cutover: docs/launch/2026-10-05-PRICE-CUTOVER-CHECKLIST.md')] },
   { id: 'D2', area: 'D', title: 'Stripe lifecycle (create/renew/cancel/delete)', status: 'PARTIAL', blocker: false, owner: 'WS-BILL',
     evidence: [ci('routes/billing.js:572-618'), test('tests/cancellation-deactivation-safety.test.mjs')] },
   { id: 'D3', area: 'D', title: 'Apple IAP entitlement (incl. delay)', status: 'UNPROVEN', blocker: true, owner: 'WS-BILL', evidence: [ci('via RevenueCat only')] },

@@ -118,7 +118,7 @@ check(!/AI-powered|money-back|guarantee of|sms|text message/i.test(listingText),
 check(/available now for Android phones\. iPhone and landline support are coming soon\./.test(fullDesc), 'Play description: Android available now; iPhone and landline coming soon');
 check(/goes beyond ordinary number blocking[\s\S]{0,140}assesses risk as the conversation develops/.test(fullDesc), 'Play description: positioned as protection beyond number blocking, assessing risk as the call develops');
 check(/Android — available now · iPhone — Coming Soon · Landline — Coming Soon/.test(play), 'Play section states availability: Android available now, iPhone and Landline Coming Soon');
-check(/£4\.99 a month including VAT/.test(fullDesc), 'Play description: price stated including VAT');
+check(/£5\.99 a month including VAT/.test(fullDesc) && !/4\.99/.test(fullDesc), 'Play description: £5.99 launch price stated including VAT (no £4.99 left)');
 check(/App Store \(iOS\) section is NOT updated/.test(listing.split('## App Store Connect (iOS)')[0]), 'the draft warns that the App Store (iOS) section is outdated and must not be used as-is');
 
 // ---- wiring ----

@@ -9,7 +9,7 @@
 //     TTS, SMS, transcription, other), in GBP
 //   - how much of that is supplier-confirmed vs allocated vs estimated,
 //     and how many items are still UNKNOWN (never counted as £0)
-//   - a month-end projection and contribution against the £4.99 price
+//   - a month-end projection and contribution against the launch price (economics register)
 //     (internal only — nothing here is shown to or enforced on a customer)
 //
 // Money rules (LEDGER_REPORTING_INTERFACE.md): currencies are never added
@@ -190,7 +190,7 @@ function accumulateHouseholdCosts({ entries = [], legs = [], calls = [], asOf, f
 // Contribution of one household for the month at a given price and payment
 // channel (internal economics; the household's real channel comes from its
 // entitlement when known).
-function householdContribution(household, { priceGbp = 4.99, channel = 'store15', vatRate = 0.2 } = {}) {
+function householdContribution(household, { priceGbp = require('./economicsRegister').value('priceIncVatGbp'), channel = 'store15', vatRate = 0.2 } = {}) {
   const net = priceGbp / (1 + vatRate);
   const fee = CHANNELS[channel].fee(priceGbp, net);
   const afterFees = net - fee;

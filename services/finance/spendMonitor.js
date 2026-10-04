@@ -91,7 +91,7 @@ async function runSpendMonitor({ load, sendCriticalAlert = null, now = new Date(
   // Internal-only loss-making flag (never shown to or enforced on a customer).
   const channels = data.householdChannels || {};
   const perHousehold = accumulation.households.map((h) => ({
-    ...h, contribution: householdContribution(h, { priceGbp: config.priceGbp || 4.99, channel: channels[h.householdId] || config.defaultChannel || 'store15' }),
+    ...h, contribution: householdContribution(h, { priceGbp: config.priceGbp || require('./economicsRegister').value('priceIncVatGbp'), channel: channels[h.householdId] || config.defaultChannel || 'store15' }),
   }));
   const lossAlerts = perHousehold.filter((h) => h.contribution.projectedLossMaking).map((h) => ({
     code: 'HOUSEHOLD_PROJECTED_LOSS', severity: 'WARNING', value: h.projectedMonthGbp, threshold: h.contribution.afterFeesGbp,
@@ -103,7 +103,7 @@ async function runSpendMonitor({ load, sendCriticalAlert = null, now = new Date(
   // and from the catastrophic hard ceilings enforced at call admission.
   const targetMargin = config.targetMargin ?? 0.4;
   const marginAlerts = perHousehold.filter((h) => !h.contribution.projectedLossMaking).flatMap((h) => {
-    const t = householdCostThresholds({ priceGbp: config.priceGbp || 4.99, channel: h.contribution.channel, targetMargin });
+    const t = householdCostThresholds({ priceGbp: config.priceGbp || require('./economicsRegister').value('priceIncVatGbp'), channel: h.contribution.channel, targetMargin });
     return h.projectedMonthGbp > t.watchAtCostGbp ? [{
       code: 'HOUSEHOLD_BELOW_TARGET_MARGIN', severity: 'WARNING', value: h.projectedMonthGbp, threshold: Math.round(t.watchAtCostGbp * 100) / 100,
       detail: `projected cost £${h.projectedMonthGbp.toFixed(2)} leaves less than a ${Math.round(targetMargin * 100)}% contribution margin (${h.contribution.channel}); watch only`, subject: h.householdId,

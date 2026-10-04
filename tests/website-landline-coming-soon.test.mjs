@@ -129,7 +129,13 @@ const homeLandlineLines = homeVisible.split('\n').filter((l) => /landline/i.test
 check(homeLandlineLines.length > 0 && homeLandlineLines.every((l) => /in development|^Landline$|not available to new customers/i.test(l)), `homepage: EVERY visible mention of landline says in development / not available (${homeLandlineLines.length} mentions)`);
 check(!/Can I use Home Call Guard on my landline\?/.test(home), 'homepage: the old standalone "Can I use Home Call Guard on my landline?" FAQ is gone (consolidated into "Which phones and networks are supported?")');
 check(home.includes('href="https://play.google.com/store/apps/details?id=co.uk.homecallguard.app"') && !/data-app-store[^>]*href/.test(strip(home)), 'homepage: Google Play links to the real listing; the App Store tile is a non-link "Coming soon"');
-check(/£4\.99 a month, including VAT/.test(home), 'homepage: £4.99 is shown VAT-inclusive');
+check(/£5\.99 <small>a month, including VAT/.test(home) && /"price": "5\.99"/.test(home), 'homepage: the £5.99 launch price is shown VAT-inclusive (pricing card + JSON-LD offer)');
+{
+  // Launch sprint 2026-10-05: no customer-facing page may still say £4.99.
+  const pages = ['index.html', 'terms.html', ...readdirSync(path.join(root, 'public', 'guides')).filter((f) => f.endsWith('.html')).map((f) => `guides/${f}`)];
+  const stale = pages.filter((f) => /4\.99/.test(readFileSync(path.join(root, 'public', f), 'utf8')));
+  check(stale.length === 0, `no homepage / terms / guide page mentions 4.99 (${stale.join(', ') || 'none'})`);
+}
 check(!home.includes('LANDLINE_COMING_SOON_FLAG.md'), 'homepage: no reference to the superseded doc');
 
 const guidesDir = path.join(root, 'public', 'guides');

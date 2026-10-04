@@ -16,7 +16,7 @@
     "modelling": "A convention needed to turn facts into a per-customer figure"
   },
   "assumptions": {
-    "priceIncVatGbp": { "value": 5.99, "unit": "GBP/month incl VAT", "status": "CONFIGURED", "kind": "policy", "source": "services/containment/economicPolicy.js DEFAULT_ECONOMICS; Andrew's brief 2026-10-04", "note": "Candidate price, NOT approved for release. Live Apple IAP is £4.99; terms.html states £4.99." },
+    "priceIncVatGbp": { "value": 5.99, "unit": "GBP/month incl VAT", "status": "CONFIGURED", "kind": "policy", "source": "services/containment/economicPolicy.js DEFAULT_ECONOMICS; Andrew's brief 2026-10-04", "note": "APPROVED launch price (Andrew, 2026-10-04). Live providers (Stripe live Price, App Store IAP) remain £4.99 until the coordinated cutover (docs/launch/2026-10-05-PRICE-CUTOVER-CHECKLIST.md); terms.html updated in source 2026-10-05, not yet published." },
     "vatRate": { "value": 0.2, "unit": "ratio", "status": "KNOWN", "kind": "fact", "source": "UK standard rate; AFMD Ltd is VAT-registered (GB379120684, public/terms.html)", "note": "Stores (Apple/Google) account for UK VAT on in-app sales as deemed supplier; commission is modelled on the ex-VAT price." },
 
     "stripeCardPct": { "value": 0.015, "unit": "ratio of gross", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "Stripe UK public pricing, standard UK cards 1.5% + 20p", "note": "Non-UK/EEA/premium cards cost more; HCG's account pricing not read (live Stripe read denied 2026-09-30)." },

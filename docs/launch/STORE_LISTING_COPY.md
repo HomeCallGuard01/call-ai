@@ -110,7 +110,7 @@ Home Call Guard was built for families protecting a parent or grandparent from p
 
 No service can identify every scam call, so Home Call Guard is an extra layer of protection, not a guarantee.
 
-£4.99 a month including VAT. Requires an active subscription — see homecallguard.co.uk for details.
+£5.99 a month including VAT. Requires an active subscription.
 ```
 
 **Category**: Communication (or Tools)

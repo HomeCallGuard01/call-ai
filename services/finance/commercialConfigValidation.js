@@ -136,7 +136,7 @@ function validateCommercialConfiguration({ env = process.env, profiles = null } 
       'Top-up quantities (£ capacity) and retail prices per channel; whether top-ups roll over (today: expire at reset)',
       'Higher-tier retail price and its £ budget',
       'Delivery-reserve scope (default trusted_only; reversible via fc_set_budget_profile)',
-      'Economic inputs: price £5.99 (not yet approved for release), VAT, platform fee, rental, infrastructure, safety reserve, overrun allowance, target margin 40%',
+      'Economic inputs: price £5.99 (approved launch price 2026-10-04; live Stripe/App Store still £4.99 until the coordinated cutover), VAT, platform fee, rental, infrastructure, safety reserve, overrun allowance, target margin 40%',
     ],
   };
 }

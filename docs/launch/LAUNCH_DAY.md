@@ -47,7 +47,7 @@ Everything verified today — the checkout, the webhook, the entitlement
 activation — was run against Stripe's **test/Sandbox** mode. Live mode
 requires:
 
-- [ ] A live-mode Price object created for £4.99/month (test-mode price
+- [ ] A live-mode Price object created for **£5.99/month, GBP, monthly, `tax_behavior=inclusive`** (approved launch price 2026-10-04; see docs/launch/2026-10-05-PRICE-CUTOVER-CHECKLIST.md) (test-mode price
   IDs do not carry over to live mode).
 - [ ] `STRIPE_SECRET_KEY` switched to the live secret key.
 - [ ] `STRIPE_PRICE_ID` switched to the live Price ID.
@@ -110,7 +110,7 @@ Mirror today's UAT, in live mode:
 - [ ] Register a real test account, confirm the email, log in.
 - [ ] Subscribe. **Live mode does not accept Stripe test cards** — this
   requires either a real card (refundable via the Stripe Dashboard
-  afterward) or accepting the £4.99 as the cost of a genuine end-to-end
+  afterward) or accepting the monthly price as the cost of a genuine end-to-end
   check. Decide which before doing this, rather than discovering it
   mid-test.
 - [ ] Confirm the dashboard shows Protected and the webhook fired (check

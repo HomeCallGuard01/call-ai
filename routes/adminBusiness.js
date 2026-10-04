@@ -119,7 +119,10 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
 
     const systemHealth = await getSystemHealthSnapshot({ recentFailedStripeWebhookCount });
 
-    const priceGbp = price && price.currency === "gbp" ? price.unitAmount / 100 : 4.99;
+    // Launch sprint 2026-10-05: when Stripe can't be read, fall back to the
+    // economics register's approved launch price (services/finance/
+    // economicsRegister.js), never a remembered literal.
+    const priceGbp = price && price.currency === "gbp" ? price.unitAmount / 100 : require("../services/finance/economicsRegister").value("priceIncVatGbp");
     const appleRevenue = estimateAppleRevenueGbp(activeAppleEntitlements, priceGbp);
 
     const openaiEstimateToday = estimateOpenAiCostGbp(callStatsToday.available ? callStatsToday.unknownMonitoredCalls : 0);

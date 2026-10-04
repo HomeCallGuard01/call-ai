@@ -7,7 +7,7 @@
 > - **An Android app now exists** (Google Play); an iPhone app is awaiting Apple approval (App Store shown as "Coming soon"). The "no app / must not be mentioned" statements below are OUT OF DATE.
 > - **LANDLINE IS "COMING SOON" (2026-09-21): HCG is not selling landline protection. Never present landline as available, never link a landline sign-up, and never quote landline providers/Call Divert fees as if it were a product today.** Android is available; iPhone is Coming soon.
 > - **(Superseded by the line above)** Landline: do not claim "no app needed", "works with every landline" or describe how calls are delivered until the landline architecture/physical BT test is confirmed. Sign-up currently accepts BT, Sky, Virgin Media, TalkTalk and Plusnet.
-> - **Price:** always show £4.99/month as **including VAT** (Terms s.4).
+> - **Price:** the approved launch price is **£5.99/month including VAT** (decided 2026-10-04). Always show it as **including VAT**. Do not publish £5.99 anywhere until the live Stripe Price, terms and website switch together (docs/launch/2026-10-05-PRICE-CUTOVER-CHECKLIST.md). Never put a price in App Store / Play screenshots.
 > - **Call audio:** the Privacy Policy says calls are analysed live (automated checks plus a third-party transcription service) and that audio and transcripts are not stored. Say "we don't store call audio or a transcript", not just "not recorded".
 
 Prepared for the marketing/customer-acquisition workstream. Every claim below was checked directly against the live, deployed product (code, live pages, or direct API/DNS checks) on 2026-08-23 — not copied from aspirational docs. Where something could not be verified, it's said explicitly rather than guessed.
@@ -24,7 +24,7 @@ People who worry about phone scams targeting themselves or a relative — common
 
 ## Price
 
-**£4.99 per month, including VAT.** No long-term contract — billed monthly, cancel any time.
+**£5.99 per month, including VAT.** No long-term contract — billed monthly, cancel any time.
 
 **One caveat marketing should state or at least not contradict**: customers on Sky or Virgin Media landlines may need to add "Call Divert" to their own phone line to complete setup, which can carry a small extra monthly charge from their own provider (around £2.50/month) — this is a third-party telecoms charge, not a Home Call Guard fee, and doesn't apply to mobile-only or other landline customers.
 
@@ -34,7 +34,7 @@ People who worry about phone scams targeting themselves or a relative — common
 
 ## How the service works, in plain English
 
-1. Sign up and pay online (£4.99/month).
+1. Sign up and pay online (£5.99/month).
 2. Upload the phone numbers of people who should always get straight through (family, friends, GP, etc.) — takes a couple of minutes.
 3. Complete a short, one-time setup step on your own phone: dialling a simple code so that calls to your number are routed via Home Call Guard. Full instructions for the customer's specific line are given after signing up.
 4. From then on: trusted numbers ring through immediately, every time. Anyone else's call connects as normal, but is monitored live for the signs of a scam call for its duration.
@@ -68,7 +68,7 @@ This is pattern-based live monitoring, not a guarantee. Marketing must not claim
 - **Do not** say calls are "screened," "checked," or "blocked" *before* the phone rings — the live product connects the call and monitors it as it happens. ("Screens unknown callers" is fine as a general description; implying a pre-connect gate is not accurate.)
 - ~~Do not claim or imply a mobile app is available or required~~ — OUT OF DATE: an Android app is live. Still do NOT claim an app is (or is not) required for a landline.
 - **Do not** claim 100% scam detection, guaranteed protection, or that a customer "cannot" be scammed while subscribed — this is real-time pattern detection, not a guarantee.
-- **Do not** state the £4.99 price as the absolute maximum cost with no caveat — Sky/Virgin landline customers may see a small extra charge from their own provider for a required feature (Call Divert), separate from and not paid to Home Call Guard.
+- **Do not** state the monthly price as the absolute maximum cost with no caveat — Sky/Virgin landline customers may see a small extra charge from their own provider for a required feature (Call Divert), separate from and not paid to Home Call Guard.
 - **Do not** claim calls or their content are recorded or permanently stored — they are not (see Privacy section above).
 - **Do not** name specific third-party sub-processors (Stripe, Twilio, Supabase, OpenAI) in customer-facing marketing copy beyond what's already in the Privacy Policy, to avoid the Privacy Policy and marketing drifting out of sync over time.
 
@@ -86,7 +86,7 @@ This is pattern-based live monitoring, not a guarantee. Marketing must not claim
 >
 > [Removed 2026-09-20: the previous "no app to download" line is unconfirmed for landline customers.] You can manage your trusted contacts list from your online account, and we show you each setup step.
 >
-> It costs £4.99 a month, there's no contract, and you can cancel any time.
+> It costs £5.99 a month, there's no contract, and you can cancel any time.
 >
 > Setting it up takes a few minutes: you sign up online, add your trusted numbers, and then there's one simple thing to do on your own phone — a short code to dial once, so your calls are routed through us. Full instructions are provided, and we're happy to help over the phone if that's easier.
 >
