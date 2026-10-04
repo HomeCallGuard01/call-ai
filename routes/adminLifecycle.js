@@ -19,11 +19,16 @@ const { planQuarantineActions } = require("../services/lifecycle/numberRetiremen
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// DECISION inputs, read from env so the queue can show cost exposure once
-// Andrew sets them. Unset ⇒ null (unknown), never a guessed default.
+// DECISION inputs. autoConfirmAfterDays stays null (decision D-N2: numbers
+// are never auto-released). Monthly number cost (soft-launch integration
+// 2026-10-04, brief §6 B9/D16): defaults to the economics register's KNOWN
+// rental (Twilio Pricing API + 45 billed number-months) so billed quarantines
+// always show their £ exposure; LIFECYCLE_MONTHLY_NUMBER_COST_GBP overrides.
 function policyFromEnv(env) {
   const cost = Number.parseFloat(env.LIFECYCLE_MONTHLY_NUMBER_COST_GBP);
-  return { autoConfirmAfterDays: null, monthlyNumberCostGbp: Number.isFinite(cost) && cost >= 0 ? cost : null };
+  if (Number.isFinite(cost) && cost >= 0) return { autoConfirmAfterDays: null, monthlyNumberCostGbp: cost, monthlyNumberCostSource: 'env' };
+  const register = require("../services/finance/economicsRegister");
+  return { autoConfirmAfterDays: null, monthlyNumberCostGbp: register.value('numberRentalGbpPerMonth'), monthlyNumberCostSource: 'register:numberRentalGbpPerMonth (KNOWN)' };
 }
 
 function createAdminLifecycleRoutes({ supabaseAdmin, getDeliveryHealth = null, env = process.env, now = () => new Date() }) {

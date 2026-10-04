@@ -139,8 +139,8 @@ try {
     check(r.status === 500 && !(r.json && r.json.items), 'entitlements unreadable ⇒ 500, no partial queue');
   } finally { s4.close(); }
 }
-check(policyFromEnv({}).monthlyNumberCostGbp === null && policyFromEnv({ LIFECYCLE_MONTHLY_NUMBER_COST_GBP: 'abc' }).monthlyNumberCostGbp === null && policyFromEnv({}).autoConfirmAfterDays === null,
-  'cost unknown unless configured; automatic confirmation is never enabled by env');
+check(policyFromEnv({}).monthlyNumberCostGbp === 0.86917 && policyFromEnv({}).monthlyNumberCostSource.startsWith('register') && policyFromEnv({ LIFECYCLE_MONTHLY_NUMBER_COST_GBP: 'abc' }).monthlyNumberCostGbp === 0.86917 && policyFromEnv({ LIFECYCLE_MONTHLY_NUMBER_COST_GBP: '1.10' }).monthlyNumberCostGbp === 1.1 && policyFromEnv({}).autoConfirmAfterDays === null,
+  'number cost defaults to the register KNOWN rental (2026-10-04) so billed quarantines always show £ exposure; env overrides; auto-confirm stays null (never auto-release)');
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed`);
