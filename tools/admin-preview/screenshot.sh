@@ -35,6 +35,9 @@ shot 4-money 1440 3000 "#money"
 shot 5-numbers 1440 2600 "#numbers"
 shot 6-operations 1440 4200 "#operations"
 shot 7-mobile-overview 390 2600 "#overview"
+shot 8-mobile-customers 390 2600 "#customers"
+shot 9-mobile-money 390 2400 "#money"
+shot 10-mobile-operations 390 2600 "#operations"
 
 python3 "$HERE/trim.py" "$OUT"/*.png
 ls -1 "$OUT"

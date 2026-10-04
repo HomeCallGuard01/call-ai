@@ -325,34 +325,36 @@
   .tab-button[aria-current="page"] .tab-flag { background: var(--red); color: #fff; }
   h3 { color: var(--green-soft); }
   .sub { color: var(--muted); font-size: 13px; }
-  .section-title { font-size: 13px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+  .section-title { font-size: 13.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); margin: 0 0 12px; }
   .cc-section { margin-bottom: 30px; }
   .cc-section > .section-header h2 { font-size: 17px; }
 
   /* Headline KPIs */
   .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
-  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; position: relative; overflow: hidden; }
-  .kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--border-strong); }
+  .kpi { background: var(--card-2); border: 1px solid var(--border-strong); border-radius: 14px; padding: 20px 22px 18px; position: relative; overflow: hidden; }
+  .kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--border-strong); }
   .kpi.tone-good::before { background: var(--green); }
   .kpi.tone-warn::before { background: var(--amber); }
   .kpi.tone-bad::before { background: var(--red); }
   .kpi-label { font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-  .kpi-value { font-size: 40px; font-weight: 800; letter-spacing: -.02em; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+  .kpi-value { font-size: 44px; line-height: 1.05; font-weight: 800; letter-spacing: -.02em; margin: 8px 0 6px; font-variant-numeric: tabular-nums; }
   .kpi-value small { font-size: 18px; font-weight: 700; color: var(--muted); letter-spacing: 0; }
   .kpi.tone-good .kpi-value { color: var(--green); }
   .kpi.tone-bad .kpi-value { color: var(--red-text); }
   .kpi.tone-warn .kpi-value { color: var(--amber-text); }
   .kpi-sub { font-size: 13px; color: var(--muted); line-height: 1.45; }
-  button.kpi { text-align: left; font: inherit; color: inherit; cursor: pointer; width: 100%; }
+  /* Clickable KPIs are buttons; browsers centre button content vertically,
+     so lay them out like the plain cards (top-aligned). */
+  button.kpi { text-align: left; font: inherit; color: inherit; cursor: pointer; width: 100%; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }
   button.kpi:hover { border-color: var(--border-strong); background: var(--card-hover); }
 
   /* HCG status */
   .status-list { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 26px; }
-  .status-item { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .status-item { background: var(--card-2); border: 1px solid var(--border-strong); border-radius: 12px; padding: 16px 18px; }
   .status-item.s-critical { border-color: var(--red); background: var(--red-bg); }
   .status-item.s-attention { border-color: #6b4a0c; }
   .status-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .status-name { font-weight: 700; font-size: 14px; }
+  .status-name { font-weight: 800; font-size: 15px; }
   .status-text { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
   .state-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
   .state-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
@@ -362,13 +364,14 @@
   .state-unknown { background: var(--grey-bg); color: var(--muted); }
 
   /* Highlights (new genuine customer / protected / needs attention) */
-  .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 22px; }
-  .highlight { display: flex; gap: 12px; align-items: flex-start; border-radius: 14px; padding: 14px 16px; border: 1px solid var(--border); background: var(--card); }
-  .highlight .hl-icon { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 900; font-size: 17px; }
-  .highlight.hl-new { border-color: var(--green-deep); background: linear-gradient(135deg, #0f2a1a, var(--card)); }
+  .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; margin-bottom: 26px; }
+  .highlight { display: flex; gap: 10px; align-items: flex-start; border-radius: 12px; padding: 11px 14px; border: 1px solid var(--border); background: var(--card); }
+  .highlight .hl-icon { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-weight: 900; font-size: 15px; }
+  .hl-title { font-size: 13.5px; }
+  .highlight.hl-new { border-color: #1f5a35; }
   .highlight.hl-new .hl-icon, .highlight.hl-protected .hl-icon { background: var(--green); color: var(--on-green); }
   .highlight.hl-protected { border-color: #1f5a35; }
-  .highlight.hl-attention { border-color: var(--red); background: linear-gradient(135deg, #3b0d0d, var(--card)); }
+  .highlight.hl-attention { border-color: #7f1d1d; }
   .highlight.hl-attention .hl-icon { background: var(--red); color: #fff; }
   .hl-kind { font-size: 11.5px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
   .hl-new .hl-kind, .hl-protected .hl-kind { color: var(--green); }
@@ -479,6 +482,28 @@
     .status-item { padding: 12px 14px; }
     .att2 li { grid-template-columns: 1fr; gap: 6px; }
     .cc-table .hide-sm { display: none; }
+    /* Customers on a phone: each row is a card, so nothing (incl. Open) is clipped. */
+    .cc-table, .cc-table tbody { display: block; }
+    .cc-table thead { display: none; }
+    .cc-table tr.cc-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
+    .cc-table tr.cc-row td { display: block; padding: 0; border: none; grid-column: 1; min-width: 0; overflow-wrap: anywhere; }
+    .cc-table .seg { white-space: normal; }
+    .cc-table tr.cc-row td:first-child { box-shadow: none !important; }
+    .cc-table tr.cc-row.att-critical { box-shadow: inset 4px 0 0 var(--red); padding-left: 12px; }
+    .cc-table tr.cc-row.att-action { box-shadow: inset 4px 0 0 var(--amber); padding-left: 12px; }
+    .cc-table tr.cc-row td:last-child { grid-column: 2; grid-row: 1; }
+    .cc-table tr.detail-row, .cc-table tr.detail-row td { display: block; padding: 8px 0; }
+    .filter-bar { flex-wrap: nowrap; overflow-x: auto; }
+    .filter-chip { white-space: nowrap; flex: none; }
+    .tab-button { padding: 10px 11px; }
+    .customer-search { min-width: 180px; margin-left: 0; }
+    /* Operations status table on a phone: one stacked block per area. */
+    .ops-table th { display: none; }
+    .ops-table td { display: block; padding: 3px 0; border: none; }
+    .ops-table tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .kpi-value { font-size: 30px; }
+    .kpis .kpi-value[style] { font-size: 22px !important; }
+    .notice { font-size: 13px; }
     .journey { grid-template-columns: 1fr; }
     .journey li { text-align: left; padding: 4px 0 10px 30px; }
     .journey li::before { top: 0; bottom: 0; left: 9px; right: auto; width: 3px; height: auto; }
@@ -522,7 +547,7 @@
   <div id="overview" class="tab-panel" role="tabpanel"><div id="ccHighlights"></div><div id="ccHeadline"><div class="loading">Loading…</div></div><div id="ccStatus"></div><div id="attention"></div><div id="ccActivity"></div></div>
   <div id="customers" class="tab-panel" role="tabpanel" hidden><div id="customerHealth"><div class="loading">Loading…</div></div><details class="secondary-section"><summary>Membership &amp; payment history — detailed counts</summary><div id="subscriptions"></div></details></div>
   <div id="numbers" class="tab-panel" role="tabpanel" hidden><div id="ccNumbers"></div><div id="reconciliation"><div class="loading">Loading…</div></div></div>
-  <div id="money" class="tab-panel" role="tabpanel" hidden><div id="ccMoney"><div class="loading">Loading…</div></div><div id="finance"><div class="loading">Loading…</div></div><div id="marketing"></div><div id="acquisition"></div></div>
+  <div id="money" class="tab-panel" role="tabpanel" hidden><div id="ccMoney"><div class="loading">Loading…</div></div><div id="finance"><div class="loading">Loading…</div></div><details class="secondary-section"><summary>Acquisition &amp; marketing — channels, campaigns, website funnel, tracked links</summary><div id="marketing"></div><div id="acquisition"></div></details></div>
   <div id="operations" class="tab-panel" role="tabpanel" hidden><div id="ccOpsStatus"></div><div id="usageSafety"></div><div id="callActivity"><div class="loading">Loading…</div></div><div id="systemhealth"></div><div id="overviewBody"></div><div id="opsTools"><div class="loading">Loading…</div></div></div>
 </div>
 
@@ -1643,7 +1668,7 @@ function renderOpsStatusHtml({ fortress, fortressError, opsEvents, opsEventsErro
   rows.push(['Accounting / Xero', accounting ? 'healthy' : 'unknown', accounting ? 'Capture ' + (accounting.capture_enabled ? 'on' : 'off') : (accountingError || 'not deployed')]);
   rows.push(['Background jobs', 'unknown', 'No job heartbeat is reported to this dashboard (release sweep, ledger) — check Railway logs']);
   let html = '<div class="cc-section"><div class="section-header"><h2>Service &amp; safety status</h2><span class="last-updated">read-only</span></div>';
-  html += '<table class="mini-table"><tr><th>Area</th><th>State</th><th>Detail</th></tr>' + rows.map((r) => '<tr><td><strong>' + escapeHtml(r[0]) + '</strong></td><td>' + ccStatePill(r[1]) + '</td><td class="sub">' + escapeHtml(r[2]) + '</td></tr>').join('') + '</table>';
+  html += '<table class="mini-table ops-table"><tr><th>Area</th><th>State</th><th>Detail</th></tr>' + rows.map((r) => '<tr><td><strong>' + escapeHtml(r[0]) + '</strong></td><td>' + ccStatePill(r[1]) + '</td><td class="sub">' + escapeHtml(r[2]) + '</td></tr>').join('') + '</table>';
   html += '<div class="notice" style="margin-top:12px;"><strong>Emergency controls are deliberately not buttons here.</strong> Breaker reset, kill switch and per-customer financial holds go through the audited admin endpoints (/admin/api/fortress/…), which require a typed confirmation phrase and a written reason and record the acting admin.</div>';
   return html + '</div>';
 }
@@ -2845,10 +2870,18 @@ async function renderFinanceTab() {
   const t = d.totals;
   const u = d.unitEconomics;
   let html = '<div class="section">' + sectionHeader('Finance detail — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
+  // Polish (2026-10-04): the founder summary above ("Money at a glance")
+  // stays open; this detail is the same information, grouped into labelled
+  // collapsible sections so the page is not a wall of tables.
+  const safetyLevel = d.safety && d.safety.level ? String(d.safety.level) : 'not connected';
+  html += '<p class="sub" style="margin-bottom:10px;">Every figure below carries its source. Open a section for the detail.</p>';
+  html += '<details class="secondary-section"><summary>Spend safety — level ' + escapeHtml(safetyLevel) + '</summary>';
+  html += renderSafetyHtml(d.safety);
+  html += '</details>';
+  html += '<details class="secondary-section"><summary>Profit &amp; loss and cost lines (with sources)</summary>';
   html += '<p class="sub" style="margin-bottom:6px;">Source: ' + escapeHtml(d.connections.source) + ' · Stripe: ' + escapeHtml(d.stripeMode) + '</p>';
   html += '<p class="sub" style="margin-bottom:14px;">' + provenanceBadge('ACTUAL') + ' supplier-reported ' + provenanceBadge('ALLOCATED') + ' supplier total apportioned ' + provenanceBadge('ESTIMATED') + ' calculated ' + provenanceBadge('MANUAL') + ' entered by you ' + provenanceBadge('NOT_CONNECTED') + ' no source (never £0). A total missing any line is shown as <em>known part only</em> or not at all.</p>';
-  html += renderSafetyHtml(d.safety);
-  html += '<h3 style="margin-top:22px;">Profit &amp; loss</h3>';
+  html += '<h3 style="margin-top:6px;">Profit &amp; loss</h3>';
   const headline = [
     ['Revenue ex VAT (genuine)', t.revenueExVat], ['Total operating cost', t.totalOperatingCost], ['Gross contribution', t.grossContribution], ['Operating contribution', t.operatingContribution], ['Marketing', t.marketing],
   ];
@@ -2866,10 +2899,11 @@ async function renderFinanceTab() {
       html += '<tr><td>' + escapeHtml(l.label) + '</td><td class="num">' + escapeHtml(formatGbpOrMissing(l.amountGbp)) + '</td><td>' + provenanceBadge(l.provenance) + (l.stale ? ' <span class="text-warn">re-check</span>' : '') + '</td><td class="customer-sub cell-wrap">' + escapeHtml(l.basis || '') + '</td></tr>';
     }
   }
-  html += '</table>';
+  html += '</table></details>';
 
   const unit = (v) => (v && v.amountGbp !== null ? escapeHtml(formatGbpOrMissing(v.amountGbp)) + (v.partial ? ' <span class="text-warn">(known part only)</span>' : v.complete === false ? ' <span class="text-warn">(incomplete)</span>' : '') : '—');
-  html += '<h3 style="margin-top:22px;">Unit economics</h3><table class="fact-table">' +
+  html += '<details class="secondary-section"><summary>Unit economics, fixed costs &amp; assumptions</summary>';
+  html += '<h3 style="margin-top:6px;">Unit economics</h3><table class="fact-table">' +
     '<tr><td>Accounts with access (any kind)</td><td>' + fmtNum(u.accountsWithAccess) + '</td></tr>' +
     '<tr><td>Genuine paying customers</td><td>' + fmtNum(u.genuinePayingCustomers) + '</td></tr>' +
     '<tr><td>Operating cost per account with access</td><td>' + unit(u.operatingCostPerAccountWithAccess) + '</td></tr>' +
@@ -2883,9 +2917,10 @@ async function renderFinanceTab() {
   html += '<h3 style="margin-top:22px;">Fixed-cost settings</h3><table class="fact-table">' + (d.fixedCostSettings || []).map((f) =>
     '<tr><td>' + escapeHtml(f.label) + '</td><td>' + (f.configured ? escapeHtml(formatGbpOrMissing(f.valueGbp)) + '/month · ' + (f.asOf ? 'checked ' + escapeHtml(f.asOf) : 'no checked date') + (f.stale ? ' <span class="text-warn">re-check</span>' : '') : provenanceBadge('NOT_CONNECTED') + ' set <code>' + escapeHtml(f.amountVar) + '</code> and <code>' + escapeHtml(f.asOfVar) + '</code>') + '<div class="customer-sub">' + escapeHtml(f.howToFind) + '</div></td></tr>').join('') + '</table>';
 
-  html += '<h3 style="margin-top:22px;">Data sources</h3><table class="fact-table">' +
-    Object.entries(d.connections).map(([k, v]) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v) + '</td></tr>').join('') + '</table>';
   html += '<div class="gaps" style="margin-top:16px;">Manual costs (advertising invoices, developer programmes, insurance, accountancy…) arrive with the Finance ledger (migration 051) and manual cost schedules. Until then those lines stay <strong>Not connected</strong> — never £0.</div>';
+  html += '</details>';
+  html += '<details class="secondary-section"><summary>Data sources &amp; connections</summary><table class="fact-table">' +
+    Object.entries(d.connections).map(([k, v]) => '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(v) + '</td></tr>').join('') + '</table></details>';
   html += '</div>';
   document.getElementById('finance').innerHTML = html;
 }

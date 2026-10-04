@@ -1,6 +1,6 @@
 <!--
-STATUS (2026-10-04): DESIGN FOR APPROVAL. Branch feature/admin-control-centre-redesign,
-pushed, NOT merged, NOT deployed. No database, provider, store or price change.
+STATUS (2026-10-04): DIRECTION APPROVED by Andrew; final polish pass done (§14).
+Branch feature/admin-control-centre-redesign, pushed, NOT merged, NOT deployed. No database, provider, store or price change.
 Previews use SYNTHETIC data only.
 -->
 # Admin Control Centre redesign (2026-10-04)
@@ -11,7 +11,7 @@ Previews use SYNTHETIC data only.
 | Worktree | `/Users/ad/call-ai-admin-redesign` (`node_modules` and `mobile/node_modules` are git-ignored symlinks to existing installs) |
 | Base | `integration/soft-launch-candidate-2026-10-04` @ `b0e46dd` |
 | Previews | `docs/admin/previews/2026-10-04-redesign/{before,after}/*.png` (synthetic data) |
-| Tests | 198/198 files, ✓8,756 ✗0 (see §11) |
+| Tests | 198/198 files, ✓8,765 ✗0 after the polish pass (see §11, §14) |
 
 ## 1. Starting point: what was merged and what was not
 
@@ -98,6 +98,7 @@ All screens are SYNTHETIC: 12 invented households, `example.com` addresses, fict
 | Numbers | `before/5-numbers.png` | `after/5-numbers.png` |
 | Operations | `before/6-operations.png` | `after/6-operations.png` |
 | Phone (390 px) Overview | `before/7-mobile-overview.png` | `after/7-mobile-overview.png` |
+| Phone (390 px) Customers, Money, Operations | — | `after/8-mobile-customers.png`, `after/9-mobile-money.png`, `after/10-mobile-operations.png` (added in the polish pass) |
 
 Paths are relative to `docs/admin/previews/2026-10-04-redesign/`.
 
@@ -259,8 +260,8 @@ Offline dummy environment (`SUPABASE_URL=http://127.0.0.1:9`, dummy keys, `NODE_
 
 | # | Item | Status / recommendation |
 |---|---|---|
-| D-1 | **Converge the two genuine definitions.** These still use v2 `genuine_customer` classification: Stripe MRR attribution (the "Monthly revenue" KPI), number inventory categories, the Memberships counts, usage `accountClass` and the detailed checks. | Recommend making `commercialStatus` the only rule and attributing Stripe MRR by `stripe_customer_id` → household → commercial status. Andrew's decision; until then the glossary states both. |
-| D-2 | Legacy `adminCustomerHealth` / `computeProtectionStatus` still drive `/admin/api/customers/onboarding` and the diagnostics panel. | Move them onto `activationState` (lifecycle doc step D-W1). The new table already uses the canonical state. |
+| D-1 | **APPROVED 2026-10-04 → requirement MI-1 (§13).** Converge the two genuine definitions. These still use v2 `genuine_customer` classification: Stripe MRR attribution (the "Monthly revenue" KPI), number inventory categories, the Memberships counts, usage `accountClass` and the detailed checks. | Recommend making `commercialStatus` the only rule and attributing Stripe MRR by `stripe_customer_id` → household → commercial status. Andrew's decision; until then the glossary states both. |
+| D-2 | **→ requirement MI-2 (§13).** Legacy `adminCustomerHealth` / `computeProtectionStatus` still drive `/admin/api/customers/onboarding` and the diagnostics panel. | Move them onto `activationState` (lifecycle doc step D-W1). The new table already uses the canonical state. |
 | D-3 | Migration 062 (account numbers) is not applied in production. | Until it is, every row says "No account no. yet". |
 | D-4 | Migration 072 (ops events) is not applied. | Highlights and activity are derived from the summary meanwhile. The existing "mark seen" route is not wired into the UI. Notifications stay OFF. |
 | D-5 | Migrations 064–070 (Fortress) and 071 (accounting) are not applied. | Financial protection, allowance exposure and accounting show "Not reported / not deployed" in production until applied. |
@@ -272,5 +273,50 @@ Offline dummy environment (`SUPABASE_URL=http://127.0.0.1:9`, dummy keys, `NODE_
 | D-11 | Release-review prototype (v2), final button disabled. | Unchanged; hidden for the reserved staging number. |
 | D-12 | Live price check. | The dashboard states £5.99 inc VAT. Live Stripe and store prices were not checked or changed here. |
 | D-13 | Scale. | The summary loads every household snapshot per request. Fine for the soft launch; paginate or cache before hundreds of customers. |
+
+## 13. Master-integration requirements (Andrew's decision, 2026-10-04)
+
+Andrew approved switching revenue, customer counts and number/customer categorisation to the canonical commercial-status rule **during Master integration**. The end state is fixed:
+
+- **ONE definition of a genuine customer** throughout HCG: `services/commercial/commercialStatus.js`.
+- **ONE canonical definition of protected**: `services/lifecycle/activationState.js`, already surfaced to customers through `canonicalProtection.js`.
+
+These changes are **deliberately not made on this branch**. Master has newer launch/security work, and reconciling across branches here would be risky. The integrator must do them on the integrated tree:
+
+| # | Requirement | Where the old rule lives today | Done when |
+|---|---|---|---|
+| MI-1a | **Revenue / MRR**: attribute Stripe subscriptions and charges by `stripe_customer_id` → household → `classifyCommercialStatus`, not `classification === 'genuine_customer'`. | `services/businessControl/controlOverview.js` (genuineByCustomer), `stripeRevenue.js`, `financialReadModel.js` | "Monthly revenue" and "Collected this month" count exactly the households the Overview calls Genuine paying. A test pins equality on a fixture with an unclassified Stripe-live payer and a classified-genuine Stripe-test payer. |
+| MI-1b | **Customer counts**: subscription overview, detailed checks cards, due-diligence snapshot, acquisition "real customer" funnel and usage-safety `accountClass` use the commercial status. | `services/businessControl/definitions.js` (`classifyHouseholdForBusiness`), `subscriptionOverview.js`, `controlOverview.js`, `dueDiligenceSnapshot.js`, `usageSafety.js`, acquisition | `definitions.js` no longer decides "genuine". Classification remains only as the test/reviewer/admin *exclusion* input that `commercialStatus` already reads. |
+| MI-1c | **Number / customer categorisation**: provider inventory categories (customer_active, unknown, internal_test, reviewer…) derive from the commercial status. | `services/businessControl/numberInventory.js` (`categoriseInventoryRow`) | The v2 inventory table and "Numbers at a glance" agree for every number. The reserved staging number stays reserved. |
+| MI-1d | Remove the "accounts that need classifying (to count as genuine)" attention topic and the glossary's second genuine row. | `admin-business.html` (`CARD_TOPIC`, `GLOSSARY_ROWS`), `controlOverview.js` cards `paid_unclassified` / `non_paying_access` | Glossary has one genuine row. |
+| MI-2a | **Protected**: admin customer feed and diagnostics use `deriveActivationState` (all nine gates); `computeProtectionStatus` is used only as an input to it. | `services/adminCustomerHealth.js`, `services/adminOnboardingStatus.js`, `database/adminMetrics.js` (`buildOnboardingRow`, `getHouseholdStatusDetail`, `attachProtectionEvidence`), v2 `protected` / `entitled_not_protected` cards | No admin surface can say Protected/Healthy while a canonical gate fails (hold, quarantine, stale evidence, payment state). The legacy fallback banner in Customers can be removed. |
+| MI-2b | One protection label set shared by admin and the apps. | `STAGE_DISPLAY` here vs mobile copy (decision D-C5 on the lifecycle branch) | Both read the same stage codes. Copy is owned by the product decision. |
+| MI-3 | Re-run this branch's suite **on the integrated tree**, plus a real-environment check. | — | `tests/admin-control-centre-redesign.test.mjs` passes. Then staging: log in as a real admin and open every tab. That confirms the auth path, which the synthetic previews do not exercise. |
+| MI-4 | Migration order. | 062 (account numbers), 064–070 (Fortress), 071 (accounting), 072 (ops events) | Applied per the central numbering plan. Until then the page shows "No account no. yet" / "Not reported" / "not deployed", never guesses. |
+| MI-5 | Keep the safety properties. | — | The reserved staging number (…1883) never gets a release action. Emergency controls stay on the audited typed-confirmation endpoints. The summary route stays requireAuth + requireAdmin and fails closed. Notifications stay off until separately approved. |
+
+## 14. Final polish pass (2026-10-04, after approval)
+
+Small changes only; the structure is unchanged.
+
+- **Money.** "Money at a glance" (8 cards) stays open at the top. The finance detail is the same content, grouped into labelled collapsible sections:
+  - Spend safety (level shown in the label);
+  - Profit & loss and cost lines (with sources);
+  - Unit economics, fixed costs & assumptions;
+  - Data sources & connections.
+
+  Acquisition & marketing (channels, campaigns, website funnel, tracked links) is one collapsible section. Nothing was removed.
+- **Overview.** KPI cards and HCG Status are slightly stronger (bigger values, stronger card surface and border, bolder status names). Event cards are quieter (smaller, no gradient). No information added.
+  - Fixed a real defect: the three clickable KPI cards are buttons, which browsers centre vertically, so their labels sat lower than the "Monthly revenue" card. They are now top-aligned.
+- **Phone.**
+  - Customer rows become cards with *Open* pinned top-right (nothing clipped).
+  - Filter chips scroll in one line, and tabs are a little tighter.
+  - The Operations status table stacks per area; the emergency-controls notice stays visible.
+  - New captures: `after/8-mobile-customers.png`, `9-mobile-money.png`, `10-mobile-operations.png`.
+- **Unchanged:** Customers table and journey, Numbers (staging number still "Reserved — do not release", no release action), Operations depth, branding, safety controls, synthetic previews.
+- **Tests.**
+  - +9 checks in `tests/admin-control-centre-redesign.test.mjs`: Money collapsibles, KPI alignment, phone layout.
+  - Full suite 198/198, ✓8,765 ✗0, with `mobile/node_modules` symlinked as before.
+  - Real-PG suites still opt-in (0 checks); no SQL change.
 
 **STOP:** this branch is ready for Andrew's review. Do not merge or deploy without his approval. Integrate it after (or together with) the soft-launch candidate it is based on.

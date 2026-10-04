@@ -259,6 +259,21 @@ const extract = (name) => {
   check(ops.includes('Emergency controls are deliberately not buttons here') && !/<button[^>]*(breaker|kill)/i.test(ops), 'Operations shows Fortress state read-only; breaker / kill switch stay behind the audited typed-confirmation endpoints');
 }
 
+// --- 7b. Final polish (2026-10-04, approved direction) -------------------------
+{
+  const moneyPanel = (() => { const i = html.indexOf('<div id="money" class="tab-panel"'); return html.slice(i, html.indexOf('\n', i)); })();
+  check(moneyPanel.indexOf('id="ccMoney"') < moneyPanel.indexOf('id="finance"') && /<details class="secondary-section"><summary>Acquisition &amp; marketing[^<]*<\/summary><div id="marketing"><\/div><div id="acquisition"><\/div><\/details>/.test(moneyPanel),
+    'Money: the commercial summary stays open first; acquisition & marketing is a labelled collapsible section (content kept)');
+  const finance = html.slice(html.indexOf('async function renderFinanceTab()'), html.indexOf('// ---------- Marketing ----------'));
+  for (const label of ['Spend safety — level', 'Profit &amp; loss and cost lines (with sources)', 'Unit economics, fixed costs &amp; assumptions', 'Data sources &amp; connections']) {
+    check(finance.includes('<summary>' + label), `Money finance detail grouped under a labelled collapsible: "${label.replace(/&amp;/g, '&')}"`);
+  }
+  check((finance.match(/<details class="secondary-section">/g) || []).length === (finance.match(/<\/details>/g) || []).length, 'every finance detail section is closed (balanced <details>)');
+  check(/button\.kpi \{[^}]*justify-content: flex-start/.test(html), 'clickable KPI cards are top-aligned like the plain ones');
+  check(/\.cc-table tr\.cc-row td \{[^}]*grid-column: 1;[^}]*min-width: 0/.test(html) && /\.cc-table tr\.cc-row td:last-child \{ grid-column: 2; grid-row: 1; \}/.test(html), 'phone: customer rows become cards with the Open action pinned top-right (never clipped)');
+  check(/\.ops-table th \{ display: none; \}/.test(html) && html.includes('class="mini-table ops-table"'), 'phone: the Operations status table stacks per area; emergency-control notice stays in the page');
+}
+
 // --- 8. Preview harness is local and synthetic ----------------------------
 {
   const serve = readFileSync(path.join(root, 'tools/admin-preview/serve.js'), 'utf8');
