@@ -53,3 +53,14 @@ The status, TestFlight state and install route are recorded in §Result below.
 - **Guard:** `tests/mobile-native-sdk-compat.test.mjs` fails the suite on any SDK-line drift or any iOS module that needs a newer iOS than the app target. Proven against the Build 15 lockfile (3 failures).
 - **Startup safety net:** a root `ErrorBoundary` ("couldn't confirm your protection right now", Try again, support), a splash hide on root mount, and a 10 s stalled-start message. Tests: `tests/mobile-startup-safety-net.test.mjs`. This cannot catch a native module missing from the binary at import time. The guard above covers that.
 - **Needs a new iOS staging build.** Proposed **1.0.2 (15.1)**, keeping Build 16 for the production candidate. Not built; needs Andrew's go-ahead.
+
+## iOS 1.0.2 Build 16: corrected STAGING build (2026-10-04)
+
+Andrew's decision: build numbers are disposable. Build 15 stays as the historical failed staging build; **Build 16 is its corrected successor**. The iOS production candidate will be **Build ≥ 17**. Same rules as Build 15: STAGING only, TestFlight internal only, never review, external testing or release.
+
+| | |
+|---|---|
+| EAS build | `be1f645c-1082-43a0-8faf-bb9b82d4d449`, FINISHED, from `e63377f`, profile `staging-ios-testflight` |
+| Binary | Info.plist 1.0.2 (16), MinimumOSVersion 15.1; `AssetModule` linked (absent in Build 15); lockfile single `expo-asset` 12.0.13 on `expo` 54.0.36 |
+| Endpoints | JS bundle: staging API ×1, staging Supabase ×1, production backend/Supabase ×0 |
+| TestFlight | EAS Submit `89a5d0ba-bd34-4eb6-972b-e94bc594790e` FINISHED 17:04 UTC, no error (upload only) |
