@@ -64,3 +64,9 @@ Andrew's decision: build numbers are disposable. Build 15 stays as the historica
 | Binary | Info.plist 1.0.2 (16), MinimumOSVersion 15.1; `AssetModule` linked (absent in Build 15); lockfile single `expo-asset` 12.0.13 on `expo` 54.0.36 |
 | Endpoints | JS bundle: staging API ×1, staging Supabase ×1, production backend/Supabase ×0 |
 | TestFlight | EAS Submit `89a5d0ba-bd34-4eb6-972b-e94bc594790e` FINISHED 17:04 UTC, no error (upload only) |
+
+### Real-device result: Build 16 startup PASS (2026-10-04, Andrew)
+
+Installed from TestFlight on the test iPhone. The app gets past the native splash and opens, showing the "protection unconfirmed" state. That is expected while the staging backend is offline. **Startup: PASS.** The launch crash (missing `ExpoAsset`) is fixed on a real device.
+
+Not yet tested: everything that needs the staging backend (sign-in, dashboard, call delivery). That is the controlled staging device test, next session. Android vc 22 remains untested and on hold (Motorola install failed).
