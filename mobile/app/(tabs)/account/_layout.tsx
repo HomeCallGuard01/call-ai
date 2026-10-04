@@ -12,9 +12,8 @@ export default function AccountLayout() {
         contentStyle: { backgroundColor: colors.background },
       }}
     >
-      <Stack.Screen name="index" options={{ title: "Account" }} />
-      <Stack.Screen name="membership" options={{ title: "Membership" }} />
-      <Stack.Screen name="support" options={{ title: "Support" }} />
+      <Stack.Screen name="index" options={{ title: "Help & Account" }} />
+      <Stack.Screen name="support" options={{ title: "Help" }} />
       <Stack.Screen name="legal" options={{ title: "Legal" }} />
       <Stack.Screen name="turn-off-protection" options={{ title: "Turn Off Protection" }} />
       <Stack.Screen name="set-up-call-forwarding" options={{ title: "Set Up Call Forwarding" }} />

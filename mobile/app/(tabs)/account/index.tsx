@@ -12,14 +12,12 @@ import { fetchDashboard, NotEntitledError } from "../../../lib/api";
 import { resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../../lib/voiceClient";
 import { clearSetupCompletedAt } from "../../../lib/setupCompletionStorage";
 import type { MembershipStatus } from "../../../lib/types";
+import { describeMembership, displayAccountNumber } from "../../../lib/protectionView";
 import { colors, radius, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
-const MEMBERSHIP_LABEL: Record<MembershipStatus, string> = {
-  active: "Active",
-  trial: "Free trial",
-  payment_issue: "Payment issue",
-  cancelled: "Cancelling at period end",
-};
+// 1.0.2: one shared membership vocabulary (lib/protectionView.ts) so this
+// row and the Membership tab can never word the same status differently.
+const membershipLabel = (status: MembershipStatus) => describeMembership({ status }, () => "").label.split(" — ")[0];
 
 // "loading" | "no_membership" (confirmed, not an error) | "unavailable"
 // (bootstrap/dashboard fetch failed — never show a guessed status) |
@@ -32,6 +30,7 @@ export default function Account() {
   const [statusState, setStatusState] = useState<StatusState>("loading");
   const [membershipStatus, setMembershipStatus] = useState<MembershipStatus | null>(null);
   const [isProtected, setIsProtected] = useState(false);
+  const [accountNumber, setAccountNumber] = useState<string | null>(null);
 
   // Identity changed (sign-out/sign-in as a different account) — clear
   // everything rather than risk showing a moment of the previous user's
@@ -43,6 +42,7 @@ export default function Account() {
     setStatusState("loading");
     setMembershipStatus(null);
     setIsProtected(false);
+    setAccountNumber(null);
   }, [session?.user?.id]);
 
   useFocusEffect(
@@ -72,6 +72,7 @@ export default function Account() {
           // true for a held, lapsed, renumbered or unreachable household).
           // hasProvenActivation still decides setup routing elsewhere.
           setIsProtected(result.protection.fullyProtected === true);
+          setAccountNumber(displayAccountNumber(result.account?.accountNumber));
           setStatusState("loaded");
         })
         .catch(err => {
@@ -148,14 +149,15 @@ export default function Account() {
       )}
 
       <View style={styles.statusBlock}>
-        <StatusRow label="Membership" state={statusState} value={membershipStatus ? MEMBERSHIP_LABEL[membershipStatus] : "No active membership"} positive={membershipStatus === "active"} bordered />
-        <StatusRow label="Protection" state={statusState} value={isProtected ? "Protected" : "Not yet active"} positive={isProtected} />
+        <StatusRow label="Membership" state={statusState} value={membershipStatus ? membershipLabel(membershipStatus) : "No active membership"} positive={membershipStatus === "active"} bordered />
+        <StatusRow label="Protection" state={statusState} value={isProtected ? "Protected" : "Not protected yet"} positive={isProtected} bordered={!!accountNumber} />
+        {accountNumber && <StatusRow label="HCG account" state={statusState} value={accountNumber} />}
       </View>
 
-      <Row icon="card-outline" label="Membership" onPress={() => router.push("/(tabs)/account/membership")} />
       <Row icon="power-outline" label="Need to turn protection off?" onPress={() => router.push("/(tabs)/account/turn-off-protection")} />
-      <Row icon="help-buoy-outline" label="Support" onPress={() => router.push("/(tabs)/account/support")} />
-      <Row icon="document-text-outline" label="Legal" onPress={() => router.push("/(tabs)/account/legal")} />
+      <Row icon="help-buoy-outline" label="Help & support" onPress={() => router.push("/(tabs)/account/support")} />
+      <Row icon="card-outline" label="Membership" onPress={() => router.push("/(tabs)/membership")} />
+      <Row icon="document-text-outline" label="Privacy & terms" onPress={() => router.push("/(tabs)/account/legal")} />
       <View style={styles.dangerGap} />
       <Row icon="log-out-outline" label="Log out" onPress={handleLogout} destructive />
       <Row icon="trash-outline" label="Delete Account" onPress={() => router.push("/(tabs)/account/delete-account")} destructive />

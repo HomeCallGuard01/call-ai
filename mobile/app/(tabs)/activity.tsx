@@ -12,6 +12,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { OutcomeRow } from "../../components/OutcomeRow";
 import { EmptyState } from "../../components/EmptyState";
 import { ScreenHeader } from "../../components/ScreenHeader";
+import { BackLink } from "../../components/BackLink";
 import { fetchDashboard, NotEntitledError } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import type { DashboardActivityItem } from "../../lib/types";
@@ -98,7 +99,14 @@ export default function Activity() {
         keyExtractor={(item, index) => `${item.time}-${index}`}
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
-        ListHeaderComponent={<ScreenHeader title="Activity" subtitle="How each call was handled" />}
+        ListHeaderComponent={
+          // 1.0.2: Activity is no longer a tab (reached from Home), so it
+          // carries its own way back rather than relying on the tab bar.
+          <>
+            <BackLink label="‹ Home" onPress={() => router.navigate("/(tabs)")} />
+            <ScreenHeader title="Activity" subtitle="How each call was handled" />
+          </>
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <EmptyState icon="time-outline" message="No calls yet — we'll let you know as soon as we screen one." />

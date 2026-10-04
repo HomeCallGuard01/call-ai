@@ -159,7 +159,7 @@ const mobile = await import(pathToFileURL(path.join(root, 'mobile', 'lib', 'subs
 {
   const files = [
     ['mobile', 'app', '(setup)', 'subscribe.tsx'], ['mobile', 'app', '(setup)', 'welcome.tsx'], ['mobile', 'app', '(setup)', 'complete.tsx'],
-    ['mobile', 'app', '(setup)', 'confirmation.tsx'], ['mobile', 'app', '(tabs)', 'account', 'membership.tsx'], ['mobile', 'lib', 'purchases.ts'],
+    ['mobile', 'app', '(setup)', 'confirmation.tsx'], ['mobile', 'app', '(tabs)', 'membership.tsx'], ['mobile', 'lib', 'purchases.ts'],
     ['mobile', 'lib', 'subscriptionPrice.ts'], ['server.js'], ['routes', 'mobileApi.js'], ['routes', 'billing.js'],
     ['services', 'checkoutSession.js'], ['services', 'subscriptionPricing.js'],
   ];

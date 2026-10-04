@@ -95,6 +95,9 @@ export default function ContactsList() {
         data={contacts}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
+        // 1.0.2: one plain line on what a trusted contact means (matches the
+        // approved App Store frame 07).
+        ListHeaderComponent={contacts && contacts.length > 0 ? <Text style={styles.intro}>Their calls ring straight through and are never monitored.</Text> : null}
         ListEmptyComponent={
           <View style={styles.empty}>
             <EmptyState icon="people-outline" message="No trusted contacts yet — add the people you don't want screened." />
@@ -134,6 +137,11 @@ export default function ContactsList() {
 }
 
 const styles = StyleSheet.create({
+  intro: {
+    ...typography.body,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,

@@ -72,7 +72,15 @@ check(/accessibilityRole="progressbar"/.test(meter), 'mobile: meter is an access
 check(/Your phone still works normally and every call still reaches you/.test(meter) && !/disconnect|suspend|cut off/i.test(meter), 'mobile: exhaustion copy never implies the phone service stops');
 check(!/from "\.\.\/lib\/theme"[\s\S]*#[0-9a-f]{6}/i.test(meter), 'mobile: no colour literals (theme only)');
 const home = read('mobile/app/(tabs)/index.tsx');
-check(/customerAllowance\?\.monitoringActive === false/.test(home) && home.indexOf('customerAllowance?.monitoringActive === false') < home.indexOf('Home Call Guard is monitoring unknown callers'), 'mobile: "monitoring unknown callers" is not claimed when the server says monitoring is off');
+// 1.0.2: the hero wording moved to mobile/lib/protectionView.ts (one place,
+// shared by both platforms). Same rule: the monitoring-off check runs before
+// the protected wording can be returned, and Home feeds it the server field.
+// tests/mobile-protection-view.test.mjs executes the rule behaviourally.
+const pview = read('mobile/lib/protectionView.ts');
+check(/allowance: data!\.customerAllowance \?\? null/.test(home)
+  && /al\.monitoringActive === false/.test(pview)
+  && pview.indexOf('al.monitoringActive === false') < pview.indexOf('Home Call Guard is protecting calls to this phone'),
+  'mobile: protection is not claimed when the server says monitoring is off');
 check(/<AllowanceMeter allowance=\{data!\.customerAllowance\} \/>/.test(home), 'mobile: Home shows the meter from the server field');
 const types = read('mobile/lib/types.ts');
 check(/customerAllowance\?: CustomerAllowance;/.test(types) && /monitoringActive: boolean \| null;/.test(types), 'mobile: customerAllowance is optional in the response type (older backends)');

@@ -21,7 +21,7 @@
 // "awaiting_confirmation" state this adds, and lib/setupFlow.ts's for why
 // resumeSetupAt needed it too.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Text, View, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, Image } from "react-native";
+import { Text, View, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable, Linking, AppState, Platform } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -35,13 +35,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { fetchDashboard, fetchActivationDevice, NotEntitledError } from "../../lib/api";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
-import { deriveLoadOutcome, computeHomeProtectionState, hasProvenActivation } from "../../lib/homeStatus";
+import { deriveLoadOutcome, hasProvenActivation } from "../../lib/homeStatus";
+import { describeProtection, buildSetupChecklist, isServerProtected, describeMembership, type ProtectionAction } from "../../lib/protectionView";
+import { ProtectionChecklist } from "../../components/ProtectionChecklist";
+import { getCallReadiness } from "../../lib/callReadiness";
+import { canPresentCalls, readinessMessage, readinessProblem } from "../../lib/callReadinessModel";
 import { classifyLoadFailure, type LoadFailureReason } from "../../lib/loadFailure";
-import { resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../lib/voiceClient";
+import { getActiveCall, registerForIncomingCalls, resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../lib/voiceClient";
 import { resumeSetupAt } from "../../lib/setupFlow";
 import { loadSetupCompletedAt, clearSetupCompletedAt } from "../../lib/setupCompletionStorage";
 import type { DashboardActivityItem, DashboardResponse } from "../../lib/types";
-import { colors, spacing, typography } from "../../lib/theme";
+import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
 // "ready" is the only state in which `data` is guaranteed non-null and
 // backend-confirmed for the *current* user — every other state must never
@@ -89,6 +93,10 @@ function formatActivityTime(iso: string): string {
   return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
 function BrandHeader() {
   return <BrandMark size="md" />;
 }
@@ -99,11 +107,13 @@ function BrandHeader() {
 // "protected" is visually unmistakable and never implied by a state that
 // isn't. Presentation only: which one renders is decided by the same
 // state checks as before.
-function Hero({ muted = false }: { muted?: boolean }) {
+// 1.0.2: a third, amber ring treatment for "needs attention" — still never
+// the green "protected" look.
+function Hero({ muted = false, attention = false }: { muted?: boolean; attention?: boolean }) {
   return (
-    <View style={styles.shieldWrap}>
-      <View style={[styles.ringOuter, muted && styles.ringOuterMuted]}>
-        <View style={[styles.ringInner, muted && styles.ringInnerMuted]}>
+    <View style={styles.shieldWrap} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={[styles.ringOuter, muted && styles.ringOuterMuted, attention && styles.ringOuterAttention]}>
+        <View style={[styles.ringInner, muted && styles.ringInnerMuted, attention && styles.ringInnerAttention]}>
           <Image
             source={require("../../assets/shield-mark.png")}
             style={muted ? styles.shieldImageMuted : styles.shieldImage}
@@ -150,6 +160,13 @@ export default function Home() {
   // or not-yet-loaded state must never manufacture a nudge that isn't
   // genuinely known to be needed.
   const [hasDeviceOnRecord, setHasDeviceOnRecord] = useState(true);
+  // This phone's ability to ring for a protected call (microphone /
+  // notification permission). Unknown is treated as able — only a definite
+  // denial changes the hero (lib/callReadinessModel.ts canPresentCalls).
+  const [deviceCanPresentCalls, setDeviceCanPresentCalls] = useState(true);
+  const [deviceProblemMessage, setDeviceProblemMessage] = useState<string | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [reconnectNote, setReconnectNote] = useState<string | null>(null);
 
   // load() is triggered from two independent sources — useFocusEffect
   // (every time this tab regains focus) and pull-to-refresh — so two
@@ -259,9 +276,51 @@ export default function Home() {
     });
   }
 
+  const refreshDeviceReadiness = useCallback(() => {
+    getCallReadiness()
+      .then(r => {
+        setDeviceCanPresentCalls(canPresentCalls(r));
+        setDeviceProblemMessage(readinessMessage(readinessProblem(r), Platform.OS === "ios" ? "ios" : "android"));
+      })
+      .catch(() => {
+        setDeviceCanPresentCalls(true);
+        setDeviceProblemMessage(null);
+      });
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", s => {
+      if (s === "active") refreshDeviceReadiness();
+    });
+    return () => sub.remove();
+  }, [refreshDeviceReadiness]);
+
+  // "Reconnect this phone" (1.0.2): the action for the September-incident
+  // state — forwarding works but this phone isn't registered to receive
+  // calls. Clears only the app's local "already registered" flag so the
+  // existing, unchanged registration path (lib/voiceClient.ts) runs again
+  // for the SAME signed-in household, then re-reads the server's verdict.
+  // Never runs during a call. Whether it worked is decided by the server's
+  // next response, not assumed here.
+  async function reconnectThisPhone() {
+    if (getActiveCall()) return;
+    setIsReconnecting(true);
+    setReconnectNote(null);
+    resetVoiceRegistrationState();
+    try {
+      await registerForIncomingCalls(session?.access_token);
+    } catch {
+      setReconnectNote("We couldn't reconnect this phone just now. Check your connection and try again.");
+    }
+    refreshDeviceReadiness();
+    await load(true);
+    setIsReconnecting(false);
+  }
+
   useFocusEffect(
     useCallback(() => {
       load();
+      refreshDeviceReadiness();
       // Re-read on every focus, not just once on mount — this screen is
       // reached right after complete.tsx writes this timestamp for the
       // first time, and a stale in-memory null would otherwise show
@@ -276,7 +335,7 @@ export default function Home() {
       fetchActivationDevice(session?.access_token)
         .then(d => setHasDeviceOnRecord(!!d.deviceType))
         .catch(() => setHasDeviceOnRecord(true));
-    }, [load, session?.access_token])
+    }, [load, refreshDeviceReadiness, session?.access_token])
   );
 
   if (state === "loading") {
@@ -294,10 +353,10 @@ export default function Home() {
         <View style={styles.content}>
           <BrandHeader />
           <Hero muted />
-          <Text style={styles.giantTitleMuted} accessibilityRole="header">Not protected yet</Text>
+          <Text style={[styles.headline, styles.headlineNeutral]} accessibilityRole="header">FINISH SETTING UP PROTECTION</Text>
           <Text style={styles.statusBody}>
-            You don't currently have an active membership. Protect your phone from scam
-            callers today.
+            You don't currently have an active membership. Start your membership to protect this phone
+            from scam callers.
           </Text>
           <PrimaryButton label="Start protection" onPress={() => router.push("/(setup)/welcome")} />
         </View>
@@ -349,7 +408,6 @@ export default function Home() {
   // was positively confirmed by the backend for the current user (or is
   // the last such confirmation, with isStale flagging that explicitly).
   const hasCompletedActivationStep = !!setupCompletedAt;
-  const homeProtectionState = computeHomeProtectionState(data!, hasCompletedActivationStep);
   const hasNoContacts = data!.contacts.length === 0;
 
   // Same decision point B1 uses to skip already-done steps — reused here
@@ -395,6 +453,70 @@ export default function Home() {
 
   const recentActivity = data!.activity.slice(0, 3);
 
+  // 1.0.2 (2026-10-04): the whole hero — headline, explanation and the one
+  // next action — comes from lib/protectionView.ts, which only words what
+  // the server's canonical state (activationStage / protectionBlockers /
+  // fullyProtected) already decided. See that file's header for the rules
+  // it guarantees, including the September incident (calls reached HCG,
+  // the app was never registered, the customer was told nothing).
+  const protectionInput = {
+    protection: data!.protection,
+    membership: data!.membership,
+    testPurchase: data!.customerAllowance?.membership?.testPurchase === true,
+    allowance: data!.customerAllowance ?? null,
+  };
+  const view = describeProtection(protectionInput, {
+    canPresentCalls: deviceCanPresentCalls,
+    problemMessage: deviceProblemMessage,
+    hasCompletedActivationStep,
+  });
+  const checklist = buildSetupChecklist(protectionInput);
+  const serverProtected = isServerProtected(protectionInput);
+  const membershipView = describeMembership(
+    {
+      status: data!.membership.status,
+      accessUntil: data!.membership.accessUntil,
+      trialEndDate: data!.membership.trialEndDate,
+      complimentary: data!.customerAllowance?.membership?.state === "complimentary",
+      testPurchase: protectionInput.testPurchase,
+    },
+    formatShortDate
+  );
+  // Before forwarding has ever been attempted on this device the guided flow
+  // (contacts -> device-picker) is the right place; afterwards (including the
+  // old-number case) the standalone forwarding screen is.
+  const forwardingRoute =
+    resumeTarget.screen === "contacts" || resumeTarget.screen === "device-picker" ? resumeRoute : "/(tabs)/account/set-up-call-forwarding";
+
+  function runAction(kind: ProtectionAction) {
+    switch (kind) {
+      case "reconnect_app":
+        reconnectThisPhone();
+        return;
+      case "open_settings":
+        Linking.openSettings().catch(() => {});
+        return;
+      case "set_up_forwarding":
+        router.push(forwardingRoute as any);
+        return;
+      case "resume_setup":
+        router.push(resumeRoute as any);
+        return;
+      case "update_payment":
+        router.push("/(tabs)/membership");
+        return;
+      case "contact_support":
+        router.push("/(tabs)/account/support");
+        return;
+      case "refresh":
+        load(true);
+        return;
+    }
+  }
+
+  const headlineStyle =
+    view.tone === "protected" ? styles.headlineProtected : view.tone === "attention" ? styles.headlineAttention : styles.headlineNeutral;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -406,150 +528,39 @@ export default function Home() {
         {isStale && <Banner variant="notice" message="You're offline — showing your last known status." />}
 
         {/* 2026-09-30: this phone cannot ring for protected calls (a
-            microphone/notification permission is off) — shown above every
-            protection state because none of them is true while it lasts. */}
-        <CallReadinessBanner />
+            microphone/notification permission is off). Since 1.0.2 the hero
+            itself says so and offers Open Settings; the banner still covers
+            the iOS "not asked yet" microphone explainer. */}
+        {view.action?.kind !== "open_settings" && <CallReadinessBanner />}
 
-        {homeProtectionState === "setting_up" ? (
-          <>
-            <Hero muted />
-            <Text style={styles.giantTitleMuted} accessibilityRole="header">Setting up</Text>
-            <Text style={styles.statusBody}>{finishSetupBody}</Text>
-            <PrimaryButton
-              label={finishSetupLabel}
-              onPress={() => router.push(resumeRoute as any)}
-            />
-          </>
-        ) : homeProtectionState === "awaiting_confirmation" ? (
-          <>
-            {/* Manual-test-call UX removed (2026-09-25): every concrete
-                setup step — including turning on call forwarding — is
-                done. No customer action is required or offered here:
-                activation_verified_at/delivery_verified_at are both
-                stamped automatically, server-side, from the first
-                genuine forwarded call reaching Home Call Guard (see
-                services/activationVerification.js's
-                stampActivationVerifiedOnRealCall) — never from a
-                customer-initiated test call. Silence alone (no call yet)
-                is never treated as a fault, so no reminder/warning is
-                shown while waiting — a customer may simply not have
-                received a call yet. */}
-            <Hero muted />
-            <Text style={styles.giantTitleMuted} accessibilityRole="header">Protection set up</Text>
-            <Text style={styles.statusBody}>
-              We'll confirm automatically when your next call comes through.
-            </Text>
-          </>
-        ) : homeProtectionState === "confirming_delivery" ? (
-          <>
-            {/* Every concrete setup step is done (contacts added, call
-                forwarding verified) — but no approved call has actually
-                been proven to reach this phone yet, so this is
-                deliberately not "You're protected" (2026-09-07
-                correction). No customer action needed here: this
-                resolves automatically the next time a real call
-                connects, same as the "setting up" -> "protected"
-                transition already does. */}
-            <Hero muted />
-            <Text style={styles.giantTitleMuted} accessibilityRole="header">Almost there</Text>
-            <Text style={styles.statusBody}>
-              Your call forwarding is set up correctly. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.
-            </Text>
-          </>
-        ) : homeProtectionState === "reconnect_needed" ? (
-          <>
-            {/* 2026-09-12: a real approved call has already been
-                delivered successfully at least once (endToEndDeliveryVerified),
-                so call forwarding itself is genuinely working — the app
-                just isn't currently reachable (e.g. not opened in a
-                while, so the Voice SDK registration has expired). This
-                must never send the customer back through device-picker/
-                MMI setup — nothing about their carrier-level forwarding
-                needs to change, only this app's own registration, which
-                recovers automatically. Also never claims "You're
-                protected" — the existing fail-safe (fullyProtected
-                requires current reachability) still applies. */}
-            <Hero muted />
-            <Text style={styles.giantTitleMuted} accessibilityRole="header">Reconnecting</Text>
-            <Text style={styles.statusBody}>
-              Home Call Guard has protected you before — we just can't currently reach this app. Keep it open for a moment to reconnect. You don't need to redo call forwarding.
-            </Text>
-          </>
-        ) : homeProtectionState === "delivery_problem" ? (
-          <>
-            {/* Diagnostic instrumentation / protection-status wording
-                (2026-09-24): a REAL, observed delivery failure — never
-                inferred from silence or staleness (see
-                hasRecentDeliveryProblem's own comment). This is the one
-                state in this whole model that names an actual, known
-                event rather than reassuring.
-                Manual-test-call UX removed (2026-09-25): no longer offers
-                a "test it now" action — the customer is never required or
-                encouraged to place a test call; Home Call Guard keeps
-                monitoring and will resolve this automatically the next
-                time a real call is delivered successfully. */}
-            <Hero muted />
-            <Text style={styles.giantTitleMuted} accessibilityRole="header">Checking your protection</Text>
-            <Text style={styles.statusBody}>
-              A recent call to your protected number didn't come through as expected. Your protection has worked
-              before — this may be a one-off, and we'll keep monitoring automatically.
-            </Text>
-          </>
-        ) : (
-          <>
-            {/* Dominant hero: the real brand shield, large, with a soft
-                glow ring so it reads as "active" rather than a static
-                icon — the single most important element on this screen,
-                per the design objective ("shield/protection visual as
-                the dominant element rather than a generic text
-                dashboard"). */}
-            <Hero />
+        <Hero muted={!view.isProtected} attention={view.tone === "attention"} />
+        <Text style={[styles.headline, headlineStyle]} accessibilityRole="header">
+          {view.headline}
+        </Text>
+        <Text style={styles.statusBody}>{view.body}</Text>
+        {view.action && (
+          <PrimaryButton label={view.action.label} onPress={() => runAction(view.action!.kind)} loading={isReconnecting} />
+        )}
+        {reconnectNote && <Banner variant="notice" message={reconnectNote} />}
 
-            {/* Customer allowance (2026-10-03): the server's
-                monitoringActive decides whether unknown callers are being
-                checked right now. When it is explicitly false (this
-                month's checking used up, or a safety pause), never claim
-                monitoring — calls still connect. A missing field (older
-                backend) keeps the previous wording. */}
-            {data!.customerAllowance?.monitoringActive === false && data!.customerAllowance.status !== "inactive" ? (
-              <>
-                <Text style={styles.giantTitle} accessibilityRole="header">
-                  {data!.customerAllowance.callsContinue === false ? "This month's allowance is used up" : "Your calls are connecting"}
-                </Text>
-                <Text style={styles.reassurance}>
-                  {data!.customerAllowance.callsContinue === false
-                    ? "Calls forwarded to Home Call Guard may not get through until your allowance resets."
-                    : "People you trust ring straight through. Calls from other numbers still reach you, but they aren't being checked for scams right now."}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.giantTitle} accessibilityRole="header">You're protected</Text>
-                <Text style={styles.reassurance}>
-                  Home Call Guard is monitoring unknown callers and helping protect you from scams.
-                </Text>
-              </>
-            )}
-            {/* Protection-status wording precision (2026-09-24): a quiet,
-                honest "when was this last genuinely confirmed" fact —
-                never a claim that carrier forwarding is currently,
-                actively known to be on (HCG cannot observe that; see
-                DashboardResponse.lastConfirmedProtectedAt's own comment).
-                Deliberately small/muted, not a warning.
-                Manual-test-call link removed (2026-09-25): no longer
-                offers a way to trigger verify.tsx from here — nothing to
-                encourage the customer to check, this is purely a passive
-                fact. */}
-            {data!.protection.lastConfirmedProtectedAt && (
-              <Text style={styles.lastConfirmedText}>
-                Last confirmed {formatActivityTime(data!.protection.lastConfirmedProtectedAt)}
-              </Text>
-            )}
+        {/* Protection-status wording precision (2026-09-24): a quiet,
+            honest "when was this last genuinely confirmed" fact — never a
+            claim that carrier forwarding is currently, actively known to be
+            on (HCG cannot observe that). */}
+        {view.isProtected && data!.protection.lastConfirmedProtectedAt && (
+          <Text style={styles.lastConfirmedText}>
+            Last confirmed {formatActivityTime(data!.protection.lastConfirmedProtectedAt)}
+          </Text>
+        )}
 
-            {/* Real-data protection summary — no invented numbers, same
-                stats.* fields the previous version already read, just
-                given a scannable card treatment instead of one run-on
-                sentence. */}
+        {/* Setup progress (Task 5) — shown whenever this phone is not fully
+            protected and the server could establish its state. Every tick
+            is a server gate. */}
+        {!view.isProtected && view.tone !== "unknown" && <ProtectionChecklist steps={checklist} />}
+
+        {serverProtected && (
+          <>
+            {/* Real-data protection summary — no invented numbers. */}
             <View style={styles.statRow}>
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>{data!.stats.callsScreened}</Text>
@@ -566,39 +577,53 @@ export default function Home() {
                 </Text>
               </View>
             </View>
-
             <AllowanceMeter allowance={data!.customerAllowance} />
+          </>
+        )}
 
-            {hasNoContacts && (
-              <View style={styles.nudge}>
-                <Text style={styles.nudgeText}>
-                  You haven't added a trusted contact yet — family and friends may be checked like an
-                  unknown caller until you do.
-                </Text>
-                <PrimaryButton
-                  label="Add a trusted contact"
-                  variant="secondary"
-                  onPress={() => router.push("/(setup)/contacts")}
-                />
-              </View>
-            )}
+        {hasNoContacts && (
+          <View style={styles.nudge}>
+            <Text style={styles.nudgeText}>
+              You haven't added a trusted contact yet — family and friends may be checked like an
+              unknown caller until you do.
+            </Text>
+            <PrimaryButton
+              label="Add a trusted contact"
+              variant="secondary"
+              onPress={() => router.push("/(setup)/contacts")}
+            />
+          </View>
+        )}
 
-            {/* Trusted contacts status — simple summary + link, never the
-                full editable list (that's the Contacts tab's job). */}
-            <View style={styles.summaryRow}>
-              <Ionicons name="people" size={20} color={colors.accent} style={styles.summaryIcon} accessibilityElementsHidden importantForAccessibility="no" />
-              <Text style={styles.summaryRowLabel}>Trusted contacts</Text>
-              <Text style={styles.summaryRowValue}>
-                {data!.contacts.length === 0
-                  ? "None yet"
-                  : `${data!.contacts.length} ${data!.contacts.length === 1 ? "contact" : "contacts"}`}
-              </Text>
-            </View>
+        {/* At-a-glance answers: who gets straight through, and what my
+            membership is — each a link to its own tab. */}
+        <View style={styles.summaryBlock}>
+          <SummaryRow
+            icon="people"
+            label="Trusted contacts"
+            value={data!.contacts.length === 0 ? "None yet" : `${data!.contacts.length} ${data!.contacts.length === 1 ? "contact" : "contacts"}`}
+            onPress={() => router.push("/(tabs)/contacts")}
+            bordered
+          />
+          <SummaryRow
+            icon="card"
+            label="Membership"
+            value={membershipView.label.split(" — ")[0]}
+            warning={membershipView.tone === "warning"}
+            onPress={() => router.push("/(tabs)/membership")}
+          />
+        </View>
 
-            {/* Recent activity preview — real rows from the same array
-                the Activity tab reads, just the first few, in plain
-                English (see describeActivity above), with a link to the
-                full list rather than duplicating it here. */}
+        {data!.membership.status === "payment_issue" && view.action?.kind !== "update_payment" && (
+          <Banner
+            variant="error"
+            message="There's a problem with your payment. Please update your billing details to keep your protection active."
+          />
+        )}
+
+        {/* Recent activity preview — real rows, plain English. */}
+        {(serverProtected || data!.activity.length > 0) && (
+          <>
             <Text style={styles.sectionTitle}>Recent activity</Text>
             {recentActivity.length === 0 ? (
               <View style={styles.emptyWrap}>
@@ -627,10 +652,8 @@ export default function Home() {
         )}
 
         {/* Complimentary/admin-account onboarding fix (2026-09-24): a
-            friendly, clearly-secondary nudge — never shown while
-            homeProtectionState is "setting_up" (resumeTarget never
-            resolves to "confirm-device" until every real setup step is
-            already done), and never claims protection is in question. */}
+            friendly, clearly-secondary nudge — only once every real setup
+            step is done, and never claims protection is in question. */}
         {showConfirmDeviceNudge && (
           <View style={styles.nudge}>
             <Text style={styles.nudgeText}>
@@ -645,19 +668,7 @@ export default function Home() {
           </View>
         )}
 
-        {data!.membership.status === "payment_issue" && (
-          <Banner
-            variant="error"
-            message="There's a problem with your payment. Please update your billing details to keep your protection active."
-          />
-        )}
-
-        {/* 5-step protection checklist (2026-09-27) — always reachable
-            regardless of which state above rendered, most useful exactly
-            while not yet fully protected (it's what explains WHY, step
-            by step). A small, unobtrusive text link, matching the
-            existing lastConfirmedText/lastConfirmedLink treatment above
-            rather than a prominent button — this is supplementary detail,
+        {/* 5-step protection checklist (2026-09-27) — supplementary detail,
             never the primary call to action on this screen. */}
         <Text style={styles.protectionStatusLinkRow}>
           <Text style={styles.lastConfirmedLink} onPress={() => router.push("/(setup)/protection-status")}>
@@ -666,6 +677,36 @@ export default function Home() {
         </Text>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function SummaryRow({
+  icon,
+  label,
+  value,
+  onPress,
+  bordered,
+  warning,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  onPress: () => void;
+  bordered?: boolean;
+  warning?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.summaryRow, bordered && styles.summaryRowBordered, pressed && styles.summaryRowPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value}`}
+    >
+      <Ionicons name={icon} size={20} color={colors.accent} style={styles.summaryIcon} accessibilityElementsHidden importantForAccessibility="no" />
+      <Text style={styles.summaryRowLabel}>{label}</Text>
+      <Text style={[styles.summaryRowValue, warning && styles.summaryRowValueWarning]}>{value}</Text>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} accessibilityElementsHidden importantForAccessibility="no" />
+    </Pressable>
   );
 }
 
@@ -703,6 +744,9 @@ const styles = StyleSheet.create({
   ringOuterMuted: {
     backgroundColor: colors.neutralSoft,
   },
+  ringOuterAttention: {
+    backgroundColor: colors.dangerSoft,
+  },
   ringInner: {
     width: SHIELD_SIZE + 44,
     height: SHIELD_SIZE + 44,
@@ -716,6 +760,26 @@ const styles = StyleSheet.create({
   ringInnerMuted: {
     backgroundColor: colors.card,
     borderColor: colors.border,
+  },
+  ringInnerAttention: {
+    borderColor: colors.danger,
+  },
+  // 1.0.2 hero headline: upper-case, one line per state.
+  headline: {
+    fontSize: 26,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    textAlign: "center",
+    marginBottom: spacing.sm,
+  },
+  headlineProtected: {
+    color: colors.accent,
+  },
+  headlineAttention: {
+    color: colors.danger,
+  },
+  headlineNeutral: {
+    color: colors.text,
   },
   shieldImage: {
     width: SHIELD_SIZE,
@@ -803,16 +867,27 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.xs,
   },
-  summaryRow: {
-    flexDirection: "row",
-    alignItems: "center",
+  summaryBlock: {
     backgroundColor: colors.card,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
+    marginBottom: spacing.lg,
+    overflow: "hidden",
+  },
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: MIN_TOUCH_TARGET + 4,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
+  },
+  summaryRowBordered: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  summaryRowPressed: {
+    backgroundColor: colors.cardElevated,
   },
   summaryIcon: {
     marginRight: spacing.sm,
@@ -826,6 +901,10 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.accent,
     fontWeight: "700",
+    marginRight: spacing.xs,
+  },
+  summaryRowValueWarning: {
+    color: colors.danger,
   },
   sectionTitle: {
     ...typography.title,

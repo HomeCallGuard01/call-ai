@@ -8,10 +8,13 @@
 // Accordion rows per the revised UX_REVIEW_PERSONAS.md guidance — kept
 // (a standard, expected pattern), with the whole row tappable rather
 // than a small chevron.
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Text, View, Pressable, Linking, StyleSheet, Platform } from "react-native";
 import { contactsPermissionHelp } from "../../../lib/iphoneAvailability";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { fetchDashboard } from "../../../lib/api";
+import { useAuth } from "../../../lib/AuthContext";
+import { displayAccountNumber } from "../../../lib/protectionView";
 import { Screen } from "../../../components/Screen";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
 
@@ -44,6 +47,16 @@ const FAQ_ITEMS = [
     answer: "Home Call Guard currently protects compatible mobile phones. We're exploring landline protection for the future.",
   },
   {
+    question: "What is my HCG account number?",
+    answer:
+      "It's your permanent Home Call Guard reference, shown at the top of this page and on the Membership tab. Quote it whenever you contact us so we can find your account straight away. It never changes.",
+  },
+  {
+    question: "What does \"Protection needs attention\" mean?",
+    answer:
+      "Something is stopping protected calls reaching you — for example, this phone isn't connected, or call forwarding needs updating. Your Home screen shows the one thing to do next. If it doesn't clear, contact us.",
+  },
+  {
     question: "What if I need help?",
     answer: `Contact us any time at ${SUPPORT_EMAIL} and we'll be glad to help. If you're calling on behalf of a family member, that's no problem — just let us know.`,
   },
@@ -51,9 +64,32 @@ const FAQ_ITEMS = [
 
 export default function Support() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const { session } = useAuth();
+  // 1.0.2: the permanent HCG account number (migration 062) is the support
+  // identity. Shown and pre-filled into the email subject when known; the
+  // screen works exactly as before when it isn't (older backend, no
+  // membership, offline).
+  const [accountNumber, setAccountNumber] = useState<string | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboard(session?.access_token)
+        .then(d => setAccountNumber(displayAccountNumber(d.account?.accountNumber)))
+        .catch(() => {});
+    }, [session?.access_token])
+  );
+  const mailto = accountNumber
+    ? `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Help with ${accountNumber}`)}`
+    : `mailto:${SUPPORT_EMAIL}`;
 
   return (
     <Screen>
+      {accountNumber && (
+        <View style={styles.contactRow} accessible accessibilityLabel={`Your HCG account: ${accountNumber.split("").join(" ")}`}>
+          <Text style={styles.contactLabel}>Your HCG account</Text>
+          <Text style={styles.accountValue} selectable>{accountNumber}</Text>
+        </View>
+      )}
+
       <Pressable
         style={styles.contactRow}
         onPress={() => router.push("/(tabs)/account/set-up-call-forwarding")}
@@ -65,7 +101,7 @@ export default function Support() {
 
       <Pressable
         style={styles.contactRow}
-        onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
+        onPress={() => Linking.openURL(mailto)}
         accessibilityRole="button"
       >
         <Text style={styles.contactLabel}>Email support</Text>
@@ -108,6 +144,11 @@ const styles = StyleSheet.create({
   contactLabel: {
     ...typography.caption,
     color: colors.textMuted,
+  },
+  accountValue: {
+    ...typography.title,
+    color: colors.text,
+    letterSpacing: 1,
   },
   contactValue: {
     ...typography.body,

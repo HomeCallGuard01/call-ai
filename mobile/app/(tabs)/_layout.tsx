@@ -1,4 +1,6 @@
-// C1-C6's tab bar: Home / Contacts / Activity / Account, per
+// C1-C6's tab bar. 1.0.2 (2026-10-04): Home / Contacts / Membership /
+// Help & Account — the four customer areas; Activity is a Home link. Was
+// Home / Contacts / Activity / Account, per
 // APP_VISUAL_SPECIFICATION.md's core daily-use structure. Text labels
 // always shown alongside icons (never icon-only) — per the persona
 // review's explicit finding.
@@ -85,23 +87,27 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="activity"
+        name="membership"
         options={{
-          title: "Activity",
+          title: "Membership",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={focused ? "time" : "time-outline"} color={color} size={size} />
+            <Ionicons name={focused ? "card" : "card-outline"} color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
         name="account"
         options={{
-          title: "Account",
+          title: "Help & Account",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={focused ? "person" : "person-outline"} color={color} size={size} />
+            <Ionicons name={focused ? "help-buoy" : "help-buoy-outline"} color={color} size={size} />
           ),
         }}
       />
+      {/* 1.0.2: Activity leaves the tab bar (four customer areas: Home,
+          Contacts, Membership, Help & Account) but stays a route, reached
+          from Home's "See all activity". */}
+      <Tabs.Screen name="activity" options={{ href: null, title: "Activity" }} />
     </Tabs>
   );
 }
