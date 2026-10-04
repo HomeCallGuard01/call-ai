@@ -330,3 +330,21 @@ The settled synthetic reservation and audit rows remain **by design** (append-on
 | Temporary household `7ab0cf71` (created 13:50, no number, no calls or contacts, revoked "staging server-only check" entitlement) | **anonymised** via `anonymize_inactive_household` (029), the product's deletion path. The account number registry is append-only (062 restricts deletes), so the number is retired, never reissued |
 | Temporary login `staging-servercheck-…@example.com` | **deleted** (its `user_roles` row is gone) |
 | Settled synthetic Fortress reservation and ledger, hold audit, policy audit, account-number registry entry | **kept by design**: append-only financial and audit evidence; deleting them would break the Fortress guarantees |
+
+## 10. £5.99 TEST price configured for STAGING ONLY (2026-10-04)
+
+Andrew created the price (`price_1UMq63Eopg3VmrHs78CGvh5H`) on the existing "Home Call Guard" **test** product.
+
+**Configuration:** `STRIPE_PRICE_ID` was changed **only** in the private staging file (`/Users/ad/hcg-staging-config/staging.env`). A mode-600 backup of the previous file sits beside it. The primary `.env` and `.env.staging.local` are unchanged.
+
+| Check | Result |
+|---|---|
+| Price (read-only, test mode) | livemode false; 599 GBP / month; tax behaviour **inclusive**; active; product "Home Call Guard"; 0 subscriptions |
+| **Not the default** | product default is still the **£4.99** test price (active, unchanged) |
+| Staging recognises £5.99 | the same functions `/billing/offer` and `/api/v1/billing/offer` use (`getCurrentStripeOffer` → `buildOfferResponse`), with the staging config: `amountLabel "£5.99"`, `priceLabel "£5.99 per month including VAT"`, 599 GBP monthly |
+| Exact charge | Stripe invoice preview (creates nothing), automatic tax, UK address: **total 599 GBP, nothing added on top**. A Checkout Session built by staging's own `buildCheckoutSessionParams` (test mode): `amount_subtotal 599`, `amount_total 599`, line = the £5.99 price, `automatic_tax: true`. Expired immediately; the temporary test customer was deleted |
+| VAT split (finding) | In **test mode** Stripe Tax is active but has **no GB registration** (`taxability_reason: not_collecting`), so the recorded VAT is £0 inside the £5.99. Live has the AFMD Ltd UK registration (per the code comments), so live would show £4.99 net + £1.00 VAT within £5.99. Test-mode default tax behaviour is *exclusive*, which confirms "inclusive" on this price is required. **Optional:** add a GB VAT registration in Stripe **test mode** to rehearse the VAT split |
+| £0.30 household limit | intact: standard / plus / complimentary / internal_test = £0.30; sandbox £0.10; unentitled £0.20. Global 0 purchases per day, £1 per day, 600 s |
+| Stripe live | not touched: every call used the **test** key (`sk_test_`) and every object returned `livemode: false` |
+| Production | fingerprint identical; the production `.env` has no reference to the new price |
+| Telephony / `…1883` | untouched; no staging server running |
