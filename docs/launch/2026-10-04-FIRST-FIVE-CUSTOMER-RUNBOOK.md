@@ -27,7 +27,7 @@ OPS_NOTIFY_PUSH_ENABLED=false                # future admin app
 
 | Step | Source of truth | Expected within | If not |
 |---|---|---|---|
-| 1. **Genuine payment confirmed** | Stripe Dashboard (live) payment succeeded, and the HCG classifier = `genuine_paying` (admin label "Paying"). Store: RevenueCat shows **production** (not Sandbox). | at signup | not genuine: classify it; no further steps |
+| 1. **Genuine payment confirmed** | Stripe Dashboard (live) payment of **£5.99** succeeded (launch price, decided 2026-10-04), and the HCG classifier = `genuine_paying` (admin label "Paying"). Store: RevenueCat shows **production** (not Sandbox). | at signup | not genuine: classify it; no further steps |
 | 2. **Permanent HCG account number** | `households.account_number` (062), quoted in the `NEW_GENUINE_CUSTOMER` event | at signup | engineering (062 trigger) |
 | 3. **Number provisioned** | event payload `numberState=active`; admin onboarding | 5 min | queue `NUMBER_PROVISIONING_FAILED` → admin retry (after checking provenance) |
 | 4. **App registered** | `voice_client_registered_at` set; onboarding "App ready" | 1 h | contact the customer (approved wording) |

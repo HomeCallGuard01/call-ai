@@ -18,14 +18,14 @@ Staging is **not a hosted service**. It is a local staging server (port 3099), e
 | Item | What exists | Status |
 |---|---|---|
 | Staging Supabase project | `tigwgmayeuisrxjjykqd`. Credentials in the primary checkout's `.env.staging.local` (staging only). | READY |
-| Staging migration state | Present: 045, 046, 051, 052 (objects; its **history row needs repair**), 057 (and 058–061 per the 2026-09-30 evidence). **Absent: 053, 054, 055, 056, 062–072.** 047, 065 and 070 are function-only and need checking in `schema_migrations`. | NEEDS ANDREW APPROVAL (apply, §2) |
+| Staging migration state | **Applied 2026-10-04 (§7):** 052 → 072 on staging, 68 history rows, verifier 17/17, grants verifier passed, `fc_check_invariants` ok. | **READY** |
 | Staging backend host | Local server + ngrok (reserved domain); no Railway staging service | NEEDS CONFIGURATION (a start-up per test window; `scripts/staging/start-staging-server.sh`) |
 | Staging URL | `https://ferret-augmented-distrust.ngrok-free.dev`. The existing `.env.staging.local` has `APP_URL=http://192.168.1.237:3099` (http, LAN) and `NODE_ENV=development`, which the validator rejects for staging. | NEEDS CONFIGURATION |
 | Staging environment file | `.env.staging` (used on 2026-10-01 and 03) **no longer exists**. Only `.env.staging.local` (6 values) remains. The template is `scripts/staging/staging.env.template`. | NEEDS CONFIGURATION |
 | Twilio for staging | **The production Twilio account is shared** (no subaccount). Staging can be made unable to buy, release or modify numbers: `NUMBER_PROVISIONING_MODE=fake`; the provider-mutation guard refuses non-production on the production account. | READY with conditions (§4); subaccount = EXTERNAL / B-6 |
 | Staging phone number | **`…1883`** (production account, no household in production; staging household `ffc4cfe1`). Its Voice URL is **empty** between tests. It was pointed at staging during tests and reset afterwards. Last call 2026-10-01. | READY. Pointing it at staging is a Twilio change: NEEDS ANDREW APPROVAL each window |
 | Test handset | Motorola (Andrew's production account `…6063` lives on it). Phase A done 2026-10-03; Phases B–E paused (`~/hcg-staging-handset-test/README.md`, outside the repo). Trusted test caller `…2700`. | NEEDS ANDREW APPROVAL (Andrew operates the handset) |
-| Android staging build | EAS `28111eb5…`, 1.0.1 vc 21 from `a1fcede` (Build 19 source) with staging URLs pinned. **The artifact expires 2026-10-16.** **It does not contain this candidate's mobile changes** (Account-tab fix, allowance meter, readiness/sign-out). | NEEDS CONFIGURATION: a new **1.0.2 staging APK** from this candidate (EAS build = Andrew action) |
+| Android staging build | EAS `28111eb5…`, 1.0.1 vc 21 from `a1fcede` (Build 19 source) with staging URLs pinned. **The artifact expires 2026-10-16.** **It does not contain this candidate's mobile changes** (Account-tab fix, allowance meter, readiness/sign-out). | **Owned by the separate Mobile 1.0.2 workstream** (not built here). Staging needs a 1.0.2 **staging-pinned** APK from it before the handset window |
 | iOS / TestFlight | Live 1.0.1 = Build 14. No 1.0.2 build exists. TestFlight builds point at **production**; a sandbox purchase there reaches the **production** RevenueCat webhook. Production has no environment guard, so it **buys a real number** (the 28 Sep case). | EXTERNAL BLOCKER for iOS purchase tests until the candidate is in production, **or** a staging-pinned iOS build exists |
 | OpenAI | No staging key in the staging configuration. Spend inside HCG is bounded by Fortress monitoring caps (30-minute per-call cap, household and global £ caps). An OpenAI **project** spend limit is external. | NEEDS CONFIGURATION (key) + EXTERNAL (project limit, recommended) |
 | Stripe test mode | Test keys exist (production `.env` holds `STRIPE_TEST_*`). There is **no test-mode webhook endpoint pointing at staging** and no staging `STRIPE_WEBHOOK_SECRET`. | NEEDS CONFIGURATION (Stripe Dashboard, test mode: add the endpoint; Andrew) |
@@ -33,14 +33,14 @@ Staging is **not a hosted service**. It is a local staging server (port 3099), e
 | Webhook signatures | Twilio signature enforcement is the default (`TWILIO_WEBHOOK_AUTH_MODE` unset); admission requires signature. Proven on staging on 2026-10-01 (unsigned `/voice` → 403). | READY |
 | Required secrets / config | The validator against the current `.env.staging.local`: **9 fatal** (APP_URL https; ABUSE_AUDIT_HASH_SECRET; SAFETY_CALLER_KEY_SECRET; TRUST_PROXY_HOPS; Stripe ×3; RevenueCat auth; Twilio core; Voice SDK; OpenAI). Against the filled template (dummy values): **would START**, with 2 expected warnings. | NEEDS CONFIGURATION |
 | TRUST_PROXY_HOPS | Not set. ngrok is one hop, so the template sets `1`. Verify that `req.ip` is the caller during step 4. | NEEDS CONFIGURATION |
-| Financial containment (067) | Not on staging. After 067, set **small staging budget profiles** (`fc_set_budget_profile`), for example £0.30 per household per period. | NEEDS ANDREW APPROVAL (apply 067) |
+| Financial containment (067) | **Applied on staging.** Kill switch off, breaker closed, 6 seeded profiles; policy = register defaults. Small staging budget profiles (`fc_set_budget_profile`, for example £0.30 per household per period) are still to set before the first call window. | READY (schema); NEEDS CONFIGURATION (staging budgets) |
 | Global kill switch / latching breaker | In 067 (`fc_set_kill_switch`, `fc_reset_breaker`), plus the admin routes in `routes/adminFortress.js` | READY in code; needs 067 |
 | Per-household holds | 067 `fc_set_household_hold` + admin route | READY in code; needs 067 |
 | Signed call delivery | `<Dial timeLimit>` from the Fortress reservation; egress guard; `<Reject/>` on errors | READY in code; needs 067 + a signed real call |
 | App staging configuration | The staging APK pins the staging API and Supabase; the EAS `staging` profile is **uncommitted** in `/Users/ad/call-ai-staging-handset` | NEEDS ANDREW APPROVAL (commit the profile or keep it local; release doc B-10/low) |
 | Alerts in staging | Critical alerts go to the hard-coded support inbox. **Now labelled `[HCG ALERT STAGING]`** (this change). Recommended: leave `Resend_API_Key` unset in staging. | READY |
-| Operational events (072) | Not on staging; delivery OFF | NEEDS ANDREW APPROVAL (apply 072) |
-| Accounting (071) | Not on staging; capture OFF | NOT REQUIRED for the first staging pass; required for the "accounting isolation" gate item later |
+| Operational events (072) | **Applied on staging**; 0 events; delivery OFF | READY |
+| Accounting (071) | **Applied on staging** (inert: capture OFF, 0 transactions). Applied now because `db push` applies in order and 072 follows it; the full apply and rollback chain was rehearsed. | READY (capture stays OFF until gate item G20) |
 | Production isolation of the staging process | `start-staging-server.sh` refuses if a `.env` is present in the working directory. The primary checkout's `.env` is **production**, and `server.js`'s dotenv would fill any missing staging value from it. Run only from the candidate worktree. | READY (script) |
 
 ## 2. Staging migration plan
@@ -66,12 +66,12 @@ Staging is **not a hosted service**. It is a local staging server (port 3099), e
 | 071 | accounting sub-ledger | 011 | absent | not for the first pass; **yes** before the accounting-isolation gate item | rollback refuses if anything was posted to Xero (nothing will be) |
 | 072 | operational events + notifications | 002 | absent | **YES** for the alert gate items | rollback refuses while event history exists |
 
-**Exact sequence (staging only; prepared in `scripts/staging/apply-staging-migrations.sh`, NOT executed):**
+**Exact sequence (staging only; `scripts/staging/apply-staging-migrations.sh`; EXECUTED 2026-10-04, see §7):**
 
 0. **Andrew approval + backup.** Take a staging PITR point or `pg_dump` of `public` + `auth.users`, and **test the restore** into a scratch database.
 1. `supabase link --project-ref tigwgmayeuisrxjjykqd` (prompts for the staging DB password).
 2. `scripts/staging/apply-staging-migrations.sh`. This is a **dry run**: it lists pending migrations.
-3. `APPLY=yes CONFIRM_STAGING_REF=tigwgmayeuisrxjjykqd BACKUP_RESTORE_TESTED=yes scripts/staging/apply-staging-migrations.sh`. It repairs 052, then pushes 053 → 072 in number order (`--include-all`).
+3. `APPLY=yes CONFIRM_STAGING_REF=tigwgmayeuisrxjjykqd BACKUP_RESTORE_TESTED=yes scripts/staging/apply-staging-migrations.sh`. It pushes 052 → 072 in number order (`--include-all`). 052 is applied normally rather than history-repaired: the rehearsal proved it re-runs cleanly over its existing objects.
 4. `node scripts/staging/verify-staging-schema.js`: all marker objects present. In the SQL editor, run `select public.fc_check_invariants();` and the grants check.
 5. Set small staging budget profiles (`fc_set_budget_profile`) and confirm `fc_global_status`.
 
@@ -149,12 +149,13 @@ Expected (billed) costs: **trusted £0.0086/min, monitored £0.0172/min**. The F
 - Upstream routing of trusted calls is worth far more than the £1 price difference: it moves typical margins from 12–26% to about 49–56%.
 - Every figure is ESTIMATED from register rates. **There is no real usage data yet.**
 
-**Recommendation for the 5-customer soft launch: ANDREW DECISION.** Use **£4.99** for the first five. Reasons:
-- Every live surface (website, terms §4, 11 guides, the live iOS product) already says £4.99, so there is no terms-notice, App Store Connect or Stripe-price change before Customer #1.
-- Exposure at five customers is tiny: the Fortress enforces £ budgets per household whatever the price.
-- The cohort's *real* usage is exactly the evidence the £4.99 vs £5.99 decision lacks.
+**DECIDED (Andrew, 2026-10-04): £5.99/month including VAT** is the launch price, including for the first five customers. It is no longer an open decision.
 
-Set the Fortress budget profile from the £4.99 Stripe column (about £0.68 expected, ≈ £0.98 Fortress basis) and **set the boot economics to £4.99** (`HCG_ECONOMICS_PRICE_INC_VAT_GBP=4.99`), so the margin check is honest. Decide £5.99 before Stage 3 (25 customers). Customer-facing pricing has **not** been changed.
+Consequences recorded here (nothing customer-facing has been changed):
+- **Fortress budget profile (D1)** comes from the £5.99 columns: Stripe safe variable budget **£1.07** expected (≈ **£1.54** Fortress basis); 15% store **£0.74** (≈ £1.06 Fortress basis). The 067 seed (£0.50 / £0.25 / £0.10) is more conservative and stays until D1 is set.
+- **Boot economics** already default to £5.99 (register `priceIncVatGbp`). Do **not** set `HCG_ECONOMICS_PRICE_INC_VAT_GBP` lower.
+- **Live surfaces still say £4.99** (website, terms §4, 11 guides, the live iOS product, and the live Stripe price behind `STRIPE_PRICE_ID`). The £5.99 transition (new Stripe Price, App Store Connect / RevenueCat product price, store listings, terms notice, website copy) is **coordinated by the Mobile 1.0.2 / store workstream** and is **not** done here.
+- For staging, the Stripe **test-mode** price should be £5.99, so staging matches the launch price.
 
 ## 6. Number cleanup recommendation (prepared, NOT executed)
 
@@ -173,3 +174,28 @@ Set the Fortress budget profile from the £4.99 Stripe column (about £0.68 expe
 | `…510` | orphan, quarantined since 23 Sep (very probably Andrew's original number) | **RELEASE** (confirm the quarantine) | Andrew confirms his phone no longer forwards to it (last call 13 Sep) |
 
 Savings if all four RELEASE rows go ahead: ≈ **£3.48/month**.
+
+## 7. Evidence: staging database preparation (executed 2026-10-04)
+
+Approved by Andrew: "staging backup and staging database preparation ONLY". Nothing else was changed.
+
+| Step | Result |
+|---|---|
+| 1. Target identity | The Supabase CLI (logged in) lists `tigwgmayeuisrxjjykqd` = **home-call-guard-staging** and `psbzynxplxfbyrbdidmn` = **home-call-guard** (production). The **candidate worktree only** was linked to staging (`supabase/.temp` is git-ignored). **The primary checkout `/Users/ad/call-ai` is linked to PRODUCTION** and was never used for any database command. Every dump and push ran with the CLI login role `cli_login_postgres.tigwgmayeuisrxjjykqd` (tenant = staging ref). |
+| 2. Backup | `pg_dump` 18.4 (Homebrew `libpq`, already installed; no Docker) through the CLI's own login role, into `/Users/ad/hcg-staging-backups/2026-10-04-pre-053-072/` (mode 700, outside the repo; contains staging test-user data). Files: `schema.sql` (public, 2,466 lines), `auth-schema.sql`, `data.sql` (public + auth data, 849 lines), `roles.sql`. SHA-256 prefixes: schema `c88ccb44a85df812…`, data `c466fd3c2e4fce08…`, roles `168a95a9c745af5e…`. The temporary credential scripts were deleted. |
+| 3. Restore proof | The backup was restored into a **throwaway local PostgreSQL 18** (embedded, temp dir, localhost; Supabase roles, vault and realtime stubbed). **All 18 tables match live staging row counts** (30 households, 45 calls, 17 entitlements, 25 user roles, 26 contacts, 25 Stripe events, 12 subscriptions, 8 terms acceptances, 5 waiting-list rows, 1 classification, 31 auth users; the rest 0). |
+| 3b. Rehearsal on the restored copy | **All 16 migrations 052 → 072 applied cleanly** on staging's real schema and data; `fc_check_invariants` ok; households preserved. **All 15 rollbacks 072 → 053 ran cleanly** (kill switch on before 067), and afterwards 18/18 tables still matched the backup. Rollback is viable. |
+| 4. Verifier before | 4/17 marker objects; CLI history showed 052–056 and 062–072 not applied |
+| 5. Plan shown | `supabase db push --linked --include-all --dry-run`: exactly 052, 053, 054, 055, 056, 062, 063, 064, 065, 066, 067, 068, 069, 070, 071, 072 |
+| 6. Applied | `scripts/staging/apply-staging-migrations.sh` with explicit confirmations: **16 migrations applied to staging**, in order, no errors |
+| 7. Verifier after | **17/17 marker objects present**; history **68 rows, nothing pending** (065 and 070 recorded) |
+| 8. Database checks (read-only transaction, staging) | `scripts/verify-table-grants.js`: **all checks passed** (RLS on every public table; anon holds nothing; authenticated exactly on its allowlist; default ACLs closed). `fc_check_invariants` **ok**; kill switch **off**, breaker **closed**; 6 budget profiles; `fc_policy` = register (0.010718 / 0.008069 £ per min, uplift 1.10, max call 14,400 s, daily £15, hourly £4, 10 purchases per day). **Data preserved:** 30 households, 17 entitlements, 45 calls. **30/30 households have a permanent account number** (registry 30; 11 routing assignments). 0 ops events, 0 accounting transactions. 2 staging Apple grants are environment-unverified (pre-053, as designed). Key functions present (047, 065, 066, 067, 070 canonical body, 071, 072). |
+| 9. Production untouched | A read-only production fingerprint was taken before and after (new-migration markers all absent; row counts for households 36, entitlements 38, subscriptions 15, calls 103, contacts 851, Stripe events 27, quarantine 2; latest `updated_at` on households and entitlements): **identical**. |
+
+**Next staging step:** the configuration window (Andrew-provided secrets and approvals; §1 rows marked NEEDS CONFIGURATION):
+- the staging environment file from `scripts/staging/staging.env.template`;
+- the Stripe **test-mode** webhook endpoint pointing at the staging URL, with a £5.99 test price;
+- small staging Fortress budget profiles;
+- then `start-staging-server.sh` (health and unsigned-403 checks only, no calls).
+
+The telephony window (pointing `…1883`, handset calls) follows, and needs the Mobile 1.0.2 staging APK.

@@ -274,7 +274,7 @@ Skipped: none. Both real-PG suites ran. The Android manifest/notification suites
 
 ## 14. Business decisions required from Andrew
 
-1. **Launch price, £4.99 or £5.99.** Then the Stripe Price, ASC/RevenueCat, the terms notice, the website and the guides follow.
+1. ~~Launch price~~ **DECIDED 2026-10-04: £5.99/month incl VAT.** The transition (Stripe Price, ASC/RevenueCat, terms notice, website, guides, store listings) is coordinated by the Mobile 1.0.2/store workstream.
 2. **D1 Fortress budgets per profile** (seeds £0.50 / £0.25 / £0.10), and whether any minute allowance is promised to customers.
 3. **LEVEL 4:**
    - Approve the subaccount, master-token-offline and prepaid architecture.

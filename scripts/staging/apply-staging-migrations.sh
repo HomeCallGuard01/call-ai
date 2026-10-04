@@ -8,7 +8,7 @@
 # prompts for the staging DB password (never stored here).
 #
 # Order (docs/launch/2026-10-04-STAGING-READINESS.md §2):
-#   repair history 052 → 053 054 055 056 062 063 064 065 066 067 068 069 070 071 072
+#   052 053 054 055 056 062 063 064 065 066 067 068 069 070 071 072 (rehearsed on a restored copy)
 # `supabase db push --include-all` applies every un-applied local migration in
 # number order. NEVER point this at production (psbzynxplxfbyrbdidmn).
 set -euo pipefail
@@ -28,9 +28,11 @@ if [[ "${APPLY:-}" != "yes" || "${CONFIRM_STAGING_REF:-}" != "$STAGING_REF" || "
   exit 0
 fi
 
-echo "== Repair: 052 objects exist on staging but its history row does not =="
-supabase migration repair --linked --status applied 052
-echo "== Apply 053…072 in order =="
+# 052's objects already exist on staging but its history row does not. The
+# 2026-10-04 rehearsal on a restored copy proved 052 re-runs cleanly over them,
+# so it is applied normally (records history + guarantees the objects) rather
+# than history-repaired.
+echo "== Apply 052…072 in order =="
 supabase db push --linked --include-all
 echo "== Verify =="
 node scripts/staging/verify-staging-schema.js
