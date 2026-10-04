@@ -27,8 +27,20 @@ Copy rules (Apple 2.3.1 / 2.3.7 / 2.3.10; Google Play preview-asset policy):
 no price, no "Android", no "stops every scam"/"guaranteed"/"before they reach
 you", no competitor claims, fake data only.
 
-Run:  python3 marketing/app-store/ios-102-v2/build_preview.py
-Out:  marketing/app-store/ios-102-v2/preview/
+Run:  python3 marketing/app-store/ios-102-v2/build_preview.py            # preview (mock screens)
+      python3 marketing/app-store/ios-102-v2/build_preview.py --final    # upload set from real captures
+Out:  preview/  (PREVIEW-*)   ·   final/6.9/ + final/6.5/  (HCG-iOS102-NN-*.png)
+
+FINAL EXPORT (2026-10-05): frames 03/05/06/07 show the real Build 16 /
+production-equivalent app when these captures exist (portrait iPhone
+screenshots, any 19.5:9 size; gitignored — they may show real data):
+  captures/03-activity.png       Activity after the device-test calls
+  captures/05-home-protected.png Home showing YOUR PHONE IS PROTECTED
+  captures/06-home-setup.png     Home in setup, scrolled to the checklist
+  captures/07-contacts.png       Contacts with example names, Ofcom drama numbers
+A missing capture falls back to the approved mock; in --final mode that frame is
+written as DRAFT-* (gitignored) and the run exits non-zero, so a mock can never
+be uploaded by accident. 6.5" (1284x2778) is derived from the 6.9" render.
 """
 import base64
 import pathlib
@@ -43,6 +55,9 @@ OUT = HERE / "preview"
 HTML_DIR = OUT / "html"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 W, H, SCALE = 440, 956, 3  # CSS px x3 = 1320 x 2868
+CAPTURES = HERE / "captures"
+FINAL = HERE / "final"
+SIZE_65 = (1284, 2778)  # App Store 6.5" portrait
 
 SHIELD = "data:image/png;base64," + base64.b64encode((ROOT / "mobile/assets/shield-mark-from-logo-master.png").read_bytes()).decode()
 APP_SHIELD = "data:image/png;base64," + base64.b64encode((ROOT / "mobile/assets/shield-mark.png").read_bytes()).decode()
@@ -175,6 +190,28 @@ def phone(inner, top, width, active="Home", scroll=0, extra=""):
             f'{tabbar(active)}</div></div></div>')
 
 
+def capture_uri(slot):
+    """data: URI of captures/<slot>.png, or None when the capture is missing."""
+    p = CAPTURES / f"{slot}.png"
+    return "data:image/png;base64," + base64.b64encode(p.read_bytes()).decode() if p.exists() else None
+
+
+def phone_capture(uri, top, width):
+    """The same device frame as phone(), filled with a real full-screen capture
+    (its own status bar and tab bar), cropped from the top."""
+    s = (width - 14) / 390
+    h = round(844 * s + 14)
+    return (f'<div class="phone" style="top:{top}px;width:{width}px;height:{h}px">'
+            f'<div class="screen" style="width:{width-14}px;height:{h-14}px;overflow:hidden">'
+            f'<img src="{uri}" style="display:block;width:100%;height:100%;object-fit:cover;object-position:top"></div></div>')
+
+
+def screen(slot, mock_inner, top, width, **kw):
+    """Real capture when present (final mode), else the approved mock screen."""
+    uri = capture_uri(slot)
+    return (phone_capture(uri, top, width), True) if uri else (phone(mock_inner, top, width, **kw), False)
+
+
 BRANDMARK = f'<div class="brandmark"><img src="{APP_SHIELD}"><span>Home Call <span class="g">Guard</span></span></div>'
 
 HOME_PROTECTED = BRANDMARK + f"""
@@ -237,8 +274,21 @@ def mcard(kind, top, icon, title, sub, tag=None):
 # legible at thumbnail size; the top of every screen — the part that carries
 # the message — is fully visible.
 PH_W = 392
+# Frames whose phone shows an app screen that must be a real capture for upload.
+CAPTURE_SLOTS = {"03": "03-activity", "05": "05-home-protected", "06": "06-home-setup", "07": "07-contacts"}
 
-FRAMES = [
+
+def build_frames():
+    s03, c03 = screen("03-activity", ACTIVITY, 214, PH_W, active="")
+    s05, c05 = screen("05-home-protected", HOME_PROTECTED, 214, PH_W)
+    s06, c06 = screen("06-home-setup", HOME_SETUP, 214, PH_W, scroll=290)
+    s07, c07 = screen("07-contacts", CONTACTS, 160, PH_W, active="Contacts", extra=CONTACTS_FOOT)
+    captured = {"03": c03, "05": c05, "06": c06, "07": c07}
+    return frames_with(s03, s05, s06, s07), captured
+
+
+def frames_with(s03, s05, s06, s07):
+  return [
     ("01", "Beyond blocking numbers", doc(
         LOCKUP
         + head('Scam call protection that goes <span class="g">beyond blocking numbers</span>')
@@ -258,11 +308,11 @@ FRAMES = [
     ("03", "Protection as the call develops", doc(
         LOCKUP
         + head('Protection <span class="g">as the call develops</span>', "Unknown callers are checked while you talk.")
-        + phone(ACTIVITY, 214, PH_W, active="")
+        + s03
     )),
     ("04", "Trusted people ring through", doc(
         LOCKUP
-        + head('Trusted people <span class="g">ring straight through</span>', "No checks, no delays — just the people you trust.")
+        + head('Trusted people <span class="g">ring straight through</span>', "Their calls connect as normal and are never monitored.")
         + mcard("g2", 236, I_PERSON, "Mum", "In your trusted contacts", tag="Trusted")
         + f'<div class="flow" style="top:378px">{svg(I_ARROW, 26)} Number recognised</div>'
         + mcard("g2", 424, I_PHONE, "Your phone rings", "Straight through, as normal")
@@ -276,17 +326,17 @@ FRAMES = [
     ("05", "Know when you're protected", doc(
         LOCKUP
         + head('Know when <span class="g">you’re protected</span>', "One clear answer, confirmed by real calls.")
-        + phone(HOME_PROTECTED, 214, PH_W)
+        + s05
     )),
     ("06", "Simple setup", doc(
         LOCKUP
         + head('Simple,<br><span class="g">step-by-step setup</span>', "Each step is ticked only when it’s confirmed.")
-        + phone(HOME_SETUP, 214, PH_W, scroll=290)
+        + s06
     )),
     ("07", "Choose who you trust", doc(
         LOCKUP
         + head('Choose <span class="g">who you trust</span>', "Add family and friends in a few taps.")
-        + phone(CONTACTS, 160, PH_W, active="Contacts", extra=CONTACTS_FOOT)
+        + s07
     )),
     ("08", "Brand close", doc(
         '<div class="glow" style="top:70px;width:520px;height:520px"></div>'
@@ -302,12 +352,20 @@ FRAMES = [
 ]
 
 
-def render():
+def render(final=False):
+    frames, captured = build_frames()
     HTML_DIR.mkdir(parents=True, exist_ok=True)
-    for old in OUT.glob("PREVIEW-*.png"):
-        old.unlink()
+    if final:
+        for d in (FINAL / "6.9", FINAL / "6.5"):
+            d.mkdir(parents=True, exist_ok=True)
+            for old in d.glob("*.png"):
+                old.unlink()
+    else:
+        for old in OUT.glob("PREVIEW-*.png"):
+            old.unlink()
     pngs = []
-    for num, name, html in FRAMES:
+    missing = []
+    for num, name, html in frames:
         hp = HTML_DIR / f"frame-{num}.html"
         hp.write_text(html)
         raw = OUT / f"_raw-{num}.png"
@@ -316,12 +374,31 @@ def render():
                         f"--screenshot={raw}", hp.as_uri()], check=True, capture_output=True)
         im = Image.open(raw).convert("RGB")  # Apple: no alpha channel
         assert im.size == (W * SCALE, H * SCALE), im.size
-        out = OUT / f"PREVIEW-HCG-iOS102-{num}-{W*SCALE}x{H*SCALE}.png"
-        im.save(out, optimize=True)
         raw.unlink()
+        if final:
+            draft = num in CAPTURE_SLOTS and not captured[num]
+            if draft:
+                missing.append(CAPTURE_SLOTS[num])
+            prefix = "DRAFT-" if draft else ""
+            out = FINAL / "6.9" / f"{prefix}HCG-iOS102-{num}-{W*SCALE}x{H*SCALE}.png"
+            im.save(out, optimize=True)
+            # 6.5": scale to 1284 wide, centre-crop the few extra pixels of height.
+            w65, h65 = SIZE_65
+            scaled = im.resize((w65, round(im.height * w65 / im.width)), Image.LANCZOS)
+            off = (scaled.height - h65) // 2
+            scaled.crop((0, off, w65, off + h65)).save(FINAL / "6.5" / f"{prefix}HCG-iOS102-{num}-{w65}x{h65}.png", optimize=True)
+        else:
+            out = OUT / f"PREVIEW-HCG-iOS102-{num}-{W*SCALE}x{H*SCALE}.png"
+            im.save(out, optimize=True)
         pngs.append((num, name, out))
         print("rendered", out.name)
-    contact_sheet(pngs)
+    if not final:
+        contact_sheet(pngs)
+    elif missing:
+        print("NOT UPLOADABLE — missing captures (frames written as DRAFT-*):", ", ".join(f"captures/{m}.png" for m in missing))
+        sys.exit(2)
+    else:
+        print("FINAL set complete: final/6.9 and final/6.5 (8 frames each)")
 
 
 def contact_sheet(pngs):
@@ -352,4 +429,4 @@ def contact_sheet(pngs):
 if __name__ == "__main__":
     if not pathlib.Path(CHROME).exists():
         sys.exit("Google Chrome is required for rendering")
-    render()
+    render(final="--final" in sys.argv)
