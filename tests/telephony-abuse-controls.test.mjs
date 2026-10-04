@@ -206,8 +206,15 @@ const params = (o = {}) => ({ CallSid: `CA${Math.random().toString(16).slice(2).
 // ═══ 6. TwiML egress guard ════════════════════════════════════════════════
 {
   const own = 'hcg.test';
-  const ok = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>x</Say><Start><Stream url="wss://hcg.test/media-stream"><Parameter name="streamToken" value="t"/></Stream></Start><Dial action="/call-delivery-failed" timeout="20"><Client>household_h1</Client></Dial></Response>';
+  const ok = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>x</Say><Start><Stream url="wss://hcg.test/media-stream"><Parameter name="streamToken" value="t"/></Stream></Start><Dial action="/call-delivery-failed" timeout="20" timeLimit="1800"><Client>household_h1</Client></Dial></Response>';
   check(inspectTwiml(ok, { ownHost: own, expectedClientIdentity: 'household_h1' }).ok, 'the real /voice TwiML shape passes');
+  // 2026-10-04 (containment T9): an unbounded Dial is never sent.
+  const unbounded = ok.replace(' timeLimit="1800"', '');
+  check(inspectTwiml(unbounded, { ownHost: own, expectedClientIdentity: 'household_h1' }).violations.includes('dial_without_time_limit'), 'a <Dial> with no timeLimit is a violation (would run to the 4 h provider default)');
+  for (const v of ['0', '-5', '14401', '99999', 'abc', '1800.5', '']) {
+    check(inspectTwiml(ok.replace('timeLimit="1800"', `timeLimit="${v}"`), { ownHost: own, expectedClientIdentity: 'household_h1' }).violations.includes('dial_time_limit_out_of_range'), `a <Dial timeLimit="${v}"> is a violation`);
+  }
+  check(inspectTwiml(ok.replace('timeLimit="1800"', 'timeLimit="14400"'), { ownHost: own, expectedClientIdentity: 'household_h1' }).ok, 'timeLimit at the 14 400 s ceiling passes');
   const bad = {
     '<Response><Dial><Number>+449098790123</Number></Dial></Response>': 'forbidden_verb:Number',
     '<Response><Dial><Sip>sip:x@evil.example</Sip></Dial></Response>': 'forbidden_verb:Sip',

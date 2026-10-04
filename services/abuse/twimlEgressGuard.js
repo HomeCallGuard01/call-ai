@@ -6,7 +6,7 @@
 // sent. Whatever any route, refactor or future feature built, HCG must
 // never hand Twilio an instruction that creates a chargeable leg to a
 // destination outside the product's scope. Today that scope is exactly:
-//   - <Dial><Client> to THIS household's own Voice SDK identity
+//   - <Dial timeLimit=1..14400><Client> to THIS household's own Voice SDK identity
 //   - <Start><Stream> to HCG's own /media-stream
 //   - <Say>, <Pause>, <Hangup>, <Reject>, and <Gather> with an own-host action
 // Everything else — <Number>, <Sip>, <Sim>, <Conference>, <Queue>,
@@ -18,6 +18,7 @@
 // a false negative could cost an unbounded amount of international or
 // premium-rate traffic.
 
+const MAX_DIAL_TIME_LIMIT_SECONDS = 14400;
 const REJECT_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>';
 
 const FORBIDDEN_TAGS = ['Number', 'Sip', 'Sim', 'Conference', 'Queue', 'Enqueue', 'Refer', 'Pay', 'Record', 'Sms', 'Message', 'Connect', 'Siprec', 'Transcription', 'VirtualAgent', 'Application'];
@@ -67,6 +68,16 @@ function inspectTwiml(xml, { ownHost, expectedClientIdentity = null } = {}) {
     while ((a = attrRe.exec(attrs))) {
       if (URL_ATTRS.includes(a[1]) && !urlIsOwn(a[2], ownHost)) violations.push(`foreign_url:${tag}.${a[1]}`);
     }
+    // Soft-launch integration 2026-10-04 (containment T9): a <Dial> without a
+    // provider-enforced timeLimit runs to Twilio's 4-hour default. Every Dial
+    // HCG emits must carry 1..MAX_DIAL_TIME_LIMIT_SECONDS (067's max_call_seconds
+    // ceiling); anything else is replaced with an unbilled <Reject/>.
+    if (tag === 'Dial') {
+      const tl = /\btimeLimit\s*=\s*"([^"]*)"/.exec(attrs);
+      const n = tl ? Number(tl[1]) : NaN;
+      if (!tl) violations.push('dial_without_time_limit');
+      else if (!Number.isInteger(n) || n < 1 || n > MAX_DIAL_TIME_LIMIT_SECONDS) violations.push('dial_time_limit_out_of_range');
+    }
     if (tag === 'Stream') {
       const url = /\burl\s*=\s*"([^"]*)"/.exec(attrs);
       if (!url) violations.push('stream_without_url');
@@ -115,4 +126,4 @@ function createTwimlEgressGuard({ ownHost, audit }) {
   };
 }
 
-module.exports = { inspectTwiml, createTwimlEgressGuard, REJECT_TWIML, FORBIDDEN_TAGS };
+module.exports = { inspectTwiml, createTwimlEgressGuard, REJECT_TWIML, FORBIDDEN_TAGS, MAX_DIAL_TIME_LIMIT_SECONDS };

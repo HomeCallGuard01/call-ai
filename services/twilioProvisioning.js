@@ -56,11 +56,20 @@ function pickAvailableNumber(availableNumbers) {
 // that was still rejected ("Bundle required and not provided for
 // country: [GB] and numberType: [LOCAL]") even with addressSid supplied.
 // Same omit-when-unset treatment as addressSid.
-function buildIncomingPhoneNumberParams({ phoneNumber, appUrl, addressSid, bundleSid }) {
+//
+// voiceFallbackUrl (soft-launch integration 2026-10-04, containment T4):
+// when HCG cannot be reached at all, Twilio answers with "an application
+// error has occurred" and bills it. A fallback URL pointing at a static
+// <Reject/> (e.g. a TwiML Bin) makes those calls unbilled. Omitted unless
+// TWILIO_VOICE_FALLBACK_URL is an https URL — applies to NEW purchases only;
+// existing numbers need a provider-side update (EXTERNAL, not done here).
+function buildIncomingPhoneNumberParams({ phoneNumber, appUrl, addressSid, bundleSid, voiceFallbackUrl = process.env.TWILIO_VOICE_FALLBACK_URL }) {
+  const fallback = typeof voiceFallbackUrl === "string" && /^https:\/\/[^\s]+$/.test(voiceFallbackUrl.trim()) ? voiceFallbackUrl.trim() : null;
   return {
     phoneNumber,
     voiceUrl: `${appUrl}/voice`,
     voiceMethod: "POST",
+    ...(fallback ? { voiceFallbackUrl: fallback, voiceFallbackMethod: "POST" } : {}),
     ...(addressSid ? { addressSid } : {}),
     ...(bundleSid ? { bundleSid } : {}),
   };

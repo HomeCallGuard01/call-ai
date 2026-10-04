@@ -54,6 +54,7 @@ const { wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber 
 // mode, provisioning guard. See docs/security/TELEPHONY_ABUSE_THREAT_MODEL.md.
 const { createTelephonyAbuseLayer } = require("./services/abuse");
 const { newCorrelationId } = require("./services/abuse/abuseAudit");
+const { REJECT_TWIML } = require("./services/abuse/twimlEgressGuard");
 const { configureProvisioningAbuseGuard } = require("./services/twilioProvisioning");
 const { runNumberLifecycleSweepScheduled } = require("./services/numberLifecycleSweepScheduler");
 // Integration 2026-10-03: restored. security/voice-surface-p0 dropped this
@@ -503,11 +504,11 @@ function dialHouseholdOrFailClosed(twiml, household, dialOptions = {}) {
     "An approved call could not be delivered — no household matches the dialled Twilio number",
     { householdId: household && household.id }
   ).catch(() => {});
-  twiml.say(
-    { voice: "Polly.Amy", language: "en-GB" },
-    "We're sorry, this call cannot be connected right now. Please try again later."
-  );
-  twiml.hangup();
+  // Soft-launch integration 2026-10-04 (containment T4): an HCG-side fault
+  // (no household for this number) must not answer the call just to play an
+  // apology — answering is what makes the inbound leg billable. <Reject/>
+  // is unbilled; the caller hears busy.
+  twiml.reject({ reason: "busy" });
 }
 
 // Restoring progressive monitoring (2026-08-11, selectively ported from
@@ -1459,6 +1460,21 @@ app.post("/process", twilioSignatureGuard, twilioWebhookIntegrity, async (req, r
   const twiml = new VoiceResponse();
   const processingStart = Date.now();
 
+  // Soft-launch integration 2026-10-04 (containment T9): no orphan paid
+  // route. Disabled unless PROCESS_ROUTE_ENABLED=true (startup config
+  // refuses that in production/staging without an explicit acknowledgement).
+  // The code below stays intact as the documented rollback path; even when
+  // enabled, its <Dial> carries no timeLimit, so the egress guard turns the
+  // whole response into an unbilled <Reject/> until it is given a Fortress
+  // reservation like /voice.
+  if (process.env.PROCESS_ROUTE_ENABLED !== "true") {
+    console.error("DORMANT /process ROUTE INVOKED — refused (PROCESS_ROUTE_ENABLED is not true)", req.body.CallSid);
+    sendCriticalAlert("dormant_process_route_invoked", "Twilio POSTed to the dormant /process route; it was refused with <Hangup/>", { callSid: req.body.CallSid }).catch(() => {});
+    telephonyAbuse.inboundGuard.release(req.body.CallSid);
+    twiml.hangup();
+    return sendVoiceTwiml(req, res, twiml);
+  }
+
   const speech = req.body.SpeechResult || "";
   const from = req.body.From;
   const callSid = req.body.CallSid;
@@ -1508,6 +1524,8 @@ app.post("/process", twilioSignatureGuard, twilioWebhookIntegrity, async (req, r
     try {
       const aiResponse = await openai.chat.completions.create({
         model: "gpt-4o-mini",
+        // Bounded output (containment report §1.3): the answer is one word.
+        max_tokens: 5,
         messages: [
           {
             role: "system",
@@ -3037,6 +3055,11 @@ app.get("/dashboard", requireAuth, async (req, res) => {
 // response Express would have sent anyway. Must be registered after
 // every other route/middleware (Express error handlers are matched by
 // having 4 parameters, and only ever run for errors passed to them).
+// Twilio voice webhooks whose response Twilio would play as TwiML.
+const TWILIO_VOICE_TWIML_ROUTES = new Set(["/voice", "/process", "/call-delivery-failed", "/red-line-terminate", "/voice-sdk-outbound-not-supported"]);
+function isTwilioVoiceTwimlRoute(req) {
+  return req.method === "POST" && TWILIO_VOICE_TWIML_ROUTES.has(req.path);
+}
 app.use((err, req, res, next) => {
   console.error("UNHANDLED ROUTE ERROR:", req.method, req.path, err.message);
 
@@ -3047,6 +3070,15 @@ app.use((err, req, res, next) => {
   }).catch(() => {});
 
   if (res.headersSent) return next(err);
+  // Soft-launch integration 2026-10-04 (containment T4): a plain 500 on a
+  // Twilio voice webhook makes Twilio ANSWER the call to play "an
+  // application error has occurred" (billable). An HCG failure on a voice
+  // route instead returns an unbilled <Reject/>. Calls that never reach HCG
+  // at all need the number's voiceFallbackUrl (provider configuration —
+  // TWILIO_VOICE_FALLBACK_URL, EXTERNAL PROOF REQUIRED).
+  if (isTwilioVoiceTwimlRoute(req)) {
+    return res.status(200).type("text/xml").send(REJECT_TWIML);
+  }
   res.status(500).send("Internal Server Error");
 });
 
