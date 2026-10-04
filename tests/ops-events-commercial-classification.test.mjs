@@ -156,7 +156,7 @@ for (const [name, input] of CASES.filter(([, , s]) => s !== STATUS.GENUINE_PAYIN
 
 // ── 7. The 28 Sep 2026 account, replayed through the candidate ──────────
 {
-  const s = snap({ household: { id: '0ffd9843-3374-4672-b6ce-222756d035a0', account_number: null, created_at: '2026-09-28T04:46:40Z', twilio_provisioning_updated_at: '2026-09-28T04:48:31Z' } }, ent({ source: 'apple_revenuecat', revenuecat_environment: null, starts_at: '2026-09-28T04:48:29Z', ends_at: '2026-10-05T04:49:49Z' }));
+  const s = snap({ household: { id: '0ffd9843-0000-4000-8000-000000000028', account_number: null, created_at: '2026-09-28T04:46:40Z', twilio_provisioning_updated_at: '2026-09-28T04:48:31Z' } }, ent({ source: 'apple_revenuecat', revenuecat_environment: null, starts_at: '2026-09-28T04:48:29Z', ends_at: '2026-10-05T04:49:49Z' }));
   const q = householdExceptions(s, NOW);
   const ev = detectOpsEvents(s, NOW);
   check(q.items.some((i) => i.code === 'PAYMENT_ENVIRONMENT_UNVERIFIED') && !q.items.some((i) => i.code === 'SETUP_STALLED') && ev.events.length === 0, '28 Sep account: queue says PAYMENT_ENVIRONMENT_UNVERIFIED (verify in RevenueCat), no "paid customer" claim, no new-customer event');
