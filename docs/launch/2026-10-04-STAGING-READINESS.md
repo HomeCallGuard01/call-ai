@@ -261,13 +261,15 @@ Results (synthetic HTTP requests only):
 | Production fingerprint | **identical** before and after |
 | Server stopped | PID verified (`node server.js`, cwd = candidate worktree) and stopped; port free; ngrok never started |
 
-**Staging fixtures left in place (inert):**
-- household `7ab0cf71`: `internal_test`, entitlement revoked, hold released;
-- its temporary auth user `staging-servercheck-…@example.com`;
-- one settled synthetic reservation on `237957ef`.
+**Staging fixtures (cleaned up 2026-10-04, §9.3):**
+- the temporary household `7ab0cf71` went through the product's own deletion path (029; account number retired, never reissued);
+- the temporary login was deleted;
+- the synthetic call row was removed.
+
+The settled synthetic reservation and audit rows remain **by design** (append-only financial evidence).
 
 **Findings:**
-- **F-1. A household whose app is not registered gets an *answered* apology.** This is the existing `self_protecting_no_registered_client` branch. It is financially bounded (one short inbound leg, reservation settled), but it is the 6 Sep failure mode. Callers hear "cannot be connected" instead of the customer's phone ringing. Whether to keep it (honest message, small cost) or `<Reject/>` (unbilled, caller hears busy) is a **product decision**, not changed here.
+- **F-1. A household whose app is not registered gets an *answered* apology.** This was the existing `self_protecting_no_registered_client` branch: financially bounded, but the 6 Sep failure mode. **Decided by Andrew 2026-10-04: no paid apology. Implemented in the candidate (§9.1), not deployed.**
 - **F-2. In staging, Stripe *test-mode* entitlements classify as `genuine_paying`,** because entitlements don't record `livemode`. This is consistent:
   - production refuses to start with a test key, so it can only ever receive live events;
   - in staging, test-mode is the stand-in for real payment (needed for gate G16);
@@ -283,3 +285,48 @@ Results (synthetic HTTP requests only):
 3. ngrok started on the reserved domain;
 4. the Mobile 1.0.2 staging-pinned APK (separate workstream; the old APK expires on 16 Oct and lacks the candidate's app changes);
 5. for the payment tests, a **£5.99 test-mode price** and confirmation of the test webhook secret.
+
+## 9. Follow-up (2026-10-04): Finding F-1 decision, Stripe test account, fixture cleanup
+
+### 9.1 F-1: desired behaviour (Andrew's decision) and the candidate change
+
+**Principle:**
+1. A customer whose receiving app is not genuinely ready is **never** classified or displayed as fully protected.
+2. That state is highly visible and actionable in customer and admin UX.
+3. If a call nevertheless reaches the failure state, HCG does **not** keep consuming paid resources to play an apology.
+4. Use the safest reject/terminate behaviour the Fortress already supports.
+5. No carrier/native fallback is invented.
+6. Production behaviour is not changed in this workstream.
+
+| Situation | Before | Candidate (commit `b673230`, not deployed) |
+|---|---|---|
+| Approved call, household app **never registered** | Fortress reservation → announcement/stream possible → answered `<Say>` apology → `<Hangup/>` (billed) | decided **before** the reservation, announcement and stream: bare **`<Reject reason="busy"/>`**, never answered, never billed. Routing decision + `delivery_failed / no_registered_endpoint` recorded, critical alert, admission session closed |
+| Dial ran, app **did not answer** (`/call-delivery-failed`, leg already answered) | `<Say>` apology + `<Hangup/>` | **`<Hangup/>` at once** (no apology). The voicemail prototype stays non-production only |
+| Any defence-in-depth path in `dialHouseholdOrFailClosed` | apology | `<Hangup/>` |
+| Customer status | — | canonical status: stage `awaiting_app` / `reconnect_needed`, blocker `appReachable`, never `fullyProtected` |
+| Admin / operations | — | lifecycle queue `SETUP_STALLED` (genuine paying) / `PROTECTION_LOST`; ops event `CUSTOMER_NEEDS_ATTENTION` (`not_protected_within_onboarding_window` / `protection_lost_app_unreachable`); delivery health from the recorded `delivery_failed` events |
+
+**What the caller hears:** busy (pre-dial) or the call ending after ringing (post-dial). The customer-facing explanation belongs in the app's "app not ready" state (Mobile 1.0.2 workstream), not a paid announcement.
+
+**Tests:** `tests/undeliverable-no-registered-app.test.mjs` (new) and `tests/call-delivery-fallback.test.mjs` (updated: production now `<Hangup/>` only). Every telephony suite passes.
+
+**Open (Master integration):** the customer-facing wording for "your app isn't ready to receive calls", and its prominence (Mobile 1.0.2 + D-C5).
+
+### 9.2 Stripe TEST account: identification (read-only test-mode API; no change made)
+
+| Item | Finding |
+|---|---|
+| Account | `acct_1Tq…mrHs`; dashboard display name **"Home Call Guard"**; statement descriptor **HOMECALLGUARD**; country GB; default currency GBP. (Business name and URL are not set in the test profile.) |
+| HCG test product | **exists**: the one and only test product, named **"Home Call Guard"** ("Protecting you and your family from scammers"), `prod_Utw…OMFv`, tax code `txcd_10000000` |
+| Its prices | **£4.99 GBP/month, active, default price**, tax behaviour *unspecified* (8 test subscriptions use it). £6.99 GBP/month, **archived**, tax behaviour *inclusive* |
+| Test webhook | `we_1U4R7…8wJL`, **enabled**, description **"Home Call Guard staging (created 2026-08-16)"**, destination **`https://ferret-augmented-distrust.ngrok-free.dev/billing/webhook`** (the reserved staging tunnel), events `customer.subscription.created/updated/deleted`. Clearly HCG staging. Signing secret not read. |
+| Correct action | **Yes:** add a new recurring **£5.99 GBP monthly** price to the existing "Home Call Guard" test product. Set **tax behaviour = inclusive**, because checkout uses `automatic_tax`; with *unspecified* Stripe falls back to the account default and could add VAT on top. Do not archive £4.99 yet (existing test subscriptions use it). |
+
+### 9.3 Fixture cleanup (only unequivocally ours)
+
+| Fixture | Action |
+|---|---|
+| Synthetic call row `15393a38` on `237957ef` (the only call ever from synthetic caller `+447700900111`) | **deleted** |
+| Temporary household `7ab0cf71` (created 13:50, no number, no calls or contacts, revoked "staging server-only check" entitlement) | **anonymised** via `anonymize_inactive_household` (029), the product's deletion path. The account number registry is append-only (062 restricts deletes), so the number is retired, never reissued |
+| Temporary login `staging-servercheck-…@example.com` | **deleted** (its `user_roles` row is gone) |
+| Settled synthetic Fortress reservation and ledger, hold audit, policy audit, account-number registry entry | **kept by design**: append-only financial and audit evidence; deleting them would break the Fortress guarantees |
