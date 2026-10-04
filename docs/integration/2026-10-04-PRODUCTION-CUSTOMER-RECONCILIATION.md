@@ -82,6 +82,8 @@ Without live Stripe access, **whether a charge settled, failed or was refunded c
 
 ## Account 3: `sim…@icloud.com` (household `87fdd35a`): **probably a genuine paying customer**
 
+> **Correction (Andrew, 2026-10-04):** this is probably the customer Andrew already knew about and remembers **refunding**. Do not treat them as newly discovered unless Stripe later proves otherwise. Nothing is to be refunded, contacted or changed. The remaining action is to *confirm* the refund in Stripe (live) and classify the account. The analysis below stands as evidence.
+
 **A. Origin**
 - Auth account created **2026-09-06 19:26:27 UTC**; confirmed 39 s later; last sign-in **2026-09-09 11:41**.
 - **Web.** HCG recorded `checkout_started` on the web route `/billing/create-checkout-session` at 19:27:52 and `paid_conversion` from the Stripe webhook at 19:29:17. No UTM or referrer.
@@ -118,8 +120,8 @@ Without live Stripe access, **whether a charge settled, failed or was refunded c
 There are no onboarding emails from HCG beyond Supabase's confirmation. Stripe receipts or emails depend on Stripe Dashboard settings (unknown). No provisioning errors.
 
 **E. Recommendation:**
-1. **REFUND CHECK REQUIRED.** In Stripe live, check whether £4.99 was collected or refunded, and whether there was a dispute.
-2. **CUSTOMER CONTACT: BUSINESS DECISION.** This person paid and HCG failed to deliver their calls for about 2½ days. A goodwill refund and apology is a reasonable consideration. That is Andrew's decision, and the wording needs approval.
+1. **REFUND CONFIRMATION** (per the correction above): confirm in Stripe live that the £4.99 was refunded. No new customer contact.
+2. ~~Customer contact~~: not required. Andrew already handled this customer.
 3. **Classify** the account (`genuine_customer` if Andrew does not recognise them).
 4. **RELEASE NUMBER** after 9 Oct (via quarantine and confirmation). Twilio shows no calls since 9 Sep, so their phone is no longer forwarding to it.
 5. Record this as **the first evidence of the setup-failure mode** (paid, forwarding OK, app never ready, calls lost). It is exactly what the candidate's `SETUP_STALLED` and `CUSTOMER_NEEDS_ATTENTION` events would now surface within 24 h.
@@ -129,7 +131,7 @@ There are no onboarding emails from HCG beyond Supabase's confirmation. Stripe r
 ## Answers to the six questions
 
 **1. How many genuine production paying customers has HCG ever had?**
-- **At most one: `sim…` (6–9 Sep).** It is "probable", not "proven": it is unclassified, and money settlement is unverified.
+- **At most one: `sim…` (6–9 Sep), already known to Andrew and, he recalls, refunded.** It is "probable", not "proven": it is unclassified, and money settlement is unverified.
 - HCG has recorded **6 live-mode £4.99 Stripe subscriptions** in total:
 
 | Created | Household | Evidence |
@@ -147,7 +149,7 @@ There are no onboarding emails from HCG beyond Supabase's confirmation. Stripe r
 
 **2. Genuine customer revenue to date**
 - **£0 proven.**
-- **At most £4.99 gross** (sim…), if that charge settled and was not refunded, less Stripe fees.
+- Very probably **£0 net**, because sim…'s £4.99 was, per Andrew, refunded. Confirm in Stripe.
 - If every live-mode first invoice settled unrefunded, the **upper bound is £29.94 gross**, of which **£24.95 is very probably Andrew's own test payments**.
 - Settlement and refunds need a live Stripe check. Apple: nothing evidenced.
 
