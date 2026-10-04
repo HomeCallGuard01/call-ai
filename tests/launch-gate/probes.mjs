@@ -133,24 +133,33 @@ probe({ id: 'PR-06', scenarios: ['S8', 'S26'], controls: ['B1'], kind: 'static',
 
 probe({ id: 'PR-07', scenarios: ['S14'], controls: ['C7'], kind: 'behavioural',
   title: 'Number purchase that succeeds but whose DB assignment throws/times out is released (no orphan rental)' }, async () => {
+  // Updated 2026-10-04 (soft-launch integration): the probe predated the C7
+  // refinement and did not inject readHouseholdNumber, so the real reader hit
+  // an unreachable DB and the code (correctly) KEPT the possibly-live number.
+  // Both C7 branches are now probed explicitly.
   const { ensureTwilioNumberProvisioned } = require('./services/twilioProvisioning.js');
-  let removed = 0;
-  let purchased = 0;
-  const client = {
-    availablePhoneNumbers: () => ({ local: { list: async () => [{ phoneNumber: '+441000000001' }] } }),
-    incomingPhoneNumbers: Object.assign(
-      sid => ({ remove: async () => { removed++; } }),
-      { create: async () => { purchased++; return { sid: 'PN_fake', phoneNumber: '+441000000001' }; } }
-    ),
+  const run = async (readHouseholdNumber) => {
+    const st = { removed: 0, purchased: 0, alerts: [] };
+    const client = {
+      availablePhoneNumbers: () => ({ local: { list: async () => [{ phoneNumber: '+441000000001' }] } }),
+      incomingPhoneNumbers: Object.assign(
+        () => ({ remove: async () => { st.removed++; } }),
+        { create: async () => { st.purchased++; return { sid: 'PN_fake', phoneNumber: '+441000000001' }; }, list: async () => [] }
+      ),
+    };
+    await ensureTwilioNumberProvisioned(
+      { id: 'hh-orphan', twilio_number: null, twilio_provisioning_attempts: 0 },
+      { client, assign: async () => { throw new Error('simulated DB timeout'); }, readHouseholdNumber, recordFailure: async () => {}, sendAlert: async (t) => { st.alerts.push(t); }, appUrl: 'https://example.invalid' }
+    );
+    return st;
   };
-  const r = await ensureTwilioNumberProvisioned(
-    { id: 'hh-orphan', twilio_number: null, twilio_provisioning_attempts: 0 },
-    { client, assign: async () => { throw new Error('simulated DB timeout'); }, recordFailure: async () => {}, sendAlert: async () => {}, appUrl: 'https://example.invalid' }
-  );
-  if (!purchased) return { status: 'UNPROVEN', detail: `purchase never attempted (result ${JSON.stringify(r)})` };
-  return removed
-    ? { status: 'PASS', detail: 'purchased number released after assignment failure' }
-    : { status: 'FAIL', detail: 'number purchased, assignment threw, number NOT released — orphaned rental; retries (max attempts) can repeat this' };
+  const confirmedNot = await run(async () => null);
+  const unreadable = await run(async () => { throw new Error('db down'); });
+  if (!confirmedNot.purchased) return { status: 'UNPROVEN', detail: 'purchase never attempted' };
+  const ok = confirmedNot.removed === 1 && unreadable.removed === 0 && unreadable.alerts.includes('twilio_provisioning_orphan_risk');
+  return ok
+    ? { status: 'PASS', detail: 'DB confirms unassigned → released; DB unreadable → kept (never release a possibly-live number) + orphan-risk alert; retry adopts (tests/provisioning-orphan)' }
+    : { status: 'FAIL', detail: `confirmed-unassigned released=${confirmedNot.removed}; unreadable released=${unreadable.removed}, alerts=${unreadable.alerts.join(',')}` };
 });
 
 probe({ id: 'PR-08', scenarios: ['S22'], controls: ['D7'], kind: 'static',
@@ -191,11 +200,18 @@ probe({ id: 'PR-10', scenarios: [], controls: ['I6'], kind: 'behavioural',
 
 probe({ id: 'PR-11', scenarios: ['S1', 'S2'], controls: ['A8', 'C8'], kind: 'static',
   title: 'Unauthenticated account-creation and auth endpoints are rate-limited' }, () => {
-  const src = read('server.js') + read('routes/mobileApi.js');
-  const limiter = /rateLimit\(|express-rate-limit|ipRateLimit|registrationRateLimit/i.test(src);
-  return limiter
-    ? { status: 'PASS', detail: 'a rate limiter is referenced (verify it covers /register, /api/v1/register, /login, /forgot-password)' }
-    : { status: 'FAIL', detail: 'no rate limiter on /register, /api/v1/register, /login, /forgot-password, /resend-confirmation, /api/v1/waiting-list' };
+  // Updated 2026-10-04: the limiter is middleware/authEndpointRateLimit.js
+  // (createAuthEndpointLimiter), which the old name regex never matched. Now
+  // checks that EVERY listed route is mounted behind it (per-IP limits also
+  // need TRUST_PROXY_HOPS, which production/staging now refuse to start without).
+  const server = read('server.js');
+  const mobile = read('routes/mobileApi.js');
+  const routes = [[server, 'app.post("/register"'], [server, 'app.post("/login"'], [server, 'app.post("/forgot-password"'], [server, 'app.post("/resend-confirmation"'], [server, 'app.post("/api/v1/waiting-list"'], [mobile, 'router.post("/api/v1/register"']];
+  const missing = routes.filter(([src, decl]) => { const k = src.indexOf(decl); return k < 0 || !/RateLimiter\.limit\(/.test(src.slice(k, src.indexOf('\n', k))); }).map(([, d]) => d);
+  const configEnforced = /trust_proxy_hops/.test(read('services/config/launchConfig.js'));
+  return missing.length === 0 && configEnforced
+    ? { status: 'PASS', detail: 'all 6 unauthenticated auth endpoints mounted behind createAuthEndpointLimiter; TRUST_PROXY_HOPS required in production/staging (tests/auth-rate-limit, tests/launch-config-safety)' }
+    : { status: 'FAIL', detail: `not rate-limited: ${missing.join(', ') || 'none'}; proxy-hops config enforced: ${configEnforced}` };
 });
 
 probe({ id: 'PR-12', scenarios: ['S18', 'S19', 'S20'], controls: ['B4', 'B5', 'G6'], kind: 'static',
