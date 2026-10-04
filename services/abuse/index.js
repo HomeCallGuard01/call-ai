@@ -136,7 +136,11 @@ function createTelephonyAbuseLayer(opts) {
   const provisioningGuard = createProvisioningGuard({ config, incident, velocity, audit, accountRisk, alert, entitlementSource: signals.entitlementSource,
     // Integration 2026-10-04: buy → abandon → repeat is a FINANCIAL abuse
     // signal ⇒ automatic Fortress household hold (admin release only).
-    onFraudHold: (householdId, reason) => holds.hold(householdId, reason, 'fraud') });
+    onFraudHold: (householdId, reason) => holds.hold(householdId, reason, 'fraud'),
+    // Soft-launch integration 2026-10-04: cross-instance purchase lock
+    // (066 claim_number_provisioning). Optional port; when supplied, an
+    // unavailable claim HOLDS the purchase (fail closed).
+    ...(typeof opts.claimProvisioning === 'function' ? { claimProvisioning: opts.claimProvisioning } : {}) });
 
   /** For code that is not request-scoped: may a new paid action of `kind` start? */
   async function paidActionGate(kind, ctx = {}) {

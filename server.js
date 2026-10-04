@@ -982,6 +982,16 @@ const telephonyAbuse = createTelephonyAbuseLayer({
     const g = await financialContainmentDb.globalStatus({ now: new Date() });
     return { level: g && (g.killSwitch === true || g.breakerOpen === true) ? "full_stop" : "normal" };
   },
+  // Soft-launch integration 2026-10-04: per-household number purchase lock
+  // across server instances (migration 066). singleFlight is process-local;
+  // without this two instances could each buy a number for one household.
+  // Unavailable (066 not applied, DB down) ⇒ purchase held, never guessed.
+  claimProvisioning: async (householdId, ttlMs) => {
+    if (!supabaseAdmin) return null;
+    const { data, error } = await supabaseAdmin.rpc("claim_number_provisioning", { p_household_id: householdId, p_ttl_seconds: Math.max(1, Math.min(3600, Math.round(ttlMs / 1000))) });
+    if (error) throw new Error(`claim_number_provisioning unavailable: ${error.message || error}`);
+    return data === true;
+  },
 });
 configureProvisioningAbuseGuard(telephonyAbuse.provisioningGuard);
 
