@@ -54,7 +54,16 @@ async function loadLifecycleSnapshots({ supabase, householdId = null }) {
 
   const [households, entitlements, quarantine] = await Promise.all([
     required(() => scoped(supabase.from('households').select('*'), 'id').order('id', { ascending: true }), 'households'),
-    required(() => scoped(supabase.from('entitlements').select('id, household_id, entitlement_type, status, starts_at, ends_at, source, external_reference')).order('id', { ascending: true }), 'entitlements'),
+    // 2026-10-04: + revenuecat_environment (053) for commercial classification;
+    // falls back to the base columns until 053 is applied (store grants are then
+    // environment-unverified, never genuine paying).
+    (async () => {
+      const cols = 'id, household_id, entitlement_type, status, starts_at, ends_at, source, external_reference';
+      const res = await selectAll(() => scoped(supabase.from('entitlements').select(`${cols}, revenuecat_environment`)).order('id', { ascending: true }));
+      if (res.error && isMissingRelation(res.error)) return required(() => scoped(supabase.from('entitlements').select(cols)).order('id', { ascending: true }), 'entitlements');
+      if (res.error) throw new Error(`lifecycle snapshot: entitlements unreadable: ${res.error.message}`);
+      return { rows: res.data, truncated: res.truncated };
+    })(),
     required(() => {
       const q = supabase.from('twilio_number_quarantine').select('*').is('released_at', null);
       return (householdId ? q.eq('household_id', householdId) : q).order('id', { ascending: true });
@@ -68,6 +77,8 @@ async function loadLifecycleSnapshots({ supabase, householdId = null }) {
   ]);
   // F-03 fix (2026-10-04): events for a deleted household are now recorded as
   // 'ignored'; the ones whose subscription was still LIVE need a human.
+  const classifications = await optional(() => scoped(supabase.from('account_classifications').select('household_id, classification')).order('household_id', { ascending: true }));
+  const classBy = new Map(classifications.rows.map((c) => [c.household_id, c.classification]));
   const liveForDeleted = await optional(() => scoped(supabase.from('stripe_webhook_events').select('stripe_event_id, event_type, household_id, error, received_at, processed_at').eq('status', 'ignored').eq('error', 'ignored:deleted_household_subscription_live')).order('stripe_event_id', { ascending: true }));
 
   const entsBy = groupBy(entitlements.rows, 'household_id');
@@ -95,6 +106,7 @@ async function loadLifecycleSnapshots({ supabase, householdId = null }) {
       currentNumberAssignedAt: assignment ? assignment.state_changed_at : null,
       failedStripeEvents: eventsBy.get(household.id) || [],
       liveSubscriptionEventsAfterDeletion: liveDeletedBy.get(household.id) || [],
+      classification: classBy.get(household.id) || null,
       deliveryHealth: null,
     };
   });

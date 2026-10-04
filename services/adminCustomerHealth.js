@@ -80,6 +80,7 @@ const TEST_CLASSIFICATION_LABELS = {
   other_non_customer: 'Non-customer',
 };
 
+const { classifyCommercialStatus, STATUS } = require('./commercial/commercialStatus');
 const PAID_ENTITLEMENT_TYPES = new Set(['paid_subscription']);
 const TRIAL_ENTITLEMENT_TYPES = new Set(['free_trial']);
 
@@ -109,8 +110,16 @@ function describeAccount({ currentEntitlement, latestEntitlement, classification
   let kind = 'complimentary';
   let label = 'Complimentary';
   if (PAID_ENTITLEMENT_TYPES.has(type)) {
-    kind = 'paying';
-    label = 'Paying';
+    // Soft-launch integration 2026-10-04 (28 Sep investigation): "Paying"
+    // only for PROVEN production money — services/commercial/commercialStatus.js.
+    // A store sandbox/TestFlight/review grant, a store grant whose environment
+    // was never recorded, or a paid entitlement held by a test/reviewer account
+    // is labelled for what it is and never counted as paying.
+    const c = classifyCommercialStatus({ currentEntitlement, classification });
+    if (c.genuinePaying) { kind = 'paying'; label = 'Paying'; }
+    else if (c.status === STATUS.INTERNAL_OR_TEST) { kind = 'test_paid'; label = 'Paid entitlement — test/reviewer, not revenue'; }
+    else if (c.status === STATUS.STORE_SANDBOX || c.status === STATUS.STRIPE_TEST) { kind = 'store_sandbox'; label = c.label; }
+    else { kind = 'payment_unverified'; label = c.label; }
   } else if (TRIAL_ENTITLEMENT_TYPES.has(type)) {
     kind = 'trial';
     label = 'Trial';
@@ -246,7 +255,7 @@ function deriveCustomerHealth({ household, entitlements, lastCallAt, lastDial, c
 }
 
 function summariseCustomerHealth(rows) {
-  const counts = { customers: 0, healthy: 0, needs_attention: 0, setup_incomplete: 0, inactive: 0, paying: 0, complimentary: 0, trial: 0, test: 0 };
+  const counts = { customers: 0, healthy: 0, needs_attention: 0, setup_incomplete: 0, inactive: 0, paying: 0, complimentary: 0, trial: 0, test: 0, store_sandbox: 0, payment_unverified: 0, test_paid: 0 };
   for (const r of rows || []) {
     if (r.health === HEALTH.INACTIVE) {
       counts.inactive += 1;

@@ -14,6 +14,7 @@ const {
 } = require("../database/twilioQuarantine");
 const { sendCriticalAlert } = require("./alerting");
 const { decideNumberPurchase, decideTelephonyMutation, fakeNumber } = require("./telephony/provisioningGuard");
+const { decideNumberPurchaseByProvenance } = require("./commercial/commercialStatus");
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
@@ -207,6 +208,30 @@ async function purchaseTwilioNumber(household, deps, guard) {
     return { attempted: true, success: false, error: message };
   }
 
+  // Soft-launch integration 2026-10-04 (28 Sep investigation): a non-production
+  // store entitlement (Apple sandbox / TestFlight / App Review, Google test)
+  // must never cause a real number purchase, whichever path asked for it
+  // (RevenueCat webhook, checkout polling, admin retry, invites).
+  // services/commercial/commercialStatus.js decideNumberPurchaseByProvenance.
+  // Fail closed: unreadable provenance → no purchase. Not recorded as a
+  // provisioning failure (never burns the household's attempts).
+  const readActiveEntitlements = deps.readActiveEntitlements !== undefined
+    ? deps.readActiveEntitlements
+    : (client && client === twilioRestClient ? readActiveEntitlementsForProvenance : null);
+  if (readActiveEntitlements) {
+    let provenance;
+    try {
+      provenance = decideNumberPurchaseByProvenance(await readActiveEntitlements(household.id), { adminOverride: deps.abuseOverride || null });
+    } catch (err) {
+      provenance = { allowed: false, reason: `entitlement_provenance_unreadable: ${err.message}` };
+    }
+    if (!provenance.allowed) {
+      console.error("TWILIO PROVISIONING REFUSED BY ENTITLEMENT PROVENANCE:", household.id, provenance.reason);
+      Promise.resolve().then(() => sendAlert("twilio_provisioning_refused_provenance", `Number purchase refused: ${provenance.reason}`, { householdId: household.id, reason: provenance.reason })).catch(() => {});
+      return { attempted: true, success: false, provenanceRefused: true, error: `number purchase refused: ${provenance.reason}` };
+    }
+  }
+
   if (authorizeNumberPurchase) {
     // Each attempt is counted (random key): two racing attempts are two
     // purchases. A refusal is NOT recorded as a provisioning failure, so it
@@ -337,6 +362,22 @@ async function purchaseTwilioNumber(household, deps, guard) {
     );
     return { attempted: true, success: false, error: err.message };
   }
+}
+
+// Soft-launch integration 2026-10-04: the household's ACTIVE entitlements with
+// their store environment (053). Before 053 is applied the column does not
+// exist: read without it, so store rows are treated as environment-unverified.
+// THROWS when unreadable (the caller then refuses the purchase).
+async function readActiveEntitlementsForProvenance(householdId) {
+  const { supabaseAdmin } = require("./supabaseClients");
+  if (!supabaseAdmin) throw new Error("database not configured");
+  const base = "entitlement_type, status, source";
+  let { data, error } = await supabaseAdmin.from("entitlements").select(`${base}, revenuecat_environment`).eq("household_id", householdId).eq("status", "active");
+  if (error && /42703|revenuecat_environment|does not exist|Could not find/i.test(`${error.code || ""} ${error.message || ""}`)) {
+    ({ data, error } = await supabaseAdmin.from("entitlements").select(base).eq("household_id", householdId).eq("status", "active"));
+  }
+  if (error) throw new Error(error.message || String(error));
+  return data || [];
 }
 
 // Integration 2026-10-03: the household's current number, for deciding what

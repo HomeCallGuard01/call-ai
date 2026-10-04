@@ -4,6 +4,17 @@ const { classifySupportQuery } = require("../services/lifecycle/supportSearch");
 const { stripe } = require("../services/stripeClient");
 const { deriveAdminCustomerState, ONBOARDING_ATTENTION_THRESHOLD_MS } = require("../services/adminOnboardingStatus");
 const { deriveCustomerHealth, summariseCustomerHealth } = require("../services/adminCustomerHealth");
+
+// Entitlements with their store environment (migration 053). Before 053 is
+// applied the column does not exist: fall back to the base columns, and store
+// grants then classify as environment-unverified (never "Paying").
+async function selectEntitlementsWithEnvironment(columns) {
+  const withEnv = await supabaseAdmin.from("entitlements").select(`${columns}, revenuecat_environment`);
+  if (withEnv.error && /42703|revenuecat_environment|does not exist|Could not find/i.test(`${withEnv.error.code || ""} ${withEnv.error.message || ""}`)) {
+    return supabaseAdmin.from("entitlements").select(columns);
+  }
+  return withEnv;
+}
 const { getClassificationMap, classifyHousehold } = require("../services/businessMetrics/accountClassification");
 
 // Cached in-process: the price of the one product this app sells changes
@@ -850,7 +861,9 @@ async function getOnboardingMonitor(now = new Date()) {
         .select(ONBOARDING_HOUSEHOLD_COLUMNS)
         .order("created_at", { ascending: false })
         .limit(ONBOARDING_HOUSEHOLD_LIMIT),
-      supabaseAdmin.from("entitlements").select("household_id, entitlement_type, status, source, starts_at, ends_at, updated_at"),
+      // 2026-10-04: + revenuecat_environment (053) so store sandbox/unverified
+      // grants are never labelled "Paying"; tolerant until 053 is applied.
+      selectEntitlementsWithEnvironment("household_id, entitlement_type, status, source, starts_at, ends_at, updated_at"),
       supabaseAdmin.from("subscriptions").select("household_id, status, cancel_at_period_end, updated_at"),
       getClassificationMap(),
     ]);

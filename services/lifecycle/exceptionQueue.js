@@ -19,6 +19,7 @@
 
 const { DAY_MS, HOUR_MS, parseTimestampMs } = require('../numberLifecycle/state');
 const { STAGES, deriveActivationState, isDeletedHousehold } = require('./activationState');
+const { classifyCommercialStatus, STATUS } = require('../commercial/commercialStatus');
 
 // Time rules. DECISION-marked values are proposals for Andrew; they only
 // change when an item is raised, never what the system does.
@@ -44,7 +45,9 @@ const EXCEPTIONS = Object.freeze({
   NUMBER_CONFLICT: { severity: 'critical', owner: 'ops', automation: 'manual', action: 'The household is entitled but its live number is in quarantine. Do NOT confirm deactivation; remove the quarantine row after checking the number still routes.' },
   HOUSEHOLD_ON_HOLD: { severity: 'action', owner: 'ops', automation: 'manual', action: 'Fortress financial hold: no HCG-funded call (trusted callers included) is authorised. Review the hold reason; only an admin can release it (POST /admin/api/fortress/households/:id/hold).' },
   NUMBER_PROVISIONING_FAILED: { severity: 'action', owner: 'ops', automation: 'manual', action: 'Paid customer without a number. Check the last provisioning error, then POST /admin/api/households/:id/retry-provisioning.' },
-  SETUP_STALLED: { severity: 'action', owner: 'support', automation: 'automatable_after_decision', action: 'Paid customer not protected 24h after their number was ready. Contact them with the setup step they are missing (the setup_incomplete message, once approved, automates this).' },
+  SETUP_STALLED: { severity: 'action', owner: 'support', automation: 'automatable_after_decision', action: 'GENUINE paying customer not protected 24h after their number was ready. Contact them with the setup step they are missing (the setup_incomplete message, once approved, automates this).' },
+  STORE_SANDBOX_HOLDS_NUMBER: { severity: 'action', owner: 'ops', automation: 'manual', action: 'A store sandbox / TestFlight / App Review grant (no revenue) holds a real, billed HCG number. Decide whether to keep it for the tester or release it (manual confirmation).' },
+  PAYMENT_ENVIRONMENT_UNVERIFIED: { severity: 'action', owner: 'ops', automation: 'manual', action: 'A store (Apple/Google) entitlement whose environment HCG never recorded (granted before migration 053). Check the customer in the RevenueCat dashboard: production → classify genuine; sandbox → not revenue. Not counted as paying until verified; new number purchases are refused meanwhile.' },
   FIRST_DELIVERY_UNCONFIRMED_LONG: { severity: 'watch', owner: 'support', automation: 'manual', action: 'Forwarding and app look ready but no protected call has been confirmed delivered for a week. Ask the customer to test or check their divert.' },
   PROTECTION_LOST: { severity: 'action', owner: 'support', automation: 'automatable_after_decision', action: 'Delivery worked before but the app is now unreachable. Ask the customer to open the app (re-register).' },
   EVIDENCE_PREDATES_CURRENT_NUMBER: { severity: 'action', owner: 'support', automation: 'manual', action: 'The household has a new HCG number; its forwarding/delivery proof is for the old one. The customer must re-dial the forwarding code for the new number.' },
@@ -105,6 +108,13 @@ function setupClockStartMs(snapshot) {
  * Exceptions for one household snapshot (the deriveActivationState input).
  * @returns {{ activation: object, items: object[] }}
  */
+// The entitlement in effect now (active, started, not ended); newest first.
+function currentEntitlementOf(entitlements, nowMs) {
+  return (entitlements || [])
+    .filter((e) => e && e.status === 'active' && (!e.starts_at || Date.parse(e.starts_at) <= nowMs) && (!e.ends_at || Date.parse(e.ends_at) > nowMs))
+    .sort((a, b) => String(b.starts_at || '').localeCompare(String(a.starts_at || '')))[0] || null;
+}
+
 function householdExceptions(snapshot, now, thresholds = THRESHOLDS) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
   const h = snapshot.household || {};
@@ -129,6 +139,11 @@ function householdExceptions(snapshot, now, thresholds = THRESHOLDS) {
     }
   }
 
+  // Commercial status (2026-10-04): one definition — services/commercial/commercialStatus.js.
+  const commercial = classifyCommercialStatus({ currentEntitlement: currentEntitlementOf(snapshot.entitlements, nowMs), classification: snapshot.classification || null });
+  if (commercial.status === STATUS.STORE_SANDBOX && h.twilio_number) items.push(item('STORE_SANDBOX_HOLDS_NUMBER', ctx, commercial.channel));
+  if (commercial.status === STATUS.STORE_ENVIRONMENT_UNVERIFIED) items.push(item('PAYMENT_ENVIRONMENT_UNVERIFIED', ctx, commercial.channel));
+
   switch (activation.stage) {
     case STAGES.AMBIGUOUS:
       items.push(item('LIFECYCLE_STATE_AMBIGUOUS', ctx, activation.blockers.join(', ')));
@@ -146,7 +161,8 @@ function householdExceptions(snapshot, now, thresholds = THRESHOLDS) {
       break;
     case STAGES.AWAITING_FORWARDING:
     case STAGES.AWAITING_APP:
-      if (age !== null && age > thresholds.setupStalledMs) items.push(item('SETUP_STALLED', ctx, `stage: ${activation.stage}`, sinceIso));
+      // Only a GENUINE paying customer is a "paid customer not protected".
+      if (age !== null && age > thresholds.setupStalledMs && commercial.genuinePaying) items.push(item('SETUP_STALLED', ctx, `stage: ${activation.stage}`, sinceIso));
       break;
     case STAGES.AWAITING_FIRST_DELIVERY:
       if (age !== null && age > thresholds.firstDeliveryLongMs) items.push(item('FIRST_DELIVERY_UNCONFIRMED_LONG', ctx, null, sinceIso));
@@ -239,4 +255,5 @@ function buildExceptionQueue({ snapshots = [], orphanQuarantineRows = [] }, now,
   };
 }
 
-module.exports = { THRESHOLDS, EXCEPTIONS, setupClockStartMs, householdExceptions, buildExceptionQueue };
+module.exports = {
+  currentEntitlementOf, THRESHOLDS, EXCEPTIONS, setupClockStartMs, householdExceptions, buildExceptionQueue };
