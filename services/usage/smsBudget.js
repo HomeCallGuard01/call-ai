@@ -4,9 +4,12 @@
 // per day). Over a ceiling the message is not sent and the intervention is
 // audited.
 //
-// Fail-OPEN on a 056 database error, deliberately: a warning SMS is a
-// protection message, its cost is small, and volume is already bounded by
-// the per-call single-fire rules in riskMonitor.js. The failure is logged.
+// Fail-CLOSED on a 056 database error (soft-launch integration 2026-10-04,
+// reversing the earlier fail-open choice on Andrew's rule "financial
+// uncertainty must reject spend"; provider containment final T7): if the
+// SMS ceiling cannot be checked, the SMS is NOT sent. Trade-off accepted
+// and documented: a protective warning SMS can be lost while the 056
+// claim is unavailable. The failure is logged and audited.
 //
 // Financial containment P0 (2026-10-03): when a `containment` service is
 // supplied (server.js always does), EVERY send — including the paths that
@@ -51,8 +54,9 @@ function createSmsBudget({ client, claimSmsSend, containment = null, recordInter
               costGbp: rates.smsPerSegment, limits: smsLimits(resolveSafetyConfig(env)),
             });
           } catch (err) {
-            logEvent('sms_budget_check_failed_sent_anyway', { householdId, error: err.message });
-            return client.messages.create(params);
+            logEvent('sms_budget_check_failed_not_sent', { householdId, error: err.message });
+            recordIntervention({ level: 'warning', rule: 'sms_budget_unavailable', action: 'customer SMS not sent (SMS ceiling could not be checked; fail closed)', householdId, details: { error: err.message } }).catch(() => {});
+            throw new Error('SMS not sent: sms_budget_unavailable');
           }
           if (decision && decision.allowed === false) {
             recordIntervention({ level: 'warning', rule: decision.reason || 'sms_limit', action: 'customer SMS not sent (SMS ceiling reached)', householdId, details: decision }).catch(() => {});

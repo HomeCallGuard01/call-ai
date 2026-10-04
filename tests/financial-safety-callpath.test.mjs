@@ -213,9 +213,11 @@ const HH = { id: 'hh-1' };
   const deny = createSmsBudget({ client, claimSmsSend: async () => ({ allowed: false, reason: 'household_daily_sms_limit' }), recordIntervention: async (e) => audits.push(e) }).forHousehold('hh-1', period);
   let threw = false;
   try { await deny.messages.create({ to: 'x', body: 'b' }); } catch { threw = true; }
-  const down = createSmsBudget({ client, claimSmsSend: async () => { throw new Error('db'); } }).forHousehold('hh-1', period);
-  await down.messages.create({ to: 'x', body: 'b' });
-  check(sent.length === 2 && threw && audits.some((e) => e.rule === 'household_daily_sms_limit'), 'SMS: sent within budget, refused (and audited) over it, sent anyway if the budget can\'t be checked (protection message)');
+  const down = createSmsBudget({ client, claimSmsSend: async () => { throw new Error('db'); }, recordIntervention: async (e) => audits.push(e) }).forHousehold('hh-1', period);
+  let downThrew = null;
+  try { await down.messages.create({ to: 'x', body: 'b' }); } catch (e) { downThrew = e.message; }
+  check(sent.length === 1 && threw && audits.some((e) => e.rule === 'household_daily_sms_limit'), 'SMS: sent within budget, refused (and audited) over it');
+  check(downThrew === 'SMS not sent: sms_budget_unavailable' && sent.length === 1 && audits.some((e) => e.rule === 'sms_budget_unavailable'), 'SMS: NOT sent (fail closed, audited) when the SMS ceiling cannot be checked (2026-10-04, T7)');
 }
 
 // ─── live-monitoring handler: mid-call rules ────────────────────────────
