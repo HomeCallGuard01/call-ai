@@ -980,6 +980,8 @@ configureProvisioningAbuseGuard(telephonyAbuse.provisioningGuard);
 app.use(require("./routes/adminFortress").createAdminFortressRoutes({ supabaseAdmin, financialContainmentDb, telephonyAbuse }));
 // Accounting automation status (read-only; 503 until migration 071 is applied).
 app.use(require("./routes/adminAccounting").createAdminAccountingRoutes({ supabaseAdmin }));
+// Customer lifecycle (2026-10-04): read-only exception queue + per-household activation state.
+app.use(require("./routes/adminLifecycle").createAdminLifecycleRoutes({ supabaseAdmin, getDeliveryHealth: (household) => getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household }) }));
 
 // Integration 2026-10-03: the customer allowance describes the AUTHORITATIVE
 // £ budget (Financial Fortress) unless explicitly set otherwise, so the

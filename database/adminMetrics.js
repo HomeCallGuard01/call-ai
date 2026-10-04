@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require("../services/supabaseClients");
 const { parseAccountNumber } = require("../services/customerIdentity/accountNumber");
+const { classifySupportQuery } = require("../services/lifecycle/supportSearch");
 const { stripe } = require("../services/stripeClient");
 const { deriveAdminCustomerState, ONBOARDING_ATTENTION_THRESHOLD_MS } = require("../services/adminOnboardingStatus");
 const { deriveCustomerHealth, summariseCustomerHealth } = require("../services/adminCustomerHealth");
@@ -614,23 +615,50 @@ async function attachProtectionEvidence(households) {
   );
 }
 
+// Households that have held this routing number at any time (current,
+// quarantined or released). [] when routing_assignments (062) is absent
+// or unreadable — the households-table search still runs.
+async function householdIdsForRoutingNumber(e164) {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("routing_assignments")
+      .select("household_id")
+      .eq("e164_number", e164)
+      .limit(25);
+    if (error || !Array.isArray(data)) return [];
+    return [...new Set(data.map(r => r.household_id).filter(id => looksLikeUuid(id)))];
+  } catch {
+    return [];
+  }
+}
+
 async function searchCustomers(query) {
   if (!supabaseAdmin || !query || !query.trim()) return [];
 
-  const trimmed = query.trim();
+  // Classification and filter-value sanitising live in
+  // services/lifecycle/supportSearch.js (2026-10-04): phone numbers typed
+  // the way customers read them ("07700 900123") now match the stored
+  // E.164, and no raw query text reaches a PostgREST .or() filter.
+  const q = classifySupportQuery(query);
+  if (!q.value) return [];
   let queryBuilder = supabaseAdmin.from("households").select("*").limit(25);
 
-  const accountNumber = parseAccountNumber(trimmed);
-  if (looksLikeUuid(trimmed)) {
-    queryBuilder = queryBuilder.eq("id", trimmed);
-  } else if (accountNumber.valid && /^hcg/i.test(trimmed)) {
+  if (q.kind === "uuid") {
+    queryBuilder = queryBuilder.eq("id", q.value);
+  } else if (q.kind === "account_number") {
     // Exact match on the permanent HCG account number (migration 062).
-    // Requires the "HCG" prefix as well as a valid check digit, so a
-    // partial phone-number search (bare digits) keeps its substring path.
-    queryBuilder = queryBuilder.eq("account_number", accountNumber.canonical);
+    queryBuilder = queryBuilder.eq("account_number", q.value);
+  } else if (q.kind === "phone") {
+    // Protected phone (households.phone_number) or current HCG routing
+    // number (households.twilio_number), exact E.164 — plus any household
+    // that has EVER held this routing number (routing_assignments, 062;
+    // skipped when that table is not deployed).
+    const formerIds = await householdIdsForRoutingNumber(q.e164);
+    const clauses = [`phone_number.eq.${q.e164}`, `twilio_number.eq.${q.e164}`, ...formerIds.map(id => `id.eq.${id}`)];
+    queryBuilder = queryBuilder.or(clauses.join(","));
   } else {
     queryBuilder = queryBuilder.or(
-      `email.ilike.%${trimmed}%,phone_number.ilike.%${trimmed}%,twilio_number.ilike.%${trimmed}%`
+      `email.ilike.%${q.value}%,phone_number.ilike.%${q.value}%,twilio_number.ilike.%${q.value}%`
     );
   }
 
