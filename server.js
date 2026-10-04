@@ -1403,34 +1403,27 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
 // Twilio signature REQUIRED — an unsigned request is refused, never
 // alerted on (this endpoint must not become an unauthenticated way to page
 // the operator). Alert only: Twilio triggers cannot cap spend.
-app.post("/webhooks/provider-usage-alert", (req, res) => {
+// Soft-launch integration 2026-10-04 (containment T11): a VERIFIED alert
+// for a designated trigger latches the Fortress kill switch (application
+// stop, admin reset only) — see services/containment/providerUsageAlert.js.
+const handleProviderUsageAlert = require("./services/containment/providerUsageAlert").createProviderUsageAlertHandler({
+  setKillSwitch: (args) => financialContainmentDb.setKillSwitch(args),
+  recordIntervention: recordFinancialSafetyIntervention,
+  sendCriticalAlert,
+});
+app.post("/webhooks/provider-usage-alert", async (req, res) => {
   const genuine = isGenuineTwilioRequest({
     authToken: process.env.TWILIO_AUTH_TOKEN,
     signature: req.get("X-Twilio-Signature"),
     url: buildWebhookUrl(APP_URL, req.originalUrl),
     params: req.body,
   });
-  if (!genuine) {
-    console.error("PROVIDER USAGE ALERT REFUSED: Twilio signature did not validate");
-    return res.status(403).end();
-  }
-  const context = {
-    usageCategory: req.body.UsageCategory || null,
-    currentValue: req.body.CurrentValue || null,
-    triggerValue: req.body.TriggerValue || null,
-    triggerBy: req.body.TriggerBy || null,
-    recurring: req.body.Recurring || null,
-    friendlyName: req.body.FriendlyName || null,
-    usageTriggerSid: req.body.UsageTriggerSid || null,
-  };
-  recordFinancialSafetyIntervention({
-    level: "emergency",
-    rule: "provider_usage_trigger",
-    action: "provider-side spend alarm fired (alert only; the provider does not stop spending)",
-    details: context,
-  }).catch(() => {});
-  return res.status(204).end();
+  if (!genuine) console.error("PROVIDER USAGE ALERT REFUSED: Twilio signature did not validate");
+  const outcome = await handleProviderUsageAlert({ genuine, body: req.body || {} });
+  if (outcome.tripped) console.error("PROVIDER USAGE ALERT LATCHED THE KILL SWITCH:", outcome.reason);
+  return res.status(outcome.status).end();
 });
+
 
 // VOICE SDK OUTGOING CALLS (2026-09-30, release readiness P5)
 //

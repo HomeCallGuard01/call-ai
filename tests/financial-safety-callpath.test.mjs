@@ -311,7 +311,7 @@ async function runStream({ meter, seconds, restCalls, outcomes, clock = makeCloc
   check(/timeLimit: dialOptions\.timeLimit/.test(server), 'the <Dial> sets timeLimit from financial safety');
   check((server.match(/callAdmission\.end\(\{ callSid: req\.body\.CallSid, source: "dial_action" \}\)/g) || []).length === 2, 'both <Dial> action callbacks close the admission session');
   const usageRoute = server.match(/app\.post\("\/webhooks\/provider-usage-alert"[\s\S]*?\n\}\);\n/)[0];
-  check(/isGenuineTwilioRequest/.test(usageRoute) && /status\(403\)/.test(usageRoute), 'the provider usage-alert webhook refuses unsigned requests');
+  check(/isGenuineTwilioRequest/.test(usageRoute) && /handleProviderUsageAlert\(\{ genuine, body/.test(usageRoute), 'the provider usage-alert webhook passes the signature verdict to the handler (unsigned → 403: tests/provider-usage-alert-breaker.pglite.test.mjs)');
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
