@@ -70,6 +70,7 @@ const { buildCustomerProtectionSteps } = require("../services/customerProtection
 const { updateTwilioNumberForEntitlementChange } = require("../services/twilioProvisioning");
 const { deleteOwnAccount } = require("../services/accountDeletion");
 const { classifyRevenueCatEvent, resolveEventAppUserId, resolveGrantReference, resolveAndRevokeTransferSources, resolveEventIsSandbox } = require("../services/revenuecatWebhook");
+const { accountingCapture } = require("../services/accounting/capture");
 const { ensureHouseholdAndRole } = require("../services/householdBootstrap");
 const { supabase, supabaseAdmin, buildUserScopedClient } = require("../services/supabaseClients");
 const { handleRegisterRequest, handleResendConfirmationRequest } = require("../services/registrationRequest");
@@ -1425,6 +1426,12 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
   if (!event || typeof event.type !== "string") {
     return res.status(400).json({ error: "invalid_payload" });
   }
+
+  // Accounting sub-ledger capture (feature/accounting-automation, 2026-10-04):
+  // OFF unless ACCOUNTING_CAPTURE_ENABLED=true; never throws, never changes
+  // the entitlement handling below. A RevenueCat event for a Stripe purchase
+  // is recorded as superseded (Stripe's webhook is the source of that money).
+  await accountingCapture.captureRevenueCatEvent(req.body);
 
   // TRANSFER carries no app_user_id at all — identity comes from
   // transferred_to instead. resolveEventAppUserId (services/

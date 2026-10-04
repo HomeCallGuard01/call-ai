@@ -25,6 +25,7 @@ const { LANDLINE_PROVIDERS } = require("../services/activationInstructions");
 const { setHouseholdCarrierCompatibility, recordTermsAcceptance } = require("../database/households");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { CHECKOUT_SUBMIT_MESSAGE, createOfferHandler } = require("../services/subscriptionPricing");
+const { accountingCapture } = require("../services/accounting/capture");
 
 const router = express.Router();
 
@@ -580,6 +581,11 @@ router.post(
       console.error("WEBHOOK SIGNATURE VERIFICATION FAILED:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
+
+    // Accounting sub-ledger capture (feature/accounting-automation, 2026-10-04):
+    // OFF unless ACCOUNTING_CAPTURE_ENABLED=true; records the verified event
+    // for accounting only, never throws, never changes anything below.
+    await accountingCapture.captureStripeEvent(event);
 
     // Allowance top-ups (customer allowance workstream, 2026-10-03): a
     // one-off Checkout payment HCG created with hcg_purpose=allowance_topup,

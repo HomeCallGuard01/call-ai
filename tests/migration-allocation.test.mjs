@@ -1,4 +1,4 @@
-// Frozen migration allocation 046–069 — integration 2026-10-03
+// Frozen migration allocation 046–071 — integration 2026-10-03 (+071 accounting automation 2026-10-04)
 // (docs/integration/2026-10-03-MIGRATION_RECONCILIATION.md §4).
 // A migration already APPLIED somewhere keeps its identity; this test fails if
 // any of them is renamed, renumbered or removed, or if a number collides.
@@ -33,6 +33,7 @@ const EXPECTED = {
   '068': ['068_allowance_economic_credit_bridge.sql', 'draft (new)'],
   '069': ['069_account_classification_history.sql', 'draft (drafted as admin 055)'],
   '070': ['070_stripe_entitlement_canonical_decision.sql', 'draft (new; replaces 027\'s function)'],
+  '071': ['071_accounting_transactions.sql', 'draft (accounting automation, 2026-10-04)'],
 };
 const BURNED = ['048', '049', '050'];
 
@@ -45,8 +46,8 @@ for (const [n, [file, state]] of Object.entries(EXPECTED)) {
 }
 for (const n of BURNED) check(!byNumber.has(n), `burned number ${n} is never reused`);
 const highest = Math.max(...files.map((f) => Number(f.slice(0, 3))));
-check(highest === 70, `highest migration is 070 (found ${String(highest).padStart(3, '0')}); a new one needs this allocation updated deliberately`);
-for (const n of ['062', '063', '064', '065', '066', '067', '068', '069', '070']) {
+check(highest === 71, `highest migration is 071 (found ${String(highest).padStart(3, '0')}); a new one needs this allocation updated deliberately`);
+for (const n of ['062', '063', '064', '065', '066', '067', '068', '069', '070', '071']) {
   const f = EXPECTED[n][0].replace(/^(\d{3})_/, '$1_rollback_');
   check(existsSync(path.join(DIR, '_rollbacks', f)), `${n} has a rollback file (${f})`);
 }

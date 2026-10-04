@@ -978,6 +978,8 @@ configureProvisioningAbuseGuard(telephonyAbuse.provisioningGuard);
 // Integration 2026-10-03: admin visibility of the Launch Fortress controls
 // (read-only; DASHBOARD ≠ ENFORCEMENT — see services/businessControl/fortressOverview.js).
 app.use(require("./routes/adminFortress").createAdminFortressRoutes({ supabaseAdmin, financialContainmentDb, telephonyAbuse }));
+// Accounting automation status (read-only; 503 until migration 071 is applied).
+app.use(require("./routes/adminAccounting").createAdminAccountingRoutes({ supabaseAdmin }));
 
 // Integration 2026-10-03: the customer allowance describes the AUTHORITATIVE
 // £ budget (Financial Fortress) unless explicitly set otherwise, so the
