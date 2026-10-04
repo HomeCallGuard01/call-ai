@@ -62,8 +62,8 @@ check(
   'the verified branch reports deliveryConfirmed from protectionStatus.endToEndDeliveryVerified — the exact same, already-tested signal computeProtectionStatus uses elsewhere for "You\'re protected", never a separately re-derived or looser check'
 );
 check(
-  /const protectionStatus = computeProtectionStatus\(req\.household, new Date\(\)\);/.test(routeBody),
-  'computeProtectionStatus is reused directly, not reimplemented — the same function tests/call-routing.test.mjs already exhaustively covers'
+  /const \{ protection: protectionStatus \} = await resolveCanonicalProtection\(\{ supabase: supabaseAdmin, household: req\.household, deliveryHealth, now: new Date\(\) \}\);/.test(routeBody),
+  'the canonical status is reused (2026-10-04: resolveCanonicalProtection, which wraps computeProtectionStatus + the lifecycle state machine — tests/canonical-protection.test.mjs), not reimplemented'
 );
 
 // --- the old `verified` field's meaning and value must be byte-for-byte

@@ -31,9 +31,9 @@ check(
   'mobileApi.js imports buildCustomerProtectionSteps from services/customerProtectionSteps — the one shared implementation, not a route-local reimplementation'
 );
 check(
-  /const customerProtectionSteps = buildCustomerProtectionSteps\(req\.household, new Date\(\), deliveryHealth\);/.test(src) &&
-    /const protectionStatus = computeProtectionStatus\(req\.household, new Date\(\), deliveryHealth\);/.test(src),
-  'buildCustomerProtectionSteps is called with the same req.household (and, since 2026-09-29, the same deliveryHealth) used for computeProtectionStatus just above it'
+  /const customerProtectionSteps = buildCustomerProtectionSteps\(req\.household, new Date\(\), deliveryHealth, protectionStatus\);/.test(src) &&
+    /const \{ protection: protectionStatus \} = await resolveCanonicalProtection\(\{ supabase: supabaseAdmin, household: req\.household, deliveryHealth, now: new Date\(\) \}\);/.test(src),
+  'buildCustomerProtectionSteps is called with the same req.household and deliveryHealth AND the canonical protectionStatus computed just above it (2026-10-04), so "Protection Active" can never disagree with fullyProtected'
 );
 check(
   /steps: customerProtectionSteps\.steps,/.test(src) && /guidance: customerProtectionSteps\.guidance,/.test(src),

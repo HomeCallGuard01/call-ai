@@ -63,6 +63,7 @@ const { wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber 
 const { createTelephonyAbuseLayer } = require("./services/abuse");
 const { newCorrelationId } = require("./services/abuse/abuseAudit");
 const { REJECT_TWIML } = require("./services/abuse/twimlEgressGuard");
+const { resolveCanonicalProtection } = require("./services/lifecycle/canonicalProtection");
 const { configureProvisioningAbuseGuard } = require("./services/twilioProvisioning");
 const { runNumberLifecycleSweepScheduled } = require("./services/numberLifecycleSweepScheduler");
 // Integration 2026-10-03: restored. security/voice-surface-p0 dropped this
@@ -1872,7 +1873,9 @@ app.get("/dashboard-data", requireAuth, requireEntitlement, async (req, res) => 
     console.error("DELIVERY HEALTH READ FAILED:", err.message);
     return null;
   });
-  const protection = computeProtectionStatus(req.household, new Date(), deliveryHealth);
+  // Soft-launch integration 2026-10-04: canonical strict status (same shape;
+  // see services/lifecycle/canonicalProtection.js). Fail closed.
+  const { protection } = await resolveCanonicalProtection({ supabase: supabaseAdmin, household: req.household, deliveryHealth, now: new Date() });
 
   res.json({
     // req.household already carries this — requireAuth's

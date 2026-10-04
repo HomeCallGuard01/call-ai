@@ -75,7 +75,7 @@ const mobileApi = readFileSync(path.join(__dirname, '..', 'routes', 'mobileApi.j
 check(mobileApi.includes('getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household: req.household }).catch('), 'mobile dashboard reads delivery health, fail-open');
 check(/deliveryHealth: deliveryHealth\n\s+\? \{\n\s+status: deliveryHealth\.customerStatus,/.test(mobileApi), 'mobile dashboard exposes only the plain customer status (+ timestamps)');
 const server = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-check(server.includes('const protection = computeProtectionStatus(req.household, new Date(), deliveryHealth);'), 'web /dashboard-data uses the same delivery health');
+check(server.includes('const { protection } = await resolveCanonicalProtection({ supabase: supabaseAdmin, household: req.household, deliveryHealth, now: new Date() });'), 'web /dashboard-data uses the same delivery health (via the canonical status, 2026-10-04)');
 
 // --- routing is untouched ---
 const dialFn = (server.match(/function dialHouseholdOrFailClosed\(twiml, household(?:, dialOptions = \{\})?\) \{[\s\S]*?\n\}\n/) || [''])[0];

@@ -55,6 +55,7 @@ function resolveEventEnvironment(event) {
 const { sendCriticalAlert } = require("../services/alerting");
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { computeProtectionStatus, hasRecentDeliveryProblem } = require("../services/callRouting");
+const { resolveCanonicalProtection } = require("../services/lifecycle/canonicalProtection");
 const { getHouseholdDeliveryHealth } = require("../database/deliveryEvidence");
 const { recordDeliveryEvent, EVENTS: DELIVERY_EVENTS } = require("../services/callDeliveryEvents");
 const { parseDeviceReadiness } = require("../services/deviceReadiness");
@@ -642,7 +643,12 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // fullyProtected now, shared with the web dashboard's GET
     // /dashboard-data — the app must use fullyProtected for any
     // "You're protected" claim, not activationVerifiedAt alone.
-    const protectionStatus = computeProtectionStatus(req.household, new Date(), deliveryHealth);
+    // Soft-launch integration 2026-10-04: the canonical (strict) protection
+    // status — fullyProtected now also requires entitlement, no financial
+    // hold, an active non-quarantined number and evidence for the CURRENT
+    // number (services/lifecycle/canonicalProtection.js). Same field names,
+    // so shipped app builds become strict without a release.
+    const { protection: protectionStatus } = await resolveCanonicalProtection({ supabase: supabaseAdmin, household: req.household, deliveryHealth, now: new Date() });
     // 5-step customer-facing protection checklist (2026-09-27) — a pure
     // presentation layer over the exact same protectionStatus computed
     // just above (plus hasProvisionedNumber for step 1); see
@@ -650,7 +656,7 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
     // introduces zero new verification logic. Additive: existing
     // deliveryReady/endToEndDeliveryVerified/fullyProtected fields below
     // are completely unchanged.
-    const customerProtectionSteps = buildCustomerProtectionSteps(req.household, new Date(), deliveryHealth);
+    const customerProtectionSteps = buildCustomerProtectionSteps(req.household, new Date(), deliveryHealth, protectionStatus);
     // Diagnostic instrumentation (2026-09-24) — see services/callRouting.js's
     // hasRecentDeliveryProblem and migration 044's own comment. A real,
     // observed delivery failure more recent than the last confirmed
@@ -677,6 +683,9 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
         deliveryReady: protectionStatus.deliveryReady,
         endToEndDeliveryVerified: protectionStatus.endToEndDeliveryVerified,
         fullyProtected: protectionStatus.fullyProtected,
+        // Additive machine codes (2026-10-04); no customer wording.
+        activationStage: protectionStatus.activationStage,
+        protectionBlockers: protectionStatus.protectionBlockers,
         // 5-step checklist (see services/customerProtectionSteps.js) —
         // additive, new field only. steps[4] ("protection_active").done
         // is always identical to fullyProtected above, by construction.
@@ -1243,7 +1252,10 @@ router.post("/api/v1/activation/verify", requireAuthApi, async (req, res) => {
     }
 
     const verifiedAt = await markActivationVerified(req.household.id);
-    const protectionStatus = computeProtectionStatus(req.household, new Date());
+    // 2026-10-04 (lifecycle P-5): delivery evidence counts only for the
+    // CURRENT number and with delivery health, via the canonical status.
+    const deliveryHealth = await getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household: req.household }).catch(() => null);
+    const { protection: protectionStatus } = await resolveCanonicalProtection({ supabase: supabaseAdmin, household: req.household, deliveryHealth, now: new Date() });
     res.json({ verified: true, verifiedAt, deliveryConfirmed: protectionStatus.endToEndDeliveryVerified });
   } catch (err) {
     console.error("MOBILE ACTIVATION VERIFY ERROR:", err.message);

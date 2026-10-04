@@ -84,6 +84,12 @@ export interface DashboardResponse {
     deliveryReady: boolean;
     endToEndDeliveryVerified: boolean;
     fullyProtected: boolean;
+    // 2026-10-04 (soft-launch integration): fullyProtected is now the
+    // canonical strict status (entitled, not financially held, number active
+    // and not quarantined, evidence for the CURRENT number, app reachable).
+    // Additive machine codes — never displayed as copy.
+    activationStage?: string;
+    protectionBlockers?: string[];
     // Diagnostic instrumentation / protection-status wording (2026-09-24):
     // a real, OBSERVED delivery failure (Twilio's own DialCallStatus, not
     // "completed") more recent than the last confirmed success — never

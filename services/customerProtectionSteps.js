@@ -117,8 +117,11 @@ const GUIDANCE = {
  *   result (services/deliveryHealth.js); omitted → previous behaviour
  * @returns {{ steps: Array<{key: string, label: string, done: boolean}>, guidance: object|null }}
  */
-function buildCustomerProtectionSteps(household, now, deliveryHealth = null) {
-  const protectionStatus = computeProtectionStatus(household, now, deliveryHealth);
+// canonicalProtection (optional, 2026-10-04): the merged status from
+// services/lifecycle/canonicalProtection.js, so "Protection Active" can never
+// disagree with the response's own fullyProtected. Omitted → previous behaviour.
+function buildCustomerProtectionSteps(household, now, deliveryHealth = null, canonicalProtection = null) {
+  const protectionStatus = canonicalProtection || computeProtectionStatus(household, now, deliveryHealth);
   const healthState = deliveryHealth ? deliveryHealth.state : null;
   const numberActive = hasProvisionedNumber(household);
   // Mirrors adminOnboardingStatus.js's own "Forwarding confirmed" done

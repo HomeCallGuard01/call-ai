@@ -10,7 +10,6 @@ import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/AuthContext";
 import { fetchDashboard, NotEntitledError } from "../../../lib/api";
 import { resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../../lib/voiceClient";
-import { hasProvenActivation } from "../../../lib/homeStatus";
 import { clearSetupCompletedAt } from "../../../lib/setupCompletionStorage";
 import type { MembershipStatus } from "../../../lib/types";
 import { colors, radius, spacing, typography, MIN_TOUCH_TARGET } from "../../../lib/theme";
@@ -67,7 +66,12 @@ export default function Account() {
           // correctly showed it as protected). Using the same shared
           // OR-logic keeps this screen consistent with Home instead of a
           // second, narrower definition of "protected".
-          setIsProtected(hasProvenActivation(result));
+          // 2026-10-04 (soft-launch integration, lifecycle P-4): "Protected"
+          // is the server's canonical fullyProtected — never the setup-done
+          // rule (hasProvenActivation = forwarding OR delivery, which stays
+          // true for a held, lapsed, renumbered or unreachable household).
+          // hasProvenActivation still decides setup routing elsewhere.
+          setIsProtected(result.protection.fullyProtected === true);
           setStatusState("loaded");
         })
         .catch(err => {
