@@ -964,6 +964,10 @@ const telephonyAbuse = createTelephonyAbuseLayer({
   sendAlert: sendCriticalAlert,
   appUrl: APP_URL,
   financialAuthorization: null,
+  // Integration 2026-10-04: the household hold store reads/writes the Fortress
+  // per-household financial hold (fc_household_holds).
+  readHouseholdHold: (householdId) => financialContainmentDb.householdHold({ householdId }),
+  writeHouseholdHold: ({ householdId, reason, source }) => financialContainmentDb.setHouseholdHold({ householdId, hold: true, reason, actor: `system:abuse`, source }),
   financialBreaker: async () => {
     const g = await financialContainmentDb.globalStatus({ now: new Date() });
     return { level: g && (g.killSwitch === true || g.breakerOpen === true) ? "full_stop" : "normal" };

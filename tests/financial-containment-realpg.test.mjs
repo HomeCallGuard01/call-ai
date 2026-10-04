@@ -129,7 +129,14 @@ async function main() {
     const w = st.window;
     check(st.breakerOpen && storm.some((r) => r.allowed) && num(w.hourCommitted) + num(st.activeReservedGbp) <= cap + 1e-9,
       `60-call storm on 12 connections: ${storm.filter((r) => r.allowed).length} admitted, then the breaker opened; committed + in-flight £${(num(w.hourCommitted) + num(st.activeReservedGbp)).toFixed(4)} never exceeded the £${cap} hourly cap`);
-    check(storm.filter((r) => !r.allowed).every((r) => ['global_hourly_cap', 'breaker_open'].includes(r.reason)), 'every storm refusal is the breaker, never an error');
+    // Integration 2026-10-04: step 6 recorded a £0.90 actual against a ~£0.02
+    // estimate, which (correctly) places that household under the AUTOMATIC
+    // financial hold — its storm calls are refused as household_hold. Every
+    // other refusal must be the breaker; never an error.
+    const heldIds = new Set((await admin.query("select household_id from public.fc_household_holds where source = 'financial'")).rows.map((r) => r.household_id));
+    const refusals = storm.map((r, i) => ({ r, hh: hhs[i % 24] })).filter((x) => !x.r.allowed);
+    check(heldIds.size >= 1 && refusals.every((x) => ['global_hourly_cap', 'breaker_open'].includes(x.r.reason) || (x.r.reason === 'household_hold' && heldIds.has(x.hh))),
+      `every storm refusal is the breaker — or household_hold for the household the undercount automatically held (${heldIds.size}) — never an error`);
 
     // 8. Counters still consistent after all of the above.
     const inv = await A.invariants();

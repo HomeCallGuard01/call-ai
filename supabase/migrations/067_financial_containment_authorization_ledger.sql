@@ -47,7 +47,9 @@ create table if not exists public.fc_policy (
   renew_ahead_seconds integer not null default 90 check (renew_ahead_seconds between 15 and 900),
   termination_grace_seconds integer not null default 60 check (termination_grace_seconds between 0 and 300),
   max_call_seconds integer not null default 14400 check (max_call_seconds between 60 and 14400),
-  breaker_terminates_active boolean not null default true,
+  -- Integration 2026-10-04 (Andrew): the breaker LATCHES and ends live calls —
+  -- not switchable off by a policy change.
+  breaker_terminates_active boolean not null default true check (breaker_terminates_active),
   -- Fraction of the household's remaining (worst-case-adjusted) headroom one
   -- call's provider backstop may claim (I5 per household). <1 leaves room
   -- for a simultaneous call; 1.0 lets one call claim it all.
@@ -78,7 +80,10 @@ create table if not exists public.fc_policy (
   global_monitoring_hourly_per_household_gbp numeric(12, 4) not null default 0.02 check (global_monitoring_hourly_per_household_gbp >= 0),
   global_unattributed_daily_gbp numeric(12, 4) not null default 2 check (global_unattributed_daily_gbp > 0),
   global_number_purchases_per_day integer not null default 10 check (global_number_purchases_per_day between 0 and 1000),
-  breaker_latch_on_rate boolean not null default true,
+  breaker_latch_on_rate boolean not null default true check (breaker_latch_on_rate),
+  -- Automatic per-household financial hold: committed + reserved HCG spend for
+  -- one household in a rolling 24 h above this ⇒ hold until an admin releases it.
+  household_auto_hold_daily_gbp numeric(12, 4) not null default 5 check (household_auto_hold_daily_gbp > 0 and household_auto_hold_daily_gbp <= 100),
   entitled_count_max_age_seconds integer not null default 93600 check (entitled_count_max_age_seconds > 0),
   -- periods
   max_period_days integer not null default 35 check (max_period_days between 1 and 35),
@@ -346,7 +351,7 @@ declare
     'global_worst_case_floor_gbp', 'global_active_floor', 'global_monitoring_hourly_floor_gbp',
     'global_unattributed_daily_gbp', 'global_number_purchases_per_day',
     'global_hourly_per_household_gbp', 'global_daily_per_household_gbp', 'global_exposure_per_household_gbp',
-    'global_worst_case_per_household_gbp', 'global_monitoring_hourly_per_household_gbp'];
+    'global_worst_case_per_household_gbp', 'global_monitoring_hourly_per_household_gbp', 'household_auto_hold_daily_gbp'];
   tighten_max text[] := array['connected_rate_gbp_per_min', 'monitoring_rate_gbp_per_min', 'call_fixed_fee_gbp',
     'estimate_uplift', 'sms_unit_gbp', 'ai_request_gbp', 'number_purchase_gbp', 'renew_ahead_seconds'];
 begin
@@ -497,6 +502,117 @@ revoke all on function public.fc_resolve_profile(uuid, timestamptz) from public,
 revoke all on function public.fc_account(uuid, timestamptz, timestamptz, timestamptz, jsonb) from public, anon, authenticated, service_role;
 
 -- Shared global gate (caller already holds the global row lock). Returns a
+-- ---------------------------------------------------------------------------
+-- Integration 2026-10-04 (Andrew, approved): PER-HOUSEHOLD FINANCIAL HOLD.
+-- An immediate, audited kill switch for one household. While held, NOTHING
+-- HCG-funded is authorised for it: new calls (trusted or not, any funding
+-- source incl. reserve and essential pool, shadow mode or not), lease
+-- renewals (live calls end at lease end), monitoring start, SMS, AI and
+-- number purchases. Keyed on household_id, so changing contacts, payment
+-- channel, number or retrying cannot escape it. Automatic controls may SET a
+-- hold; only an administrator ('admin' source) may RELEASE one.
+create table if not exists public.fc_household_holds (
+  household_id uuid primary key references public.households(id) on delete cascade,
+  source text not null check (source in ('admin', 'financial', 'fraud')),
+  reason text not null check (length(trim(reason)) >= 5),
+  actor text not null check (length(trim(actor)) >= 2),
+  held_at timestamptz not null default now()
+);
+create table if not exists public.fc_household_hold_audit (
+  id bigint generated always as identity primary key,
+  household_id uuid not null,
+  action text not null check (action in ('hold', 'release', 'refused_release')),
+  source text not null,
+  reason text not null,
+  actor text not null,
+  at timestamptz not null default now()
+);
+alter table public.fc_household_holds enable row level security;
+alter table public.fc_household_hold_audit enable row level security;
+revoke all on public.fc_household_holds, public.fc_household_hold_audit from public, anon, authenticated;
+revoke all on sequence public.fc_household_hold_audit_id_seq from public, anon, authenticated;
+grant select on public.fc_household_holds, public.fc_household_hold_audit to service_role;
+create or replace function public.fc_household_hold_audit_block() returns trigger
+language plpgsql security invoker set search_path = '' as $$
+begin
+  raise exception 'fc_household_hold_audit is append-only';
+end;
+$$;
+drop trigger if exists fc_household_hold_audit_append_only on public.fc_household_hold_audit;
+create trigger fc_household_hold_audit_append_only before update or delete on public.fc_household_hold_audit
+  for each row execute function public.fc_household_hold_audit_block();
+revoke all on function public.fc_household_hold_audit_block() from public, anon, authenticated, service_role;
+
+create or replace function public.fc_household_held(p_household_id uuid) returns boolean
+language sql stable security invoker set search_path = '' as $$
+  select p_household_id is not null and exists (select 1 from public.fc_household_holds h where h.household_id = p_household_id);
+$$;
+revoke all on function public.fc_household_held(uuid) from public, anon, authenticated, service_role;
+
+-- Set or release a hold. Idempotent. Automatic sources can only HOLD.
+create or replace function public.fc_set_household_hold(
+  p_household_id uuid, p_hold boolean, p_reason text, p_actor text, p_source text
+) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_was boolean;
+begin
+  if p_household_id is null or p_hold is null then raise exception 'fc_set_household_hold: household and state required'; end if;
+  if coalesce(length(trim(p_reason)), 0) < 5 or coalesce(length(trim(p_actor)), 0) < 2 then
+    raise exception 'fc_set_household_hold: reason and actor required';
+  end if;
+  if coalesce(p_source, '') not in ('admin', 'financial', 'fraud') then raise exception 'fc_set_household_hold: invalid source'; end if;
+  perform 1 from public.households where id = p_household_id for update;
+  if not found then raise exception 'fc_set_household_hold: unknown household'; end if;
+  v_was := public.fc_household_held(p_household_id);
+  if p_hold then
+    insert into public.fc_household_holds (household_id, source, reason, actor) values (p_household_id, p_source, p_reason, p_actor)
+    on conflict (household_id) do nothing;
+    insert into public.fc_household_hold_audit (household_id, action, source, reason, actor) values (p_household_id, 'hold', p_source, p_reason, p_actor);
+    perform public.fc_event('critical', 'household_hold_set', p_household_id, null, jsonb_build_object('source', p_source, 'actor', p_actor, 'reason', p_reason, 'alreadyHeld', v_was));
+  else
+    if p_source <> 'admin' then
+      -- Refused WITHOUT raising, so the refused attempt itself stays audited
+      -- (an exception would roll the audit row back).
+      insert into public.fc_household_hold_audit (household_id, action, source, reason, actor) values (p_household_id, 'refused_release', p_source, p_reason, p_actor);
+      perform public.fc_event('critical', 'household_hold_release_refused', p_household_id, null, jsonb_build_object('source', p_source, 'actor', p_actor));
+      return jsonb_build_object('ok', false, 'reason', 'only_admin_can_release', 'held', v_was);
+    end if;
+    delete from public.fc_household_holds where household_id = p_household_id;
+    insert into public.fc_household_hold_audit (household_id, action, source, reason, actor) values (p_household_id, 'release', p_source, p_reason, p_actor);
+    perform public.fc_event('critical', 'household_hold_released', p_household_id, null, jsonb_build_object('actor', p_actor, 'reason', p_reason, 'wasHeld', v_was));
+  end if;
+  return jsonb_build_object('ok', true, 'held', p_hold, 'wasHeld', v_was);
+end;
+$$;
+
+-- Automatic FINANCIAL hold: this household's committed + still-reserved HCG
+-- spend in the rolling 24 h exceeds policy ⇒ hold (latches until an admin
+-- releases it). Returns true when the household is (now) held.
+create or replace function public.fc_household_auto_hold(p_household_id uuid, p_now timestamptz, p_pol jsonb) returns boolean
+language plpgsql security invoker set search_path = '' as $$
+declare
+  v_spend numeric;
+begin
+  if p_household_id is null then return false; end if;
+  if public.fc_household_held(p_household_id) then return true; end if;
+  select coalesce(sum(committed_gbp + case when state in ('active', 'terminating') then reserved_gbp else 0 end), 0) into v_spend
+    from public.fc_reservations where household_id = p_household_id and started_at > p_now - interval '24 hours';
+  if v_spend > (p_pol->>'household_auto_hold_daily_gbp')::numeric then
+    insert into public.fc_household_holds (household_id, source, reason, actor)
+    values (p_household_id, 'financial', 'automatic: 24 h HCG spend above policy', 'system:fortress')
+    on conflict (household_id) do nothing;
+    insert into public.fc_household_hold_audit (household_id, action, source, reason, actor)
+    values (p_household_id, 'hold', 'financial', 'automatic: 24 h HCG spend £' || round(v_spend, 4) || ' above policy', 'system:fortress');
+    perform public.fc_event('emergency', 'household_hold_automatic', p_household_id, null,
+      jsonb_build_object('spend24hGbp', v_spend, 'limitGbp', p_pol->>'household_auto_hold_daily_gbp'));
+    return true;
+  end if;
+  return false;
+end;
+$$;
+revoke all on function public.fc_household_auto_hold(uuid, timestamptz, jsonb) from public, anon, authenticated, service_role;
+
 -- deny reason or null; latches the breaker on a spend-rate trip.
 create or replace function public.fc_global_gate(
   p_pol jsonb, p_now timestamptz, p_add_authorized numeric, p_add_worst numeric, p_new_reservation boolean,
@@ -524,7 +640,8 @@ begin
     when g.active_reserved_gbp + p_add_authorized > (caps->>'exposure')::numeric then 'global_exposure_cap'
     when g.active_worst_case_gbp + p_add_worst > (caps->>'worstCase')::numeric then 'global_worst_case_cap'
     else null end;
-  if v_reason in ('global_hourly_cap', 'global_daily_cap') and (p_pol->>'breaker_latch_on_rate')::boolean then
+  -- Integration 2026-10-04: a spend/rate trip ALWAYS latches (manual, audited reset only).
+  if v_reason in ('global_hourly_cap', 'global_daily_cap') then
     update public.fc_global_state set breaker_open = true, breaker_reason = v_reason, breaker_opened_at = p_now, updated_at = p_now where id = 1;
     perform public.fc_event('emergency', 'breaker_opened', p_household, p_call_sid,
       jsonb_build_object('reason', v_reason, 'caps', caps, 'window', w, 'requested', p_add_authorized));
@@ -647,6 +764,18 @@ begin
   -- ---------------- household call ----------------
   a := public.fc_account(p_household_id, p_period_start, p_period_end, p_now, pol);
   select * into pr from public.fc_budget_profiles where profile = a.profile;
+
+  -- Integration 2026-10-04: per-household financial hold — before ANY funding
+  -- decision; no funding source, trusted status or shadow mode bypasses it.
+  if public.fc_household_auto_hold(p_household_id, p_now, pol) then
+    insert into public.fc_reservations (idempotency_key, household_id, period_start, call_sid, category, state, deny_reason, is_known, started_at)
+    values (v_key, p_household_id, a.period_start, p_call_sid, 'call', 'denied', 'household_hold', coalesce(p_is_known, false), p_now) returning * into r;
+    insert into public.fc_ledger (idempotency_key, reservation_id, household_id, call_sid, category, entry_type, basis, amount_gbp, reason)
+    values (v_key || ':deny', r.id, p_household_id, p_call_sid, 'call', 'deny', 'none', 0, 'household_hold');
+    update public.fc_budget_accounts set last_denial_reason = 'household_hold', last_denial_at = p_now, updated_at = p_now
+     where household_id = p_household_id and period_start = a.period_start;
+    return jsonb_build_object('allowed', false, 'reason', 'household_hold', 'telephony', false, 'monitoring', false, 'reservationId', r.id);
+  end if;
 
   -- Headroom after reservations AND after the unreserved worst case of the
   -- household's other live calls (their backstop cost beyond what they have
@@ -896,6 +1025,8 @@ begin
   if not found then return jsonb_build_object('ok', false, 'reason', 'no_reservation'); end if;
   if not r.monitored then return jsonb_build_object('ok', false, 'reason', 'monitoring_not_authorized'); end if;
   if r.state not in ('active', 'terminating') then return jsonb_build_object('ok', false, 'reason', 'call_not_live'); end if;
+  -- Integration 2026-10-04: no monitoring may start for a held household.
+  if public.fc_household_held(r.household_id) then return jsonb_build_object('ok', false, 'reason', 'household_hold'); end if;
   update public.fc_reservations set monitoring_started = true where id = r.id;
   return jsonb_build_object('ok', true, 'alreadyStarted', r.monitoring_started);
 end;
@@ -950,6 +1081,8 @@ begin
   -- Breaker / kill switch: refuse renewals (live calls end at lease end).
   if g.kill_switch and (pol->>'breaker_terminates_active')::boolean then v_reason := 'kill_switch';
   elsif g.breaker_open and (pol->>'breaker_terminates_active')::boolean then v_reason := 'breaker_open';
+  -- Integration 2026-10-04: a held household's live calls are not renewed (end at lease end).
+  elsif public.fc_household_held(r.household_id) then v_reason := 'household_hold';
   end if;
 
   if v_reason is null and r.household_id is not null and r.funding in ('budget', 'reserve', 'essential') then
@@ -1141,7 +1274,14 @@ begin
     when 'ai' then (pol->>'ai_request_gbp')::numeric
     else (pol->>'number_purchase_gbp')::numeric end;
 
-  v_reason := public.fc_global_gate(pol, p_now, v_cost, 0, false, p_household_id, null);
+  -- Integration 2026-10-04: a held household gets NO one-shot spend (SMS, AI,
+  -- number purchase incl. a replacement number) — checked before the global
+  -- gate so a held household's request never counts towards a breaker trip.
+  if public.fc_household_auto_hold(p_household_id, p_now, pol) then
+    v_reason := 'household_hold';
+  else
+    v_reason := public.fc_global_gate(pol, p_now, v_cost, 0, false, p_household_id, null);
+  end if;
   if v_reason = 'global_exposure_cap' or v_reason = 'global_worst_case_cap' then v_reason := null; end if; -- one-shot: no live exposure
   if v_reason is null and p_category = 'number_purchase' then
     w := public.fc_window_sums(p_now);
@@ -1237,6 +1377,16 @@ begin
     perform public.fc_bump_minute(p_now, v_charge, v_charge, 0, 0, 0);
     perform public.fc_event('critical', 'estimate_undercount', r.household_id, p_call_sid,
       jsonb_build_object('estimateGbp', r.committed_gbp, 'actualGbp', v_total, 'chargedGbp', v_charge));
+    -- Integration 2026-10-04: a provider charge far above the estimate is a
+    -- financial anomaly ⇒ automatic household hold (admin release only).
+    if r.household_id is not null and v_charge > 0.5 and v_total > 2 * r.committed_gbp
+       and not public.fc_household_held(r.household_id) then
+      insert into public.fc_household_holds (household_id, source, reason, actor)
+      values (r.household_id, 'financial', 'automatic: provider actual cost far above estimate', 'system:fortress') on conflict (household_id) do nothing;
+      insert into public.fc_household_hold_audit (household_id, action, source, reason, actor)
+      values (r.household_id, 'hold', 'financial', 'automatic: actual £' || round(v_total, 4) || ' vs estimate £' || round(r.committed_gbp, 4), 'system:fortress');
+      perform public.fc_event('emergency', 'household_hold_automatic', r.household_id, p_call_sid, jsonb_build_object('actualGbp', v_total, 'estimateGbp', r.committed_gbp));
+    end if;
   end if;
   return jsonb_build_object('ok', true, 'duplicate', false, 'matched', true, 'actualTotalGbp', v_total, 'chargedGbp', v_charge);
 end;
@@ -1334,7 +1484,7 @@ declare
     'global_exposure_floor_gbp', 'global_exposure_per_household_gbp', 'global_worst_case_floor_gbp',
     'global_worst_case_per_household_gbp', 'global_active_floor', 'global_active_households_per_call',
     'global_monitoring_hourly_floor_gbp', 'global_monitoring_hourly_per_household_gbp', 'global_unattributed_daily_gbp',
-    'global_number_purchases_per_day', 'breaker_latch_on_rate', 'entitled_count_max_age_seconds', 'max_period_days'];
+    'global_number_purchases_per_day', 'breaker_latch_on_rate', 'entitled_count_max_age_seconds', 'max_period_days', 'household_auto_hold_daily_gbp'];
   merged public.fc_policy%rowtype;
 begin
   if p_changes is null or jsonb_typeof(p_changes) <> 'object' or p_changes = '{}'::jsonb then raise exception 'fc_set_policy: changes required'; end if;
@@ -1364,6 +1514,7 @@ begin
     global_monitoring_hourly_per_household_gbp = merged.global_monitoring_hourly_per_household_gbp,
     global_unattributed_daily_gbp = merged.global_unattributed_daily_gbp, global_number_purchases_per_day = merged.global_number_purchases_per_day,
     breaker_latch_on_rate = merged.breaker_latch_on_rate, entitled_count_max_age_seconds = merged.entitled_count_max_age_seconds,
+    household_auto_hold_daily_gbp = merged.household_auto_hold_daily_gbp,
     max_period_days = merged.max_period_days, updated_at = now(), updated_by = p_actor
   where id = 1;
   select to_jsonb(p) into after_row from public.fc_policy p where id = 1;
@@ -1424,7 +1575,8 @@ begin
       'terminateAt', terminate_at, 'terminationReason', termination_reason)), '[]'::jsonb)
     into v_live from public.fc_reservations where household_id = p_household_id and state in ('active', 'terminating');
   if a.household_id is null then
-    return jsonb_build_object('householdId', p_household_id, 'hasAccount', false, 'profile', public.fc_resolve_profile(p_household_id, p_now), 'live', v_live);
+    return jsonb_build_object('householdId', p_household_id, 'hasAccount', false, 'profile', public.fc_resolve_profile(p_household_id, p_now), 'live', v_live,
+      'held', public.fc_household_held(p_household_id));
   end if;
   return jsonb_build_object(
     'householdId', p_household_id, 'hasAccount', true, 'profile', a.profile,
@@ -1441,7 +1593,10 @@ begin
     -- Integration 2026-10-03: who the delivery reserve funds ('all' |
     -- 'trusted_only' | 'none'), so the customer view never claims every call
     -- still connects when only trusted callers would.
-    'deliveryReserveScope', (select pr.delivery_reserve_scope from public.fc_budget_profiles pr where pr.profile = a.profile));
+    'deliveryReserveScope', (select pr.delivery_reserve_scope from public.fc_budget_profiles pr where pr.profile = a.profile),
+    -- Integration 2026-10-04: per-household financial hold.
+    'held', public.fc_household_held(p_household_id),
+    'hold', (select jsonb_build_object('source', h.source, 'reason', h.reason, 'heldAt', h.held_at) from public.fc_household_holds h where h.household_id = p_household_id));
 end;
 $$;
 
@@ -1505,6 +1660,7 @@ begin
     'fc_admin_adjust(uuid, numeric, text, text, text, text, timestamptz, timestamptz, timestamptz)',
     'fc_set_kill_switch(boolean, text, text)',
     'fc_reset_breaker(text, text)',
+    'fc_set_household_hold(uuid, boolean, text, text, text)',
     'fc_set_policy(jsonb, text, text)',
     'fc_set_budget_profile(text, numeric, numeric, text, numeric, boolean, text, text)',
     'fc_refresh_entitled_count(timestamptz)',

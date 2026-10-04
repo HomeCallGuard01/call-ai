@@ -74,6 +74,13 @@ function createProvisioningGuard(deps) {
       const risk = await accountRisk.evaluateProvisioning(household, { entitlementSource: source });
       if (risk.decision !== 'allow') {
         alert('abuse_provisioning_hold', 'A number purchase was held for review (multi-account / repeat-provisioning signals)', { householdId: household.id, reasons: risk.reasons.join(',') });
+        // Integration 2026-10-04: repeated number provisioning (buy → abandon →
+        // repeat) also places the household under a Fortress financial hold.
+        // Softer signals (shared phone / email base) stay provisioning-only.
+        if (risk.reasons.includes('repeated_number_provisioning') && typeof deps.onFraudHold === 'function') {
+          await Promise.resolve(deps.onFraudHold(household.id, 'automatic: repeated number provisioning (buy, abandon, repeat)')).catch((err) =>
+            alert('abuse_fraud_hold_failed', 'Could not place the automatic financial hold', { householdId: household.id, error: String(err && err.message || err).slice(0, 120) }));
+        }
         return hold('account_risk_hold', household, { reasons: risk.reasons.join(','), signalsAvailable: Object.entries(risk.signals).filter(([, v]) => v && v.available).map(([k]) => k).join(',') });
       }
     } else {

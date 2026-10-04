@@ -40,15 +40,37 @@ const { ACTIONS } = require('./incidentMode');
 
 const STIR_FAILED = /^TN-Validation-Failed/i;
 
-function createHoldStore({ env = process.env } = {}) {
+// Integration 2026-10-04: the AUTHORITATIVE hold is the Financial Fortress
+// per-household financial hold (fc_household_holds, migration 067), enforced
+// inside every Fortress authorisation. This store reads it (5 s cache) so a
+// held household is refused early at abuse step 4, and writes automatic
+// FRAUD holds to it. ABUSE_HELD_HOUSEHOLD_IDS remains an operator env hold.
+// A read failure here only flags (Fortress, fail-closed under D3, still decides).
+function createHoldStore({ env = process.env, readHold = null, writeHold = null, now = () => Date.now(), cacheMs = 5000 } = {}) {
   const held = new Map();
   for (const id of String(env.ABUSE_HELD_HOUSEHOLD_IDS || '').split(',').map((s) => s.trim()).filter(Boolean)) {
     held.set(id, 'env_operator_hold');
   }
+  const cache = new Map(); // householdId -> { at, value }
   return {
-    async isHeld(householdId) { return householdId && held.has(householdId) ? held.get(householdId) : null; },
-    hold(householdId, reason) { held.set(householdId, reason); },
-    release(householdId) { held.delete(householdId); },
+    async isHeld(householdId) {
+      if (!householdId) return null;
+      if (held.has(householdId)) return held.get(householdId);
+      if (typeof readHold !== 'function') return null;
+      const c = cache.get(householdId);
+      if (c && now() - c.at < cacheMs) return c.value;
+      const h = await readHold(householdId);
+      const value = h ? `fortress_hold:${h.source}` : null;
+      cache.set(householdId, { at: now(), value });
+      if (cache.size > 5000) cache.clear();
+      return value;
+    },
+    async hold(householdId, reason, source = 'fraud') {
+      cache.delete(householdId);
+      if (typeof writeHold === 'function') return writeHold({ householdId, reason, source });
+      held.set(householdId, reason);
+      return null;
+    },
   };
 }
 

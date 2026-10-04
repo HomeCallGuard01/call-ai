@@ -8,7 +8,7 @@ or reconfigure a production number.
 
 ## 0. Preconditions (stop if any is false)
 
-1. Decisions recorded: D3 (degraded mode), D2, D9 floors, reserve scope, placeholder £ budgets for staging only.
+1. Decisions recorded: D3 = reject and latching breaker (decided 2026-10-04); D9 floors, reserve scope, automatic-hold threshold, placeholder £ budgets for staging only.
 2. Staging DB snapshot/backup taken and its restore tested (Supabase PITR or `pg_dump` of `public` + `auth.users`).
 3. Staging history repair for 052 decided (`supabase migration repair --status applied 052`, Andrew).
 4. Branch deployed to a **staging-only** Railway service; `NODE_ENV` and the environment-guard signature say non-production.
@@ -29,7 +29,7 @@ Rollback order: strictly reverse, using `_rollbacks/`; **067 only with the kill 
 ## 3. Staging-only configuration
 
 `FC_REQUIRE_SIGNED_VOICE=true`, `TWILIO_WEBHOOK_AUTH_MODE` unset (enforce), `TWILIO_WEBHOOK_ALLOWED_HOSTS` = staging hosts,
-`FC_DEGRADED_MODE` per D3, `ALLOWANCE_SOURCE=fortress`, `ALLOWANCE_TOPUPS_ENABLED` off until §9,
+`FC_DEGRADED_MODE` unset (D3 = reject; bounded is refused outside test/development), `ALLOWANCE_SOURCE=fortress`, `ALLOWANCE_TOPUPS_ENABLED` off until §9,
 `APP_ENV=staging`, `ALLOWANCE_ALLOW_SANDBOX_CREDITS=true` only for §9, `ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE` unset,
 `TRUST_PROXY_HOPS` = Railway's verified hop count, `ABUSE_AUDIT_HASH_SECRET` set, `TWILIO_ACCOUNT_SID` set.
 Staging budget profiles set with `fc_set_budget_profile` (audited) to small test values.
@@ -81,3 +81,16 @@ alerts received. Record each M-01…M-17 result in `docs/launch-gate/` so the re
 ## 12. Restore
 
 Kill switch on → stop staging service → restore snapshot (or reverse rollbacks 070→053) → verify `schema_migrations` → restart previous staging build.
+
+## 13. Added 2026-10-04 — kill switches, destinations, provider containment
+
+1. Household hold via the admin route on a test household during a live call → that call ends at
+   lease end; new calls (trusted and unknown), SMS and a number purchase all refused; release via
+   the admin route; audit rows present (incl. a refused automatic release).
+2. Breaker: trip with a lowered hourly floor; restore the floor; confirm calls are STILL refused;
+   reset via the admin route (authenticated admin) and confirm resumption and the audit row.
+3. Automatic hold: lower `household_auto_hold_daily_gbp` on staging; generate calls; confirm the hold.
+4. Try adding 09/087/070/076 trusted contacts from web and app — refused server-side.
+5. Provider LEVEL 4: complete `2026-10-04-PROVIDER_FINANCIAL_CONTAINMENT.md` §3 with dated evidence
+   and the written Twilio answers (§4) — no provider change is made as part of the plan without
+   Andrew's explicit instruction.

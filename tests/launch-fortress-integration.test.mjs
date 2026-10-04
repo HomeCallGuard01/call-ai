@@ -284,6 +284,42 @@ try {
   check(isReject(total.text), 'S21/D: whole database unavailable → the household cannot be resolved → <Reject> (unbilled; customer misses the call)');
   fault.allDown = false;
 
+  // ── 2026-10-04 decisions: destinations, household kill switch, latching breaker ──
+  const unknownPremium = await voice(port, H.spare, '+449098790999');
+  check(!/<Number|<Sip/.test(unknownPremium.text), 'D5: an UNKNOWN premium-rate caller never causes an outbound/expensive leg (inbound only; same rules as trusted)');
+  if (connects(unknownPremium.text, H.spare)) await ended(port, unknownPremium.params.CallSid);
+  // Trusted contact changed after validation (direct DB change to a premium number).
+  const c1 = contacts.find((c) => c.id === 'c1');
+  c1.number = '9098790555';
+  const changed = await voice(port, H.trust, '+449098790555');
+  check(connects(changed.text, H.trust) && monitored(changed.text), 'D4: a trusted contact changed to a premium number AFTER validation never gets trust (re-checked at call time)');
+  if (connects(changed.text, H.trust)) await ended(port, changed.params.CallSid);
+  c1.number = '7700900555';
+  // Household kill switch + bypass attempts.
+  await q('select public.fc_set_household_hold($1, true, $2, $3, $4)', [H.spare.id, 'integration: household kill switch', 'admin:integration', 'admin']);
+  contacts.push({ id: 'c-bypass', household_id: H.spare.id, name: 'added to bypass the hold', number: '7700900321' });
+  const heldTrusted = await voice(port, H.spare, '+447700900321');
+  const heldBurst = await Promise.all(Array.from({ length: 5 }, (_, i) => voice(port, H.spare, `+4477009004${i}0`)));
+  check(isReject(heldTrusted.text) && heldBurst.every((r) => isReject(r.text)), 'D2: household hold — refused even for a NEWLY ADDED trusted contact, and for 5 simultaneous calls (no bypass)');
+  check((await q("select count(*)::int c from public.fc_reservations where household_id = $1 and state = 'active'", [H.spare.id]))[0].c === 0, 'D2: nothing reserved for the held household');
+  await q('select public.fc_set_household_hold($1, false, $2, $3, $4)', [H.spare.id, 'integration: hold released by admin', 'admin:integration', 'admin']);
+  await sleep(5200); // abuse-layer hold cache
+  const afterRelease = await voice(port, H.spare, '+447700900321');
+  check(connects(afterRelease.text, H.spare), 'D2: after an administrator releases the hold, delivery resumes');
+  await ended(port, afterRelease.params.CallSid);
+  // Latching global breaker: trip, spend returns to normal, still refused until the manual reset.
+  await q(`select public.fc_set_policy($1::jsonb, 'integration: tiny hourly cap', 'tester')`, [JSON.stringify({ global_hourly_floor_gbp: 0.05, global_hourly_per_household_gbp: 0 })]);
+  for (let i = 0; i < 4; i++) { const r = await voice(port, H.globalA, `+4477009011${i}0`); if (connects(r.text, H.globalA)) await ended(port, r.params.CallSid); }
+  const opened = (await q('select breaker_open from public.fc_global_state where id = 1'))[0].breaker_open;
+  await q(`select public.fc_set_policy($1::jsonb, 'integration: cap back to normal', 'tester')`, [JSON.stringify({ global_hourly_floor_gbp: 100 })]);
+  const during = await Promise.all([voice(port, H.globalA, '+447700901200'), voice(port, H.globalB, TRUSTED), voice(port, H.dup, '+447700901201')]);
+  check(opened === true && during.every((r) => isReject(r.text)), 'D1: breaker tripped → LATCHED: with the cap back to normal, simultaneous calls across households (incl. trusted) are all still refused');
+  await q("select public.fc_reset_breaker('integration: manual reset after review', 'admin:integration')");
+  await sleep(5200);
+  const resumed = await voice(port, H.globalB, '+447700901202');
+  check(connects(resumed.text, H.globalB), 'D1: only the audited manual reset reopens delivery');
+  await ended(port, resumed.params.CallSid);
+
   // ── invariants after every attack above ──
   const inv = (await q('select public.fc_check_invariants() as r'))[0].r;
   check(inv && (inv.ok === true || inv.violations === 0 || (Array.isArray(inv.violations) && inv.violations.length === 0)), `Fortress invariants hold after the whole run (${JSON.stringify(inv).slice(0, 160)})`);

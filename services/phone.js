@@ -97,8 +97,25 @@ function normaliseContactNumber(rawInput) {
   return legacyLast10(rawInput);
 }
 
+// Integration 2026-10-04: a trusted contact must also be a PERMITTED class
+// (numberPolicy TRUSTED_CONTACT): premium-rate (09), revenue-share (084/087),
+// personal numbering (070), paging (076), freephone/special, global-service /
+// satellite, short codes, unallocated ranges and HCG's own numbers are refused
+// at creation on every write path (web add/edit/upload, mobile add/edit,
+// contact sync). Server-side call-time trust checks remain authoritative for
+// rows that already exist or are changed directly in the database.
 function isValidContactNumber(stored) {
-  return /^\d{10}$/.test(stored) || /^\+[1-9]\d{6,14}$/.test(stored);
+  if (!(/^\d{10}$/.test(stored) || /^\+[1-9]\d{6,14}$/.test(stored))) return false;
+  const { evaluateNumberForPurpose, PURPOSES } = require("./abuse/numberPolicy");
+  return evaluateNumberForPurpose(PURPOSES.TRUSTED_CONTACT, /^\d{10}$/.test(stored) ? `+44${stored}` : stored).allowed;
 }
 
-module.exports = { normaliseNumber, normaliseUkPhoneToE164, wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber };
+// Existing contacts that would no longer be accepted (detection for admin /
+// support; never trusted at call time anyway). Returns masked findings.
+function findProhibitedContacts(contacts) {
+  const { maskE164 } = require("./abuse/numberPolicy");
+  return (contacts || []).filter((c) => c && c.number && !isValidContactNumber(String(c.number)))
+    .map((c) => ({ id: c.id, householdId: c.household_id, numberMasked: maskE164(/^\d{10}$/.test(String(c.number)) ? `+44${c.number}` : String(c.number)) }));
+}
+
+module.exports = { normaliseNumber, normaliseUkPhoneToE164, wouldCreateForwardingLoop, normaliseContactNumber, isValidContactNumber, findProhibitedContacts };

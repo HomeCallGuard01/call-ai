@@ -77,3 +77,16 @@ Conflicts: package.json, server.js (9 hunks), mediaStreamHandler.js (4), tests/s
 | P16 | Commercial config validator (reports; decides nothing) + read-only admin overview | §9/§10/§15; dashboard ≠ enforcement stated in the payload | 155c966 |
 | P17 | Removed a stray copy of the RevenueCat block from `grantComplimentaryEntitlement` | My own unbounded replace injected it (ReferenceError on extending a complimentary grant); caught by the full suite; all changed files audited for duplicates | 438082d |
 | P18 | 051 contribution-view test made date-independent | Pre-existing time bomb (failed once "now" reached October, also on base) — currencies were never mixed | 599b232 |
+
+## 2026-10-04 decisions (Andrew-approved) and implementation choices
+
+| # | Decision / choice | Why | Commit |
+|---|---|---|---|
+| P19 | D3 = reject default; bounded only test/development with explicit opt-in; production assert at boot | fail closed | eac6c40 |
+| P20 | Breaker latching and live-call termination made non-negotiable (CHECK constraints); admin reset route with authenticated actor | decision 1 | (this commit) |
+| P21 | Per-household hold lives INSIDE the Fortress SQL (one authority, cross-instance, under the same lock), not in the process-local abuse store; the abuse store now reads/writes it | decision 2; unbypassable | (this commit) |
+| P22 | Refused hold release returns `{ok:false}` instead of raising, so the refused attempt stays audited (raising rolled the audit row back) | auditability | (this commit) |
+| P23 | Automatic fraud hold only for repeated number provisioning; softer multi-account signals stay provisioning-only | avoid locking out families — **policy for Andrew** | (this commit) |
+| P24 | Fail-safe destination cost ceiling per purpose; unknown rate ⇒ refused; provider-metadata port (unwired) | decision 3 | (this commit) |
+| P25 | Trusted-contact creation validated by `isValidContactNumber` (all write paths); international / Crown Dependency still allowed as caller-ID matchers — **policy for Andrew** | decisions 3–4 | (this commit) |
+| P26 | Real-PG storm assertion: a refusal may now be `household_hold` for the household that test step 6 automatically held (undercount) | new control firing correctly | (this commit) |

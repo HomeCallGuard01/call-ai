@@ -63,6 +63,14 @@ module.exports = {
       p_source: source, p_period_start: iso(periodStart), p_period_end: iso(periodEnd), p_now: iso(now),
     }, client),
   setKillSwitch: ({ on, reason, actor }, client) => rpc('fc_set_kill_switch', { p_on: Boolean(on), p_reason: reason, p_actor: actor }, client),
+  // Integration 2026-10-04: per-household financial hold (source admin|financial|fraud; only admin releases).
+  setHouseholdHold: ({ householdId, hold, reason, actor, source }, client) =>
+    rpc('fc_set_household_hold', { p_household_id: householdId, p_hold: Boolean(hold), p_reason: reason, p_actor: actor, p_source: source }, client),
+  householdHold: async ({ householdId }, client) => {
+    const { data, error } = await resolveClient(client).from('fc_household_holds').select('source, reason, held_at').eq('household_id', householdId).maybeSingle();
+    if (error) throw new Error(`fc_household_holds read failed: ${error.message || error}`);
+    return data || null;
+  },
   resetBreaker: ({ reason, actor }, client) => rpc('fc_reset_breaker', { p_reason: reason, p_actor: actor }, client),
   refreshEntitledCount: ({ now }, client) => rpc('fc_refresh_entitled_count', { p_now: iso(now) }, client),
   householdStatus: ({ householdId, now }, client) => rpc('fc_household_status', { p_household_id: householdId, p_now: iso(now) }, client),

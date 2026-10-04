@@ -99,6 +99,22 @@ async function main() {
     check(Number(live) <= capacity + 1e-9 && Math.abs(Number(acc.adjustments_gbp) - (-0.95 + 0.15 * 4)) < 1e-9,
       `top-ups racing authorisations: Σ budget-funded reservations £${Number(live).toFixed(4)} ≤ capacity £${capacity.toFixed(4)} (base + adjustments incl. 4 racing top-ups)`);
 
+    // ── Household hold placed WHILE 11 connections authorise for it ───────
+    const hz = signups[5].id;
+    await admin.query(`insert into public.entitlements (household_id, entitlement_type, status, source, starts_at) values ($1, 'paid_subscription', 'active', 'stripe', $2)`, [hz, PERIOD[0]]);
+    // 5 calls already live on 5 connections BEFORE the race (so renewal is really exercised).
+    const pre = await Promise.all(conns.slice(1, 6).map((c, i) => c.query('select public.fc_authorize_call($1,$2,true,false,false,$3,$4,$5,null) as r', [hz, `CA-realpg-prelive-${i}`, PERIOD[0], PERIOD[1], new Date().toISOString()]).then((r) => r.rows[0].r)));
+    check(pre.filter((r) => r.allowed).length === 5, 'precondition: 5 calls live for the household before the hold');
+    const race2 = await Promise.all(conns.map((c, i) => (i === 0
+      ? c.query("select public.fc_set_household_hold($1, true, 'realpg: hold during a call race', 'admin:realpg', 'admin') as r", [hz]).then(() => null)
+      : c.query('select public.fc_authorize_call($1,$2,$3,$4,$5,$6,$7,$8,$9) as r', [hz, `CA-realpg-hold-${i}`, i % 2 === 0, false, false, PERIOD[0], PERIOD[1], new Date().toISOString(), null]).then((r) => r.rows[0].r))));
+    const admitted = race2.filter((r) => r && r.allowed);
+    const liveSids = (await admin.query("select call_sid from public.fc_reservations where household_id = $1 and state = 'active'", [hz])).rows.map((r) => r.call_sid);
+    const renewals = await Promise.all(liveSids.map((s2) => admin.query('select public.fc_renew_lease($1,$2,null) as r', [s2, new Date(Date.now() + 250e3).toISOString()]).then((r) => r.rows[0].r)));
+    const after = (await admin.query('select public.fc_authorize_call($1,$2,true,false,false,$3,$4,$5,null) as r', [hz, 'CA-realpg-hold-after', PERIOD[0], PERIOD[1], new Date().toISOString()])).rows[0].r;
+    check(liveSids.length >= 5 && renewals.length === liveSids.length && renewals.every((r) => (r.action === 'terminate' && r.reason === 'household_hold') || r.action === 'at_backstop') && renewals.some((r) => r.reason === 'household_hold') && !after.allowed && after.reason === 'household_hold',
+      `hold racing 11 authorisations on 12 connections: ${admitted.length} more admitted before the hold committed; all ${liveSids.length} live calls refused renewal — household_hold, or already at their provider backstop (end at lease end); every later call refused`);
+
     const inv = (await admin.query('select public.fc_check_invariants() as r')).rows[0].r;
     check(inv && inv.ok === true, `Fortress invariants hold after the races (${JSON.stringify(inv).slice(0, 120)})`);
   } finally {

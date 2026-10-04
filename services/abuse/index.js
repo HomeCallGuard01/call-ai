@@ -122,7 +122,7 @@ function createTelephonyAbuseLayer(opts) {
     },
   });
   const financial = createFinancialAuthorizationPort(opts.financialAuthorization || null, { timeoutMs: config.financialAuthTimeoutMs });
-  const holds = createHoldStore({ env });
+  const holds = createHoldStore({ env, readHold: opts.readHouseholdHold || null, writeHold: opts.writeHouseholdHold || null });
   const isHcgNumber = opts.isHcgNumber || createHcgNumberDirectory({ supabaseAdmin: opts.supabaseAdmin });
   const countLiveCalls = opts.countLiveCalls !== undefined ? opts.countLiveCalls : twilioLiveCallCounter(opts.twilioRestClient);
 
@@ -133,7 +133,10 @@ function createTelephonyAbuseLayer(opts) {
   const guardTwiml = createTwimlEgressGuard({ ownHost, audit });
   const signals = opts.riskSignals || supabaseRiskSignals(opts.supabaseAdmin);
   const accountRisk = createAccountRisk({ config, ...signals });
-  const provisioningGuard = createProvisioningGuard({ config, incident, velocity, audit, accountRisk, alert, entitlementSource: signals.entitlementSource });
+  const provisioningGuard = createProvisioningGuard({ config, incident, velocity, audit, accountRisk, alert, entitlementSource: signals.entitlementSource,
+    // Integration 2026-10-04: buy → abandon → repeat is a FINANCIAL abuse
+    // signal ⇒ automatic Fortress household hold (admin release only).
+    onFraudHold: (householdId, reason) => holds.hold(householdId, reason, 'fraud') });
 
   /** For code that is not request-scoped: may a new paid action of `kind` start? */
   async function paidActionGate(kind, ctx = {}) {

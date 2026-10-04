@@ -190,21 +190,42 @@ function parsePhoneNumber(raw) {
 // (households.self_protecting / services/callRouting.js — delivery is Voice
 // SDK <Client> only). Any future PSTN dial must change this list in review,
 // and twimlEgressGuard refuses <Number>/<Sip> regardless.
+// ── Fail-safe destination COST ceiling (integration 2026-10-04, Andrew) ──
+//
+// A class allowlist alone is not enough: a class added to an allowlist (or a
+// range the class rules cannot see) could become permitted with no cost check.
+// Every purpose that makes HCG pay names a cost kind and a MAXIMUM unit cost;
+// a class with no known rate for that kind is REFUSED ('cost_unknown'), and a
+// class whose rate exceeds the ceiling is refused ('cost_above_ceiling'). Rates
+// are conservative UK list estimates (DECISION/verification: provider rate
+// cards), never actual billing data. Purposes with no HCG cost (a trusted
+// contact is a caller-ID matcher — never dialled or messaged) have no ceiling.
+const DESTINATION_UNIT_COST_GBP = Object.freeze({
+  // Outbound SMS per segment (Twilio GB list, ex VAT, rounded up).
+  sms: Object.freeze({ [CLASSES.UK_MOBILE]: 0.0425, [CLASSES.UK_GEOGRAPHIC]: 0.0425 }),
+  // HCG-originated PSTN voice per minute: NONE are permitted (no product path).
+  voice: Object.freeze({}),
+  // Number purchase + first month (UK local).
+  number: Object.freeze({ [CLASSES.UK_GEOGRAPHIC]: 1.15 }),
+});
+
 const PURPOSES = Object.freeze({
   // HCG-paid SMS warning to the customer's own phone.
-  SMS_WARNING: { name: 'sms_warning', allow: [CLASSES.UK_MOBILE], loopCheck: true },
+  SMS_WARNING: { name: 'sms_warning', allow: [CLASSES.UK_MOBILE], loopCheck: true, costKind: 'sms', maxUnitCostGbp: 0.05 },
   // households.phone_number — the customer's own number (SMS destination).
-  HOUSEHOLD_PHONE: { name: 'household_phone', allow: [CLASSES.UK_MOBILE, CLASSES.UK_GEOGRAPHIC], loopCheck: true },
-  // Any HCG-originated PSTN call leg. None exist today.
-  PSTN_DIAL: { name: 'pstn_dial', allow: [], loopCheck: true },
+  HOUSEHOLD_PHONE: { name: 'household_phone', allow: [CLASSES.UK_MOBILE, CLASSES.UK_GEOGRAPHIC], loopCheck: true, costKind: 'sms', maxUnitCostGbp: 0.05 },
+  // Any HCG-originated PSTN call leg. None exist today (and no voice rate is
+  // known, so the ceiling refuses every class even if the allowlist changed).
+  PSTN_DIAL: { name: 'pstn_dial', allow: [], loopCheck: true, costKind: 'voice', maxUnitCostGbp: 0 },
   // Numbers HCG buys from a provider for a household.
-  PROVISIONED_NUMBER: { name: 'provisioned_number', allow: [CLASSES.UK_GEOGRAPHIC], loopCheck: false },
+  PROVISIONED_NUMBER: { name: 'provisioned_number', allow: [CLASSES.UK_GEOGRAPHIC], loopCheck: false, costKind: 'number', maxUnitCostGbp: 1.5 },
   // Trusted contacts are caller-ID MATCHERS only — never dialled, never
   // messaged. International is allowed (family abroad). HCG numbers are not.
   TRUSTED_CONTACT: {
     name: 'trusted_contact',
     allow: [CLASSES.UK_MOBILE, CLASSES.UK_GEOGRAPHIC, CLASSES.UK_NON_GEOGRAPHIC_03, CLASSES.UK_CORPORATE_OR_VOIP, CLASSES.CROWN_DEPENDENCY, CLASSES.INTERNATIONAL],
     loopCheck: true,
+    costKind: null,
   },
 });
 
@@ -229,6 +250,23 @@ function evaluateNumberForPurpose(purpose, raw, ctx = {}) {
   if (!purpose || !Array.isArray(purpose.allow)) return deny('unknown_purpose');
   if (number.class === CLASSES.MALFORMED) return deny(`malformed:${number.reason}`);
   if (!purpose.allow.includes(number.class)) return deny(`class_not_permitted:${number.class}`);
+  // Fail-safe cost ceiling (see DESTINATION_UNIT_COST_GBP).
+  if (purpose.costKind) {
+    const rates = DESTINATION_UNIT_COST_GBP[purpose.costKind] || {};
+    const unit = rates[number.class];
+    if (!(typeof unit === 'number' && Number.isFinite(unit))) return deny(`cost_unknown:${number.class}`);
+    if (!(unit <= purpose.maxUnitCostGbp)) return deny(`cost_above_ceiling:${number.class}`);
+  }
+  // Optional provider metadata (e.g. a carrier/line-type lookup) — stronger
+  // than prefixes. If supplied and it says the line is not an ordinary GB
+  // line of the allowed kind, refuse. NOT WIRED in production yet (a paid
+  // lookup needs a decision); see docs/integration/2026-10-04-PROVIDER_FINANCIAL_CONTAINMENT.md.
+  if (ctx.providerClassification) {
+    const pc = ctx.providerClassification;
+    if (pc.country && pc.country !== 'GB') return deny('provider_country_not_gb');
+    if (pc.lineType && !['mobile', 'landline', 'fixedVoip'].includes(pc.lineType)) return deny(`provider_line_type:${pc.lineType}`);
+    if (pc.premium === true) return deny('provider_premium');
+  }
   const denyPrefixes = ctx.denyPrefixes || parseDenyPrefixes();
   if (number.e164 && denyPrefixes.some((p) => number.e164.startsWith(p))) return deny('operator_deny_prefix');
   if (purpose.loopCheck && number.e164 && typeof ctx.isHcgNumber === 'function' && ctx.isHcgNumber(number.e164)) {
@@ -258,6 +296,7 @@ function maskE164(e164) {
 module.exports = {
   CLASSES,
   PURPOSES,
+  DESTINATION_UNIT_COST_GBP,
   GLOBAL_SERVICE_CODES,
   CROWN_DEPENDENCY_NSN_PREFIXES,
   parsePhoneNumber,

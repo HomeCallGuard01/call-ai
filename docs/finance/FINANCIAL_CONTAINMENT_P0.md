@@ -380,3 +380,20 @@ it for each priced Twilio leg once both are deployed. Until then
 | D7 | Delivery-reserve scope `all` vs `trusted_only` | `all` |
 | D8 | The 056 £ ceilings stay underneath as defence in depth; they now overlap with this layer | kept |
 | D9 | Global caps' floors and per-household scaling (§6). They are sized for the current small base and scale with N | as §6 |
+
+## 12. Decisions taken (Andrew, 2026-10-04) — integration branch
+
+- **D3 = REJECT.** With the authority unreachable no new HCG-funded call is admitted.
+  `services/containment/policy.js` defaults to `reject`; `bounded` is honoured only with
+  `FC_ALLOW_BOUNDED_DEGRADED_MODE=true` and `NODE_ENV=test|development`. The degraded-envelope
+  text in §8 now describes a test/development-only mode.
+- **D2 resolved: the breaker always latches** (`breaker_latch_on_rate` and
+  `breaker_terminates_active` are CHECK-constrained to true). Reset only via `fc_reset_breaker`
+  (service_role; admin route `POST /admin/api/fortress/breaker/reset`: authenticated,
+  admin-only, JSON, typed confirmation, reason; actor = authenticated admin; audited).
+- **Per-household financial hold** (`fc_household_holds`, `fc_set_household_hold`,
+  append-only `fc_household_hold_audit`): checked inside `fc_authorize_call` (before any funding
+  source), `fc_renew_lease`, `fc_mark_monitoring_started`, `fc_authorize_spend` (SMS, AI,
+  number purchase). Automatic holds: 24 h household spend > `household_auto_hold_daily_gbp`
+  (default £5, policy); provider actual > 2 × estimate and > £0.50; repeated number
+  provisioning (abuse layer). Only an administrator can release; refused releases are audited.

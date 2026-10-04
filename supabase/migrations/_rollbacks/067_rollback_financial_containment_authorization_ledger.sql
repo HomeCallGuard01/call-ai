@@ -3,6 +3,13 @@
 -- Drops every fc_* object. Destroys the authorisation ledger: export
 -- fc_ledger / fc_reservations / fc_events first if any of it matters.
 begin;
+-- Integration 2026-10-04: per-household financial holds (export fc_household_hold_audit first).
+drop function if exists public.fc_set_household_hold(uuid, boolean, text, text, text);
+drop function if exists public.fc_household_auto_hold(uuid, timestamptz, jsonb);
+drop function if exists public.fc_household_held(uuid);
+drop table if exists public.fc_household_hold_audit;
+drop function if exists public.fc_household_hold_audit_block();
+drop table if exists public.fc_household_holds;
 drop function if exists public.fc_authorize_call(uuid, text, boolean, boolean, boolean, timestamptz, timestamptz, timestamptz, jsonb);
 drop function if exists public.fc_settle_call(text, integer, integer, text, timestamptz);
 drop function if exists public.fc_mark_monitoring_started(text);

@@ -127,3 +127,13 @@ Roll back strictly in reverse (070 → 047). Rollback files live in `supabase/mi
 - **070 (new):** see §4.
 - Production ordering is still monotonic (046 → 070). Staging still needs `--include-all` for 053–056.
 - `tests/migration-allocation.test.mjs` pins 046–070, burned 048–050, and a rollback for 062–070.
+
+## 9. 2026-10-04 changes to draft 067 (still applied nowhere)
+
+`fc_household_holds`, append-only `fc_household_hold_audit`, `fc_set_household_hold`,
+`fc_household_held`, `fc_household_auto_hold`; hold checks in `fc_authorize_call`,
+`fc_renew_lease`, `fc_mark_monitoring_started`, `fc_authorize_spend`, automatic hold in
+`fc_record_actual`; `fc_household_status` exposes `held`/`hold`; new policy column
+`household_auto_hold_daily_gbp`; `breaker_latch_on_rate` and `breaker_terminates_active`
+CHECK-constrained to true; spend/rate trips latch unconditionally. The 067 rollback drops the
+new objects first. Rollback of 067 after holds exist loses the hold audit — export it first.

@@ -34,14 +34,16 @@ nowhere. All money figures are **estimates** — no provider billing feed is con
 | Abandoned calls / lost callbacks | ENFORCED | sweeper settles from provider status within one lease | ≤ 1 lease | e2e |
 | Forwarding loops | ENFORCED | lineage checks + per-caller limits + concurrency + budget | ≤ budget | attacks, integration S10 |
 | Floods (many callers) | PARTIAL | concurrency + household budget; delivered until budget spent (no victim lockout of trusted callers) | ≤ household budget + reserve; **victim's unknown callers refused for rest of period** | integration S3/S4 |
-| Global business-wide | ENFORCED (code) | kill switch, latched hourly/daily breaker, exposure/active caps | caps are policy floors (D9 placeholders) | realpg storm, FC-7/FC-8 |
-| DB outage | PARTIAL (D3) | degraded envelope per instance, then refuse | ≈ £2.61 per instance per outage (Fortress estimate) | FC-6 FAIL in bounded mode |
+| Global business-wide | ENFORCED (code) | kill switch, breaker that ALWAYS latches (CHECK; manual audited reset), exposure/active caps | caps are policy floors (D9 placeholders) | realpg storm, FC-7/FC-8, fortress-kill-switches |
+| Per-household runaway | ENFORCED (code) | household financial hold (manual; automatic on 24 h spend > £5 default, provider actual ≫ estimate, repeated number provisioning) | ≤ the automatic threshold before the hold | fortress-kill-switches, defence-in-depth, realpg hold race |
+| Expensive destinations (any HCG-paid purpose) | ENFORCED (code) | class allowlist + fail-safe unit-cost ceiling; contact creation validated server-side | £0 to premium / international / satellite | destination-cost-policy |
+| DB outage | ENFORCED (D3 = reject, 2026-10-04) | every new call refused; live calls ended by their instance at lease + grace | £0 new spend (customers miss calls during the outage) | FC-6 PASS; integration S21; e2e |
 | Top-ups | ENFORCED | 068: £ credited = what Fortress enforces; margin cap at credit time; idempotent | top-up £ ≤ afterFees×(1−margin)÷(1+reserve) | bridge pglite, realpg S41 |
 | Admin goodwill adjustments | ENFORCED | audited, ±£50, idempotent, £ moves with minutes | per adjustment | bridge |
 | Sandbox/test purchases | ENFORCED | no number provisioned; sandbox entitlement unfunded profile; never supersedes in-effect entitlements | ≤ £0.10 reserve if a number already exists | entitlement-canonical |
 | Support/admin actions capable of spend | PARTIAL | admin retry-provisioning (abuse override clears account-risk only); no HTTP route changes Fortress state | via purchase caps | — |
 | HCG unreachable while calls arrive | PROVIDER DEPENDENT | Twilio fallback URL behaviour unverified | **unknown** | none |
-| Master Twilio credential abuse | PROVIDER DEPENDENT | none in HCG code (scoped key, geo permissions, usage triggers, auto-recharge are Console settings) | **unbounded by HCG** | none |
+| Master Twilio credential abuse / app bypass / provider misrouting (LEVEL 4) | PROVIDER DEPENDENT — **RED** | none in HCG code; see `2026-10-04-PROVIDER_FINANCIAL_CONTAINMENT.md` | **unbounded by HCG** | none |
 | Client-originated calls (SDK outgoing grant) | PARTIAL | `/voice` rejects client-origin; TwiML App Voice URL unverified in Console | depends on Console | voice tests |
 | OpenAI account | PROVIDER DEPENDENT | no OpenAI project budget evidence | per-request estimates only | none |
 | Future carrier adapters (AQL/Magrathea/Telnyx/FMC) | NOT IMPLEMENTED | registry refuses non-Twilio providers | n/a | customer-identity tests |

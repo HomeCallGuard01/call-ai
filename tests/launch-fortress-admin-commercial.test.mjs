@@ -96,7 +96,15 @@ const SEED = [
   check(o.commercial && Array.isArray(o.commercial.decisionsRequired), 'commercial validation is surfaced to admin');
   check(calls.every((t) => ['fc_budget_accounts', 'households', 'fc_events', 'fc_budget_profiles'].includes(t)), 'the overview only reads');
   const route = readFileSync(path.join(ROOT, 'routes', 'adminFortress.js'), 'utf8');
-  check(/router\.get\("\/admin\/api\/fortress\/overview", requireAuth, requireAdmin,/.test(route) && !/router\.(post|put|patch|delete)\(/.test(route), 'the admin Fortress route is GET-only behind requireAuth + requireAdmin (no HTTP route changes safety state)');
+  // 2026-10-04 (Andrew-approved): exactly three audited safety controls may be
+  // changed over HTTP — each behind requireAuth + requireAdmin + JSON
+  // (behaviour: tests/admin-fortress-controls.test.mjs). Nothing else.
+  const writes = [...route.matchAll(/router\.(post|put|patch|delete)\("([^"]+)", ([^\n]*)/g)];
+  check(/router\.get\("\/admin\/api\/fortress\/overview", requireAuth, requireAdmin,/.test(route)
+    && writes.length === 3
+    && writes.every((m) => m[1] === 'post' && /^requireAuth, requireAdmin, express\.json\(\),/.test(m[3]))
+    && writes.map((m) => m[2]).join() === '/admin/api/fortress/breaker/reset,/admin/api/fortress/kill-switch,/admin/api/fortress/households/:id/hold',
+    'admin Fortress routes: overview (GET) + only breaker reset, kill switch and household hold (POST, requireAuth + requireAdmin + JSON)');
   const server = readFileSync(path.join(ROOT, 'server.js'), 'utf8');
   check(/if \(!process\.env\.ALLOWANCE_SOURCE\) process\.env\.ALLOWANCE_SOURCE = "fortress";/.test(server), 'the customer allowance describes the authoritative £ budget by default');
 }

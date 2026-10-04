@@ -1,4 +1,12 @@
-# Handover — Launch Fortress integration (Claude 1, 2026-10-03)
+# Handover — Launch Fortress integration (Claude 1, 2026-10-03; updated 2026-10-04)
+
+> **2026-10-04 update — Andrew-approved decisions implemented** (commits `eac6c40` and the
+> kill-switch/destination commit after it): D3 = REJECT; global breaker always latches with an
+> authenticated, authorised, audited manual reset; per-household financial hold (manual +
+> automatic, unbypassable, audited); fail-safe expensive-destination cost policy and server-side
+> trusted-contact validation; provider-level containment (LEVEL 4) recorded as a **RED** launch
+> blocker with the exact settings/questions in `docs/integration/2026-10-04-PROVIDER_FINANCIAL_CONTAINMENT.md`.
+> Nothing deployed, merged, applied or changed at any provider.
 
 **Nothing was deployed, merged to main, or applied to any database. No provider was contacted or reconfigured.**
 
@@ -65,8 +73,9 @@ reservation** → trust takes effect → monitoring decision → egress guard �
 
 ## 13. Financial invariants
 I1 reserve-before-spend, I2 atomic (real PG 12-way), I3 leases, I4 provider timeLimit, I5 Σ worst case ≤ authorisation, I6 idempotency, I8 no early reset,
-I9 no client can raise a limit — test-proven locally. **I7 actual cost: ledger logic proven, feed NOT wired.** **I10 fail-closed: bounded degraded
-envelope (D3) — FC-6 fails in that mode.**
+I9 no client can raise a limit — test-proven locally. **I7 actual cost: ledger logic proven, feed NOT wired.** **I10 fail-closed: D3 = REJECT
+(2026-10-04) — FC-6 PASS.** Added 2026-10-04: breaker always latches (manual audited reset only); per-household financial hold on every
+HCG-funded path; each of levels 1–3 independently stops spend (`tests/defence-in-depth.pglite.test.mjs`); level 4 UNPROVEN.
 
 ## 14. Fraud invariants
 Destination policy precedes trust; full-E.164 trust; premium/070/076/087/09/STIR-fail never trusted; no outbound PSTN leg; loops refused; per-caller
@@ -95,43 +104,48 @@ Control-centre "limits" table reports integrated controls as "code present — v
 `docs/integration/2026-10-03-COST_SURFACE_INVENTORY.md`.
 
 ## 21. Automated tests (exact)
-Integrated: `npm test` (scripts/run-all-tests.mjs, every `tests/*.test.mjs`, offline dummy env, `FC_REALPG_MODULES` set):
-**174 files, 174 passed, 0 failed; 7,603 checks ✓, 0 ✗.**
+Integrated (final, 2026-10-04): `npm test` (scripts/run-all-tests.mjs, every `tests/*.test.mjs`, offline dummy env, `FC_REALPG_MODULES` set):
+**178 files, 178 passed, 0 failed; 7,694 checks ✓, 0 ✗.** (2026-10-03: 174 files, 7,603 checks.) New 2026-10-04 suites:
+`fortress-kill-switches.pglite` 28, `defence-in-depth.pglite` 7, `destination-cost-policy` 17, `admin-fortress-controls` 10;
+`launch-fortress-integration` 46 (was 39), `launch-fortress-contract` 26.
 Baseline untouched `origin/main` eb43368, same environment: **105 files, 105 passed; 3,803 ✓, 0 ✗.**
 (Earlier in the session the two Android tests failed on main only because `mobile/node_modules` was absent.)
 Mobile `tsc --noEmit`: 0 errors. `eslint no-undef/no-redeclare/no-dupe-keys` on backend JS: 1 error, pre-existing on main (duplicate export key in `database/households.js`).
 
 ## 22. Real PostgreSQL concurrency (PostgreSQL 18.4 embedded, 12 connections, all migrations 046–070)
-`financial-containment-realpg` 15/15; `launch-fortress-realpg` 8/8 (account numbers, routing claim, provisioning claim, £ top-up replay, top-ups racing authorisations).
+`financial-containment-realpg` 15/15 (storm assertion now also accepts `household_hold` for the household automatically held by the undercount step); `launch-fortress-realpg` 10/10 (account numbers, routing claim, provisioning claim, £ top-up replay, top-ups racing authorisations, **household hold racing 11 authorisations**).
 
 ## 23. Launch gate
-`docs/integration/2026-10-03-LAUNCH_GATE_RESULT.md`. Probes 10 PASS / PR-07 FAIL (deliberate) / PR-11 FAIL (static grep; implemented). FC 6 PASS; FC-3 FAIL (model); FC-6 FAIL under D3 bounded.
-Registry 0 PROVEN. `--enforce` exit 1. **GATE CLOSED.**
+`docs/integration/2026-10-03-LAUNCH_GATE_RESULT.md`. Probes 10 PASS / PR-07 FAIL (deliberate) / PR-11 FAIL (static grep; implemented). **FC 7 PASS incl. FC-6 (D3 = reject)**; FC-3 FAIL (seconds-vs-£ model; charged once).
+Registry 0 PROVEN (controls 28 PARTIAL / 19 UNPROVEN / 30 FAIL; scenarios 8 / 5 / 17). `--enforce` exit 1. **GATE CLOSED.**
 
 ## 24. RED
-R1 migrations unapplied · R2 no provider billing feed · R3 Twilio Console/credentials unevidenced · R4 HCG-unreachable behaviour · R5 commercial values ·
-R6 abuse state process-local · R7 production signature must pass · R8 production apply order.
+R1 migrations unapplied · R2 no provider billing feed · **R3 no verified provider-level hard financial containment (LEVEL 4)** — master token, 0 usage triggers, no confirmed hard ceiling, single account · R4 HCG-unreachable behaviour · R5 commercial values ·
+R6 abuse velocity state process-local (holds are now durable) · R7 production signature must pass · R8 production apply order.
 
 ## 25. AMBER
 Staging/provider proofs listed in the gate result §5 and the staging plan.
 
 ## 26. Commercial decisions for Andrew
-Gate result §6 (D1–D9, minutes, top-ups, price, reserve scope, sandbox funding, copy, apply order).
+Gate result §6. Decided 2026-10-04: D3 = reject; latching breaker; household kill switch; destination policy; provider containment as a gate.
+Still open: D1 budgets, included minutes, top-ups, prices (£5.99), D4/D5/D6/D9, reserve scope, sandbox funding, automatic-hold threshold and which fraud
+signals hold, whether holds also block essential callers (today yes), international/Crown Dependency trusted contacts (today allowed), destination rate
+table, a paid provider line-type lookup, all customer copy, production apply order, and every LEVEL 4 provider setting.
 
 ## 27. NOT performed
 No deploy; no merge to main; no PR; no migration applied (local PGlite / throwaway embedded PostgreSQL only); no production or staging read/write;
 no Twilio/Stripe/RevenueCat/Supabase/Apple/Google/OpenAI change; no number bought/released; no call placed; no provider contacted; no branch or worktree deleted.
 
 ## 28. Recommended next step
-Andrew decides D3, D1 (staging values), reserve scope and the production apply order; then execute
-`docs/integration/2026-10-03-STAGING_VALIDATION_PLAN.md` on staging.
+Andrew decides D1 (staging values), reserve scope, the automatic-hold policy and the production apply order, and obtains the LEVEL 4
+provider evidence (`2026-10-04-PROVIDER_FINANCIAL_CONTAINMENT.md`); then execute `docs/integration/2026-10-03-STAGING_VALIDATION_PLAN.md` on staging.
 
 ## 29. Resume commands
 ```
 cd /Users/ad/call-ai-launch-fortress && git status && git log --oneline -5
 npm test                                     # every tests/*.test.mjs
 FC_REALPG_MODULES=<dir with embedded-postgres + pg> npm test -- realpg
-FC_DEGRADED_MODE=bounded LAUNCH_GATE_FINANCIAL_ADAPTER=tests/launch-gate/adapters/fortress-pglite.mjs node tests/launch-gate/run.mjs
+LAUNCH_GATE_FINANCIAL_ADAPTER=tests/launch-gate/adapters/fortress-pglite.mjs node tests/launch-gate/run.mjs   # production policy (D3 = reject)
 node tests/launch-gate/migration-inventory.mjs --min 046
 ```
 
