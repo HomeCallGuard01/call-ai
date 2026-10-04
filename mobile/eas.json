@@ -41,6 +41,32 @@
       "ios": {
         "buildConfiguration": "Release"
       }
+    },
+    "staging-android": {
+      "distribution": "internal",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://ferret-augmented-distrust.ngrok-free.dev",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tigwgmayeuisrxjjykqd.supabase.co",
+        "HCG_BUILD_TARGET": "staging"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "staging-ios-testflight": {
+      "distribution": "store",
+      "environment": "preview",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://ferret-augmented-distrust.ngrok-free.dev",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tigwgmayeuisrxjjykqd.supabase.co",
+        "HCG_BUILD_TARGET": "staging"
+      },
+      "ios": {
+        "buildConfiguration": "Release"
+      }
     }
   },
   "submit": {
@@ -51,6 +77,11 @@
       "android": {
         "track": "internal",
         "releaseStatus": "completed"
+      }
+    },
+    "staging-ios-testflight": {
+      "ios": {
+        "ascAppId": "6804235643"
       }
     }
   }
