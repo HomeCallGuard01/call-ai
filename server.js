@@ -27,6 +27,10 @@ const {
 } = require("./database/households");
 const { redeemInvite } = require("./services/complimentaryInvites");
 const { deriveMembershipStatus } = require("./services/membershipStatus");
+const { startOpsEventSchedule } = require("./services/opsEvents/scheduler");
+const { createRpcOpsEventStore } = require("./services/opsEvents/store");
+const { createResendOpsSender } = require("./services/opsEvents/emailSender");
+const { loadLifecycleSnapshots } = require("./database/lifecycleSnapshot");
 const { decidePostLoginRedirect, decideDashboardRouteRedirect } = require("./services/postLoginRouting");
 const { parseUtmParams, parseReferrerHost, recordAcquisitionEvent } = require("./services/acquisitionAnalytics");
 const { renderGoPage } = require("./services/goLanding");
@@ -3293,6 +3297,16 @@ if (process.env.ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE === "true" && numberLifec
 } else {
   console.log(`NUMBER LIFECYCLE SWEEP: schedule disabled (${numberLifecycleJobsDecision.run ? "ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE is not \"true\"" : `environment guard: ${numberLifecycleJobsDecision.reason}`})`);
 }
+
+// Operational events (launch sprint 2026-10-05): new genuine customer (with
+// milestones), customer protected, customer needs attention. OFF unless
+// OPS_EVENTS_SCHEDULE_ENABLED=true (needs migration 072); email is a further
+// switch (OPS_NOTIFY_EMAIL_ENABLED + role addresses). Never on a customer path.
+startOpsEventSchedule({
+  loadSnapshots: () => loadLifecycleSnapshots({ supabase: supabaseAdmin }),
+  store: supabaseAdmin ? createRpcOpsEventStore(supabaseAdmin) : null,
+  sender: createResendOpsSender(),
+});
 
 // Push-failure ingestion (2026-09-29) — OFF unless
 // DELIVERY_PUSH_FAILURE_POLLING=on. Read-only against Twilio Monitor

@@ -19,6 +19,11 @@ const TYPES = Object.freeze({
 const SEVERITY = { new_genuine_customer: 'info', customer_protected: 'info', customer_needs_attention: 'action' };
 const FORBIDDEN_PAYLOAD_KEYS = ['email', 'phone', 'phone_number', 'twilio_number', 'stripe_customer_id', 'external_reference', 'payment_id'];
 const CHANNEL_LABEL = { web_stripe: 'Web (Stripe)', apple: 'Apple App Store', google: 'Google Play' };
+// Launch sprint 2026-10-05 (Andrew: "particularly the first 5/10/25/50/100"):
+// the Nth genuine customer to join. Every one of the first five is a
+// milestone; after that 10, 25, 50, 100.
+const GENUINE_MILESTONES = new Set([1, 2, 3, 4, 5, 10, 25, 50, 100]);
+function isGenuineMilestone(ordinal) { return Number.isInteger(ordinal) && GENUINE_MILESTONES.has(ordinal); }
 
 /** Exactly-once keys. NEEDS_ATTENTION is once per reason per episode. */
 function eventKey(type, householdId, { reason = null, episode = null } = {}) {
@@ -70,8 +75,12 @@ const TITLES = {
 function renderMessage(event) {
   const p = event.payload || {};
   const ref = event.account_number || 'account number pending';
+  const ordinal = Number.isInteger(p.genuineCustomerOrdinal) ? p.genuineCustomerOrdinal : null;
+  const title = event.event_type === TYPES.NEW_GENUINE_CUSTOMER && ordinal
+    ? `${isGenuineMilestone(ordinal) ? 'MILESTONE: ' : ''}genuine customer #${ordinal}`
+    : TITLES[event.event_type] || event.event_type;
   const lines = [
-    `${TITLES[event.event_type] || event.event_type}: ${ref}`,
+    `${title}: ${ref}`,
     p.joinedAt ? `Joined: ${p.joinedAt}` : null,
     p.channelLabel ? `Channel: ${p.channelLabel}` : null,
     p.plan ? `Plan: ${p.plan}` : null,
@@ -82,7 +91,7 @@ function renderMessage(event) {
     p.blockers && p.blockers.length && !p.protected ? `Outstanding: ${p.blockers.join(', ')}` : null,
     'Details: Admin Dashboard → Operations (no customer contact details are included in this message).',
   ].filter(Boolean);
-  return { subject: `[HCG ops] ${TITLES[event.event_type] || event.event_type} — ${ref}`, text: lines.join('\n') };
+  return { subject: `[HCG ops] ${title} — ${ref}`, text: lines.join('\n') };
 }
 
-module.exports = { TYPES, SEVERITY, FORBIDDEN_PAYLOAD_KEYS, eventKey, buildEvent, assertSafe, renderMessage, numberState };
+module.exports = { GENUINE_MILESTONES, isGenuineMilestone, TYPES, SEVERITY, FORBIDDEN_PAYLOAD_KEYS, eventKey, buildEvent, assertSafe, renderMessage, numberState };

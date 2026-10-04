@@ -147,6 +147,13 @@ const RULES = [
   // Lifecycle communications: services/lifecycle/communicationsPlan.js has NO
   // send path and no switch (it plans only) — proven by
   // tests/launch-config-safety.test.mjs rather than an env rule.
+  // ── Operational events / customer notifications (launch sprint 2026-10-05) ──
+  R('ops_email_configured', 'Email/comms', ['OPS_NOTIFY_EMAIL_ENABLED', 'Resend_API_Key', 'OPS_NOTIFY_ROLE_OPERATIONS_EMAIL'], REQ_BOTH,
+    (e) => (e.OPS_NOTIFY_EMAIL_ENABLED === 'true' && !(present(e.Resend_API_Key) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e.OPS_NOTIFY_ROLE_OPERATIONS_EMAIL || '').trim())) ? 'email_enabled_without_provider_or_operations_recipient' : null),
+    'Notification email on without Resend or an operations@ recipient would silently mark every delivery disabled.'),
+  R('ops_events_schedule', 'Email/comms', ['OPS_EVENTS_SCHEDULE_ENABLED'], REC_BOTH,
+    (e) => (e.OPS_EVENTS_SCHEDULE_ENABLED === 'true' ? null : 'off'),
+    'Without the schedule (needs migration 072) no NEW_GENUINE_CUSTOMER / needs-attention events are recorded, so Andrew is not told when a genuine customer joins (services/opsEvents/scheduler.js).'),
   // ── Accounting / Xero (credentials only when posting is on) ───────────
   R('xero_posting_credentials', 'Accounting/Xero', ['ACCOUNTING_XERO_POSTING_ENABLED', 'XERO_CLIENT_ID', 'XERO_CLIENT_SECRET', 'XERO_TENANT_ID'], REQ_BOTH,
     (e) => (e.ACCOUNTING_XERO_POSTING_ENABLED === 'true' && !(present(e.XERO_CLIENT_ID) && present(e.XERO_CLIENT_SECRET) && present(e.XERO_TENANT_ID)) ? 'posting_enabled_without_credentials' : null),
@@ -159,7 +166,7 @@ const RULES = [
 // Documentation-only classification of the remaining settings (no startup
 // check): OPTIONAL tunables and TEST/DEV ONLY switches.
 const OPTIONAL_GROUPS = Object.freeze({
-  'OPTIONAL (tunables with safe defaults)': ['SAFETY_*', 'ABUSE_* (except ABUSE_FINANCIAL_UNAVAILABLE_POLICY)', 'MEDIA_STREAM_*', 'MONITORING_*', 'RAPID_ABUSE_*', 'ALLOWANCE_* (except the rules above)', 'BUSINESS_*', 'LIFECYCLE_MONTHLY_NUMBER_COST_GBP', 'HCG_ECONOMICS_INCLUDE_PLATFORM_FEE', 'PLAN_PRODUCT_MAP', 'ACCOUNTING_CAPTURE_ENABLED (keep false until 071 applied)', 'ACCOUNTING_XERO_ACCOUNT_CODES', 'XERO_SCOPES', 'TWILIO_ADDRESS_SID', 'TWILIO_BUNDLE_SID', 'TWILIO_VOICE_PUSH_CREDENTIAL_SID[_IOS]', 'TWILIO_WEBHOOK_ALLOWED_HOSTS', 'PRODUCTION_APP_HOSTS', 'PRODUCTION_SUPABASE_REF', 'PRODUCTION_TWILIO_ACCOUNT_SID', 'STAGING_SUPABASE_REF', 'NONPRODUCTION_MAX_NUMBERS', 'NUMBER_LIFECYCLE_JOBS', 'ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE (decision D-N1)', 'CALL_DELIVERY_*', 'DELIVERY_PUSH_FAILURE_POLLING', 'FC_TERMINATION_MODE', 'FC_TERMINATION_ANNOUNCEMENT', 'FC_ESSENTIAL_CALLERS', 'HCG_INCIDENT_MODE', 'IOS_COMING_SOON', 'LANDLINE_COMING_SOON', 'APP_STORE_URL', 'PROVIDER_USAGE_ALERT_MAX_AGE_MINUTES', 'PORT', 'RAILWAY_*'],
+  'OPTIONAL (tunables with safe defaults)': ['SAFETY_*', 'ABUSE_* (except ABUSE_FINANCIAL_UNAVAILABLE_POLICY)', 'MEDIA_STREAM_*', 'MONITORING_*', 'RAPID_ABUSE_*', 'ALLOWANCE_* (except the rules above)', 'BUSINESS_*', 'LIFECYCLE_MONTHLY_NUMBER_COST_GBP', 'HCG_ECONOMICS_INCLUDE_PLATFORM_FEE', 'PLAN_PRODUCT_MAP', 'ACCOUNTING_CAPTURE_ENABLED (keep false until 071 applied)', 'ACCOUNTING_XERO_ACCOUNT_CODES', 'XERO_SCOPES', 'TWILIO_ADDRESS_SID', 'TWILIO_BUNDLE_SID', 'TWILIO_VOICE_PUSH_CREDENTIAL_SID[_IOS]', 'TWILIO_WEBHOOK_ALLOWED_HOSTS', 'PRODUCTION_APP_HOSTS', 'PRODUCTION_SUPABASE_REF', 'PRODUCTION_TWILIO_ACCOUNT_SID', 'STAGING_SUPABASE_REF', 'NONPRODUCTION_MAX_NUMBERS', 'NUMBER_LIFECYCLE_JOBS', 'ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE (decision D-N1)', 'CALL_DELIVERY_*', 'DELIVERY_PUSH_FAILURE_POLLING', 'FC_TERMINATION_MODE', 'FC_TERMINATION_ANNOUNCEMENT', 'FC_ESSENTIAL_CALLERS', 'HCG_INCIDENT_MODE', 'IOS_COMING_SOON', 'LANDLINE_COMING_SOON', 'APP_STORE_URL', 'PROVIDER_USAGE_ALERT_MAX_AGE_MINUTES', 'PORT', 'RAILWAY_*', 'OPS_NOTIFY_FROM_EMAIL', 'OPS_NOTIFY_ROLE_FOUNDER_EMAIL', 'OPS_NOTIFY_FOUNDER_EARLY_LAUNCH', 'OPS_NOTIFY_PUSH_ENABLED (no adapter yet)'],
   'TEST/DEV ONLY': ['FC_DEGRADED_MODE=bounded', 'FC_ALLOW_BOUNDED_DEGRADED_MODE=true', 'NUMBER_PROVISIONING_MODE=fake', 'ALLOWANCE_ALLOW_SANDBOX_CREDITS=true (production)', 'TWILIO_WEBHOOK_AUTH_MODE=report', 'PROCESS_ROUTE_ENABLED=true', 'SAFETY_ADMISSION_REQUIRES_SIGNATURE=false', 'FC_REALPG_MODULES (tests)'],
 });
 

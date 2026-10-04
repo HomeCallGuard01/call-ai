@@ -6,22 +6,28 @@ Owner: Andrew (founder). Every genuine customer in the first five is followed en
 
 ## 1. Notification configuration (prepared; production email NOT enabled)
 
-The configuration needs migration 072 plus the event runner scheduled (decision D-OPS1). All values are environment variables; no address is in code.
+Built 2026-10-05 (launch sprint): Resend sender with idempotency (`services/opsEvents/emailSender.js`), milestone numbering (each genuine customer is numbered; **#1–5, 10, 25, 50, 100 are flagged "MILESTONE"**), and a 15-minute schedule (`services/opsEvents/scheduler.js`). All of it is OFF until configured. Tests: `tests/ops-notifications-launch.test.mjs`. The schedule needs **migration 072** in production. All values are environment variables; no address is in code.
 
 ```
-OPS_NOTIFY_EMAIL_ENABLED=true                # only after the sender adapter + mailbox are approved
+OPS_EVENTS_SCHEDULE_ENABLED=true             # scan + deliver every 15 min (dashboard alert even with email off)
+OPS_NOTIFY_EMAIL_ENABLED=true                # only after the operations@ mailbox exists (startup refuses it without Resend + recipient)
 OPS_NOTIFY_ROLE_OPERATIONS_EMAIL=<operations@ mailbox>
-OPS_NOTIFY_FOUNDER_EARLY_LAUNCH=true         # first five (and until Andrew turns it off)
+OPS_NOTIFY_FOUNDER_EARLY_LAUNCH=true         # first cohort: Andrew gets every event too
 OPS_NOTIFY_ROLE_FOUNDER_EMAIL=<Andrew's chosen address — set in Railway, never committed>
+OPS_NOTIFY_FROM_EMAIL=<optional; default alerts@mail.homecallguard.co.uk sender>
 OPS_NOTIFY_PUSH_ENABLED=false                # future admin app
 ```
 
-**Still to build before enabling:**
-1. A sender adapter for the chosen provider (Resend is already used for critical alerts). It takes `{ to, subject, text, idempotencyKey }` and must honour the idempotency key.
-2. A scheduled call of `runOpsEventScan` (every 15 min), then `deliverDueOpsEvents`.
-3. An admin dashboard tile reading `GET /admin/api/ops-events` (unseen count + failed deliveries).
+**Guarantees (tested):**
+- Only canonical genuine paying customers produce `NEW_GENUINE_CUSTOMER`. Reviewer, internal/test, Apple sandbox/TestFlight, unverified store, Stripe test and complimentary accounts never do.
+- Each event is recorded exactly once, and never renumbered on a re-scan.
+- A retry reuses the same `Idempotency-Key`, so a lost response cannot send a second email.
+- After 5 attempts a delivery is marked `failed` (visible in admin).
+- Nothing here is imported by any billing, entitlement, webhook or provisioning path.
 
-**Until all three exist:** Andrew checks `GET /admin/api/ops-events` (after 072) and the lifecycle exception queue `GET /admin/api/lifecycle/exceptions` **twice daily**.
+**Before enabling email:** create the operations@ mailbox, then send **one test** through the staging window (the staging start script currently refuses `OPS_NOTIFY_EMAIL_ENABLED=true`; relax it only for that attended test).
+
+**Until email is on:** Andrew checks `GET /admin/api/ops-events` (after 072) and the lifecycle exception queue `GET /admin/api/lifecycle/exceptions` **twice daily**.
 
 ## 2. Per-signup checklist (one row per customer, kept in the admin "first five" sheet)
 

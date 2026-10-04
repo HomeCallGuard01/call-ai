@@ -11,7 +11,7 @@
 'use strict';
 
 const { detectOpsEvents } = require('./detector');
-const { assertSafe, renderMessage } = require('./events');
+const { assertSafe, renderMessage, TYPES } = require('./events');
 const { plannedDeliveries, recipientFor } = require('./routing');
 
 const MAX_ATTEMPTS = 5;
@@ -32,6 +32,14 @@ async function runOpsEventScan({ loadSnapshots, store, env = process.env, now = 
       const { events } = detectOpsEvents(snap, now);
       for (const e of events) {
         summary.detected += 1;
+        // Launch sprint 2026-10-05: number each NEW genuine customer (1st, 2nd…)
+        // so milestones (first 5, 10, 25, 50, 100) are visible. Counted from
+        // the events already recorded; an already-recorded event is a no-op, so
+        // a re-scan never renumbers. Best-effort: a count failure leaves it unset.
+        if (e.event_type === TYPES.NEW_GENUINE_CUSTOMER && typeof store.countEvents === 'function') {
+          const already = await store.countEvents(TYPES.NEW_GENUINE_CUSTOMER).catch(() => null);
+          if (Number.isInteger(already)) e.payload = { ...e.payload, genuineCustomerOrdinal: already + 1 };
+        }
         const r = await store.recordEvent(assertSafe(e), plannedDeliveries(e, env));
         if (r && r.inserted) summary.recorded += 1; else summary.alreadyRecorded += 1;
       }

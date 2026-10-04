@@ -16,6 +16,11 @@ function createRpcOpsEventStore(supabase) {
     claimDue: ({ now, limit = 20, leaseSeconds = 120 }) => rpc('ops_claim_due_deliveries', { p_now: new Date(now).toISOString(), p_limit: limit, p_lease_seconds: leaseSeconds }),
     complete: ({ id, status, error = null, nextAttemptAt = null }) => rpc('ops_complete_delivery', { p_id: id, p_status: status, p_error: error, p_next_attempt_at: nextAttemptAt }),
     markSeen: ({ eventId, actor }) => rpc('ops_mark_event_seen', { p_event_id: eventId, p_actor: actor }),
+    countEvents: async (eventType) => {
+      const { count, error } = await supabase.from('ops_events').select('id', { count: 'exact', head: true }).eq('event_type', eventType);
+      if (error) throw new Error(`ops_events count: ${error.message || error}`);
+      return count;
+    },
   };
 }
 
@@ -48,6 +53,9 @@ function createMemoryOpsEventStore() {
       if (status === 'sent') d.sent_at = Date.now();
       if (nextAttemptAt) d.next_attempt_at = new Date(nextAttemptAt).getTime();
       return d;
+    },
+    async countEvents(eventType) {
+      return [...events.values()].filter((e) => e.event_type === eventType).length;
     },
     async markSeen({ eventId, actor }) {
       const e = [...events.values()].find((x) => x.id === eventId);
