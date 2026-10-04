@@ -22,15 +22,11 @@ function check(condition, message) {
   else { failures++; console.error(`✗ ${message}`); }
 }
 
-// The exact pre-2026-09-29 route body, reproduced verbatim.
-function legacyResponse(dialCallStatus) {
+// 2026-10-04 (staging finding F-1, Andrew's decision): in production ("off")
+// an undelivered call is ended at once — HCG does not keep paying for the
+// answered leg merely to play an apology. Every DialCallStatus → <Hangup/> only.
+function expectedOffResponse() {
   const twiml = new VoiceResponse();
-  if (dialCallStatus !== 'completed') {
-    twiml.say(
-      { voice: 'Polly.Amy', language: 'en-GB' },
-      "We're sorry, this call cannot be connected right now. Please try again later."
-    );
-  }
   twiml.hangup();
   return twiml.toString();
 }
@@ -38,8 +34,9 @@ function legacyResponse(dialCallStatus) {
 const build = (dialCallStatus, mode) => fallback.buildDeliveryFailedResponse(new VoiceResponse(), { dialCallStatus, mode }).toString();
 
 for (const status of ['completed', 'no-answer', 'busy', 'failed', 'canceled', undefined]) {
-  check(build(status, fallback.MODES.OFF) === legacyResponse(status), `mode off is byte-identical to the legacy response for DialCallStatus=${status}`);
-  check(build(status) === legacyResponse(status), `default mode is off (DialCallStatus=${status})`);
+  check(build(status, fallback.MODES.OFF) === expectedOffResponse(), `mode off: DialCallStatus=${status} → <Hangup/> only`);
+  check(build(status) === expectedOffResponse(), `default mode is off (DialCallStatus=${status})`);
+  check(!build(status).includes('<Say'), `mode off never plays a paid apology (DialCallStatus=${status})`);
 }
 
 // --- production hard guard ---
@@ -56,7 +53,7 @@ check(vm.includes('<Record') && vm.includes(`maxLength="${fallback.VOICEMAIL_MAX
   'prototype: records a bounded message with a completion action');
 check(vm.includes('leave a short message'), 'prototype: caller is told they are being recorded before the tone');
 check(!/<Dial|<Number/.test(vm), 'prototype: never dials a PSTN number (the household mobile would divert straight back — loop)');
-check(build('completed', fallback.MODES.VOICEMAIL_PROTOTYPE) === legacyResponse('completed'), 'prototype: a connected call is untouched');
+check(build('completed', fallback.MODES.VOICEMAIL_PROTOTYPE) === expectedOffResponse(), 'prototype: a connected call is untouched (hang up)');
 check(!build('canceled', fallback.MODES.VOICEMAIL_PROTOTYPE).includes('<Record'), 'prototype: no recording when the caller already hung up');
 check(build('busy', fallback.MODES.VOICEMAIL_PROTOTYPE).includes('<Record'), 'prototype: customer declined/busy → caller may leave a message');
 

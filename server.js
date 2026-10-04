@@ -38,6 +38,7 @@ const {
   resolveForwardingDestination,
   decideCallDeliveryPlan,
   hasVoiceClientRegistrationHistory,
+  isUndeliverableNoRegisteredClient,
   computeProtectionStatus,
   shouldStartPaidMonitoring,
 } = require("./services/callRouting");
@@ -493,10 +494,9 @@ function dialHouseholdOrFailClosed(twiml, household, dialOptions = {}) {
       "An approved call could not be delivered — no reachable Voice SDK client is currently registered for this household",
       { householdId: household && household.id }
     ).catch(() => {});
-    twiml.say(
-      { voice: "Polly.Amy", language: "en-GB" },
-      "We're sorry, this call cannot be connected right now. Please try again later."
-    );
+    // 2026-10-04 (F-1): /voice now rejects this case unbilled before any
+    // paid step, so this branch is defence in depth only. If it is ever
+    // reached, end the call at once — no paid apology.
     twiml.hangup();
     return;
   }
@@ -1202,6 +1202,29 @@ app.post("/voice", twilioSignatureGuard, twilioWebhookIntegrity, async (req, res
     twiml.reject({ reason: "busy" });
     return sendVoiceTwiml(req, res, twiml, { household, correlationId });
   }
+  // UNDELIVERABLE: NO REGISTERED APP (soft-launch integration 2026-10-04,
+  // staging finding F-1 — Andrew: HCG must not consume paid resources merely
+  // to play an apology). The household's receiving app has never registered,
+  // so <Dial><Client> cannot ring anything. Decided here, BEFORE the Fortress
+  // reservation, the "monitored" announcement and the media stream, so the
+  // response is a bare <Reject/> as the first verb: never answered, never
+  // billed. Still recorded (routing decision + delivery_failed
+  // no_registered_endpoint → delivery health, the lifecycle queue and ops
+  // events) and alerted; the customer is never shown as protected in this
+  // state (canonical status: appReachable gate).
+  if (household && isUndeliverableNoRegisteredClient(household, buildVoiceClientIdentity(household.id))) {
+    console.error("CALL DELIVERY: no registered app for household — rejected before any HCG-funded step", household.id);
+    sendCriticalAlert(
+      "self_protecting_no_registered_client",
+      "An approved call could not be delivered — the household's app has not registered (call rejected unbilled)",
+      { householdId: household.id }
+    ).catch(() => {});
+    recordRoutingTelemetry(household, { callSid: req.body.CallSid, monitoring: false, signed: genuineTwilioRequest });
+    callAdmission.end({ callSid: req.body.CallSid, source: "undeliverable_no_registered_app" }).catch(() => {});
+    telephonyAbuse.inboundGuard.release(req.body.CallSid);
+    twiml.reject({ reason: "busy" });
+    return sendVoiceTwiml(req, res, twiml, { household, correlationId });
+  }
   // FINANCIAL CONTAINMENT — reserve before any HCG-funded spend (I1/I2).
   // Refused → <Reject> as the first verb (unbilled). Allowed → the Dial
   // time limit is the call's provider-enforced backstop (I4), and the lease
@@ -1750,8 +1773,8 @@ app.post("/call-delivery-failed", twilioSignatureGuard, twilioWebhookIntegrity, 
   }
 
   // Caller-facing response (2026-09-29): services/callDeliveryFallback.js.
-  // Mode "off" (always, in production) is byte-identical to the previous
-  // inline Say + Hangup — see tests/call-delivery-fallback.test.mjs.
+  // Mode "off" (always, in production): <Hangup/> — no paid apology
+  // (2026-10-04, F-1) — see tests/call-delivery-fallback.test.mjs.
   buildDeliveryFailedResponse(twiml, { dialCallStatus, mode: CALL_DELIVERY_FALLBACK_MODE });
   return sendVoiceTwiml(req, res, twiml);
 });

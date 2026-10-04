@@ -233,7 +233,19 @@ function hasRecentDeliveryProblem(mostRecentDialOutcome, deliveryVerifiedAt) {
   return failedAt > verifiedAt;
 }
 
+// Soft-launch integration 2026-10-04 (staging finding F-1, Andrew's decision):
+// a household whose receiving app has never registered cannot be delivered
+// an approved call. /voice decides this BEFORE any HCG-funded step and
+// rejects the call unbilled — no Fortress reservation, no announcement, no
+// media stream, no paid apology. Pure; same inputs as decideCallDeliveryPlan.
+function isUndeliverableNoRegisteredClient(household, clientIdentity) {
+  if (!household) return false;
+  const voiceClientReachable = hasVoiceClientRegistrationHistory(household.voice_client_registered_at);
+  return decideCallDeliveryPlan(household, clientIdentity, { voiceClientReachable }).mode === "self-protecting-unreachable";
+}
+
 module.exports = {
+  isUndeliverableNoRegisteredClient,
   resolveForwardingDestination,
   decideCallDeliveryPlan,
   hasVoiceClientRegistrationHistory,

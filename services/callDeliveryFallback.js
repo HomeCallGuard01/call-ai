@@ -3,8 +3,9 @@
 // What the caller hears when an approved call could not be delivered to
 // the household's app (the /call-delivery-failed Dial action callback).
 //
-// PRODUCTION BEHAVIOUR IS UNCHANGED. Mode "off" reproduces the existing
-// response exactly: a short apology, then hang up. The only other mode,
+// Mode "off" (always, in production): since 2026-10-04 (F-1) an undelivered
+// call is ended immediately with <Hangup/> — no paid apology (previously a
+// short apology, then hang up). The only other mode,
 // "voicemail_prototype", is a LOCAL/STAGING PROTOTYPE of option E in
 // docs/launch/CALL_DELIVERY_RESILIENCE.md (take a message instead of
 // silently dropping the caller). It is hard-disabled whenever
@@ -57,7 +58,11 @@ function buildDeliveryFailedResponse(twiml, { dialCallStatus, mode = MODES.OFF }
     twiml.hangup();
     return twiml;
   }
-  twiml.say(SAY_OPTIONS, CANNOT_CONNECT);
+  // 2026-10-04 (staging finding F-1, Andrew's decision): the parent call is
+  // already answered (billed) while the Dial runs; HCG does not keep paying
+  // for that leg merely to play an apology. End it immediately. The failed
+  // delivery is recorded and alerted by the route; the customer's canonical
+  // status and the ops events make the state visible and actionable.
   twiml.hangup();
   return twiml;
 }
