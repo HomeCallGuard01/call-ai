@@ -37,8 +37,8 @@ Evidence lives in `docs/launch-gate/evidence/2026-10/` (create it during staging
 | G12 | **Concurrency**: ≥ 5 near-simultaneous calls to `…1883` stay within the household budget (as far as one test number allows) | RED |
 | G13 | **Number-purchase lock** (066): a double provisioning attempt → one claim; the fake purchase is held when the claim is unavailable | RED |
 | G14 | **Sandbox/reviewer cannot buy a real number**: a staging grant with `revenuecat_environment='sandbox'` → provenance refusal; the admin label is not "Paying" | RED |
-| G15 | **Genuine-customer classification**: a Stripe *test-mode* staging purchase is classified correctly (the classifier honours `stripe_livemode=false` where it's recorded) | RED |
-| G16 | **New-customer alert**: one `NEW_GENUINE_CUSTOMER` event for a genuine-classified staging household; a re-run creates none; `GET /admin/api/ops-events` shows it unseen | RED |
+| G15 | **Genuine-customer classification**: a Stripe *test-mode* staging purchase is classified `stripe_test` (not genuine), from the deployment's `sk_test` key since entitlements record no livemode (final UI integration 2026-10-04) | RED |
+| G16 | **New-customer alert**: a staging Stripe test purchase raises **no** `NEW_GENUINE_CUSTOMER` event (it is not genuine). The positive path (one event, none on re-run, shown unseen) is proven locally (`ops-events-commercial-classification`); on staging it needs a store-*production* fixture, which does not exist, so the positive path stays local evidence | RED |
 | G17 | **Customer-needs-attention alert**: a staging household past the window → one event | RED |
 | G18 | **Canonical protection status**: held, quarantined and old-number households show "not protected" on the web and the 1.0.2 app | RED |
 | G19 | **Stripe test payment / cancellation / refund**: subscribe, cancel, refund and delete the account, then `subscription.deleted` is `ignored`/200 | RED |

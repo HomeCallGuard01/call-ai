@@ -668,11 +668,12 @@ export default function Home() {
           </View>
         )}
 
-        {/* 5-step protection checklist (2026-09-27) — supplementary detail,
-            never the primary call to action on this screen. */}
+        {/* Setup steps (1.0.2): the same canonical five-step list as the
+            checklist above — supplementary detail, never the primary call to
+            action on this screen. */}
         <Text style={styles.protectionStatusLinkRow}>
           <Text style={styles.lastConfirmedLink} onPress={() => router.push("/(setup)/protection-status")}>
-            View protection status
+            See setup steps
           </Text>
         </Text>
       </ScrollView>

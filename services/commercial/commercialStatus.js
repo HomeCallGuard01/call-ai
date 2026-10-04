@@ -56,12 +56,32 @@ function storeChannel(source) {
 }
 
 /** Provenance of ONE entitlement row. */
+/**
+ * Stripe mode of THIS deployment, from its configured key. Entitlement rows do
+ * not record livemode, but every Stripe row in a database was written by that
+ * deployment's own webhook (staging DB ← test key; production ← live key), so
+ * a test-key deployment never counts a Stripe purchase as genuine money.
+ * (2026-10-04 final UI integration — "test purchases never genuine".)
+ * @returns {boolean|undefined} undefined when no recognisable key is set.
+ */
+function configuredStripeLivemode(env = process.env) {
+  const key = String((env && env.STRIPE_SECRET_KEY) || '');
+  if (/^(sk|rk)_test_/.test(key)) return false;
+  if (/^(sk|rk)_live_/.test(key)) return true;
+  return undefined;
+}
+
 function entitlementProvenance(ent, { stripeLivemode } = {}) {
   if (!ent) return { kind: 'none', channel: null };
   const type = ent.entitlement_type;
   if (TRIAL_TYPES.has(type)) return { kind: 'trial', channel: ent.source || null };
   if (!PAID_TYPES.has(type)) return { kind: 'complimentary', channel: ent.source || null };
-  if (ent.source === 'stripe') return { kind: stripeLivemode === false || ent.stripe_livemode === false ? 'stripe_test' : 'stripe_live', channel: 'web_stripe' };
+  if (ent.source === 'stripe') {
+    const explicitTest = stripeLivemode === false || ent.stripe_livemode === false;
+    const unrecorded = stripeLivemode === undefined && (ent.stripe_livemode === undefined || ent.stripe_livemode === null);
+    const test = explicitTest || (unrecorded && configuredStripeLivemode() === false);
+    return { kind: test ? 'stripe_test' : 'stripe_live', channel: 'web_stripe' };
+  }
   if (STORE_SOURCES.has(ent.source)) {
     const env = ent.revenuecat_environment;
     const channel = storeChannel(ent.source);
@@ -126,4 +146,4 @@ function hasGenuinePaymentHistory(entitlements, classification = null) {
   return (entitlements || []).some((e) => e && PAID_TYPES.has(e.entitlement_type) && ['stripe_live', 'store_production'].includes(entitlementProvenance(e).kind));
 }
 
-module.exports = { hasGenuinePaymentHistory, STATUS, LABELS, TEST_CLASSIFICATIONS, entitlementProvenance, classifyCommercialStatus, decideNumberPurchaseByProvenance };
+module.exports = { configuredStripeLivemode, hasGenuinePaymentHistory, STATUS, LABELS, TEST_CLASSIFICATIONS, entitlementProvenance, classifyCommercialStatus, decideNumberPurchaseByProvenance };

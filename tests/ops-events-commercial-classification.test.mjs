@@ -185,5 +185,31 @@ for (const [name, input] of CASES.filter(([, , s]) => s !== STATUS.GENUINE_PAYIN
   check(rb, '072 rollback refuses while event history exists');
 }
 
+// ── 2026-10-04 final UI integration: a Stripe TEST-mode deployment never
+// counts a Stripe purchase as genuine (entitlements do not record livemode;
+// the deployment's own key does). Staging runs on sk_test → no genuine
+// customer, no genuine-customer event, no real number purchase.
+{
+  const { configuredStripeLivemode } = require('../services/commercial/commercialStatus');
+  const { hasGenuinePaymentHistory } = require('../services/commercial/commercialStatus');
+  check(configuredStripeLivemode({ STRIPE_SECRET_KEY: 'sk_test_x' }) === false && configuredStripeLivemode({ STRIPE_SECRET_KEY: 'rk_test_x' }) === false, 'Stripe mode: sk_test/rk_test key → test deployment');
+  check(configuredStripeLivemode({ STRIPE_SECRET_KEY: 'sk_live_x' }) === true && configuredStripeLivemode({}) === undefined && configuredStripeLivemode({ STRIPE_SECRET_KEY: 'whatever' }) === undefined, 'Stripe mode: live key → live; no/unknown key → unrecorded (unchanged behaviour)');
+  const saved = process.env.STRIPE_SECRET_KEY;
+  try {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_staging_placeholder';
+    const c = classifyCommercialStatus({ currentEntitlement: ent() });
+    check(c.status === STATUS.STRIPE_TEST && c.genuinePaying === false, `test-key deployment: a Stripe paid entitlement is ${c.status}, never genuine`);
+    check(hasGenuinePaymentHistory([ent()]) === false, 'test-key deployment: Stripe payment history is not genuine history');
+    const fresh = detectOpsEvents(snap({ household: { created_at: iso(2), twilio_provisioning_updated_at: iso(1) } }, ent({ starts_at: iso(1) })), NOW);
+    check(fresh.events.length === 0, 'test-key deployment: a Stripe test purchase raises NO genuine-customer event');
+    check(decideNumberPurchaseByProvenance([ent()]).allowed === false, 'test-key deployment: a Stripe test entitlement cannot buy a real number');
+    check(classifyCommercialStatus({ currentEntitlement: ent(), stripeLivemode: true }).status === STATUS.GENUINE_PAYING, 'an explicitly recorded livemode=true still wins over the deployment default');
+    process.env.STRIPE_SECRET_KEY = 'sk_live_placeholder';
+    check(classifyCommercialStatus({ currentEntitlement: ent() }).genuinePaying === true && classifyCommercialStatus({ currentEntitlement: ent({ stripe_livemode: false }) }).genuinePaying === false, 'live-key deployment: Stripe live is genuine; an explicit livemode=false row still is not');
+  } finally {
+    if (saved === undefined) delete process.env.STRIPE_SECRET_KEY; else process.env.STRIPE_SECRET_KEY = saved;
+  }
+}
+
 console.log(failures === 0 ? '\nCommercial classification + operational events: all checks hold.' : `\n${failures} check(s) FAILED`);
 process.exitCode = failures === 0 ? 0 : 1;

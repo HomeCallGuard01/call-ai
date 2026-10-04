@@ -30,24 +30,24 @@ check(
   /import\s*{\s*fetchDashboard\s*}\s*from\s*"\.\.\/\.\.\/lib\/api"/.test(screenSrc),
   'the screen fetches data via the existing fetchDashboard — no new/competing verification endpoint'
 );
+// --- 1.0.2 (2026-10-04): ONE checklist — the same canonical steps as Home ---
 check(
-  /data\.protection\.steps/.test(screenSrc) && /data\.protection\.guidance/.test(screenSrc),
-  'the screen reads protection.steps/protection.guidance directly from the dashboard response'
+  /buildSetupChecklist\(input\)/.test(screenSrc) && /<ProtectionChecklist steps=\{steps\} \/>/.test(screenSrc) && /buildSetupChecklist\(protectionInput\)/.test(homeSrc),
+  'the screen renders the SAME canonical checklist as Home (buildSetupChecklist over server gates, shared ProtectionChecklist component)'
 );
-
-// --- renders all 5 steps from server data, never hardcodes step content ---
-check(
-  /steps\.map\(/.test(screenSrc),
-  'steps are rendered by mapping the server-supplied array, not a hardcoded local list'
-);
-// Checked against the render body only (past the header comment block),
-// as quoted string literals specifically — not comment prose explaining
-// what the server-supplied labels happen to say.
 {
   const renderBody = screenSrc.slice(screenSrc.indexOf('export default function'));
   check(
-    !/"HCG number active"|"Call forwarding detected"|"Home Call Guard app ready"|"Call delivery confirmed"|"Protection Active"/.test(renderBody),
-    'the screen never hardcodes any step label as a string literal in its render code — all 5 labels come from the server (services/customerProtectionSteps.js), so wording only ever needs to change in one place'
+    !/data\.protection\.steps|data\.protection\.guidance/.test(renderBody),
+    'the screen no longer renders the second, differently-worded server step list (kept in the API only for shipped 1.0.1 builds)'
+  );
+  check(
+    !/"HCG number active"|"Call forwarding detected"|"Home Call Guard app ready"|"Call delivery confirmed"|"Protection Active"|"Membership active"|"Call forwarding on"/.test(renderBody),
+    'the screen never hardcodes any step label — all labels come from lib/protectionView.ts, one place'
+  );
+  check(
+    /isProtected \? "Every step is done\. Your phone is protected\." : verdict\.body/.test(renderBody) && /describeProtection\(input, \{ canPresentCalls: true \}\)/.test(renderBody),
+    'the summary line is the server-only describeProtection wording (same as Home / setup complete), "protected" only when the server says so'
   );
 }
 
@@ -55,12 +55,6 @@ check(
 check(
   !/\bTwilio\b|\bVoice SDK\b|\bwebhook\b|\bcall leg\b|\bmedia.?stream\b/i.test(screenSrc),
   'the screen source contains no internal architecture jargon (Twilio, Voice SDK, webhook, call leg, media stream) — matches "customers should NOT need to understand" the underlying architecture'
-);
-
-// --- the guidance banner is optional/conditional, never a hardcoded permanent message ---
-check(
-  /\{guidance\s*&&/.test(screenSrc),
-  'the guidance banner only renders when guidance is present — silently absent once fully protected, not a leftover message'
 );
 
 // --- types: ProtectionStep/ProtectionGuidance exist and DashboardResponse carries them ---
@@ -86,7 +80,7 @@ check(
   const linkIndex = homeSrc.indexOf('protection-status');
   check(
     linkIndex > lastBranchEnd,
-    'the "View protection status" link sits after every homeProtectionState-conditional block — reachable in every state, not gated behind already being fully protected'
+    'the "See setup steps" link sits after every homeProtectionState-conditional block — reachable in every state, not gated behind already being fully protected'
   );
 }
 
