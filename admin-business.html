@@ -3,36 +3,54 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Home Call Guard — Admin Dashboard</title>
+<title>Home Call Guard — Admin Control Centre</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" href="/hcg-shield.png">
 <style>
+  /* Home Call Guard brand tokens (admin redesign 2026-10-04) — the same
+     palette and typeface as the public website (public/index.html):
+     near-black green background, HCG green #3cf07a, Inter. Operational
+     states use green / amber / red, each with accessible contrast on the
+     dark surface. */
+  :root {
+    --bg: #050a07; --bg-2: #08110c; --card: #0c130f; --card-2: #111c16; --card-hover: #14211a;
+    --border: #1d2b23; --border-strong: #2b4136;
+    --text: #f3f7f4; --text-2: #d2ddd6; --muted: #a3b3aa; --dim: #8a9b91;
+    --green: #3cf07a; --green-deep: #18dd56; --green-soft: #8ff5b0; --green-deep-bg: #0f3b22; --on-green: #04110a;
+    --amber: #f59e0b; --amber-bg: #3a2604; --amber-text: #fcd34d;
+    --red: #ef4444; --red-bg: #3b0d0d; --red-text: #fca5a5;
+    --grey-bg: #1a2420;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: Arial, sans-serif; background: #0b1220; color: white; font-size: 15px; }
-  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 32px; background: #030712; border-bottom: 1px solid #1e293b; }
+  body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 15px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 32px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
   .topbar-title { font-size: 19px; font-weight: 700; }
-  .admin-badge { background: #0e7490; color: #cffafe; font-size: 11px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid #22d3ee; }
+  .admin-badge { background: var(--green-deep-bg); color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--green); }
 
   /* Dashboard Cleanup (2026-09): "Operations dashboard" / "View Customer
      Dashboard" cross-links are gone — this is now the single admin
      destination, so there is nothing to navigate away to and no reason
      to ever send an admin into the consumer /dashboard. */
-  .topbar-action { color: #93a3b8; text-decoration: none; font-size: 13px; padding: 8px 14px; border: 1px solid #1e293b; border-radius: 6px; background: none; cursor: pointer; font-family: inherit; }
-  .topbar-action:hover { color: #e2e8f0; border-color: #334155; }
+  .topbar-action { color: var(--muted); text-decoration: none; font-size: 13px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; font-family: inherit; }
+  .topbar-action:hover { color: var(--text); border-color: var(--border-strong); }
 
   .main { padding: 24px 32px 48px; max-width: 1480px; margin: 0 auto; }
-  h2 { margin: 0; font-size: 16px; color: #e2e8f0; }
-  h3 { margin: 0 0 10px; font-size: 13px; color: #7dd3fc; text-transform: uppercase; letter-spacing: 0.5px; }
+  h2 { margin: 0; font-size: 16px; color: var(--text); }
+  h3 { margin: 0 0 10px; font-size: 13px; color: var(--green-soft); text-transform: uppercase; letter-spacing: 0.5px; }
   .section { margin-bottom: 30px; }
-  .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #1e293b; }
-  .last-updated { font-size: 12px; color: #64748b; }
+  .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .last-updated { font-size: 12px; color: var(--dim); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-  .card { background: #111a2e; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; }
-  .card .label { font-size: 11.5px; color: #93a3b8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
-  .card .value { font-size: 24px; font-weight: 700; color: #e2e8f0; }
-  .card .sub { font-size: 11.5px; color: #64748b; margin-top: 4px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card .label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+  .card .value { font-size: 24px; font-weight: 700; color: var(--text); }
+  .card .sub { font-size: 11.5px; color: var(--dim); margin-top: 4px; }
   .card .est { color: #fbbf24; }
   table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #1e293b; }
-  th { color: #93a3b8; font-weight: 600; font-size: 11.5px; text-transform: uppercase; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
   .badge-GREEN { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
   .badge-AMBER { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
@@ -40,29 +58,29 @@
   .gaps { background: #1c1608; border: 1px solid #78350f; border-radius: 8px; padding: 14px 18px; font-size: 13px; color: #fbbf24; }
   .gaps li { margin-bottom: 4px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  .loading, .error { color: #93a3b8; padding: 40px; text-align: center; }
+  .loading, .error { color: var(--muted); padding: 40px; text-align: center; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; margin-left: 6px; vertical-align: middle; }
   .tag-confirmed { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
   .tag-estimated { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
-  .tag-derived { background: #083344; color: #67e8f9; border: 1px solid #06b6d4; }
-  .headline { background: #0d1526; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px; margin-bottom: 30px; }
+  .tag-derived { background: #083344; color: var(--green); border: 1px solid #06b6d4; }
+  .headline { background: var(--card-2); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 30px; }
   .headline-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 14px; }
-  .headline-item .label { font-size: 11.5px; color: #93a3b8; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
-  .headline-item .value { font-size: 26px; font-weight: 800; color: #e2e8f0; }
+  .headline-item .label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+  .headline-item .value { font-size: 26px; font-weight: 800; color: var(--text); }
   .headline-item .value.incomplete { color: #fbbf24; font-size: 18px; }
 
   /* --- Tab navigation (Dashboard Cleanup, 2026-09) ---
      Strong, unmistakable contrast per the explicit UX requirement: the
-     active tab gets a solid cyan fill (#22d3ee, this dashboard's own
+     active tab gets a solid cyan fill (var(--green), this dashboard's own
      existing accent colour — already used for .admin-badge and every
      action button), not just a border or a text-colour change, so it
      cannot blend into the dark navy background the way the old
      low-contrast .topbar-link nav did. */
-  .tab-nav { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid #1e293b; padding-bottom: 0; }
+  .tab-nav { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
   .tab-button {
-    background: #111a2e;
-    color: #93a3b8;
-    border: 1px solid #1e293b;
+    background: var(--card);
+    color: var(--muted);
+    border: 1px solid var(--border);
     border-bottom: none;
     border-radius: 8px 8px 0 0;
     padding: 11px 20px;
@@ -73,11 +91,11 @@
     position: relative;
     top: 1px;
   }
-  .tab-button:hover { color: #e2e8f0; background: #16243c; }
+  .tab-button:hover { color: var(--text); background: var(--card-hover); }
   .tab-button[aria-current="page"] {
-    background: #22d3ee;
-    color: #04222b;
-    border-color: #22d3ee;
+    background: var(--green);
+    color: var(--on-green);
+    border-color: var(--green);
   }
   .tab-button .tab-flag {
     display: inline-block;
@@ -89,23 +107,23 @@
     background: #450a0a;
     color: #fca5a5;
   }
-  .tab-button[aria-current="page"] .tab-flag { background: #04222b; color: #fecaca; }
+  .tab-button[aria-current="page"] .tab-flag { background: var(--on-green); color: #fecaca; }
   .tab-panel[hidden] { display: none; }
 
   /* --- Ported from the retired admin.html (Operations content) --- */
   .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-  .stat-card { background: #030712; border: 1px solid #1e293b; border-radius: 10px; padding: 18px 20px; }
+  .stat-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
   .stat-number { font-size: 26px; font-weight: 700; color: white; font-variant-numeric: tabular-nums; }
   .stat-number.warn { color: #f59e0b; }
   .stat-number.good { color: #34d399; }
-  .stat-label { margin-top: 6px; font-size: 12.5px; color: #93a3b8; }
-  .empty-state { color: #93a3b8; font-size: 14px; padding: 8px 0; }
+  .stat-label { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+  .empty-state { color: var(--muted); font-size: 14px; padding: 8px 0; }
   .customer-table-wrap { overflow-x: auto; }
   .customer-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  .customer-table th { text-align: left; color: #93a3b8; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 12px; border-bottom: 1px solid #1e293b; white-space: nowrap; }
-  .customer-table td { padding: 10px 12px; border-bottom: 1px solid #1e293b; white-space: nowrap; }
+  .customer-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .customer-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .customer-table tr:last-child td { border-bottom: none; }
-  .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #1e293b; }
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--border); }
   .status-pill.good { background: #14532d; color: #86efac; }
   .status-pill.warn { background: #78350f; color: #fdba74; }
   .status-pill.bad { background: #7f1d1d; color: #fca5a5; }
@@ -113,34 +131,34 @@
   .columns-3-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; align-items: start; }
   .subcards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .subcards > .card { padding: 18px; }
-  .list-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1e293b; }
+  .list-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .list-item:last-child { border-bottom: none; }
   .list-icon { font-size: 17px; width: 24px; text-align: center; flex-shrink: 0; }
   .list-details { flex: 1; min-width: 0; }
   .list-title { font-weight: 600; font-size: 13.5px; }
   .list-title.severity-high { color: #f87171; }
   .list-title.severity-medium { color: #fbbf24; }
-  .list-meta { font-size: 12px; color: #93a3b8; margin-top: 2px; overflow-wrap: anywhere; }
-  .breakdown-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+  .list-meta { font-size: 12px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+  .breakdown-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .breakdown-row:last-child { border-bottom: none; }
   .breakdown-count { font-weight: 700; font-variant-numeric: tabular-nums; }
   .search-form { display: flex; gap: 8px; margin-bottom: 14px; }
-  .search-form input { flex: 1; background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 9px 12px; font-size: 14px; }
-  .search-result { padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 13px; }
+  .search-form input { flex: 1; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; color: white; padding: 9px 12px; font-size: 14px; }
+  .search-result { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .search-result:last-child { border-bottom: none; }
   .search-result-email { font-weight: 600; font-size: 14px; }
-  .search-result-meta { color: #93a3b8; margin-top: 2px; }
+  .search-result-meta { color: var(--muted); margin-top: 2px; }
   .evidence-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .quick-action-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  .quick-action-row input, .quick-action-row select { flex: 1; background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 8px 10px; font-size: 13px; }
-  button.action-button { background: #22d3ee; border: none; padding: 9px 16px; color: #04222b; font-weight: bold; font-size: 13px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-  button.action-button:hover { background: #67e8f9; }
-  .quick-action-result { font-size: 12px; color: #93a3b8; min-height: 16px; }
+  .quick-action-row input, .quick-action-row select { flex: 1; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; color: white; padding: 8px 10px; font-size: 13px; }
+  button.action-button { background: var(--green); border: none; padding: 9px 16px; color: var(--on-green); font-weight: bold; font-size: 13px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  button.action-button:hover { background: var(--green); }
+  .quick-action-result { font-size: 12px; color: var(--muted); min-height: 16px; }
   .readiness-banner { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 8px; margin-bottom: 16px; font-weight: 700; font-size: 14px; }
   .readiness-banner.not_ready { background: #450a0a; color: #fecaca; border: 1px solid #ef4444; }
   .readiness-banner.ready_with_open_items { background: #422006; color: #fde68a; border: 1px solid #f59e0b; }
   .readiness-banner.ready { background: #052e1a; color: #bbf7d0; border: 1px solid #22c55e; }
-  .readiness-item { padding: 12px 0; border-bottom: 1px solid #1e293b; }
+  .readiness-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
   .readiness-item:last-child { border-bottom: none; }
   .readiness-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .readiness-title { font-weight: 600; font-size: 13px; }
@@ -149,7 +167,7 @@
   .readiness-badge.high { background: #431407; color: #fdba74; }
   .readiness-badge.medium { background: #422006; color: #fde68a; }
   .readiness-badge.done { background: #064e3b; color: #6ee7b7; }
-  .readiness-detail { font-size: 12px; color: #93a3b8; margin-top: 6px; line-height: 1.5; }
+  .readiness-detail { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
 
   /* --- Customers tab: onboarding monitor (2026-09) --- */
   .attention-banner { display: block; width: 100%; text-align: left; background: #450a0a; color: #fecaca; border: 1px solid #ef4444; border-radius: 8px; padding: 14px 18px; font-size: 15px; font-family: inherit; cursor: pointer; margin-bottom: 14px; }
@@ -157,124 +175,124 @@
   .attention-banner strong { font-size: 18px; color: #fff; }
   .attention-ok { background: #052e1a; color: #bbf7d0; border: 1px solid #22c55e; border-radius: 8px; padding: 12px 18px; font-size: 14px; margin-bottom: 14px; }
   .filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
-  .filter-chip { background: #111a2e; color: #cbd5e1; border: 1px solid #334155; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-family: inherit; cursor: pointer; }
-  .filter-chip:hover { border-color: #64748b; }
+  .filter-chip { background: var(--card); color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-family: inherit; cursor: pointer; }
+  .filter-chip:hover { border-color: var(--dim); }
   .card.bc-warn { border-color: #f59e0b; }
   .classification-form { display: grid; gap: 8px; max-width: 560px; margin: 8px 0 12px; }
-  .classification-panel { margin-top: 10px; border-top: 1px solid #1e293b; padding-top: 6px; }
+  .classification-panel { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 6px; }
   .release-review { display: grid; gap: 8px; padding: 8px 0; }
-  .filter-sep { width: 1px; align-self: stretch; background: #334155; margin: 0 4px; }
+  .filter-sep { width: 1px; align-self: stretch; background: var(--border-strong); margin: 0 4px; }
   .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .att-body { display: grid; gap: 2px; }
-  .attention-list li { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-radius: 8px; background: #111a2e; border-left: 4px solid #334155; }
+  .attention-list li { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-radius: 8px; background: var(--card); border-left: 4px solid var(--border-strong); }
   .attention-list li.att-red { border-left-color: #ef4444; }
   .attention-list li.att-amber { border-left-color: #f59e0b; }
-  .attention-list a { color: #67e8f9; }
-  .control-group-title { margin: 22px 0 10px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #93a3b8; }
-  .filter-chip[aria-pressed="true"] { background: #22d3ee; color: #04222b; border-color: #22d3ee; font-weight: 700; }
+  .attention-list a { color: var(--green); }
+  .control-group-title { margin: 22px 0 10px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .filter-chip[aria-pressed="true"] { background: var(--green); color: var(--on-green); border-color: var(--green); font-weight: 700; }
   .filter-chip.urgent:not([aria-pressed="true"]) { border-color: #ef4444; color: #fca5a5; }
   .chip-count { font-variant-numeric: tabular-nums; opacity: 0.85; margin-left: 2px; }
-  .scope-toggle { margin-left: auto; font-size: 12.5px; color: #93a3b8; display: flex; align-items: center; gap: 6px; }
+  .scope-toggle { margin-left: auto; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .monitor-table td { vertical-align: top; }
   .monitor-table .cell-customer, .monitor-table .cell-attention { white-space: normal; min-width: 180px; }
   .customer-email { font-weight: 600; overflow-wrap: anywhere; }
-  .customer-sub { font-size: 12px; color: #93a3b8; margin-top: 3px; }
+  .customer-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .customer-row.state-needs_attention td:first-child, .customer-row.state-provisioning_problem td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
-  button.row-button { background: none; border: 1px solid #334155; color: #e2e8f0; border-radius: 6px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
-  button.row-button:hover { border-color: #22d3ee; }
-  .detail-row td { background: #0d1526; white-space: normal; }
+  button.row-button { background: none; border: 1px solid var(--border-strong); color: var(--text); border-radius: 6px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+  button.row-button:hover { border-color: var(--green); }
+  .detail-row td { background: var(--card-2); white-space: normal; }
   .customer-detail { padding: 6px 4px 10px; }
   .detail-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 28px; }
   .detail-state { margin-bottom: 10px; font-size: 13.5px; }
   .timeline { list-style: none; margin: 0 0 10px; padding: 0; }
-  .timeline li { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; align-items: baseline; padding: 7px 8px; border-bottom: 1px solid #1e293b; font-size: 13.5px; border-radius: 4px; }
-  .timeline-at { color: #93a3b8; font-size: 12.5px; text-align: right; }
+  .timeline li { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; align-items: baseline; padding: 7px 8px; border-bottom: 1px solid var(--border); font-size: 13.5px; border-radius: 4px; }
+  .timeline-at { color: var(--muted); font-size: 12.5px; text-align: right; }
   .timeline-done .timeline-icon { color: #34d399; font-weight: 700; }
-  .timeline-pending { color: #64748b; }
+  .timeline-pending { color: var(--dim); }
   .timeline-blocker { background: #450a0a; color: #fecaca; }
   .timeline-blocker .timeline-icon { color: #f87171; font-weight: 700; }
   .timeline-blocker .timeline-at { color: #fca5a5; }
-  .timeline-info { color: #cbd5e1; }
+  .timeline-info { color: var(--text-2); }
   .detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   .tech-details { margin-top: 12px; font-size: 12.5px; }
-  .tech-details summary { cursor: pointer; color: #93a3b8; }
+  .tech-details summary { cursor: pointer; color: var(--muted); }
   .tech-details td { padding: 5px 8px; overflow-wrap: anywhere; white-space: normal; }
-  .tech-details td:first-child { color: #93a3b8; white-space: nowrap; }
+  .tech-details td:first-child { color: var(--muted); white-space: nowrap; }
 
   /* --- Customers tab: admin control centre (2026-09-25) --- */
   .summary-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
-  .summary-card { background: #111a2e; border: 1px solid #1e293b; border-radius: 10px; padding: 16px 18px; cursor: pointer; }
-  .summary-card:hover { border-color: #334155; }
-  .summary-card.selected { outline: 2px solid #22d3ee; outline-offset: -1px; }
-  .summary-value { font-size: 30px; font-weight: 800; color: #e2e8f0; font-variant-numeric: tabular-nums; }
-  .summary-label { font-size: 13px; font-weight: 700; color: #cbd5e1; margin-top: 2px; }
-  .summary-sub { font-size: 12px; color: #93a3b8; margin-top: 4px; }
+  .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; cursor: pointer; }
+  .summary-card:hover { border-color: var(--border-strong); }
+  .summary-card.selected { outline: 2px solid var(--green); outline-offset: -1px; }
+  .summary-value { font-size: 30px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+  .summary-label { font-size: 13px; font-weight: 700; color: var(--text-2); margin-top: 2px; }
+  .summary-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .summary-card.good .summary-value { color: #34d399; }
   .summary-card.bad { border-color: #ef4444; background: #2a0d0d; }
   .summary-card.bad .summary-value { color: #f87171; }
   .summary-card.warn .summary-value { color: #fbbf24; }
-  .customer-search { margin-left: auto; min-width: 220px; background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 7px 10px; font-size: 13px; }
+  .customer-search { margin-left: auto; min-width: 220px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; color: white; padding: 7px 10px; font-size: 13px; }
   .monitor-table .cell-health, .monitor-table .cell-wrap { white-space: normal; min-width: 130px; max-width: 220px; }
   .customer-row.health-needs_attention td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
   .customer-row.health-setup_incomplete td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
-  .text-muted { color: #64748b; }
+  .text-muted { color: var(--dim); }
   .text-bad { color: #f87171 !important; }
   .text-warn { color: #fbbf24 !important; }
   .recent-calls, .fact-table { width: 100%; font-size: 12.5px; }
   .recent-calls th, .recent-calls td, .fact-table td { padding: 5px 8px; white-space: normal; }
-  .fact-table td:first-child { color: #93a3b8; white-space: nowrap; width: 110px; }
+  .fact-table td:first-child { color: var(--muted); white-space: nowrap; width: 110px; }
 
   /* --- Business control tabs (2026-09-27) --- */
   .prov-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
   .prov-actual { background: #064e3b; color: #6ee7b7; border: 1px solid #10b981; }
-  .prov-allocated { background: #083344; color: #67e8f9; border: 1px solid #06b6d4; }
+  .prov-allocated { background: #083344; color: var(--green); border: 1px solid #06b6d4; }
   .prov-estimated { background: #451a03; color: #fbbf24; border: 1px solid #f59e0b; }
   .prov-manual { background: #1e1b4b; color: #c7d2fe; border: 1px solid #6366f1; }
   .prov-mixed { background: #3b0764; color: #e9d5ff; border: 1px solid #a855f7; }
-  .prov-none { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
-  .card.bc-primary { border-color: #22d3ee; }
+  .prov-none { background: var(--border); color: #94a3b8; border: 1px solid var(--border-strong); }
+  .card.bc-primary { border-color: var(--green); }
   .pnl-table td, .pnl-table th { vertical-align: top; }
   .pnl-table .num, table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .pnl-section td { color: #7dd3fc; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; padding-top: 16px; }
+  .pnl-section td { color: var(--green-soft); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; padding-top: 16px; }
   .cell-chain { white-space: normal; min-width: 280px; }
-  .chain-dot { display: inline-block; font-size: 10.5px; padding: 1px 6px; margin: 1px 2px; border-radius: 4px; border: 1px solid #334155; }
+  .chain-dot { display: inline-block; font-size: 10.5px; padding: 1px 6px; margin: 1px 2px; border-radius: 4px; border: 1px solid var(--border-strong); }
   .chain-good { background: #064e3b; color: #6ee7b7; border-color: #10b981; }
   .chain-bad { background: #450a0a; color: #fca5a5; border-color: #ef4444; }
-  .chain-off { color: #64748b; }
-  .chain-neutral { background: #1e293b; color: #cbd5e1; }
+  .chain-off { color: var(--dim); }
+  .chain-neutral { background: var(--border); color: var(--text-2); }
   .manual-cost-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .manual-cost-form input, .manual-cost-form select { background: #0b1220; border: 1px solid #334155; border-radius: 6px; color: white; padding: 7px 9px; font-size: 13px; }
+  .manual-cost-form input, .manual-cost-form select { background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; color: white; padding: 7px 9px; font-size: 13px; }
   .manual-cost-form input:disabled, .manual-cost-form select:disabled, .manual-cost-form button:disabled { opacity: 0.45; cursor: not-allowed; }
-  .link-output { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 13px; background: #030712; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 12px; overflow-wrap: anywhere; }
+  .link-output { margin-top: 10px; font-family: ui-monospace, monospace; font-size: 13px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-wrap: anywhere; }
 
   /* --- Control centre v2 (2026-09-27) --- */
   .control-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-  .control-card { background: #111a2e; border: 1px solid #1e293b; border-left-width: 5px; border-radius: 10px; padding: 14px 16px; }
+  .control-card { background: var(--card); border: 1px solid var(--border); border-left-width: 5px; border-radius: 10px; padding: 14px 16px; }
   .control-card.st-red { border-left-color: #ef4444; }
   .control-card.st-amber { border-left-color: #f59e0b; }
   .control-card.st-green { border-left-color: #10b981; }
-  .control-card.st-grey { border-left-color: #475569; }
-  .control-card.st-info { border-left-color: #334155; }
+  .control-card.st-grey { border-left-color: var(--border-strong); }
+  .control-card.st-info { border-left-color: var(--border-strong); }
   /* --- Usage & cost safety (2026-10-01) --- */
   .usage-series td.bar-cell { width: 40%; }
-  .usage-bar { display: inline-block; height: 10px; background: #0ea5e9; border-radius: 3px; min-width: 1px; vertical-align: middle; }
+  .usage-bar { display: inline-block; height: 10px; background: var(--green-deep); border-radius: 3px; min-width: 1px; vertical-align: middle; }
   .control-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-  .control-label { font-size: 12.5px; font-weight: 700; color: #cbd5e1; }
-  .control-value { font-size: 26px; font-weight: 800; color: #e2e8f0; margin: 6px 0 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .control-rule { font-size: 11px; color: #64748b; margin-top: 6px; }
+  .control-label { font-size: 12.5px; font-weight: 700; color: var(--text-2); }
+  .control-value { font-size: 26px; font-weight: 800; color: var(--text); margin: 6px 0 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .control-rule { font-size: 11px; color: var(--dim); margin-top: 6px; }
   .st-badge { font-size: 10.5px; font-weight: 800; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
   .st-badge.st-red { background: #450a0a; color: #fca5a5; }
   .st-badge.st-amber { background: #451a03; color: #fbbf24; }
   .st-badge.st-green { background: #064e3b; color: #6ee7b7; }
-  .st-badge.st-grey { background: #1e293b; color: #94a3b8; }
-  .st-badge.st-info { background: #1e293b; color: #cbd5e1; }
+  .st-badge.st-grey { background: var(--border); color: #94a3b8; }
+  .st-badge.st-info { background: var(--border); color: var(--text-2); }
   .card-items { margin-top: 8px; font-size: 12px; }
-  .card-items summary { cursor: pointer; color: #93a3b8; }
+  .card-items summary { cursor: pointer; color: var(--muted); }
   .card-items ul { margin: 6px 0 0; padding-left: 18px; }
   .lc-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
-  .lc-step { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid #334155; }
+  .lc-step { display: inline-block; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-strong); }
   .lc-step small { color: inherit; opacity: 0.75; }
-  .lc-arrow { color: #475569; font-size: 10px; }
+  .lc-arrow { color: var(--border-strong); font-size: 10px; }
   .lc-first-broken { outline: 2px solid #ef4444; }
   tr.inv-red td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
   tr.inv-amber td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
@@ -291,21 +309,201 @@
     .stat-grid, .subcards { grid-template-columns: 1fr 1fr; }
     .tab-nav { flex-wrap: wrap; }
   }
+  /* ===== Admin Control Centre redesign (2026-10-04) — HCG shell ===== */
+  .topbar { padding: 14px 32px; background: var(--bg-2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); }
+  .brand img { display: block; }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+  .brand-name { font-size: 15px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+  .brand-sub { font-size: 13px; font-weight: 600; color: var(--green); }
+  .topbar-right { display: flex; gap: 10px; align-items: center; }
+  .topbar-updated { font-size: 12px; color: var(--dim); }
+  .admin-badge { background: var(--green-deep-bg); color: var(--green); border-color: var(--green-deep); }
+  .tab-nav { position: relative; }
+  .tab-button { font-size: 14.5px; }
+  .tab-button .tab-flag { background: var(--red); color: #fff; }
+  .tab-button[aria-current="page"] .tab-flag { background: var(--red); color: #fff; }
+  h3 { color: var(--green-soft); }
+  .sub { color: var(--muted); font-size: 13px; }
+  .section-title { font-size: 13px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+  .cc-section { margin-bottom: 30px; }
+  .cc-section > .section-header h2 { font-size: 17px; }
+
+  /* Headline KPIs */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; position: relative; overflow: hidden; }
+  .kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--border-strong); }
+  .kpi.tone-good::before { background: var(--green); }
+  .kpi.tone-warn::before { background: var(--amber); }
+  .kpi.tone-bad::before { background: var(--red); }
+  .kpi-label { font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .kpi-value { font-size: 40px; font-weight: 800; letter-spacing: -.02em; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+  .kpi-value small { font-size: 18px; font-weight: 700; color: var(--muted); letter-spacing: 0; }
+  .kpi.tone-good .kpi-value { color: var(--green); }
+  .kpi.tone-bad .kpi-value { color: var(--red-text); }
+  .kpi.tone-warn .kpi-value { color: var(--amber-text); }
+  .kpi-sub { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  button.kpi { text-align: left; font: inherit; color: inherit; cursor: pointer; width: 100%; }
+  button.kpi:hover { border-color: var(--border-strong); background: var(--card-hover); }
+
+  /* HCG status */
+  .status-list { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 26px; }
+  .status-item { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .status-item.s-critical { border-color: var(--red); background: var(--red-bg); }
+  .status-item.s-attention { border-color: #6b4a0c; }
+  .status-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .status-name { font-weight: 700; font-size: 14px; }
+  .status-text { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+  .state-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .state-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .state-healthy { background: var(--green-deep-bg); color: var(--green); }
+  .state-attention { background: var(--amber-bg); color: var(--amber-text); }
+  .state-critical { background: #5b1010; color: #fecaca; }
+  .state-unknown { background: var(--grey-bg); color: var(--muted); }
+
+  /* Highlights (new genuine customer / protected / needs attention) */
+  .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .highlight { display: flex; gap: 12px; align-items: flex-start; border-radius: 14px; padding: 14px 16px; border: 1px solid var(--border); background: var(--card); }
+  .highlight .hl-icon { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 900; font-size: 17px; }
+  .highlight.hl-new { border-color: var(--green-deep); background: linear-gradient(135deg, #0f2a1a, var(--card)); }
+  .highlight.hl-new .hl-icon, .highlight.hl-protected .hl-icon { background: var(--green); color: var(--on-green); }
+  .highlight.hl-protected { border-color: #1f5a35; }
+  .highlight.hl-attention { border-color: var(--red); background: linear-gradient(135deg, #3b0d0d, var(--card)); }
+  .highlight.hl-attention .hl-icon { background: var(--red); color: #fff; }
+  .hl-kind { font-size: 11.5px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+  .hl-new .hl-kind, .hl-protected .hl-kind { color: var(--green); }
+  .hl-attention .hl-kind { color: var(--red-text); }
+  .hl-title { font-weight: 700; margin-top: 3px; }
+  .hl-meta { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+
+  /* Attention (canonical) */
+  .att2 { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .att2 li { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: start; background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--border-strong); border-radius: 10px; padding: 12px 14px; }
+  .att2 li.sev-critical { border-left-color: var(--red); }
+  .att2 li.sev-action { border-left-color: var(--amber); }
+  .att2 li.sev-watch { border-left-color: var(--border-strong); }
+  .att2-title { font-weight: 700; }
+  .att2-who { font-size: 13px; color: var(--text-2); margin-top: 3px; }
+  .att2-next { font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+  .att-group-title { font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; }
+  .acct { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; font-weight: 700; color: var(--green-soft); white-space: nowrap; }
+  .acct.pending { color: var(--dim); font-family: inherit; font-weight: 500; }
+  .seg { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+  .seg-genuine_paying { background: var(--green-deep-bg); color: var(--green); border-color: #1f5a35; }
+  .seg-complimentary, .seg-trial { background: #13233a; color: #9cc5ff; }
+  .seg-internal_test, .seg-reviewer { background: #24183d; color: #d3c0ff; }
+  .seg-sandbox, .seg-payment_unverified { background: var(--amber-bg); color: var(--amber-text); }
+  .seg-former_customer, .seg-no_membership, .seg-deleted { background: var(--grey-bg); color: var(--muted); }
+  a.link, button.link { color: var(--green); background: none; border: none; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  button.open-btn { background: var(--card-2); border: 1px solid var(--border-strong); color: var(--text); border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  button.open-btn:hover { border-color: var(--green); }
+
+  /* Activity */
+  .activity { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+  .activity li { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13.5px; align-items: baseline; }
+  .activity li:last-child { border-bottom: none; }
+  .activity .when { color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .activity li.muted .what { color: var(--muted); }
+  .activity li.celebrate .what strong { color: var(--green); letter-spacing: .04em; }
+
+  /* Customers table */
+  .cc-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .cc-table th { text-align: left; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .cc-table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .cc-table tr.cc-row { cursor: pointer; }
+  .cc-table tr.cc-row:hover td { background: var(--card-hover); }
+  .cc-table tr.cc-row.att-critical td:first-child { box-shadow: inset 4px 0 0 var(--red); }
+  .cc-table tr.cc-row.att-action td:first-child { box-shadow: inset 4px 0 0 var(--amber); }
+  .cc-table tr.cc-row.nongenuine td { color: var(--muted); }
+  .cc-table tr.open td { background: var(--card-2); }
+  .prot { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+  .prot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .prot.tone-good { color: var(--green); } .prot.tone-good::before { background: var(--green); }
+  .prot.tone-setup { color: var(--amber-text); } .prot.tone-setup::before { background: var(--amber); }
+  .prot.tone-bad { color: var(--red-text); } .prot.tone-bad::before { background: var(--red); }
+  .prot.tone-muted { color: var(--muted); }
+  .dots { display: inline-flex; gap: 4px; vertical-align: middle; margin-right: 6px; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--border-strong); display: inline-block; }
+  .dots i.on { background: var(--green); }
+  .att-text { font-size: 12.5px; font-weight: 600; }
+  .att-text.critical { color: var(--red-text); } .att-text.action { color: var(--amber-text); } .att-text.watch { color: var(--muted); }
+
+  /* Customer journey */
+  .journey { list-style: none; display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; margin: 6px 0 18px; padding: 0; counter-reset: step; }
+  .journey li { position: relative; padding: 30px 8px 0; text-align: center; font-size: 12.5px; }
+  .journey li::before { content: ""; position: absolute; top: 10px; left: 0; right: 0; height: 3px; background: var(--border-strong); }
+  .journey li:first-child::before { left: 50%; } .journey li:last-child::before { right: 50%; }
+  .journey li.done::before { background: var(--green-deep); }
+  .journey .node { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); width: 19px; height: 19px; border-radius: 50%; background: var(--card); border: 3px solid var(--border-strong); display: grid; place-items: center; font-size: 10px; font-weight: 900; }
+  .journey li.done .node { background: var(--green); border-color: var(--green); color: var(--on-green); }
+  .journey li.blocker .node { border-color: var(--red); background: var(--red-bg); }
+  .journey .j-label { font-weight: 700; }
+  .journey li.blocker .j-label { color: var(--red-text); }
+  .journey .j-at { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+  .detail-grid2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 24px; }
+  .facts { width: 100%; font-size: 13px; }
+  .facts td { padding: 5px 0; border: none; vertical-align: top; }
+  .facts td:first-child { color: var(--muted); width: 150px; }
+  .diag-title { margin: 22px 0 10px; padding-top: 14px; border-top: 1px dashed var(--border-strong); font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  details.secondary-section { margin-top: 18px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+  details.secondary-section > summary { cursor: pointer; font-weight: 700; color: var(--text-2); }
+  details.secondary-section[open] > summary { margin-bottom: 14px; }
+  .notice { border-radius: 10px; padding: 12px 16px; font-size: 13.5px; margin-bottom: 16px; border: 1px solid var(--border-strong); background: var(--card); }
+  .notice.price { border-color: var(--green-deep); background: #0b1d12; }
+  .notice.warn { border-color: #6b4a0c; background: var(--amber-bg); color: var(--amber-text); }
+  .mini-table { width: 100%; font-size: 13px; }
+  .mini-table td, .mini-table th { padding: 8px 10px; }
+  .reserved { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; background: #13233a; color: #9cc5ff; font-size: 11.5px; font-weight: 700; }
+
+  @media (max-width: 1100px) {
+    .status-list { grid-template-columns: repeat(2, 1fr); }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .detail-grid2 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .topbar { padding: 10px 16px; }
+    .brand img { width: 32px; height: 32px; }
+    .brand-name { font-size: 12.5px; }
+    .brand-sub { font-size: 12px; }
+    .topbar-updated, .admin-badge { display: none; }
+    .topbar-action { padding: 7px 10px; }
+    .main { padding: 14px 16px 40px; }
+    .tab-nav { flex-wrap: nowrap; overflow-x: auto; gap: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tab-button { padding: 10px 13px; font-size: 13.5px; flex: none; }
+    .kpis { gap: 10px; }
+    .kpi { padding: 14px; }
+    .kpi-value { font-size: 30px; }
+    .kpi-label { font-size: 10.5px; }
+    .kpi-sub { font-size: 12px; }
+    .status-list { grid-template-columns: 1fr; gap: 8px; }
+    .status-item { padding: 12px 14px; }
+    .att2 li { grid-template-columns: 1fr; gap: 6px; }
+    .cc-table .hide-sm { display: none; }
+    .journey { grid-template-columns: 1fr; }
+    .journey li { text-align: left; padding: 4px 0 10px 30px; }
+    .journey li::before { top: 0; bottom: 0; left: 9px; right: auto; width: 3px; height: auto; }
+    .journey li:first-child::before { left: 9px; top: 10px; } .journey li:last-child::before { right: auto; bottom: auto; height: 10px; }
+    .journey .node { left: 10px; top: 4px; }
+    .activity li { grid-template-columns: 1fr; gap: 2px; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<div class="topbar">
-  <div style="display:flex;align-items:center;gap:10px;">
-    <span class="topbar-title">Home Call Guard</span>
+<header class="topbar">
+  <a class="brand" href="#overview" onclick="switchTab('overview');return false;" aria-label="Home Call Guard Admin Control Centre — Overview">
+    <img src="/hcg-shield.png" alt="" width="38" height="38">
+    <span class="brand-text"><span class="brand-name">Home Call Guard</span><span class="brand-sub">Admin Control Centre</span></span>
+  </a>
+  <div class="topbar-right">
     <span class="admin-badge">Admin</span>
-  </div>
-  <div style="display:flex;gap:10px;align-items:center;">
+    <span class="topbar-updated" id="ccUpdated"></span>
     <button type="button" class="topbar-action" onclick="loadAll();">Refresh</button>
     <form action="/logout" method="POST" style="margin:0;">
       <button type="submit" class="topbar-action">Log out</button>
     </form>
   </div>
-</div>
+</header>
 
 <div class="main">
   <nav class="tab-nav" id="tabNav" role="tablist" aria-label="Admin dashboard sections">
@@ -316,16 +514,16 @@
     <button type="button" class="tab-button" id="tabBtn-operations" role="tab" onclick="switchTab('operations')">Operations</button>
   </nav>
 
-  <!-- Five tabs (2026-09-28 consolidation). Each panel holds one or more
-       sections; each section is rendered by one function from one
-       existing endpoint. The old Business / Subscriptions /
-       Reconciliation / Finance / Marketing / System Health tabs are
-       sections now — no endpoint changed. -->
-  <div id="overview" class="tab-panel" role="tabpanel"><div id="attention"></div><div id="overviewBody"><div class="loading">Loading…</div></div></div>
-  <div id="customers" class="tab-panel" role="tabpanel" hidden><div id="customerHealth"><div class="loading">Loading…</div></div><div id="subscriptions"></div></div>
-  <div id="numbers" class="tab-panel" role="tabpanel" hidden><div id="reconciliation"><div class="loading">Loading…</div></div></div>
-  <div id="money" class="tab-panel" role="tabpanel" hidden><div id="finance"><div class="loading">Loading…</div></div><div id="marketing"></div><div id="acquisition"></div></div>
-  <div id="operations" class="tab-panel" role="tabpanel" hidden><div id="usageSafety"></div><div id="callActivity"><div class="loading">Loading…</div></div><div id="systemhealth"></div><div id="opsTools"><div class="loading">Loading…</div></div></div>
+  <!-- Five tabs. Admin redesign (2026-10-04): Overview answers the
+       founder's questions only (customers, protection, attention, service
+       status, money, today) from the canonical summary; the detailed
+       v2 "Checks" grid moved to Operations; every existing section and
+       endpoint is kept. -->
+  <div id="overview" class="tab-panel" role="tabpanel"><div id="ccHighlights"></div><div id="ccHeadline"><div class="loading">Loading…</div></div><div id="ccStatus"></div><div id="attention"></div><div id="ccActivity"></div></div>
+  <div id="customers" class="tab-panel" role="tabpanel" hidden><div id="customerHealth"><div class="loading">Loading…</div></div><details class="secondary-section"><summary>Membership &amp; payment history — detailed counts</summary><div id="subscriptions"></div></details></div>
+  <div id="numbers" class="tab-panel" role="tabpanel" hidden><div id="ccNumbers"></div><div id="reconciliation"><div class="loading">Loading…</div></div></div>
+  <div id="money" class="tab-panel" role="tabpanel" hidden><div id="ccMoney"><div class="loading">Loading…</div></div><div id="finance"><div class="loading">Loading…</div></div><div id="marketing"></div><div id="acquisition"></div></div>
+  <div id="operations" class="tab-panel" role="tabpanel" hidden><div id="ccOpsStatus"></div><div id="usageSafety"></div><div id="callActivity"><div class="loading">Loading…</div></div><div id="systemhealth"></div><div id="overviewBody"></div><div id="opsTools"><div class="loading">Loading…</div></div></div>
 </div>
 
 <script>
@@ -460,7 +658,10 @@ function switchTab(name) {
       btn.removeAttribute('aria-current');
     }
   }
-  window.location.hash = name;
+  // Update the address without the browser jumping to the panel (the
+  // panel ids equal the tab names, and the header is sticky).
+  if (window.history && history.replaceState) history.replaceState(null, '', '#' + name); else window.location.hash = name;
+  if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
   if (typeof loadBusinessControlTab === 'function') for (const section of TAB_SECTIONS[name] || []) loadBusinessControlTab(section);
 }
 
@@ -486,7 +687,7 @@ let lastOperationsData = null;
 // never hides a row.
 
 async function loadAll() {
-  await Promise.all([loadBusinessOverview(), loadOperationsOverview(), loadCustomerMonitor()]);
+  await Promise.all([loadBusinessOverview(), loadOperationsOverview(), loadCustomerMonitor(), typeof loadControlCentre === 'function' ? loadControlCentre() : null]);
 }
 
 async function loadBusinessOverview() {
@@ -507,6 +708,7 @@ async function loadBusinessOverview() {
     renderSystemHealthTab(d);
     renderAcquisitionSection(d);
     renderAttentionStrip();
+    if (typeof renderOverviewSections === 'function') { renderOverviewSections(); renderOpsStatus(); }
   } catch (err) {
     showTabError('callActivity', 'Failed to load: ' + escapeHtml(err.message));
   }
@@ -559,9 +761,9 @@ function renderCallActivitySection(d) {
   for (const h of d.fairUse.households) {
     html += renderFairUseRowHtml(h);
   }
-  if (d.fairUse.households.length === 0) html += '<tr><td colspan="3" style="color:#64748b;">No Unknown-caller calls recorded this month.</td></tr>';
+  if (d.fairUse.households.length === 0) html += '<tr><td colspan="3" style="color:var(--dim);">No Unknown-caller calls recorded this month.</td></tr>';
   if (d.fairUse.truncated) html += '<tr><td colspan="3" class="text-warn">Too many calls to load in full — counts below are incomplete.</td></tr>';
-  html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div>';
+  html += '</table><div class="sub" style="margin-top:8px;color:var(--dim);">Warning threshold: ' + d.fairUse.thresholds.warningCallsPerMonth + ' calls/month. Hard threshold: ' + d.fairUse.thresholds.hardCallsPerMonth + ' calls/month. Visibility only — nothing is automatically restricted.</div>';
 
   html += '<h3 style="margin-top:18px;">Production release</h3><div class="cards">';
   html += card('Backend commit', escapeHtml(d.release.backend.gitCommitSha || 'UNCONFIRMED'), escapeHtml(d.release.backend.note || ''));
@@ -623,7 +825,7 @@ function acquisitionGenuineFunnelTable(snapshot) {
   let html = '<table><tr><th>Stage</th><th>Count (real customers only)</th></tr>';
   html += '<tr><td>Checkouts started</td><td>' + fmtNum(g.checkoutsStarted) + '</td></tr>';
   html += '<tr><td>Paid conversions ' + tag('confirmed') + '</td><td>' + fmtNum(g.paidConversions) + '</td></tr>';
-  html += '</table><div class="sub" style="margin-top:8px;color:#64748b;">Landing visits/registrations cannot be classified — no household exists yet at those stages, so they never appear in this real-customer funnel.</div>';
+  html += '</table><div class="sub" style="margin-top:8px;color:var(--dim);">Landing visits/registrations cannot be classified — no household exists yet at those stages, so they never appear in this real-customer funnel.</div>';
   return html;
 }
 
@@ -651,7 +853,7 @@ function acquisitionSection(acquisition) {
   // "Top sources" table removed (2026-09-28): it duplicated Marketing's
   // campaign/source table and rendered the visitor-supplied utm_source
   // into innerHTML unescaped.
-  html += '<div class="sub" style="margin-top:12px;color:#64748b;">Landing/registration counts are raw page-request counts, not unique visitors — no cookie or session is used to deduplicate. Unclassified accounts are never counted as genuine customers. Channel and campaign detail is in Marketing above.</div>';
+  html += '<div class="sub" style="margin-top:12px;color:var(--dim);">Landing/registration counts are raw page-request counts, not unique visitors — no cookie or session is used to deduplicate. Unclassified accounts are never counted as genuine customers. Channel and campaign detail is in Marketing above.</div>';
   html += '</div>';
   return html;
 }
@@ -675,8 +877,6 @@ function acquisitionSection(acquisition) {
 // are not customers and are left out, with a count.
 // ============================================================
 let customerMonitorData = null;
-let customerFilter = 'active';
-let customerAudience = 'all';
 let customerSearch = '';
 let openCustomerDetailId = null;
 
@@ -864,16 +1064,6 @@ async function loadCustomerMonitor() {
   }
 }
 
-function setCustomerFilter(filter) {
-  customerFilter = CUSTOMER_FILTERS.includes(filter) ? filter : 'active';
-  renderCustomersTab();
-}
-
-function setCustomerAudience(audience) {
-  customerAudience = AUDIENCE_FILTERS.includes(audience) ? audience : 'all';
-  renderCustomersTab();
-}
-
 function setCustomerSearch(value) {
   customerSearch = value;
   renderCustomersTab();
@@ -881,96 +1071,76 @@ function setCustomerSearch(value) {
   if (input) { input.focus(); input.setSelectionRange(value.length, value.length); }
 }
 
-function updateCustomersTabFlag(counts) {
+function setSegmentFilter(key) {
+  ccSegmentFilter = key;
+  renderCustomersTab();
+}
+
+function updateCustomersTabFlag(count) {
   const btn = document.getElementById('tabBtn-customers');
-  btn.innerHTML = 'Customers' + (counts.needs_attention > 0 ? '<span class="tab-flag">' + counts.needs_attention + '</span>' : '');
+  btn.innerHTML = 'Customers' + (count > 0 ? '<span class="tab-flag">' + count + '</span>' : '');
 }
 
-function summaryCard(label, value, sub, className, filter) {
-  const clickable = filter ? ' role="button" tabindex="0" onclick="setCustomerFilter(\'' + filter + '\')"' : '';
-  return '<div class="summary-card ' + (className || '') + (filter && customerFilter === filter ? ' selected' : '') + '"' + clickable + '>' +
-    '<div class="summary-value">' + value + '</div><div class="summary-label">' + label + '</div>' +
-    (sub ? '<div class="summary-sub">' + sub + '</div>' : '') + '</div>';
-}
-
-function customerMonitorRow(row, nowMs) {
-  const health = HEALTH_LABELS[row.health] || { label: row.health, className: '' };
-  const account = describeAccountCell(row);
-  const call = describeLatestCallCell(row, nowMs);
-  const isOpen = openCustomerDetailId === row.householdId;
-  let html = '<tr class="customer-row health-' + escapeHtml(row.health) + '">' +
-    '<td class="cell-customer"><div class="customer-email">' + escapeHtml(row.email) + '</div><div class="customer-sub">Joined ' + escapeHtml(fmtDateTime(row.signedUpAt)) + '</div></td>' +
-    '<td><div>' + escapeHtml(account.label) + describeAudienceBadges(row).map((b) => ' <span class="status-pill ' + b.className + '">' + escapeHtml(b.label) + '</span>').join('') + '</div>' +
-      (account.sub ? '<div class="customer-sub' + (row.subscriptionIssue ? ' text-warn' : '') + '">' + escapeHtml(account.sub) + '</div>' : '') + '</td>' +
-    '<td class="cell-health"><span class="status-pill ' + health.className + '">' + escapeHtml(health.label) + '</span>' +
-      (row.health !== 'healthy' ? '<div class="customer-sub">' + escapeHtml(row.healthReason) + '</div>' : '') + '</td>' +
-    '<td class="cell-wrap">' + escapeHtml(row.health === 'inactive' ? '—' : row.setupLabel) + '</td>' +
-    '<td class="cell-wrap' + (!row.network || !row.device ? ' text-muted' : '') + '">' + escapeHtml(describeNetworkCell(row)) + '</td>' +
-    '<td class="' + (row.app ? '' : 'text-muted') + '">' + escapeHtml(describeAppCell(row)) + '</td>' +
-    '<td class="cell-wrap">' + escapeHtml(describeLastConfirmedCell(row, nowMs)) + '</td>' +
-    '<td class="cell-wrap"><div>' + escapeHtml(call.main) + '</div>' +
-      (call.delivery ? '<div class="customer-sub' + (call.failure ? ' text-bad' : '') + '">' + escapeHtml(call.delivery) + '</div>' : '') + '</td>' +
-    '<td><button type="button" class="row-button" data-household-id="' + escapeHtml(row.householdId) + '" onclick="toggleCustomerDetail(this.dataset.householdId)">' + (isOpen ? 'Close' : 'View') + '</button></td>' +
+// Admin redesign (2026-10-04): one scannable table — HCG account first,
+// canonical membership / protection / setup, last activity, attention.
+// Genuine customers sort first; test, reviewer and sandbox rows are greyed,
+// never hidden. Opening a row shows the customer journey, then support
+// diagnostics (the existing detail panel and classification) below it.
+function customerTableRowHtml(m, nowMs) {
+  const isOpen = openCustomerDetailId === m.householdId;
+  const live = m.attention.filter((a) => a.severity !== 'watch');
+  const sev = worstSeverity(live);
+  const done = m.setupDone;
+  const dots = m.journey ? '<span class="dots" aria-hidden="true">' + m.journey.filter((x) => x.key !== 'joined' && x.key !== 'protected_now').map((x) => '<i class="' + (x.done ? 'on' : '') + '"></i>').join('') + '</span>' : '';
+  let html = '<tr id="cc-row-' + escapeHtml(m.householdId) + '" class="cc-row' + (sev ? ' att-' + sev : '') + (m.segment !== 'genuine_paying' ? ' nongenuine' : '') + (isOpen ? ' open' : '') + '" data-household-id="' + escapeHtml(m.householdId) + '" onclick="toggleCustomerDetail(this.dataset.householdId)">' +
+    '<td>' + ccAccountHtml(m.accountNumber) + '</td>' +
+    '<td class="cell-customer"><div class="customer-email">' + escapeHtml(m.email || '—') + '</div><div class="customer-sub">Joined ' + escapeHtml(m.joinedAt ? ccShortTime(m.joinedAt, nowMs) : '—') + '</div></td>' +
+    '<td>' + ccSegmentBadge(m.segment, m.segmentLabel) + (m.protection.billingStanding === 'payment_issue' ? '<div class="customer-sub text-warn">Payment problem</div>' : m.protection.billingStanding === 'cancelling' ? '<div class="customer-sub">Cancelling</div>' : '') + '</td>' +
+    '<td><span class="prot tone-' + escapeHtml(m.protection.tone) + '">' + escapeHtml(m.protection.label) + '</span></td>' +
+    '<td class="hide-sm">' + (done === null ? '—' : dots + '<span class="customer-sub">' + done + '/5</span>') + '</td>' +
+    '<td class="hide-sm">' + escapeHtml(m.lastActivityAt ? formatRelativeTime(m.lastActivityAt, nowMs) : 'No calls yet') + '</td>' +
+    '<td class="cell-wrap">' + (live.length ? live.slice(0, 2).map((a) => '<div class="att-text ' + escapeHtml(a.severity) + '">' + escapeHtml(a.title) + '</div>').join('') : '<span class="text-muted">—</span>') + '</td>' +
+    '<td><button type="button" class="open-btn" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' + (isOpen ? 'Close' : 'Open') + '</button></td>' +
     '</tr>';
   if (isOpen) {
-    html += '<tr class="detail-row"><td colspan="9"><div id="customerDetail" class="customer-detail"><div class="empty-state">Loading…</div></div></td></tr>';
+    html += '<tr class="detail-row"><td colspan="8">' + customerDetailHeaderHtml(m, ccSummary, nowMs) +
+      '<div class="diag-title">Support diagnostics</div><div id="customerDetail" class="customer-detail"><div class="empty-state">Loading…</div></div></td></tr>';
   }
   return html;
 }
 
 function renderCustomersTab() {
   const d = customerMonitorData;
-  if (!d) return;
-  const nowMs = new Date(d.generatedAt).getTime();
-  const counts = countCustomerHealth(d.rows);
-  const s = d.summary || {};
-  const visible = sortCustomerRows(customerRowsForView(filterRowsByAudience(d.rows, customerAudience), customerFilter, customerSearch));
-  const audienceCounts = countAudiences(d.rows);
-  updateCustomersTabFlag(counts);
+  if (!d && !ccSummary) return;
+  const nowMs = Date.parse((ccSummary && ccSummary.generatedAt) || (d && d.generatedAt)) || Date.now();
+  const models = sortCustomerModels(buildCustomerModels(ccSummary, d));
+  const visible = filterCustomerModels(models, ccSegmentFilter, customerSearch);
+  const genuineAttention = new Set(models.filter((m) => m.segment === 'genuine_paying' && m.attention.some((a) => a.severity !== 'watch')).map((m) => m.householdId));
+  updateCustomersTabFlag(genuineAttention.size);
 
-  let html = '<div class="section"><div class="section-header"><h2>Customers</h2>' +
-    '<span class="last-updated">Updated ' + escapeHtml(fmtDateTime(d.generatedAt)) + ' · <a href="#" onclick="loadCustomerMonitor();return false;">refresh</a></span></div>';
-
-  const mix = [s.paying ? s.paying + ' paying' : null, s.complimentary ? s.complimentary + ' complimentary' : null, s.trial ? s.trial + ' trial' : null].filter(Boolean).join(' · ') || 'none';
-  html += '<div class="summary-strip">' +
-    summaryCard('Accounts with access', counts.active, mix + (s.test ? ' · incl. ' + s.test + ' test/reviewer' : ''), '', 'active') +
-    summaryCard('Healthy', counts.healthy, 'protected, no problems seen', 'good', 'healthy') +
-    summaryCard('Needs attention', counts.needs_attention, counts.needs_attention ? 'click to see who and why' : 'nothing to investigate', counts.needs_attention ? 'bad' : '', 'needs_attention') +
-    summaryCard('Setup incomplete', counts.setup_incomplete, 'not yet protected, nothing wrong seen', counts.setup_incomplete ? 'warn' : '', 'setup_incomplete') +
-    '</div>';
-
+  let html = '<div class="cc-section"><div class="section-header"><h2>Customers</h2>' +
+    '<span class="last-updated">Updated ' + escapeHtml(fmtDateTime((ccSummary && ccSummary.generatedAt) || (d && d.generatedAt))) + ' · <a href="#" onclick="loadAll();return false;">refresh</a></span></div>';
+  if (!ccSummary) html += '<div class="notice warn">Canonical customer status unavailable' + (ccSummaryError ? ' (' + escapeHtml(ccSummaryError) + ')' : '') + ' — showing the onboarding monitor\'s legacy health instead. Genuine/protected figures are not shown on Overview until it loads.</div>';
   html += '<div class="filter-bar" role="toolbar" aria-label="Filter customers">';
-  for (const f of CUSTOMER_FILTERS) {
-    const urgent = f === 'needs_attention' && counts[f] > 0;
-    html += '<button type="button" class="filter-chip' + (urgent ? ' urgent' : '') + '" aria-pressed="' + (customerFilter === f ? 'true' : 'false') + '"' +
-      ' onclick="setCustomerFilter(\'' + f + '\')">' + CUSTOMER_FILTER_LABELS[f] + ' <span class="chip-count">' + counts[f] + '</span></button>';
+  for (const f of CC_SEGMENT_FILTERS) {
+    const n = models.filter(f.test).length;
+    html += '<button type="button" class="filter-chip' + (f.key === 'attention' && n ? ' urgent' : '') + '" aria-pressed="' + (ccSegmentFilter === f.key ? 'true' : 'false') + '" onclick="setSegmentFilter(\'' + f.key + '\')">' + escapeHtml(f.label) + ' <span class="chip-count">' + n + '</span></button>';
   }
-  html += '<span class="filter-sep" aria-hidden="true"></span>';
-  for (const a of AUDIENCE_FILTERS) {
-    html += '<button type="button" class="filter-chip" aria-pressed="' + (customerAudience === a ? 'true' : 'false') + '" onclick="setCustomerAudience(\'' + a + '\')">' + AUDIENCE_LABELS[a] + ' <span class="chip-count">' + audienceCounts[a] + '</span></button>';
-  }
-  html += '<input type="search" id="customerSearchInput" class="customer-search" placeholder="Search email, network, device" value="' + escapeHtml(customerSearch) + '" oninput="setCustomerSearch(this.value)">';
+  html += '<input type="search" id="customerSearchInput" class="customer-search" placeholder="Search HCG account, email, network" value="' + escapeHtml(customerSearch) + '" oninput="setCustomerSearch(this.value)">';
   html += '</div>';
 
-  if (visible.length === 0) {
-    html += '<div class="empty-state">' + (customerFilter === 'needs_attention' && !customerSearch ? 'Nobody needs attention right now.' : 'No customers in this view.') + '</div>';
-  } else {
-    html += '<div class="customer-table-wrap"><table class="customer-table monitor-table"><thead><tr>' +
-      '<th>Customer</th><th>Account</th><th>Health</th><th>Setup</th><th>Network · device</th><th>App</th><th>Last confirmed</th><th>Latest call</th><th></th>' +
-      '</tr></thead><tbody>' + visible.map((r) => customerMonitorRow(r, nowMs)).join('') + '</tbody></table></div>';
+  if (!visible.length) html += '<div class="empty-state">No customers in this view.</div>';
+  else {
+    html += '<div class="customer-table-wrap"><table class="cc-table"><thead><tr><th>HCG account</th><th>Customer</th><th>Membership</th><th>Protection</th><th class="hide-sm">Setup</th><th class="hide-sm">Last activity</th><th>Attention</th><th></th></tr></thead><tbody>' +
+      visible.map((m) => customerTableRowHtml(m, nowMs)).join('') + '</tbody></table></div>';
   }
-
-  html += '<p class="sub" style="margin-top:14px;">' +
-    'A customer who simply hasn\'t had calls recently is never flagged. Needs attention means real evidence: a call HCG could not deliver since the last successful one, forwarding not confirmed ' + d.thresholdHours + 'h+ after setup became possible, calls reaching HCG with no registered app, HCG number problems, or setup incomplete with network/device unknown. ' +
-    '"Phone" outcomes are only reported by app versions that report their version; older installs show "Not reported". ' +
-    (d.deletedAccountsHidden ? d.deletedAccountsHidden + ' deleted (anonymised) account' + (d.deletedAccountsHidden === 1 ? '' : 's') + ' not shown.' : '') +
-    (d.truncated ? ' Showing the newest households only — list truncated.' : '') + '</p>';
+  html += '<p class="sub" style="margin-top:12px;">Genuine paying = real money proven (Stripe live, or Apple/Google production) and not a test, reviewer or admin account. Protected = every protection check passes now, including a delivered call to the current HCG number. Quiet customers are never flagged. ' +
+    (ccSummary && ccSummary.identity && ccSummary.identity.accountNumbersAssigned < ccSummary.identity.households ? escapeHtml(String(ccSummary.identity.households - ccSummary.identity.accountNumbersAssigned)) + ' account(s) have no HCG account number yet (migration 062 assigns them). ' : '') +
+    (d && d.deletedAccountsHidden ? d.deletedAccountsHidden + ' deleted account(s) not shown.' : '') + '</p>';
   html += '</div>';
 
   document.getElementById('customerHealth').innerHTML = html;
-  if (openCustomerDetailId && visible.some((r) => r.householdId === openCustomerDetailId)) {
-    loadCustomerDetail(openCustomerDetailId);
-  }
+  if (openCustomerDetailId && visible.some((m) => m.householdId === openCustomerDetailId)) loadCustomerDetail(openCustomerDetailId);
 }
 
 function toggleCustomerDetail(householdId) {
@@ -992,6 +1162,567 @@ async function loadCustomerDetail(householdId) {
     if (el) el.innerHTML = '<div class="error">Failed to load: ' + escapeHtml(err.message) + '</div>';
   }
 }
+
+// ============================================================
+// ADMIN CONTROL CENTRE (redesign 2026-10-04) — the founder's view.
+// Data: GET /admin/api/control-centre/summary (read-only; composed
+// server-side from the canonical definitions: commercialStatus = genuine,
+// activationState = protected, exceptionQueue = attention), plus the
+// existing read-only feeds (Fortress overview, ops events, accounting
+// status, business-control overview/finance, system health).
+// This block only renders; it never decides who is genuine or protected.
+// Every data-derived string goes through escapeHtml. GET only — the one
+// write anywhere near here is the existing audited "mark seen" for ops
+// events, offered only when migration 072 is deployed.
+// ============================================================
+// TEST-EXTRACT-START: controlCentre
+let ccSummary = null;
+let ccSummaryError = null;
+let ccFortress = null;
+let ccFortressError = null;
+let ccOpsEvents = null;
+let ccOpsEventsError = null;
+let ccAccounting = null;
+let ccAccountingError = null;
+let ccFinance = null;
+let ccSegmentFilter = 'all';
+
+// HCG's own staging test number (…1883, docs/integration/2026-10-04-
+// PRODUCTION-CUSTOMER-RECONCILIATION.md): in use for handset testing on the
+// production Twilio account. Shown as RESERVED everywhere; this dashboard
+// has no release control, and the release-review prototype is hidden for it.
+const RESERVED_NUMBER_SUFFIXES = ['1883'];
+function isReservedNumber(number) {
+  const digits = String(number || '').replace(/\D/g, '');
+  return digits.length >= 4 && RESERVED_NUMBER_SUFFIXES.includes(digits.slice(-4));
+}
+
+const CC_SEGMENT_FILTERS = [
+  { key: 'all', label: 'All accounts', test: () => true },
+  { key: 'genuine', label: 'Genuine paying', test: (m) => m.segment === 'genuine_paying' },
+  { key: 'attention', label: 'Needs attention', test: (m) => m.attention.some((a) => a.severity !== 'watch') },
+  { key: 'complimentary', label: 'Complimentary', test: (m) => m.segment === 'complimentary' || m.segment === 'trial' },
+  { key: 'test', label: 'Test & reviewer', test: (m) => m.segment === 'internal_test' || m.segment === 'reviewer' },
+  { key: 'sandbox', label: 'Sandbox & unverified', test: (m) => m.segment === 'sandbox' || m.segment === 'payment_unverified' },
+  { key: 'former', label: 'Former & never paid', test: (m) => m.segment === 'former_customer' || m.segment === 'no_membership' },
+];
+const CC_SEVERITY_RANK = { critical: 0, action: 1, watch: 2 };
+const CC_SEVERITY_LABEL = { critical: 'Critical', action: 'Attention', watch: 'FYI' };
+
+function ccAccountHtml(accountNumber) {
+  return accountNumber ? '<span class="acct">' + escapeHtml(accountNumber) + '</span>' : '<span class="acct pending">No account no. yet</span>';
+}
+function ccSegmentBadge(segment, label) {
+  return '<span class="seg seg-' + escapeHtml(segment) + '">' + escapeHtml(label || segment) + '</span>';
+}
+function ccStatePill(state) {
+  const text = { healthy: 'Healthy', attention: 'Attention', critical: 'Critical', unknown: 'Not reported' }[state] || state;
+  return '<span class="state-pill state-' + escapeHtml(state) + '">' + escapeHtml(text) + '</span>';
+}
+function ccGbp(n) {
+  return n === null || n === undefined || !Number.isFinite(Number(n)) ? null : '£' + Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function ccShortTime(iso, nowMs) {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '—';
+  const d = new Date(ms);
+  const now = new Date(nowMs);
+  const hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  if (d.toDateString() === now.toDateString()) return 'Today ' + hm;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' }) + ' ' + hm;
+}
+
+// Legacy onboarding account kind → admin segment, used ONLY when the
+// canonical summary is unavailable (the page says so in a banner).
+const LEGACY_KIND_SEGMENT = { paying: 'genuine_paying', complimentary: 'complimentary', trial: 'trial', test_paid: 'internal_test', store_sandbox: 'sandbox', payment_unverified: 'payment_unverified', ended: 'former_customer', none: 'no_membership' };
+const LEGACY_HEALTH_PROTECTION = { healthy: { label: 'Protected (legacy check)', tone: 'good' }, setup_incomplete: { label: 'Setting up', tone: 'setup' }, needs_attention: { label: 'Needs attention', tone: 'bad' }, inactive: { label: 'No membership', tone: 'muted' } };
+
+// One row model for the Customers table: canonical summary joined to the
+// onboarding feed (email, last call, network) by household id.
+function buildCustomerModels(summary, onboardingData) {
+  const rows = (onboardingData && onboardingData.rows) || [];
+  const rowById = new Map(rows.map((r) => [r.householdId, r]));
+  if (summary && summary.customers) {
+    return summary.customers.filter((c) => c.segment !== 'deleted').map((c) => {
+      const r = rowById.get(c.householdId) || null;
+      return {
+        householdId: c.householdId, accountNumber: c.accountNumber, canonical: true,
+        email: r ? r.email : null, joinedAt: (c.journey[0] && c.journey[0].at) || (r && r.signedUpAt) || null,
+        segment: c.segment, segmentLabel: c.segmentLabel, commercialLabel: c.commercial.label,
+        protection: c.protection, journey: c.journey, setupDone: c.setupDone,
+        attention: c.attention || [], row: r,
+        lastActivityAt: (r && r.latestCall && r.latestCall.at) || null,
+      };
+    });
+  }
+  return rows.filter((r) => !r.deletedAccount).map((r) => {
+    const kind = (r.account && r.account.kind) || 'none';
+    const segment = r.account && r.account.testLabel ? 'internal_test' : (LEGACY_KIND_SEGMENT[kind] || 'no_membership');
+    return {
+      householdId: r.householdId, accountNumber: r.accountNumber || null, canonical: false,
+      email: r.email, joinedAt: r.signedUpAt, segment, segmentLabel: (r.account && r.account.label) || segment, commercialLabel: (r.account && r.account.label) || '—',
+      protection: LEGACY_HEALTH_PROTECTION[r.health] || { label: r.health, tone: 'muted' }, journey: null, setupDone: null,
+      attention: r.health === 'needs_attention' ? [{ code: 'LEGACY', severity: 'action', title: r.healthReason }] : [], row: r,
+      lastActivityAt: (r.latestCall && r.latestCall.at) || null,
+    };
+  });
+}
+
+function worstSeverity(items) {
+  return (items || []).reduce((w, a) => (w === null || CC_SEVERITY_RANK[a.severity] < CC_SEVERITY_RANK[w] ? a.severity : w), null);
+}
+
+function sortCustomerModels(models) {
+  const score = (m) => [m.segment === 'genuine_paying' ? 0 : 1, CC_SEVERITY_RANK[worstSeverity(m.attention.filter((a) => a.severity !== 'watch'))] ?? 3, m.protection.protected ? 1 : 0];
+  return models.slice().sort((a, b) => {
+    const x = score(a);
+    const y = score(b);
+    for (let i = 0; i < x.length; i += 1) if (x[i] !== y[i]) return x[i] - y[i];
+    return String(b.joinedAt || '').localeCompare(String(a.joinedAt || ''));
+  });
+}
+
+function filterCustomerModels(models, filterKey, search) {
+  const f = CC_SEGMENT_FILTERS.find((x) => x.key === filterKey) || CC_SEGMENT_FILTERS[0];
+  const q = String(search || '').trim().toLowerCase();
+  return models.filter((m) => f.test(m) && (!q || [m.accountNumber, m.email, m.segmentLabel, m.protection.label, m.row && m.row.network, m.row && m.row.device].some((v) => v && String(v).toLowerCase().includes(q))));
+}
+
+// ---- Overview: headline KPIs -------------------------------------------
+function buildKpis(summary, overview) {
+  if (!summary) return null;
+  const h = summary.headline;
+  const s = h.bySegment || {};
+  const others = [
+    s.complimentary + s.trial ? (s.complimentary + s.trial) + ' complimentary/trial' : null,
+    s.internal_test + s.reviewer ? (s.internal_test + s.reviewer) + ' test/reviewer' : null,
+    s.sandbox + s.payment_unverified ? (s.sandbox + s.payment_unverified) + ' sandbox/unverified' : null,
+  ].filter(Boolean);
+  const mrr = overview && overview.stripe && overview.stripe.mrr && overview.stripe.mrr.genuine ? overview.stripe.mrr.genuine.GBP : null;
+  const stripeMode = overview && overview.stripe ? overview.stripe.mode : null;
+  const unprotected = h.genuineCustomers - h.genuineProtected;
+  return [
+    { key: 'genuine', label: 'Genuine customers', value: String(h.genuineCustomers), tone: h.genuineCustomers ? 'good' : '', sub: others.length ? 'Not counted: ' + others.join(' · ') : 'Paying with real money, not test or sandbox', filter: 'genuine' },
+    { key: 'protected', label: 'Protected', value: h.genuineProtected + '<small> of ' + h.genuineCustomers + '</small>', tone: unprotected === 0 ? 'good' : 'warn', sub: unprotected === 0 ? 'Every genuine customer is protected' : (h.genuineSettingUp ? h.genuineSettingUp + ' setting up normally' : '') + (h.genuineSettingUp && h.genuineNeedingAttention ? ' · ' : '') + (h.genuineNeedingAttention ? h.genuineNeedingAttention + ' need help' : ''), filter: 'genuine' },
+    { key: 'attention', label: 'Needs attention', value: String(h.genuineNeedingAttention), tone: h.genuineNeedingAttention ? 'bad' : 'good', sub: h.genuineNeedingAttention ? 'genuine customer' + (h.genuineNeedingAttention === 1 ? '' : 's') + ' — see the list below' : 'No genuine customer needs you', filter: 'attention' },
+    { key: 'revenue', label: 'Monthly revenue', value: mrr === null || mrr === undefined ? '—' : escapeHtml(ccGbp(mrr)), tone: '', sub: mrr === null || mrr === undefined ? (stripeMode && stripeMode !== 'live' ? 'Stripe ' + escapeHtml(stripeMode) + ' — no real revenue' : 'Stripe revenue not loaded yet') : 'Stripe recurring, inc. VAT · App Store revenue not connected', filter: null },
+  ];
+}
+
+function renderKpisHtml(kpis) {
+  return '<div class="kpis">' + kpis.map((k) => {
+    const tag = k.filter ? 'button type="button" onclick="showCustomers(\'' + k.filter + '\')"' : 'div';
+    return '<' + tag + ' class="kpi' + (k.tone ? ' tone-' + k.tone : '') + '"><div class="kpi-label">' + escapeHtml(k.label) + '</div><div class="kpi-value">' + k.value + '</div><div class="kpi-sub">' + escapeHtml(k.sub) + '</div></' + (k.filter ? 'button' : 'div') + '>';
+  }).join('') + '</div>';
+}
+
+// ---- Overview: HCG status (five founder-level rows) ----------------------
+function componentState(comp) {
+  if (!comp) return 'unknown';
+  return comp.status === 'RED' ? 'critical' : comp.status === 'AMBER' ? 'attention' : comp.status === 'GREEN' ? 'healthy' : 'unknown';
+}
+const STATE_RANK = { critical: 0, attention: 1, unknown: 2, healthy: 3 };
+const worstState = (...states) => states.reduce((w, s) => (STATE_RANK[s] < STATE_RANK[w] ? s : w), 'healthy');
+
+function computeHcgStatus({ summary, summaryError, business, fortress, fortressError, overview, opsEvents, opsEventsError }) {
+  const comps = (business && business.systemHealth && business.systemHealth.components) || {};
+  const att = (summary && summary.attention) || [];
+  const genuineIn = (area, sev) => att.filter((a) => a.genuine && a.area === area && (!sev || a.severity === sev));
+  const rows = [];
+
+  // Customer protection
+  if (!summary) rows.push({ key: 'protection', label: 'Customer protection', state: 'unknown', text: 'Customer status unavailable' + (summaryError ? ': ' + summaryError : '') });
+  else {
+    const h = summary.headline;
+    const crit = att.some((a) => a.genuine && a.severity === 'critical');
+    const act = att.some((a) => a.genuine && a.severity === 'action' && a.area === 'protection');
+    rows.push({ key: 'protection', label: 'Customer protection', state: crit ? 'critical' : act ? 'attention' : 'healthy', text: h.genuineCustomers ? h.genuineProtected + ' of ' + h.genuineCustomers + ' genuine customers protected' + (h.genuineSettingUp ? ' · ' + h.genuineSettingUp + ' setting up' : '') : 'No genuine customers yet' });
+  }
+
+  // Telephony
+  const tw = comps.twilio;
+  const telItems = att.filter((a) => a.area === 'telephony' && a.severity !== 'watch');
+  rows.push({ key: 'telephony', label: 'Telephony', state: worstState(componentState(tw), telItems.some((a) => a.severity === 'critical') ? 'critical' : telItems.length ? 'attention' : 'healthy'),
+    text: (tw ? tw.reason : 'Twilio status not loaded') + (telItems.length ? ' · ' + telItems.length + ' number problem' + (telItems.length === 1 ? '' : 's') : '') });
+
+  // Financial protection (Launch Fortress + spend safety)
+  let fin = 'unknown';
+  let finText = 'Financial Fortress status unavailable' + (fortressError ? ': ' + fortressError : '');
+  if (fortress && fortress.global && fortress.global.available) {
+    const g = fortress.global;
+    if (g.killSwitch || g.breakerOpen) { fin = 'critical'; finText = g.killSwitch ? 'KILL SWITCH ON — ' + (g.killReason || 'no reason recorded') : 'Breaker OPEN — ' + (g.breakerReason || 'no reason recorded'); }
+    else {
+      fin = 'healthy';
+      const spent = g.window && g.window.spentTodayGbp;
+      const cap = g.caps && g.caps.globalDailyGbp;
+      finText = 'Breaker closed · ' + (g.enforcementMode ? 'enforcement: ' + g.enforcementMode : 'enforcement mode not reported') + (spent !== undefined && cap ? ' · ' + ccGbp(spent) + ' of ' + ccGbp(cap) + ' today' : '');
+      if (g.enforcementMode && g.enforcementMode !== 'enforce') fin = 'attention';
+    }
+  } else if (fortress && fortress.global && !fortress.global.available) finText = 'Fortress not readable: ' + (fortress.global.error || 'unknown');
+  const fs = overview && overview.financialSafety;
+  if (fs) {
+    if (fs.level === 'EMERGENCY' || fs.level === 'ALERT' || fs.state === 'stale' || fs.state === 'load_failed') fin = worstState(fin, 'critical');
+    else if (fs.level === 'WATCH') fin = worstState(fin, 'attention');
+  }
+  if (att.some((a) => a.code === 'HOUSEHOLD_ON_HOLD')) { fin = worstState(fin, 'attention'); finText += ' · customer on financial hold'; }
+  rows.push({ key: 'financial', label: 'Financial protection', state: fin, text: finText });
+
+  // Payments
+  const payItems = att.filter((a) => a.area === 'payments' && a.severity !== 'watch');
+  const genuinePay = payItems.filter((a) => a.genuine);
+  let pay = worstState(componentState(comps.stripe), genuinePay.length ? 'attention' : 'healthy');
+  if (payItems.some((a) => a.code === 'DELETED_HOUSEHOLD_SUBSCRIPTION_LIVE')) pay = 'critical';
+  const payBits = [comps.stripe ? 'Stripe: ' + comps.stripe.reason : 'Stripe status not loaded'];
+  if (genuinePay.length) payBits.push(genuinePay.length + ' customer payment problem' + (genuinePay.length === 1 ? '' : 's'));
+  if (payItems.length - genuinePay.length) payBits.push((payItems.length - genuinePay.length) + ' store purchase(s) to verify');
+  rows.push({ key: 'payments', label: 'Payments', state: pay, text: payBits.join(' · ') });
+
+  // Notifications (operational alerts to Andrew; customer messages are not sent)
+  let notif = componentState(comps.resend);
+  const notifBits = [comps.resend ? 'Email: ' + comps.resend.reason : 'Email provider status not loaded'];
+  if (opsEvents) {
+    const problems = (opsEvents.deliveryProblems || []).length;
+    if (problems) { notif = worstState(notif, 'critical'); notifBits.push(problems + ' failed operational notification' + (problems === 1 ? '' : 's')); }
+    else notifBits.push('operational events recording');
+  } else {
+    notif = worstState(notif, 'attention');
+    notifBits.push('operational events not deployed' + (opsEventsError && /072/.test(opsEventsError) ? ' (migration 072)' : '') + ' — new-customer alerts are dashboard-only');
+  }
+  rows.push({ key: 'notifications', label: 'Notifications', state: notif, text: notifBits.join(' · ') });
+  return rows;
+}
+
+function renderStatusHtml(rows) {
+  return '<div class="cc-section"><div class="section-title">HCG status</div><div class="status-list">' + rows.map((r) =>
+    '<div class="status-item s-' + escapeHtml(r.state) + '"><div class="status-head"><span class="status-name">' + escapeHtml(r.label) + '</span>' + ccStatePill(r.state) + '</div><div class="status-text">' + escapeHtml(r.text) + '</div></div>').join('') + '</div></div>';
+}
+
+// ---- Overview: highlights (Task 10 — first five customers) ---------------
+// Celebrations come ONLY from genuine-customer events in the canonical
+// summary (test/sandbox/reviewer activity never celebrates).
+function buildHighlights(summary, nowMs) {
+  if (!summary) return [];
+  const out = [];
+  const seen = new Set();
+  for (const a of summary.attention || []) {
+    if (!a.genuine || a.severity === 'watch' || seen.has('att:' + a.householdId)) continue;
+    seen.add('att:' + a.householdId);
+    out.push({ kind: 'attention', label: 'Customer needs attention', title: a.title, accountNumber: a.accountNumber, householdId: a.householdId, at: a.since });
+  }
+  for (const e of summary.activity || []) {
+    if (!e.genuine || !e.celebrate || nowMs - Date.parse(e.at) > 72 * 3600e3) continue;
+    const key = e.type + ':' + e.householdId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e.type === 'new_genuine_customer'
+      ? { kind: 'new', label: 'New genuine customer', title: 'Joined and paid', accountNumber: e.accountNumber, householdId: e.householdId, at: e.at }
+      : { kind: 'protected', label: 'Customer protected', title: 'First protected call delivered', accountNumber: e.accountNumber, householdId: e.householdId, at: e.at });
+  }
+  return out.slice(0, 4);
+}
+
+function renderHighlightsHtml(items, nowMs) {
+  if (!items.length) return '';
+  const icon = { new: '+', protected: '✓', attention: '!' };
+  return '<div class="highlights">' + items.map((h) =>
+    '<div class="highlight hl-' + h.kind + '"><div class="hl-icon" aria-hidden="true">' + icon[h.kind] + '</div><div style="flex:1;min-width:0;">' +
+      '<div class="hl-kind">' + escapeHtml(h.label) + '</div>' +
+      '<div class="hl-title">' + ccAccountHtml(h.accountNumber) + ' · ' + escapeHtml(h.title) + '</div>' +
+      '<div class="hl-meta">' + escapeHtml(h.at ? ccShortTime(h.at, nowMs) : '') + ' · <button type="button" class="link" data-household-id="' + escapeHtml(h.householdId) + '" onclick="openCustomer(this.dataset.householdId)">Open customer</button></div>' +
+    '</div></div>').join('') + '</div>';
+}
+
+// ---- Overview: today / recent activity -----------------------------------
+const OPS_EVENT_TITLES = { new_genuine_customer: 'NEW GENUINE CUSTOMER', customer_protected: 'CUSTOMER PROTECTED', customer_needs_attention: 'Customer needs attention' };
+function buildActivity(summary, opsEvents) {
+  const items = ((summary && summary.activity) || []).map((e) => ({ ...e }));
+  for (const ev of (opsEvents && opsEvents.events) || []) {
+    items.push({ at: ev.occurred_at || ev.created_at, title: OPS_EVENT_TITLES[ev.event_type] || ev.event_type, accountNumber: ev.account_number, householdId: ev.household_id || null, genuine: true, celebrate: ev.event_type !== 'customer_needs_attention', type: 'ops_' + ev.event_type, source: 'ops' });
+  }
+  return items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+function renderActivityHtml(items, nowMs) {
+  let html = '<div class="cc-section"><div class="section-header"><h2>Today &amp; recent activity</h2><span class="last-updated">last 7 days · test and sandbox accounts shown in grey, never celebrated</span></div>';
+  if (!items.length) return html + '<div class="empty-state">Nothing happened in the last 7 days.</div></div>';
+  const row = (e) => '<li class="' + (e.genuine ? (e.celebrate ? 'celebrate' : '') : 'muted') + '"><span class="when">' + escapeHtml(ccShortTime(e.at, nowMs)) + '</span><span class="what">' +
+    (e.celebrate ? '<strong>' + escapeHtml(e.title) + '</strong>' : escapeHtml(e.title)) + ' · ' + ccAccountHtml(e.accountNumber) +
+    (!e.genuine && e.segment ? ' ' + ccSegmentBadge(e.segment, (ccSummary && ccSummary.segments && ccSummary.segments[e.segment] && ccSummary.segments[e.segment].label) || e.segment) : '') + '</span></li>';
+  html += '<ul class="activity">' + items.slice(0, 10).map(row).join('') + '</ul>';
+  if (items.length > 10) html += '<details style="margin-top:8px;"><summary class="sub">All ' + items.length + ' events</summary><ul class="activity" style="margin-top:8px;">' + items.slice(10).map(row).join('') + '</ul></details>';
+  return html + '</div>';
+}
+
+// ---- Overview: needs your attention (canonical + business checks) -------
+// v2 topics already covered by the canonical exception queue are left out
+// (no double counting); "classification" is a v2 genuine-definition step
+// the commercial classifier does not need.
+const V2_TOPICS_COVERED = new Set(['provisioning', 'number_lifecycle', 'classification', 'setup_overdue', 'voice_sdk', 'delivery']);
+function v2BusinessItems(overview, business) {
+  if (typeof buildAttentionItems !== 'function') return [];
+  return buildAttentionItems(overview, null, business).filter((g) => !V2_TOPICS_COVERED.has(g.topic)).map((g) => {
+    const who = g.topic === 'numbers_cost' ? g.who.filter((w) => !isReservedNumber(w.label)) : g.who;
+    if (g.topic === 'numbers_cost' && !who.length) return null;
+    const severity = g.severity === 'red' ? (g.topic === 'finance' || g.topic === 'system' ? 'critical' : 'action') : 'watch';
+    return { severity, title: g.what, detail: g.details.slice(0, 2).join(' · '), who: who.map((w) => w.label).slice(0, 3).join(', '), nextStep: g.next, tab: g.tab, v2: true };
+  }).filter(Boolean);
+}
+
+function attentionLiHtml(a, emailOf) {
+  const who = a.v2 ? escapeHtml(a.who || '') : !a.householdId && !a.accountNumber ? '' : ccAccountHtml(a.accountNumber) + (emailOf && emailOf(a.householdId) ? ' · ' + escapeHtml(emailOf(a.householdId)) : '') + (a.segment && a.segment !== 'genuine_paying' ? ' ' + ccSegmentBadge(a.segment, (ccSummary && ccSummary.segments && ccSummary.segments[a.segment] && ccSummary.segments[a.segment].label) || a.segment) : '');
+  const action = a.v2
+    ? '<button type="button" class="open-btn" onclick="switchTab(\'' + escapeHtml(a.tab) + '\')">Open</button>'
+    : a.householdId ? '<button type="button" class="open-btn" data-household-id="' + escapeHtml(a.householdId) + '" onclick="openCustomer(this.dataset.householdId)">Open customer</button>' : '<button type="button" class="open-btn" onclick="switchTab(\'numbers\')">Open numbers</button>';
+  return '<li class="sev-' + escapeHtml(a.severity) + '"><span class="state-pill state-' + (a.severity === 'critical' ? 'critical' : a.severity === 'action' ? 'attention' : 'unknown') + '">' + escapeHtml(CC_SEVERITY_LABEL[a.severity] || a.severity) + '</span>' +
+    '<div><div class="att2-title">' + escapeHtml(a.title) + '</div>' +
+    (who ? '<div class="att2-who">' + who + '</div>' : '') +
+    (a.detail ? '<div class="att2-next">' + escapeHtml(a.detail) + '</div>' : '') +
+    (a.nextStep ? '<div class="att2-next"><strong>Next:</strong> ' + escapeHtml(a.nextStep) + '</div>' : '') + '</div>' + action + '</li>';
+}
+
+function renderCanonicalAttentionHtml(summary, overview, business, onboardingData) {
+  const rows = (onboardingData && onboardingData.rows) || [];
+  const emailById = new Map(rows.map((r) => [r.householdId, r.email]));
+  const emailOf = (id) => emailById.get(id) || null;
+  const canon = summary.attention || [];
+  const genuine = canon.filter((a) => a.genuine && a.severity !== 'watch');
+  const business2 = canon.filter((a) => !a.genuine && a.severity !== 'watch').concat(v2BusinessItems(overview, business).filter((a) => a.severity !== 'watch'));
+  const fyi = canon.filter((a) => a.severity === 'watch').concat(v2BusinessItems(overview, business).filter((a) => a.severity === 'watch'));
+  const total = genuine.length + business2.length;
+  let html = '<div class="cc-section"><div class="section-header"><h2>Needs your attention' + (total ? ' (' + total + ')' : '') + '</h2><span class="last-updated">most urgent first · nothing here acts or contacts anyone</span></div>';
+  if (!total) html += '<div class="readiness-banner ready">Nothing needs you right now.</div>';
+  if (genuine.length) html += '<div class="att-group-title">Genuine customers</div><ul class="att2">' + genuine.map((a) => attentionLiHtml(a, emailOf)).join('') + '</ul>';
+  if (business2.length) html += '<div class="att-group-title">Business &amp; operations</div><ul class="att2">' + business2.map((a) => attentionLiHtml(a, emailOf)).join('') + '</ul>';
+  if (fyi.length) html += '<details style="margin-top:12px;"><summary class="sub">Also worth knowing (' + fyi.length + ')</summary><ul class="att2" style="margin-top:8px;">' + fyi.map((a) => attentionLiHtml(a, emailOf)).join('') + '</ul></details>';
+  return html + '</div>';
+}
+
+// ---- Customers: detail (journey first, diagnostics below) ----------------
+function journeyHtml(journey, nowMs) {
+  if (!journey) return '<div class="notice warn">Journey unavailable — canonical customer status could not be loaded.</div>';
+  return '<ol class="journey">' + journey.map((s) => {
+    const cls = s.done ? 'done' : s.firstIncomplete ? 'blocker' : '';
+    return '<li class="' + cls + '"><span class="node">' + (s.done ? '✓' : s.firstIncomplete ? '!' : '') + '</span><div class="j-label">' + escapeHtml(s.label) + '</div><div class="j-at">' + escapeHtml(s.at ? ccShortTime(s.at, nowMs) : s.done ? 'done' : s.firstIncomplete ? 'next step' : 'not yet') + '</div></li>';
+  }).join('') + '</ol>';
+}
+
+function customerDetailHeaderHtml(m, summary, nowMs) {
+  const items = ((summary && summary.attention) || []).filter((a) => a.householdId === m.householdId);
+  const r = m.row;
+  let html = '<div class="customer-detail">';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px;">' + ccAccountHtml(m.accountNumber) + ccSegmentBadge(m.segment, m.segmentLabel) + '<span class="prot tone-' + escapeHtml(m.protection.tone) + '">' + escapeHtml(m.protection.label) + '</span></div>';
+  html += journeyHtml(m.journey, nowMs);
+  html += '<div class="detail-grid2"><div><h3>What needs doing</h3>';
+  if (items.length) html += '<ul class="att2">' + items.map((a) => attentionLiHtml({ ...a, householdId: null, accountNumber: null, segment: null }, null).replace(/<button[^>]*>Open numbers<\/button>/, '')).join('') + '</ul>';
+  else if (m.protection.protected) html += '<div class="readiness-banner ready">Nothing outstanding — protected.</div>';
+  else html += '<div class="sub">Nothing flagged yet' + (m.protection.blockers && m.protection.blockers.length ? '. Next step for the customer: ' + escapeHtml(m.protection.blockers[0].text) + '.' : '.') + '</div>';
+  if (m.protection.blockers && m.protection.blockers.length && !m.protection.protected) {
+    html += '<p class="sub" style="margin-top:10px;">Not protected because: ' + m.protection.blockers.map((b) => escapeHtml(b.text)).join(' · ') + '</p>';
+  }
+  html += '</div><div><h3>Key facts</h3><table class="facts">' +
+    '<tr><td>Customer</td><td>' + escapeHtml(m.email || '—') + '</td></tr>' +
+    '<tr><td>Membership</td><td>' + escapeHtml(m.commercialLabel || '—') + '</td></tr>' +
+    (r ? '<tr><td>Network · device</td><td>' + escapeHtml(describeNetworkCell(r)) + '</td></tr>' +
+      '<tr><td>App</td><td>' + escapeHtml(describeAppCell(r)) + '</td></tr>' +
+      '<tr><td>Last confirmed</td><td>' + escapeHtml(describeLastConfirmedCell(r, nowMs)) + '</td></tr>' +
+      '<tr><td>Latest call</td><td>' + escapeHtml(describeLatestCallCell(r, nowMs).main) + '</td></tr>' : '') +
+    '</table></div></div>';
+  return html + '</div>';
+}
+
+// ---- Money summary --------------------------------------------------------
+function buildMoneySummary({ finance, overview, fortress, accounting, accountingError }) {
+  const cards = [];
+  const mrr = overview && overview.stripe && overview.stripe.mrr ? overview.stripe.mrr : null;
+  cards.push({ label: 'Genuine subscription revenue', value: mrr && mrr.genuine && mrr.genuine.GBP !== undefined ? ccGbp(mrr.genuine.GBP) + '<small>/month</small>' : '—', sub: mrr ? 'Stripe recurring, inc. VAT · ' + (mrr.genuineSubscriptions || 0) + ' subscription(s) · App Store not connected' : 'Stripe not loaded' });
+  const t = finance && finance.totals;
+  const rev = t && t.revenueExVat;
+  cards.push({ label: 'Collected this month (ex VAT)', value: rev && rev.amountGbp !== null ? ccGbp(rev.amountGbp) : '—', sub: rev ? (rev.complete ? 'genuine customers, net of refunds' : 'known part only') : 'Finance not loaded' });
+  cards.push({ label: 'Refunds', value: '—', sub: 'Not reported separately — revenue above is already net of refunds' });
+  if (finance) {
+    const direct = finance.lines.filter((l) => l.section === 'direct');
+    const known = direct.filter((l) => l.amountGbp !== null && l.amountGbp !== undefined);
+    const sum = known.reduce((a, l) => a + Number(l.amountGbp), 0);
+    cards.push({ label: 'Estimated variable cost', value: ccGbp(sum), sub: (known.length < direct.length ? 'known part only · ' : '') + known.filter((l) => l.provenance === 'ESTIMATED').length + ' of ' + direct.length + ' lines estimated' });
+    const gc = t.grossContribution;
+    cards.push({ label: 'Estimated gross contribution', value: gc && gc.amountGbp !== null ? ccGbp(gc.amountGbp) : '—', sub: gc && gc.complete ? 'complete' : 'known part only — not every cost is connected' });
+  } else {
+    cards.push({ label: 'Estimated variable cost', value: '—', sub: 'Finance not loaded' });
+    cards.push({ label: 'Estimated gross contribution', value: '—', sub: 'Finance not loaded' });
+  }
+  const inv = overview && overview.inventory;
+  cards.push({ label: 'Number rental exposure', value: inv && inv.monthlyRental && inv.monthlyRental.allNumbers !== null ? ccGbp(inv.monthlyRental.allNumbers) + '<small>/month</small>' : '—', sub: inv ? inv.providerNumberCount + ' numbers' + (inv.needsReview && inv.needsReview.count ? ' · ' + inv.needsReview.count + ' possibly unnecessary (≈' + ccGbp(inv.needsReview.monthlyCost) + ')' : '') : 'Twilio inventory not loaded' });
+  const hh = fortress && Array.isArray(fortress.households) ? fortress.households : null;
+  if (hh) {
+    const budget = hh.reduce((a, x) => a + (Number(x.budgetGbp) || 0), 0);
+    const used = hh.reduce((a, x) => a + (Number(x.estimatedCommittedGbp) || 0) + (Number(x.reservedGbp) || 0), 0);
+    const top = hh.reduce((m, x) => Math.max(m, x.usedPercent || 0), 0);
+    cards.push({ label: 'Customer allowance exposure', value: ccGbp(used) + '<small> of ' + escapeHtml(ccGbp(budget)) + '</small>', sub: hh.length + ' account(s) this period · highest ' + top + '% used (Fortress estimate)' });
+  } else cards.push({ label: 'Customer allowance exposure', value: '—', sub: 'Financial Fortress budgets not readable' });
+  cards.push(accounting
+    ? { label: 'Accounting exceptions', value: String((accounting.exceptions && accounting.exceptions.open) || accounting.openExceptions || 0), sub: 'Xero posting ' + (accounting.capture_enabled ? 'capture on' : 'capture off') }
+    : { label: 'Accounting exceptions', value: '—', sub: accountingError || 'Accounting not deployed' });
+  const high = hh ? hh.filter((x) => (x.usedPercent || 0) >= 50) : [];
+  return { cards, high };
+}
+
+function renderMoneySummaryHtml(m) {
+  let html = '<div class="cc-section"><div class="section-header"><h2>Money at a glance</h2><span class="last-updated">details, provenance and Xero below</span></div>';
+  html += '<div class="notice price"><strong>Launch price: £5.99/month including VAT</strong> (decided 4 Oct 2026). Nothing here changes Stripe, Apple or Google prices — confirm the live store and Stripe prices match before launch.</div>';
+  html += '<div class="kpis">' + m.cards.map((c) => '<div class="kpi"><div class="kpi-label">' + escapeHtml(c.label) + '</div><div class="kpi-value" style="font-size:28px;">' + c.value + '</div><div class="kpi-sub">' + escapeHtml(c.sub) + '</div></div>').join('') + '</div>';
+  if (m.high.length) {
+    html += '<h3>Highest-cost customers this period</h3><table class="mini-table"><tr><th>HCG account</th><th class="num">Used of allowance</th><th class="num">Estimated cost</th><th class="num">Budget</th></tr>' + m.high.map((x) => '<tr><td>' + ccAccountHtml(x.accountNumber) + '</td><td class="num">' + escapeHtml(String(x.usedPercent)) + '%</td><td class="num">' + escapeHtml(ccGbp(x.estimatedCommittedGbp) || '—') + '</td><td class="num">' + escapeHtml(ccGbp(x.budgetGbp) || '—') + '</td></tr>').join('') + '</table>';
+  } else html += '<p class="sub">No customer has used more than half of their allowance this period.</p>';
+  return html + '</div>';
+}
+
+function renderMoneySummary() {
+  const el = document.getElementById('ccMoney');
+  if (!el) return;
+  const overview = typeof businessControlCache !== 'undefined' ? businessControlCache.overview : null;
+  el.innerHTML = renderMoneySummaryHtml(buildMoneySummary({ finance: ccFinance, overview, fortress: ccFortress, accounting: ccAccounting, accountingError: ccAccountingError }));
+}
+
+// ---- Numbers summary --------------------------------------------------------
+const NUMBER_GROUPS = [
+  { key: 'genuine', label: 'Genuine customers', note: 'In service for paying customers.' },
+  { key: 'other', label: 'Complimentary, test, reviewer & sandbox', note: 'Billed to HCG with no revenue — check each still needs a number.' },
+  { key: 'staging', label: 'Staging', note: 'Bought by staging on the production account. The reserved test number is in use — never release it.' },
+  { key: 'quarantined', label: 'Quarantined', note: 'Awaiting your release confirmation; still billed.' },
+  { key: 'scheduled', label: 'Scheduled for release', note: 'In the grace period after a membership ended.' },
+  { key: 'orphan', label: 'Orphaned', note: 'No customer in HCG. Check inbound calls before any decision.' },
+];
+function classifyNumberRow(row, segmentOf) {
+  if (isReservedNumber(row.number) || row.category === 'staging') return 'staging';
+  if (row.quarantinedAt) return 'quarantined';
+  if (row.pendingReleaseAt || row.category === 'pending_release' || row.category === 'customer_cancelled_grace') return 'scheduled';
+  if (row.category === 'orphan' || !row.owner) return 'orphan';
+  return segmentOf(row.owner.householdId) === 'genuine_paying' ? 'genuine' : 'other';
+}
+function buildNumberGroups(inventory, summary) {
+  if (!inventory) return null;
+  const seg = new Map(((summary && summary.customers) || []).map((c) => [c.householdId, c.segment]));
+  const groups = NUMBER_GROUPS.map((g) => ({ ...g, count: 0, monthly: 0 }));
+  for (const row of inventory.rows || []) {
+    const g = groups.find((x) => x.key === classifyNumberRow(row, (id) => seg.get(id)));
+    g.count += 1;
+    g.monthly += Number(row.monthlyRental) || 0;
+  }
+  return groups;
+}
+function renderNumbersSummaryHtml(inventory, summary) {
+  const groups = buildNumberGroups(inventory, summary);
+  if (!groups) return '';
+  const total = groups.reduce((a, g) => a + g.monthly, 0);
+  let html = '<div class="cc-section"><div class="section-header"><h2>Numbers at a glance</h2><span class="last-updated">' + escapeHtml(String(inventory.providerNumberCount)) + ' numbers · ≈' + escapeHtml(ccGbp(total)) + '/month rental</span></div>';
+  html += '<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));">' + groups.map((g) => '<div class="kpi' + (g.key === 'genuine' ? ' tone-good' : g.key === 'orphan' && g.count ? ' tone-bad' : (g.key === 'quarantined' || g.key === 'other') && g.count ? ' tone-warn' : '') + '"><div class="kpi-label">' + escapeHtml(g.label) + '</div><div class="kpi-value" style="font-size:30px;">' + g.count + '<small> · ' + escapeHtml(ccGbp(g.monthly)) + '/mo</small></div><div class="kpi-sub">' + escapeHtml(g.note) + '</div></div>').join('') + '</div>';
+  html += '<div class="notice">Nothing on this page releases a number. HCG’s staging test number (ending …' + escapeHtml(RESERVED_NUMBER_SUFFIXES.join(', …')) + ') is marked <span class="reserved">Reserved — do not release</span> and has no release review.</div>';
+  return html + '</div>';
+}
+function renderNumbersSummary() {
+  const el = document.getElementById('ccNumbers');
+  const overview = typeof businessControlCache !== 'undefined' ? businessControlCache.overview : null;
+  if (el && overview) el.innerHTML = renderNumbersSummaryHtml(overview.inventory, ccSummary);
+}
+
+// ---- Operations: service & safety status ----------------------------------
+function renderOpsStatusHtml({ fortress, fortressError, opsEvents, opsEventsError, accounting, accountingError, business }) {
+  const comps = (business && business.systemHealth && business.systemHealth.components) || {};
+  const g = fortress && fortress.global;
+  const rows = [];
+  if (g && g.available) {
+    rows.push(['Financial Fortress', g.killSwitch || g.breakerOpen ? 'critical' : g.enforcementMode === 'enforce' ? 'healthy' : 'attention',
+      'Breaker ' + (g.breakerOpen ? 'OPEN' : 'closed') + ' · kill switch ' + (g.killSwitch ? 'ON' : 'off') + ' · enforcement ' + (g.enforcementMode || 'not reported') + ' · ' + (g.activeCalls || 0) + ' active call(s), worst case ' + ccGbp(g.activeWorstCaseGbp || 0)]);
+  } else rows.push(['Financial Fortress', 'unknown', fortressError || (g && g.error) || 'not loaded']);
+  const inc = fortress && fortress.incident;
+  rows.push(['Abuse / security signals', !inc || inc.available === false ? 'unknown' : inc.level === 'normal' ? 'healthy' : 'attention', inc && inc.level ? 'Incident level: ' + inc.level + ' (' + (inc.scope || 'this server') + ')' : 'not reported']);
+  rows.push(['Call delivery (Twilio)', componentState(comps.twilio), comps.twilio ? comps.twilio.reason : 'not loaded']);
+  rows.push(['AI screening (OpenAI)', componentState(comps.openai), comps.openai ? comps.openai.reason : 'not loaded']);
+  rows.push(['Payment webhooks (Stripe)', componentState(comps.stripe), comps.stripe ? comps.stripe.reason : 'not loaded']);
+  rows.push(['Operational notifications', opsEvents ? ((opsEvents.deliveryProblems || []).length ? 'critical' : 'healthy') : 'attention', opsEvents ? opsEvents.unseenCount + ' unseen event(s) · ' + (opsEvents.deliveryProblems || []).length + ' failed deliveries' : (opsEventsError || 'not deployed') + ' · email delivery is OFF by design']);
+  rows.push(['Accounting / Xero', accounting ? 'healthy' : 'unknown', accounting ? 'Capture ' + (accounting.capture_enabled ? 'on' : 'off') : (accountingError || 'not deployed')]);
+  rows.push(['Background jobs', 'unknown', 'No job heartbeat is reported to this dashboard (release sweep, ledger) — check Railway logs']);
+  let html = '<div class="cc-section"><div class="section-header"><h2>Service &amp; safety status</h2><span class="last-updated">read-only</span></div>';
+  html += '<table class="mini-table"><tr><th>Area</th><th>State</th><th>Detail</th></tr>' + rows.map((r) => '<tr><td><strong>' + escapeHtml(r[0]) + '</strong></td><td>' + ccStatePill(r[1]) + '</td><td class="sub">' + escapeHtml(r[2]) + '</td></tr>').join('') + '</table>';
+  html += '<div class="notice" style="margin-top:12px;"><strong>Emergency controls are deliberately not buttons here.</strong> Breaker reset, kill switch and per-customer financial holds go through the audited admin endpoints (/admin/api/fortress/…), which require a typed confirmation phrase and a written reason and record the acting admin.</div>';
+  return html + '</div>';
+}
+function renderOpsStatus() {
+  const el = document.getElementById('ccOpsStatus');
+  if (!el) return;
+  el.innerHTML = renderOpsStatusHtml({ fortress: ccFortress, fortressError: ccFortressError, opsEvents: ccOpsEvents, opsEventsError: ccOpsEventsError, accounting: ccAccounting, accountingError: ccAccountingError, business: typeof lastBusinessData !== 'undefined' ? lastBusinessData : null });
+}
+
+// ---- Overview assembly + loading -----------------------------------------
+function renderOverviewSections() {
+  const nowMs = ccSummary ? Date.parse(ccSummary.generatedAt) : Date.now();
+  const overview = typeof businessControlCache !== 'undefined' ? businessControlCache.overview : null;
+  const business = typeof lastBusinessData !== 'undefined' ? lastBusinessData : null;
+  const head = document.getElementById('ccHeadline');
+  if (head) {
+    const kpis = buildKpis(ccSummary, overview);
+    head.innerHTML = kpis ? renderKpisHtml(kpis) : '<div class="notice warn">Customer status unavailable' + (ccSummaryError ? ': ' + escapeHtml(ccSummaryError) : '') + '. Counts are not shown rather than guessed.</div>';
+  }
+  const hl = document.getElementById('ccHighlights');
+  if (hl) hl.innerHTML = renderHighlightsHtml(buildHighlights(ccSummary, nowMs), nowMs);
+  const st = document.getElementById('ccStatus');
+  if (st) st.innerHTML = renderStatusHtml(computeHcgStatus({ summary: ccSummary, summaryError: ccSummaryError, business, fortress: ccFortress, fortressError: ccFortressError, overview, opsEvents: ccOpsEvents, opsEventsError: ccOpsEventsError }));
+  const act = document.getElementById('ccActivity');
+  if (act) act.innerHTML = renderActivityHtml(buildActivity(ccSummary, ccOpsEvents), nowMs);
+  const up = document.getElementById('ccUpdated');
+  if (up && ccSummary) up.textContent = 'Updated ' + fmtDateTime(ccSummary.generatedAt);
+}
+
+async function ccFetch(url) {
+  try {
+    const res = await fetch(url, { credentials: 'include' });
+    if (res.redirected || res.status === 403) return { error: 'Not authorized' };
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: body.reason || body.error || ('Failed (' + res.status + ')') };
+    return { data: body };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+async function loadControlCentre() {
+  const [s, f, o, a] = await Promise.all([
+    ccFetch('/admin/api/control-centre/summary'), ccFetch('/admin/api/fortress/overview'),
+    ccFetch('/admin/api/ops-events'), ccFetch('/admin/api/accounting/status'),
+  ]);
+  ccSummary = s.data || null; ccSummaryError = s.error || null;
+  ccFortress = f.data || null; ccFortressError = f.error || null;
+  ccOpsEvents = o.data || null; ccOpsEventsError = o.error || null;
+  ccAccounting = a.data || null; ccAccountingError = a.error || null;
+  try { await fetchOverviewOnce(); } catch (err) { /* shown as "not loaded" where used */ }
+  renderControlCentre();
+}
+
+function renderControlCentre() {
+  renderOverviewSections();
+  renderAttentionStrip();
+  renderCustomersTab();
+  renderMoneySummary();
+  renderNumbersSummary();
+  renderOpsStatus();
+}
+
+function showCustomers(filterKey) {
+  ccSegmentFilter = CC_SEGMENT_FILTERS.some((f) => f.key === filterKey) ? filterKey : 'all';
+  switchTab('customers');
+  renderCustomersTab();
+}
+
+function openCustomer(householdId) {
+  ccSegmentFilter = 'all';
+  customerSearch = '';
+  openCustomerDetailId = householdId;
+  switchTab('customers');
+  renderCustomersTab();
+  const row = document.getElementById('cc-row-' + householdId);
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'start' });
+}
+// TEST-EXTRACT-END: controlCentre
 
 // TEST-EXTRACT-START: renderCustomerDetailHtml
 function describeDetailDelivery(call) {
@@ -1220,10 +1951,10 @@ function renderSystemHealthTab(d) {
   let html = '<div class="section-header"><h2>System Health — ' + badge(d.systemHealth.overall) + '</h2><span class="last-updated">Last updated ' + new Date(d.generatedAt).toLocaleString('en-GB') + '</span></div>';
   html += '<div class="section"><table><tr><th>Component</th><th>Status</th><th>Detail</th></tr>';
   for (const [name, c] of Object.entries(d.systemHealth.components)) {
-    html += '<tr><td>' + name + '</td><td>' + badge(c.status) + '</td><td style="color:#93a3b8;">' + c.reason + '</td></tr>';
+    html += '<tr><td>' + escapeHtml(name) + '</td><td>' + badge(c.status) + '</td><td style="color:var(--muted);">' + escapeHtml(c.reason) + '</td></tr>';
   }
   html += '</table></div>';
-  html += '<div class="sub" style="color:#64748b;">This is the single, canonical health interpretation for this dashboard — "configured" is never treated as the same thing as "confirmed working" (see each component\'s own reason above).</div>';
+  html += '<div class="sub" style="color:var(--dim);">This is the single, canonical health interpretation for this dashboard — "configured" is never treated as the same thing as "confirmed working" (see each component\'s own reason above).</div>';
   document.getElementById('systemhealth').innerHTML = html;
 }
 
@@ -1327,20 +2058,20 @@ function renderOperationsTab(data) {
   html += '</div>';
 
   html += '<div class="card"><h3>Customer search</h3>' +
-    '<form class="search-form" id="opSearchForm"><input type="text" id="opSearchInput" placeholder="Email, phone, or Twilio number"><button type="submit" class="action-button">Search</button></form>' +
+    '<form class="search-form" id="opSearchForm"><input type="text" id="opSearchInput" placeholder="HCG account number, email or phone"><button type="submit" class="action-button">Search</button></form>' +
     '<div id="opSearchResults"></div>' +
     '<h3 style="margin-top:20px;">Retry provisioning</h3>' +
     '<div class="quick-action-row"><input type="text" id="opRetryHouseholdId" placeholder="Household ID"><button type="button" id="opRetryProvisioningBtn" class="action-button">Retry</button></div>' +
     '<div class="quick-action-result" id="opQuickActionResult"></div>' +
     '<h3 style="margin-top:20px;">Grant complimentary access</h3>' +
-    '<p style="color:#93a3b8;font-size:12.5px;margin-bottom:8px;">Complimentary — no payment taken. For an existing registered household only; does not create or imply a Stripe/RevenueCat subscription.</p>' +
+    '<p style="color:var(--muted);font-size:12.5px;margin-bottom:8px;">Complimentary — no payment taken. For an existing registered household only; does not create or imply a Stripe/RevenueCat subscription.</p>' +
     '<div class="quick-action-row"><input type="text" id="opComplimentaryHouseholdId" placeholder="Household ID"></div>' +
     '<div class="quick-action-row"><select id="opComplimentaryDuration"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">12 months</option><option value="custom">Custom date…</option></select><input type="date" id="opComplimentaryCustomDate" style="display:none;"></div>' +
     '<div class="quick-action-row"><input type="text" id="opComplimentaryNotes" placeholder="Reason (required)"></div>' +
     '<div class="quick-action-row"><button type="button" id="opGrantComplimentaryBtn" class="action-button">Grant complimentary — no payment taken</button><button type="button" id="opRevokeComplimentaryBtn" class="action-button">Revoke complimentary</button></div>' +
     '<div class="quick-action-result" id="opComplimentaryResult"></div>' +
     '<h3 style="margin-top:20px;">Friends &amp; Family — create invite link</h3>' +
-    '<p style="color:#93a3b8;font-size:12.5px;margin-bottom:8px;">For someone with no household yet — they register/log in normally, then complimentary access is granted automatically. Single use; the link expires for redemption after 7 days if unused.</p>' +
+    '<p style="color:var(--muted);font-size:12.5px;margin-bottom:8px;">For someone with no household yet — they register/log in normally, then complimentary access is granted automatically. Single use; the link expires for redemption after 7 days if unused.</p>' +
     '<div class="quick-action-row"><select id="opInviteDuration"><option value="30">30 days</option><option value="90">90 days</option><option value="365">12 months</option></select><input type="text" id="opInviteNote" placeholder="Note (e.g. Sister, Family tester)"></div>' +
     '<div class="quick-action-row"><button type="button" id="opCreateInviteBtn" class="action-button">Create invite link</button></div>' +
     '<div class="quick-action-result" id="opInviteResult"></div>' +
@@ -1490,7 +2221,7 @@ function wireOperationsActions() {
         if (!res.ok) {
           resultEl.textContent = 'Failed: ' + data.error;
         } else {
-          resultEl.innerHTML = 'Invite created — copy this link: <input type="text" readonly value="' + data.url + '" onclick="this.select();" style="width:100%;margin-top:6px;background:#0b1220;border:1px solid #334155;border-radius:6px;color:white;padding:8px 10px;font-size:12.5px;">';
+          resultEl.innerHTML = 'Invite created — copy this link: <input type="text" readonly value="' + data.url + '" onclick="this.select();" style="width:100%;margin-top:6px;background:var(--bg);border:1px solid var(--border-strong);border-radius:6px;color:white;padding:8px 10px;font-size:12.5px;">';
         }
         loadInviteList();
       } catch (err) {
@@ -1573,7 +2304,10 @@ const businessControlCache = {};
 // Sections fetched from /admin/api/business-control/*, by the tab that
 // shows them. Each section loads the first time its tab opens.
 const BUSINESS_CONTROL_TABS = ['overviewBody', 'subscriptions', 'reconciliation', 'finance', 'marketing', 'usageSafety'];
-const TAB_SECTIONS = { overview: ['overviewBody'], customers: ['subscriptions'], numbers: ['reconciliation'], money: ['finance', 'marketing'], operations: ['usageSafety'] };
+// Admin redesign (2026-10-04): the detailed v2 checks grid (overviewBody)
+// lives on Operations; the new Overview is rendered from the canonical
+// summary by loadControlCentre().
+const TAB_SECTIONS = { overview: [], customers: ['subscriptions'], numbers: ['reconciliation'], money: ['finance', 'marketing'], operations: ['usageSafety', 'overviewBody'] };
 
 // TEST-EXTRACT-START: businessControlHelpers
 const PROVENANCE_BADGES = {
@@ -1677,7 +2411,8 @@ function bcCard(label, value, sub, className) {
 // ---------- Overview ----------
 const GLOSSARY_ROWS = [
   ['Account / household', 'Any registered household. Neutral: not necessarily a customer.'],
-  ['Genuine customer', 'Explicitly classified as a genuine customer. Never inferred.'],
+  ['Genuine paying customer (Overview, Customers)', 'The commercial classifier (services/commercial/commercialStatus.js): proven production money — Stripe live, or Apple/Google with RevenueCat environment = production — and not a test, reviewer, admin or QA account. Sandbox, TestFlight, App Review and unverified store purchases are never genuine.'],
+  ['Genuine customer (these detailed checks)', 'Explicitly classified as a genuine customer (account classification, migration 069). Still used by these checks, Stripe MRR attribution and number categories until the two definitions are converged (see docs/product/2026-10-04-ADMIN-CONTROL-CENTRE-REDESIGN.md).'],
   ['Internal test / reviewer / admin / QA', 'Explicitly classified non-customer accounts. Visible everywhere, never counted as customers or revenue.'],
   ['Unclassified', 'Not yet classified. Not counted as a customer or revenue until classified.'],
   ['Paid / complimentary / trial access', 'The type of the current entitlement.'],
@@ -1685,7 +2420,8 @@ const GLOSSARY_ROWS = [
   ['Payment history / former paying', 'A paid membership was recorded at some point (any status); former paying = no paid access now. Stripe test / Apple sandbox rows look the same, so this is not proof money was received.'],
   ['Cancelled', 'No current or upcoming membership; the subscription was cancelled or access revoked.'],
   ['Expired', 'No current or upcoming membership; the last one ended by date.'],
-  ['Protected', 'Current membership + delivery confirmed + app registered (the customer-facing definition).'],
+  ['Protected (Overview, Customers)', 'Every canonical protection gate holds now (services/lifecycle/activationState.js): entitled, not on a financial hold, number active and not quarantined, forwarding and a delivered call for the CURRENT number, app reachable.'],
+  ['Protected (these detailed checks)', 'Legacy rule: current membership + delivery confirmed + app registered.'],
   ['Entitled but not protected', 'Current membership, not (yet) Protected.'],
   ['Revenue / MRR', 'Money from genuine customers only, read from the payment provider. Never an entitlement count multiplied by the list price.'],
 ];
@@ -1828,6 +2564,13 @@ function renderAttentionStrip() {
   // typeof guards: these page globals are declared outside this block.
   const customers = typeof customerMonitorData !== 'undefined' ? customerMonitorData : null;
   const business = typeof lastBusinessData !== 'undefined' ? lastBusinessData : null;
+  // Admin redesign (2026-10-04): with the canonical summary loaded, the list
+  // is built from the canonical exception queue (genuine customers first)
+  // plus the business checks it does not cover.
+  if (typeof ccSummary !== 'undefined' && ccSummary) {
+    el.innerHTML = renderCanonicalAttentionHtml(ccSummary, businessControlCache.overview, business, customers);
+    return;
+  }
   const items = buildAttentionItems(businessControlCache.overview, customers, business);
   const pending = [!businessControlCache.overview && 'checks', !customers && 'customers', !business && 'system health'].filter(Boolean);
   let html = '<div class="section"><div class="section-header"><h2>Needs your attention' + (items.length ? ' (' + items.length + ')' : '') + '</h2></div>';
@@ -1845,8 +2588,8 @@ function renderAttentionStrip() {
 async function renderOverviewTab(force) {
   const d = await fetchOverviewOnce(force);
   renderAttentionStrip();
-  let html = '<div class="section">' + sectionHeader('Checks', d.generatedAt, 'overviewBody');
-  html += '<p class="sub">Genuine = explicitly classified genuine customer; test, reviewer, admin, complimentary and unclassified accounts are never counted as customers or revenue. Each card states the rule behind its colour — open "rule &amp; items".</p>';
+  let html = '<div class="section">' + sectionHeader('Detailed business checks', d.generatedAt, 'overviewBody');
+  html += '<p class="sub">Moved here from the Overview (2026-10-04). These checks use account <em>classification</em> (\'genuine_customer\'), not the commercial classifier the Overview uses — see Definitions. Each card states the rule behind its colour — open "rule &amp; items".</p>';
   for (const g of groupOverviewCards(d.cards)) {
     html += '<div class="control-group-title">' + escapeHtml(g.title) + '</div>';
     html += '<div class="control-grid">' + g.cards.map((c) =>
@@ -2004,13 +2747,14 @@ function inventoryHtml(inv, reason, generatedAt) {
     const flags = (row.flags.length ? row.flags.map((f) => '<div class="' + (f.severity === 'red' ? 'text-bad' : 'text-warn') + '">' + escapeHtml(f.label) + '</div>').join('') : '') + row.recommendations.map((t) => '<div class="customer-sub">→ ' + escapeHtml(t) + '</div>').join('');
     const call = row.lastInboundCall || {};
     const lifecycle = escapeHtml(row.stateLabel) + (row.pendingReleaseAt ? '<div class="customer-sub">release ' + escapeHtml(String(row.pendingReleaseAt).slice(0, 10)) + '</div>' : '') + (row.quarantinedAt ? '<div class="customer-sub">quarantined ' + escapeHtml(String(row.quarantinedAt).slice(0, 10)) + '</div>' : '');
-    html += '<tr class="inv-' + escapeHtml(row.severity) + '"><td>' + escapeHtml(row.number || '—') + (row.sid ? '<div class="customer-sub">…' + escapeHtml(String(row.sid).slice(-6)) + '</div>' : '') + '</td>' +
-      '<td>' + escapeHtml(row.categoryLabel || '—') + '</td><td class="cell-wrap">' + owner + '</td>' +
+    const reserved = typeof isReservedNumber === 'function' && isReservedNumber(row.number);
+    html += '<tr class="inv-' + escapeHtml(reserved ? 'info' : row.severity) + '"><td>' + escapeHtml(row.number || '—') + (row.sid ? '<div class="customer-sub">…' + escapeHtml(String(row.sid).slice(-6)) + '</div>' : '') + '</td>' +
+      '<td>' + (reserved ? 'Staging test number<div class="reserved">Reserved — do not release</div>' : escapeHtml(row.categoryLabel || '—')) + '</td><td class="cell-wrap">' + owner + '</td>' +
       '<td>' + escapeHtml((row.environment || '—').replace(/_/g, ' ')) + (row.voiceHost ? '<div class="customer-sub">' + escapeHtml(row.voiceHost) + '</div>' : '') + '</td>' +
       '<td>' + escapeHtml(row.createdAt ? String(row.createdAt).slice(0, 10) : '—') + '</td>' +
       '<td class="cell-wrap">' + (call.at ? escapeHtml(fmtDateTime(call.at)) : '<span class="text-muted">' + escapeHtml(call.source || '—') + '</span>') + '</td>' +
       '<td class="cell-wrap">' + lifecycle + '</td><td class="num">' + escapeHtml(row.monthlyRental !== null ? Number(row.monthlyRental).toFixed(2) : '—') + '</td><td class="cell-wrap">' + flags + '</td>' +
-      '<td>' + (row.sid ? '<button type="button" class="row-button" data-sid="' + escapeHtml(row.sid) + '" onclick="toggleReleaseReview(this.dataset.sid)">' + (openReleaseReviewSid === row.sid ? 'Close' : 'Review release…') + '</button>' : '') + '</td></tr>';
+      '<td>' + (row.sid && !reserved ? '<button type="button" class="row-button" data-sid=""' + escapeHtml(row.sid) + '" onclick="toggleReleaseReview(this.dataset.sid)">' + (openReleaseReviewSid === row.sid ? 'Close' : 'Review release…') + '</button>' : '') + '</td></tr>';
     if (row.sid && openReleaseReviewSid === row.sid) html += '<tr class="detail-row"><td colspan="10">' + renderReleaseReviewHtml(row, generatedAt, Date.now()) + '</td></tr>';
   }
   html += '</tbody></table></div>';
@@ -2042,6 +2786,7 @@ async function renderReconciliationTab(force) {
   html += '<ul class="sub" style="margin-top:12px;">' + d.notes.map((n) => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>';
   html += '</div>';
   document.getElementById('reconciliation').innerHTML = html;
+  if (typeof renderNumbersSummary === 'function') renderNumbersSummary();
   if (openReleaseReviewSid && overview && overview.inventory) wireReleaseReview(overview.inventory.rows.find((r) => r.sid === openReleaseReviewSid), overview.generatedAt);
 }
 
@@ -2096,9 +2841,10 @@ function renderSafetyHtml(safety) {
 
 async function renderFinanceTab() {
   const d = await fetchBusinessControl('finance');
+  if (typeof renderMoneySummary === 'function') { ccFinance = d; renderMoneySummary(); }
   const t = d.totals;
   const u = d.unitEconomics;
-  let html = '<div class="section">' + sectionHeader('Finance — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
+  let html = '<div class="section">' + sectionHeader('Finance detail — ' + escapeHtml(d.period.label), d.generatedAt, 'finance');
   html += '<p class="sub" style="margin-bottom:6px;">Source: ' + escapeHtml(d.connections.source) + ' · Stripe: ' + escapeHtml(d.stripeMode) + '</p>';
   html += '<p class="sub" style="margin-bottom:14px;">' + provenanceBadge('ACTUAL') + ' supplier-reported ' + provenanceBadge('ALLOCATED') + ' supplier total apportioned ' + provenanceBadge('ESTIMATED') + ' calculated ' + provenanceBadge('MANUAL') + ' entered by you ' + provenanceBadge('NOT_CONNECTED') + ' no source (never £0). A total missing any line is shown as <em>known part only</em> or not at all.</p>';
   html += renderSafetyHtml(d.safety);
@@ -2279,6 +3025,10 @@ async function renderUsageSafetyTab() {
 // Boot
 // ============================================================
 switchTab(initialTab());
+// The tab name in the URL is also a panel id: stop the browser jumping to
+// it on load (the sticky header would hide the top of the panel).
+if (window.history && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
+window.addEventListener('load', () => setTimeout(() => window.scrollTo(0, 0), 0));
 loadAll();
 </script>
 </body>
