@@ -39,16 +39,30 @@ function createAccountingCapture({ env = process.env, deps = {} } = {}) {
     return engine;
   }
 
+  // Soft-launch integration 2026-10-04 (brief §6 C11): accounting is never an
+  // entitlement authority and can never delay or block the webhook's
+  // entitlement handling — capture is bounded by ACCOUNTING_CAPTURE_TIMEOUT_MS
+  // (default 2000) and the failure alert is fire-and-forget. A timed-out
+  // capture is caught later by reconciliation/backfill (doc §5).
+  const timeoutMs = () => Math.max(100, Number(env.ACCOUNTING_CAPTURE_TIMEOUT_MS) || 2000);
   async function capture(kind, fn) {
     if (!enabled()) return { captured: false, reason: 'disabled' };
+    let timer;
     try {
-      const result = await fn(getEngine());
-      return { captured: true, outcome: result.outcome };
+      const result = await Promise.race([
+        Promise.resolve().then(() => fn(getEngine())),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`accounting capture timed out after ${timeoutMs()}ms`)), timeoutMs()); }),
+      ]);
+      return { captured: true, outcome: result && result.outcome };
     } catch (err) {
       console.error(`ACCOUNTING CAPTURE FAILED (${kind}):`, err.message);
-      const alert = deps.sendCriticalAlert || require('../alerting').sendCriticalAlert;
-      await Promise.resolve(alert('accounting_capture_failed', `Accounting capture failed for a ${kind} event`, { error: err.message })).catch(() => {});
-      return { captured: false, reason: 'error', error: err.message };
+      try {
+        const alert = deps.sendCriticalAlert || require('../alerting').sendCriticalAlert;
+        Promise.resolve(alert('accounting_capture_failed', `Accounting capture failed for a ${kind} event`, { error: err.message })).catch(() => {});
+      } catch { /* alerting unavailable: already logged */ }
+      return { captured: false, reason: /timed out/.test(err.message) ? 'timeout' : 'error', error: err.message };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
