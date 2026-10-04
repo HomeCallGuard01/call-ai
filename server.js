@@ -1004,6 +1004,8 @@ app.use(require("./routes/adminAccounting").createAdminAccountingRoutes({ supaba
 app.use(require("./routes/adminLifecycle").createAdminLifecycleRoutes({ supabaseAdmin, getDeliveryHealth: (household) => getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household }) }));
 // Operational events (2026-10-04): admin view of new-genuine-customer / protected / needs-attention events (503 until 072).
 app.use(require("./routes/adminOpsEvents").createAdminOpsEventRoutes({ supabaseAdmin }));
+// Admin Control Centre redesign (2026-10-04): read-only founder summary composed from the canonical definitions.
+app.use(require("./routes/adminControlCentre").createAdminControlCentreRoutes({ supabaseAdmin }));
 
 // Integration 2026-10-03: the customer allowance describes the AUTHORITATIVE
 // £ budget (Financial Fortress) unless explicitly set otherwise, so the

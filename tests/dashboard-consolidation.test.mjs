@@ -202,7 +202,8 @@ check(!dashboardHtml.includes('View Customer Dashboard'), 'admin-business.html: 
 check(!/href="\/dashboard"/.test(dashboardHtml), 'admin-business.html: contains no link at all into the consumer /dashboard route');
 
 check(dashboardHtml.includes('aria-current'), 'admin-business.html: the active tab is marked with aria-current for accessibility, not just a visual-only cue');
-check(/aria-current="page"\]\s*\{[^}]*background:\s*#22d3ee/.test(dashboardHtml), 'admin-business.html: the active tab gets a solid brand-cyan fill (#22d3ee), not just a border or text-colour change, for strong contrast');
+// Admin redesign (2026-10-04): the accent is now HCG brand green (--green, #3cf07a — the website palette), not cyan.
+check(/aria-current="page"\]\s*\{[^}]*background:\s*var\(--green\)/.test(dashboardHtml) && /--green:\s*#3cf07a/.test(dashboardHtml), 'admin-business.html: the active tab gets a solid HCG-green fill (--green #3cf07a), not just a border or text-colour change, for strong contrast');
 check(/Log out|Logout/.test(dashboardHtml), 'admin-business.html: a logout control is present');
 check(dashboardHtml.includes('action="/logout"'), 'admin-business.html: logout submits to the real /logout route, not a fake/local-only control');
 

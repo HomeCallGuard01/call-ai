@@ -304,7 +304,8 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   }
   check(/const TAB_NAMES = \['overview', 'customers', 'numbers', 'money', 'operations'\]/.test(html), 'five tabs, Overview first');
   check((html.match(/class="tab-button"/g) || []).length === 5, 'exactly five tab buttons (was nine)');
-  for (const [section, tab] of [['overviewBody', 'overview'], ['attention', 'overview'], ['customerHealth', 'customers'], ['subscriptions', 'customers'], ['reconciliation', 'numbers'], ['finance', 'money'], ['marketing', 'money'], ['acquisition', 'money'], ['callActivity', 'operations'], ['systemhealth', 'operations'], ['opsTools', 'operations']]) {
+  // Admin redesign (2026-10-04): the detailed checks grid (overviewBody) moved to Operations.
+  for (const [section, tab] of [['overviewBody', 'operations'], ['attention', 'overview'], ['ccHeadline', 'overview'], ['ccStatus', 'overview'], ['ccActivity', 'overview'], ['ccMoney', 'money'], ['ccNumbers', 'numbers'], ['ccOpsStatus', 'operations'], ['customerHealth', 'customers'], ['subscriptions', 'customers'], ['reconciliation', 'numbers'], ['finance', 'money'], ['marketing', 'money'], ['acquisition', 'money'], ['callActivity', 'operations'], ['systemhealth', 'operations'], ['opsTools', 'operations']]) {
     const panelStart = html.indexOf(`<div id="${tab}" class="tab-panel"`);
     const panelEnd = html.indexOf('\n', panelStart);
     check(panelStart !== -1 && html.slice(panelStart, panelEnd).includes(`id="${section}"`), `section "${section}" sits in the ${tab} tab`);
