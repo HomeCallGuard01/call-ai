@@ -1,5 +1,7 @@
 # Provider-level financial containment (LEVEL 4) — launch-blocking requirement
 
+> **Superseded 2026-10-04 by `2026-10-04-PROVIDER_FINANCIAL_CONTAINMENT_FINAL.md`** (official-docs audit, control classification, exposure model, Twilio questions Q1–Q12) and `2026-10-04-TWILIO_CONTAINMENT_CHECKLIST.md`. Kept unchanged below as the pre-audit record.
+
 **Status: RED launch blocker. Nothing here has been verified or changed by this work.**
 No provider was contacted and no provider setting was read or changed. Every HCG
 application control (levels 1–3) can be bypassed by anyone holding the provider
