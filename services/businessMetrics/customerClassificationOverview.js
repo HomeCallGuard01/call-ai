@@ -25,7 +25,10 @@ function resolveSupabaseAdmin() {
 // household_ids with a currently-active entitlement, and the
 // classification map, and produces the full classification breakdown.
 // Directly unit-testable with no database at all.
-function computeGenuineCustomerBreakdown({ households, activeEntitlementHouseholdIds, activeStripeEntitlementHouseholdIds }, classificationMap) {
+// 2026-10-04 (MI-1b): genuine = the canonical commercial status (commercialIndex);
+// classification only supplies the test/reviewer/admin exclusion buckets.
+// Without an index nobody counts as genuine — never a second definition.
+function computeGenuineCustomerBreakdown({ households, activeEntitlementHouseholdIds, activeStripeEntitlementHouseholdIds, commercialIndex = null }, classificationMap) {
   const byClassification = {
     genuine_customer: [],
     internal_test: [],
@@ -50,16 +53,24 @@ function computeGenuineCustomerBreakdown({ households, activeEntitlementHousehol
   const activeStripeEntSet = new Set(activeStripeEntitlementHouseholdIds || []);
   const isActiveProtected = (h) => h.twilio_provisioning_status === 'active' && !!h.twilio_number;
 
-  const genuine = byClassification.genuine_customer;
+  const commercialOf = (h) => (commercialIndex ? commercialIndex.byHousehold.get(h.id) : null);
+  const genuine = (households || []).filter((h) => { const c = commercialOf(h); return !!(c && c.genuinePaying); });
+  // Partition (2026-10-04): genuine (canonical) + explicit test/reviewer/admin/
+  // QA/other labels + everything else ("unclassified" = not genuine paying and
+  // not an explicit test account — e.g. a 'genuine_customer' label with no
+  // proven production money).
+  const genuineIds = new Set(genuine.map((h) => h.id));
+  const testIds = new Set(['internal_test', 'admin', 'reviewer', 'qa_automation', 'other_non_customer'].flatMap((k) => byClassification[k].map((h) => h.id)));
+  byClassification.unclassified = (households || []).filter((h) => !genuineIds.has(h.id) && !testIds.has(h.id));
 
   return {
     genuineCustomers: genuine.length,
-    genuinePayingCustomers: genuine.filter((h) => activeEntSet.has(h.id)).length,
+    genuinePayingCustomers: genuine.length,
     // Stripe-only subset of genuinePayingCustomers above — the real,
     // confirmed-revenue MRR (services/businessMetrics/config.js's price)
     // is computed from this count, never from the Apple/RevenueCat
     // portion, which stays a separately-labeled estimate.
-    genuineStripePayingCustomers: genuine.filter((h) => activeStripeEntSet.has(h.id)).length,
+    genuineStripePayingCustomers: genuine.filter((h) => commercialOf(h).channel === 'web_stripe').length,
     activeProtectedGenuineCustomers: genuine.filter(isActiveProtected).length,
     internalTest: byClassification.internal_test.length,
     admin: byClassification.admin.length,
@@ -95,6 +106,7 @@ async function getGenuineCustomerOverview() {
       households: households || [],
       activeEntitlementHouseholdIds: (activeEnts || []).map((e) => e.household_id),
       activeStripeEntitlementHouseholdIds: (activeEnts || []).filter((e) => e.source === 'stripe').map((e) => e.household_id),
+      commercialIndex: await require('../commercial/householdCommercialIndex').loadCommercialIndex(supabaseAdmin, classification.map),
     },
     classification.map
   );
@@ -109,15 +121,15 @@ async function getGenuineCustomerOverview() {
 // classification field regardless of which list it lands in, so the
 // "diagnostics" view can show a badge per row rather than a second,
 // separately-shaped table.
-function classifyCustomerList(customers, classificationMap) {
-  const annotated = (customers || []).map((c) => ({
-    ...c,
-    classification: classifyHousehold(c.householdId, classificationMap),
-  }));
-
+function classifyCustomerList(customers, classificationMap, commercialIndex = null) {
+  const annotated = (customers || []).map((c) => {
+    const commercial = commercialIndex ? commercialIndex.byHousehold.get(c.householdId) || null : null;
+    return { ...c, classification: classifyHousehold(c.householdId, classificationMap), commercialStatus: commercial ? commercial.status : null, genuinePaying: !!(commercial && commercial.genuinePaying) };
+  });
   return {
     all: annotated,
-    genuine: annotated.filter((c) => c.classification === 'genuine_customer'),
+    // 2026-10-04 (MI-1): the canonical genuine-paying definition.
+    genuine: annotated.filter((c) => c.genuinePaying),
   };
 }
 
@@ -145,7 +157,8 @@ async function getClassifiedCustomerList(limit = 20) {
 
   if (!classification.available) return { available: false, reason: classification.reason };
 
-  const { all, genuine } = classifyCustomerList(customers, classification.map);
+  const commercialIndex = await require('../commercial/householdCommercialIndex').loadCommercialIndex(resolveSupabaseAdmin(), classification.map);
+  const { all, genuine } = classifyCustomerList(customers, classification.map, commercialIndex);
   return { available: true, all, genuine };
 }
 

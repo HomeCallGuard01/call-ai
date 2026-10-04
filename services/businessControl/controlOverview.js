@@ -13,6 +13,7 @@
 // numbers behind it.
 // STRICTLY OBSERVATIONAL — reads only.
 'use strict';
+const NON_GENUINE_CLASS_SET = new Set(['internal_test', 'reviewer', 'admin', 'qa_automation', 'other_non_customer']);
 
 const { classifyHouseholdForBusiness } = require('./definitions');
 const { buildNumberInventory, deriveRentalPerNumber, resolveProductionHosts, maskNumber } = require('./numberInventory');
@@ -49,10 +50,12 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
 
   // 1. Genuine paying customers
   const genuinePaying = live.filter((b) => b.isGenuinePayingCustomer);
-  const genuineFormer = live.filter((b) => b.isGenuine && b.formerPaying);
+  // 2026-10-04 (MI-1): one definition — genuine paying NOW = canonical
+  // commercial status; former = proven genuine payment history, not paying now.
+  const genuineFormer = live.filter((b) => !b.isGenuinePayingCustomer && b.genuinePaymentHistory && b.formerPaying);
   cards.push(card('genuine_paying', 'Genuine paying customers (now)', genuinePaying.length, 'info',
-    'Count only. Genuine = classified genuine customer; paying = current paid subscription. A customer who paid and then cancelled is a former paying customer, not a paying one.',
-    { sub: `${live.filter((b) => b.isGenuine).length} genuine account(s) · ${genuinePaying.length + genuineFormer.length} ever paid · ${genuineFormer.length} former paying`,
+    'Count only. Genuine paying = proven production money now (Stripe live or store production) and not a test/reviewer account. A customer who paid and then cancelled is a former paying customer, not a paying one.',
+    { sub: `${genuinePaying.length} genuine paying now · ${genuinePaying.length + genuineFormer.length} ever paid · ${genuineFormer.length} former paying`,
       items: [...genuinePaying.map((b) => ref(b, 'paying now')), ...genuineFormer.map((b) => ref(b, `former paying · ${b.membership}`))] }));
 
   // 2. Non-customer / non-paying access
@@ -62,21 +65,23 @@ function computeControlOverview({ households, entitlementsByHousehold, subscript
     const key = b.accountClass === 'genuine' ? `genuine ${b.access}` : b.accountClass.replace('_', ' ');
     breakdown[key] = (breakdown[key] || 0) + 1;
   }
-  const unclassifiedWithAccess = withAccess.filter((b) => b.accountClass === 'unclassified');
-  cards.push(card('non_paying_access', 'Complimentary / internal / test / reviewer access', withAccess.length,
-    unclassifiedWithAccess.length ? 'amber' : 'info',
-    'Amber when any account with access is unclassified (it cannot be counted either way until classified).',
+  // 2026-10-04 (MI-1d): classification no longer decides "genuine", so an
+  // unlabelled account with access is not a counting problem.
+  cards.push(card('non_paying_access', 'Complimentary / internal / test / reviewer / store-test access', withAccess.length,
+    'info',
+    'Accounts with access that are not genuine paying customers (canonical commercial status).',
     { sub: Object.entries(breakdown).map(([k, n]) => `${n} ${k}`).join(' · ') || 'none', items: withAccess.map((b) => ref(b, `${b.accountClass} · ${b.access}`)) }));
 
-  // 2b. Payment history that no figure counts: a paid membership was
-  // recorded but the account is unclassified, so it is neither a genuine
-  // (or former) paying customer nor a known test account.
-  const paidUnclassified = live.filter((b) => b.everPaid && b.accountClass === 'unclassified');
-  cards.push(card('paid_unclassified', 'Paid at some point, not classified', paidUnclassified.length,
-    paidUnclassified.length ? 'amber' : 'green',
-    'Amber when an account has a recorded paid membership (any status) but no classification. Until it is classified it is counted nowhere — this is how a real payer can be missing from "genuine paying customers".',
-    { sub: paidUnclassified.length ? 'Classify as genuine customer or test/reviewer/admin' : 'Every account with payment history is classified',
-      items: paidUnclassified.map((b) => ref(b, `${b.access === 'paid' ? 'paying now' : 'former paying · ' + b.membership} · ${b.paidSources.join('/')}`)) }));
+  // 2b. (2026-10-04, MI-1d) A paid membership was recorded but production
+  // money is NOT proven (Apple/Google sandbox · TestFlight · App Review, a
+  // store grant whose environment was never recorded, or Stripe test). Never
+  // counted as genuine; worth verifying in RevenueCat / Stripe.
+  const paidNotProven = live.filter((b) => b.everPaid && !b.genuinePaymentHistory && !NON_GENUINE_CLASS_SET.has(b.accountClass));
+  cards.push(card('paid_not_proven', 'Paid membership recorded, money not proven', paidNotProven.length,
+    paidNotProven.length ? 'amber' : 'green',
+    'Amber when a paid membership exists without proven production money (store sandbox / TestFlight / review, environment unverified, or Stripe test). Never counted as genuine paying — verify in RevenueCat or Stripe.',
+    { sub: paidNotProven.length ? 'Verify the store/payment environment' : 'Every paid membership is proven production money or a known test account',
+      items: paidNotProven.map((b) => ref(b, `${b.commercial ? b.commercial.label : 'unverified'} · ${b.paidSources.join('/')}`)) }));
 
   // 3. MRR — genuine customers only, from Stripe
   let mrrCard;
@@ -245,7 +250,7 @@ async function getControlOverview(now = new Date()) {
 
   const [hRes, eRes, sRes, qRes, classification] = await Promise.all([
     supabaseAdmin.from('households').select(cols),
-    supabaseAdmin.from('entitlements').select('household_id, entitlement_type, status, source, starts_at, ends_at, updated_at'),
+    require('../commercial/householdCommercialIndex').selectEntitlementsWithEnvironment(supabaseAdmin), // 2026-10-04 MI-1: + store environment (053), tolerant
     supabaseAdmin.from('subscriptions').select('household_id, status, cancel_at_period_end, updated_at'),
     supabaseAdmin.from('twilio_number_quarantine').select('id, household_id, twilio_number, release_reason, deactivation_confirmed, deactivation_confirmed_at, quarantined_at, released_at'),
     getClassificationMap(),
@@ -294,14 +299,18 @@ async function getControlOverview(now = new Date()) {
     inventoryReason = 'Twilio credentials not configured';
   }
 
-  // Genuine revenue from Stripe.
+  // Genuine revenue from Stripe (2026-10-04, MI-1a): attributed by
+  // stripe_customer_id → household → the canonical commercial status, so
+  // "Monthly revenue" counts exactly the households called Genuine paying.
+  const { buildCommercialIndex, commercialBucket } = require('../commercial/householdCommercialIndex');
+  const commercialIndex = buildCommercialIndex({ households, entitlementsByHousehold, classificationMap: classification.map }, now);
   const genuineByCustomer = new Map();
   const classByCustomer = new Map();
   for (const h of households) {
     if (!h.stripe_customer_id) continue;
-    const cls = classification.map.get(h.id);
-    if (cls === 'genuine_customer') genuineByCustomer.set(h.stripe_customer_id, h.id);
-    classByCustomer.set(h.stripe_customer_id, cls === 'genuine_customer' ? 'genuine' : cls || 'unclassified');
+    const c = commercialIndex.byHousehold.get(h.id);
+    if (c && c.genuinePaying) genuineByCustomer.set(h.stripe_customer_id, h.id);
+    classByCustomer.set(h.stripe_customer_id, commercialBucket(c));
   }
   const stripeRevenue = await getGenuineStripeRevenue({ stripe: resolveStripe(), genuineByCustomer, classByCustomer, vatRate: resolveVatRate(), now });
 

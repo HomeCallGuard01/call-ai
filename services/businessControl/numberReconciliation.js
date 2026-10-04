@@ -262,7 +262,7 @@ async function getNumberReconciliation(now = new Date(), { providerNumbersLoader
     supabaseAdmin
       .from('households')
       .select('id, email, twilio_number, twilio_provisioning_status, twilio_provisioning_updated_at, twilio_number_pending_release_at, activation_verified_at, voice_client_registered_at, delivery_verified_at'),
-    supabaseAdmin.from('entitlements').select('household_id, entitlement_type, status, source, starts_at, ends_at, updated_at'),
+    require('../commercial/householdCommercialIndex').selectEntitlementsWithEnvironment(supabaseAdmin) /* 2026-10-04 MI-1: + store environment (053), tolerant */,
     supabaseAdmin.from('subscriptions').select('household_id, status, cancel_at_period_end, updated_at'),
     supabaseAdmin
       .from('twilio_number_quarantine')

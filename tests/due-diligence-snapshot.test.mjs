@@ -32,7 +32,7 @@ const ent = (hh, type, startsAgo, extra = {}) => ({ household_id: hh, entitlemen
 
 const IDS = { g: '11111111-1111-4111-8111-111111111111', f: '22222222-2222-4222-8222-222222222222', r: '33333333-3333-4333-8333-333333333333', u: '44444444-4444-4444-8444-444444444444' };
 const households = [
-  { id: IDS.g, email: 'real.customer@example.com', twilio_number: '+447000000301', activation_verified_at: ago(DAY), voice_client_registered_at: ago(DAY), delivery_verified_at: ago(DAY) },
+  { id: IDS.g, email: 'real.customer@example.com', twilio_number: '+447000000301', activation_verified_at: ago(DAY), voice_client_registered_at: ago(DAY), delivery_verified_at: ago(DAY), twilio_provisioning_status: 'active' },
   { id: IDS.f, email: 'former.customer@example.com', twilio_number: '+447000000302', twilio_number_pending_release_at: ago(-5 * DAY) },
   { id: IDS.r, email: 'appreview@example.com', twilio_number: '+447000000303' },
   { id: IDS.u, email: 'someone@example.com', twilio_number: null },
@@ -41,7 +41,8 @@ const entitlements = [
   ent(IDS.g, 'paid_subscription', 10 * DAY),
   ent(IDS.f, 'paid_subscription', 40 * DAY, { status: 'revoked', updated_at: ago(20 * DAY) }),
   ent(IDS.r, 'complimentary', 30 * DAY),
-  ent(IDS.u, 'paid_subscription', 50 * DAY, { status: 'expired', updated_at: ago(15 * DAY) }),
+  // 2026-10-04 (MI-1): a store-SANDBOX paid row — recorded "paid", money not proven, never genuine.
+  ent(IDS.u, 'paid_subscription', 50 * DAY, { source: 'revenuecat', revenuecat_environment: 'sandbox', status: 'expired', updated_at: ago(15 * DAY) }),
 ];
 const classes = new Map([[IDS.g, 'genuine_customer'], [IDS.f, 'genuine_customer'], [IDS.r, 'reviewer']]);
 const byHh = (rows) => { const m = new Map(); for (const r of rows) { if (!m.has(r.household_id)) m.set(r.household_id, []); m.get(r.household_id).push(r); } return m; };
@@ -65,7 +66,7 @@ const calls = [
 const snap = dd.buildDueDiligenceSnapshot({ overview, subscriptions, calls, month: '2026-09', now: NOW });
 
 // ---------- content ----------
-check(snap.customers.genuinePayingNow === 1 && snap.customers.genuineEverPaid === 2 && snap.customers.genuineFormerPaying === 1 && snap.customers.paidButUnclassified === 1, 'customers: paying now 1 · ever paid 2 · former 1 · paid-but-unclassified 1');
+check(snap.customers.genuinePayingNow === 1 && snap.customers.genuineEverPaid === 2 && snap.customers.genuineFormerPaying === 1 && snap.customers.paidButUnclassified === 1, 'customers: paying now 1 · ever paid 2 · former 1 · paid-but-money-not-proven 1 (sandbox)');
 check(snap.customers.entitledHouseholds === 2 && snap.customers.testReviewerAccounts.reviewer === 1 && snap.customers.protected === 1, 'customers: entitled 2, reviewer 1, protected 1');
 check(snap.numbers.onProviderAccount === 4 && snap.numbers.activeCustomer === 1 && snap.numbers.stagingOrInternal === 1 && snap.numbers.byCategory.reviewer.count === 1 && snap.numbers.byCategory.customer_cancelled_grace.count === 1, 'numbers: 4 on the account — 1 active customer, 1 cancelled in grace, 1 reviewer, 1 staging');
 check(snap.calls.total === 4 && snap.calls.unknownBlocked === 1 && snap.calls.endedByHcg === 1 && snap.calls.deliveryFailed === 1 && snap.calls.deliveryUnanswered === 1 && snap.calls.deliveryNotRecorded === 1, 'calls: volumes, blocked, ended by HCG, delivery failed / unanswered / not recorded');

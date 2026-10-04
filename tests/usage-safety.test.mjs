@@ -101,7 +101,13 @@ const call = (o) => ({
     // last month: excluded from MTD
     call({ household_id: 'h1', created_at: '2026-08-31T23:00:00.000Z', dial_call_status: 'failed' }),
   ];
-  const r = computeUsageSafety({ calls, households, classificationMap, env: {} }, NOW);
+
+  // 2026-10-04 (MI-1): genuine comes from the canonical commercial status.
+  const { buildCommercialIndex: __bci } = require('../services/commercial/householdCommercialIndex.js');
+  const __paid = (source, extra = {}) => ({ entitlement_type: 'paid_subscription', status: 'active', source, starts_at: '2026-01-01T00:00:00Z', ends_at: null, ...extra });
+  const __index = (ids, ents, classes) => __bci({ households: ids.map((id) => ({ id })), entitlementsByHousehold: new Map(Object.entries(ents)), classificationMap: classes }, new Date('2026-10-04T12:00:00Z'));
+  const commercialIndex = __index(households.map((h) => h.id), { h1: [__paid('stripe')] }, classificationMap);
+  const r = computeUsageSafety({ calls, households, classificationMap, commercialIndex, env: {} }, NOW);
   const sig = (id) => r.signals.find((s) => s.id === id);
 
   check(r.available && r.timezone === 'UTC' && r.series.length === 14 && r.series[13].partial, '14-day UTC series, today marked partial');

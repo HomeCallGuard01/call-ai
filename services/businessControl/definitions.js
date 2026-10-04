@@ -6,12 +6,17 @@
 //
 // Terms (also rendered in the dashboard's Definitions panel):
 //   account / household      any registered household (neutral word).
-//   genuine customer         household explicitly classified
-//                            'genuine_customer'. Never inferred.
+//   genuine customer         (final UI integration 2026-10-04, MI-1) the
+//                            canonical commercial status: PROVEN production
+//                            money now (Stripe live / store production) and
+//                            not an internal/test/reviewer/admin/QA account.
+//                            services/commercial/commercialStatus.js — the ONE
+//                            definition. The manual 'genuine_customer' label
+//                            no longer decides anything on its own.
 //   internal test / reviewer / admin / QA
 //                            explicitly classified non-customer accounts.
-//   unclassified             no classification yet — never counted as a
-//                            customer or as revenue until classified.
+//   unclassified             (audience) not genuine paying and not an
+//                            explicit test/reviewer/admin/QA account.
 //   deleted                  anonymised account (migration 029).
 //   paid access              a current 'paid_subscription' entitlement.
 //   complimentary access     a current complimentary/staff/partner/
@@ -36,9 +41,10 @@
 //                            latest entitlement was 'revoked'.
 //   expired                  no current/upcoming membership; had one that
 //                            ended by date or was expired (not cancelled).
-//   protected                current membership AND computeProtectionStatus
-//                            ().fullyProtected — the customer-facing
-//                            definition, unchanged.
+//   protected                (2026-10-04, MI-2) the canonical activation
+//                            state (services/lifecycle/activationState.js,
+//                            all gates) — the SAME truth the website and the
+//                            apps show; never membership or forwarding alone.
 //   entitled but not protected
 //                            current membership, not (yet) protected.
 //   revenue / MRR            money from GENUINE customers only, read from
@@ -47,7 +53,9 @@
 'use strict';
 
 const { isEntitlementCurrentlyActive, parseTimestampMs } = require('../adminOnboardingStatus');
-const { computeProtectionStatus } = require('../callRouting');
+const { deriveActivationState } = require('../lifecycle/activationState');
+const { commercialStatusOf } = require('../commercial/householdCommercialIndex');
+const { hasGenuinePaymentHistory } = require('../commercial/commercialStatus');
 const lifecycle = require('../numberLifecycle/state');
 
 const ANONYMISED_EMAIL_SUFFIX = '@deleted.homecallguard.internal';
@@ -58,17 +66,16 @@ const NON_GENUINE_CLASSES = new Set(['internal_test', 'reviewer', 'admin', 'qa_a
 
 const GLOSSARY = [
   ['Account / household', 'Any registered household. Neutral: not necessarily a customer.'],
-  ['Genuine customer', 'A household explicitly classified as a genuine customer. Never inferred.'],
   ['Internal test / reviewer / admin / QA', 'Explicitly classified non-customer accounts. Visible everywhere, never counted as customers or revenue.'],
-  ['Unclassified', 'Not yet classified. Not counted as a customer or as revenue until classified.'],
+  ['Not genuine paying', 'Any account that is not a genuine paying customer and not an explicit test/reviewer account (no membership, complimentary, trial, store sandbox/TestFlight/review, Stripe test, or a store purchase whose environment is unverified).'],
   ['Paid access', 'A current paid subscription entitlement.'],
   ['Complimentary access', 'A current complimentary (or staff/partner/promotion) entitlement. No payment.'],
-  ['Genuine paying customer', 'A genuine customer with paid access.'],
+  ['Genuine paying customer', 'The ONE genuine-customer definition: proven production money now (Stripe live or App Store/Google Play production) and not an internal test, reviewer, admin or QA account. Sandbox, TestFlight, App Review and unverified store purchases never count.'],
   ['Payment history', 'A paid membership was recorded at some point (any status). Stripe test or Apple sandbox purchases look the same here, so this is not proof money was received.'],
   ['Former paying', 'Payment history, but no paid access now (cancelled, expired or moved to complimentary).'],
   ['Cancelled', 'No current or upcoming membership, and the subscription was cancelled or access was revoked.'],
   ['Expired', 'No current or upcoming membership; the last one ended by date.'],
-  ['Protected', 'Current membership and the customer-facing Protected test (delivery confirmed and app registered).'],
+  ['Protected', 'The same server-confirmed protection the customer sees: membership in effect, not on hold, an active HCG number that is not quarantined, forwarding and a delivered call proven for the CURRENT number, and the app reachable.'],
   ['Entitled but not protected', 'Current membership, but not (yet) Protected.'],
   ['Revenue / MRR', 'Money from genuine customers only, read from the payment provider. Never an entitlement count multiplied by the list price.'],
 ];
@@ -95,14 +102,19 @@ function accessOf(entitlement) {
 }
 
 // Pure — the complete business classification of one household.
-function classifyHouseholdForBusiness({ household, entitlements, subscriptions, classification }, now) {
+// Optional lifecycle facts (financialHold, quarantineRows,
+// currentNumberAssignedAt, deliveryHealth) make the protection answer
+// exactly the canonical one; without them the state machine still applies
+// every other gate and reports what it could not check.
+function classifyHouseholdForBusiness({ household, entitlements, subscriptions, classification, quarantineRows = [], financialHold, currentNumberAssignedAt = null, deliveryHealth = null }, now) {
   const deleted = typeof household.email === 'string' && household.email.endsWith(ANONYMISED_EMAIL_SUFFIX);
+  const commercial = commercialStatusOf({ entitlements, classification }, now);
   const accountClass = deleted
     ? 'deleted'
-    : classification === 'genuine_customer'
-      ? 'genuine'
-      : NON_GENUINE_CLASSES.has(classification)
-        ? classification
+    : NON_GENUINE_CLASSES.has(classification)
+      ? classification
+      : commercial.genuinePaying
+        ? 'genuine'
         : 'unclassified';
 
   const ents = entitlements || [];
@@ -122,8 +134,8 @@ function classifyHouseholdForBusiness({ household, entitlements, subscriptions, 
   const paidEntitlements = ents.filter((e) => PAID_TYPES.has(e.entitlement_type));
   const everPaid = paidEntitlements.length > 0;
   const audience = accountClass === 'genuine' || accountClass === 'unclassified' || accountClass === 'deleted' ? accountClass : 'test';
-  const technical = computeProtectionStatus(household, now);
-  const protection = current ? (technical.fullyProtected ? 'protected' : 'entitled_not_protected') : 'not_entitled';
+  const activation = deriveActivationState({ household, entitlements: ents, subscription: latestSubscription || null, quarantineRows, financialHold, currentNumberAssignedAt, deliveryHealth }, now);
+  const protection = activation.protected ? 'protected' : current ? 'entitled_not_protected' : 'not_entitled';
 
   // When a finished membership ended: ends_at if passed, else the row's
   // last change (the webhook's expire/revoke update).
@@ -138,7 +150,9 @@ function classifyHouseholdForBusiness({ household, entitlements, subscriptions, 
     isGenuine: accountClass === 'genuine',
     access,
     membership,
-    isGenuinePayingCustomer: accountClass === 'genuine' && access === 'paid',
+    isGenuinePayingCustomer: accountClass === 'genuine' && commercial.genuinePaying === true,
+    commercial: { status: commercial.status, label: commercial.label, channel: commercial.channel, genuinePaying: commercial.genuinePaying },
+    genuinePaymentHistory: hasGenuinePaymentHistory(ents, classification),
     audience,
     everPaid,
     formerPaying: everPaid && access !== 'paid',
@@ -146,6 +160,8 @@ function classifyHouseholdForBusiness({ household, entitlements, subscriptions, 
     cancellingAtPeriodEnd: !!(current && latestSubscription && latestSubscription.cancel_at_period_end && latestSubscription.status !== 'canceled'),
     paymentIssue: !!(latestSubscription && (latestSubscription.status === 'past_due' || latestSubscription.status === 'unpaid')),
     protection,
+    protectionStage: activation.stage,
+    protectionBlockers: activation.blockers,
     holdsNumber: !!household.twilio_number,
     membershipEndedAt: endedAt,
     currentEntitlement: current,

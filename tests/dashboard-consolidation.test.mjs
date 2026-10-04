@@ -86,10 +86,16 @@ const { classifyCustomerList } = require('../services/businessMetrics/customerCl
     // h-unclassified deliberately has no entry at all
   ]);
 
-  const result = classifyCustomerList(customers, classificationMap);
+
+  // 2026-10-04 (MI-1): genuine comes from the canonical commercial status.
+  const { buildCommercialIndex: __bci } = require('../services/commercial/householdCommercialIndex.js');
+  const __paid = (source, extra = {}) => ({ entitlement_type: 'paid_subscription', status: 'active', source, starts_at: '2026-01-01T00:00:00Z', ends_at: null, ...extra });
+  const __index = (ids, ents, classes) => __bci({ households: ids.map((id) => ({ id })), entitlementsByHousehold: new Map(Object.entries(ents)), classificationMap: classes }, new Date('2026-10-04T12:00:00Z'));
+  const commercialIndex = __index(['h-genuine', 'h-internal', 'h-admin', 'h-unclassified'], { 'h-genuine': [__paid('stripe')], 'h-internal': [__paid('stripe')] }, classificationMap);
+  const result = classifyCustomerList(customers, classificationMap, commercialIndex);
 
   check(result.all.length === 4, 'classifyCustomerList: the "all" diagnostics list keeps every account — nothing is dropped, deleted or hidden');
-  check(result.genuine.length === 1 && result.genuine[0].householdId === 'h-genuine', 'classifyCustomerList: the default "genuine" list contains only the explicitly classified genuine_customer account');
+  check(result.genuine.length === 1 && result.genuine[0].householdId === 'h-genuine', 'classifyCustomerList: the default "genuine" list contains only the canonical genuine-paying account (the internal-test payer is excluded)');
   check(
     result.all.find(c => c.householdId === 'h-unclassified').classification === 'unclassified',
     'classifyCustomerList: an account with no row in account_classifications is labelled unclassified, never defaulted to genuine'

@@ -69,32 +69,46 @@ const classificationMap = new Map([
   ['genuine-2', 'genuine_customer'],
   // unclassified-1 deliberately has no entry — must fall to UNCLASSIFIED
 ]);
-// Every household except reviewer-1 and unclassified-1 has an active entitlement.
-const activeEntitlementHouseholdIds = ['admin-1', 'test-1', 'qa-1', 'genuine-1', 'genuine-2'];
+// 2026-10-04 (final UI integration, MI-1): ONE genuine definition — the
+// canonical commercial status (services/commercial/commercialStatus.js).
+// Classification is only the test/reviewer/admin/QA exclusion input; the
+// 'genuine_customer' label alone no longer makes anyone genuine.
+const { buildCommercialIndex } = require('../services/commercial/householdCommercialIndex.js');
+const paid = (source, extra = {}) => ({ entitlement_type: 'paid_subscription', status: 'active', source, starts_at: '2026-09-01T00:00:00Z', ends_at: null, ...extra });
+const entitlementsByHousehold = new Map([
+  ['admin-1', [paid('stripe')]],
+  ['test-1', [paid('stripe')]],
+  ['qa-1', [paid('stripe')]],
+  ['genuine-1', [paid('stripe')]], // labelled genuine + Stripe live → genuine
+  ['genuine-2', [paid('apple_revenuecat', { revenuecat_environment: 'sandbox' })]], // labelled genuine but Apple SANDBOX → NOT genuine
+  ['unclassified-1', [paid('apple_revenuecat', { revenuecat_environment: 'production' })]], // no label, Apple PRODUCTION → genuine
+]);
+const commercialIndex = buildCommercialIndex({ households, entitlementsByHousehold, classificationMap }, new Date('2026-10-04T12:00:00Z'));
+const activeEntitlementHouseholdIds = ['admin-1', 'test-1', 'qa-1', 'genuine-1', 'genuine-2', 'unclassified-1'];
 
 const breakdown = computeGenuineCustomerBreakdown(
-  { households, activeEntitlementHouseholdIds, activeStripeEntitlementHouseholdIds: ['genuine-1'] },
+  { households, activeEntitlementHouseholdIds, activeStripeEntitlementHouseholdIds: ['genuine-1', 'admin-1', 'test-1', 'qa-1'], commercialIndex },
   classificationMap
 );
 
 check(
   breakdown.genuineCustomers === 2,
-  'computeGenuineCustomerBreakdown: counts only the 2 genuine_customer households (genuine-1, genuine-2), not admin/test/reviewer/qa/unclassified'
+  'computeGenuineCustomerBreakdown: genuine = canonical commercial status — genuine-1 (Stripe live) and the UNLABELLED Apple-production payer; the genuine_customer-labelled Apple-SANDBOX account is not genuine'
 );
 
 check(
   breakdown.genuinePayingCustomers === 2,
-  'computeGenuineCustomerBreakdown: both genuine customers have an active entitlement here — genuinePayingCustomers reflects that, unaffected by the internal_test/admin/reviewer/qa accounts that also have active entitlements'
+  'computeGenuineCustomerBreakdown: genuine paying = the same canonical set (internal_test/admin/QA accounts with paid entitlements never count)'
 );
 
 check(
   breakdown.genuineStripePayingCustomers === 1,
-  'computeGenuineCustomerBreakdown: only the Stripe-sourced genuine entitlement counts toward the real, confirmed-MRR basis'
+  'computeGenuineCustomerBreakdown: only the genuine Stripe-channel household counts toward the confirmed-MRR basis'
 );
 
 check(
-  breakdown.activeProtectedGenuineCustomers === 1,
-  'computeGenuineCustomerBreakdown: active-protected count is scoped to genuine customers only (genuine-1 has a live Twilio number; genuine-2 does not)'
+  breakdown.activeProtectedGenuineCustomers === 2,
+  'computeGenuineCustomerBreakdown: active-protected count is scoped to genuine customers only (both genuine households hold a live number)'
 );
 
 check(
@@ -103,13 +117,18 @@ check(
 );
 
 check(
-  breakdown.unclassified === 1 && breakdown.unclassifiedAccounts.length === 1 && breakdown.unclassifiedAccounts[0].householdId === 'unclassified-1',
-  'computeGenuineCustomerBreakdown: an account with no classification row is reported as unclassified, not silently counted as genuine — the exact case this whole mechanism exists for (ad_74uk@yahoo.co.uk looked exactly like a real customer by email shape alone)'
+  breakdown.unclassified === 1 && breakdown.unclassifiedAccounts.length === 1 && breakdown.unclassifiedAccounts[0].householdId === 'genuine-2',
+  'computeGenuineCustomerBreakdown: an account that is neither genuine paying nor an explicit test account (here: labelled genuine but Apple sandbox) is reported in the "other" bucket, never counted as genuine'
 );
 
 check(
   breakdown.genuineCustomers + breakdown.internalTest + breakdown.admin + breakdown.reviewer + breakdown.qaAutomation + breakdown.unclassified === households.length,
   'computeGenuineCustomerBreakdown: every household lands in exactly one bucket — no double-counting, no household dropped'
+);
+
+check(
+  computeGenuineCustomerBreakdown({ households, activeEntitlementHouseholdIds, activeStripeEntitlementHouseholdIds: [] }, classificationMap).genuineCustomers === 0,
+  'computeGenuineCustomerBreakdown: without the canonical index nobody is genuine — never a fallback to the label'
 );
 
 // --- resolveFixedMonthlyCostsStatus: unknown cost is never £0 ---

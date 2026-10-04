@@ -371,8 +371,8 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
       { id: 'lifecycle_anomalies', label: 'Lifecycle anomalies', value: 2, status: 'red', items: [{ householdId: 'h-lapsed', email: 'lapsed@x', detail: 'No entitlement, number retained' }, { householdId: 'h-prov', email: 'prov@x', detail: 'Entitled without number' }] },
       { id: 'lapsed_retaining_number', label: 'Lapsed households holding a number', value: 1, status: 'red', items: [{ householdId: 'h-lapsed', email: 'lapsed@x', detail: 'outside lifecycle' }] },
       { id: 'unmapped_numbers', label: 'Unmapped numbers', value: 8, status: 'red', items: [{ number: '+44 •••• ••0010', detail: 'dev' }] },
-      { id: 'paid_unclassified', label: 'Paid at some point, not classified', value: 1, status: 'amber', items: [{ householdId: 'h-payer', email: 'payer@x', detail: 'former paying' }] },
-      { id: 'non_paying_access', label: 'Complimentary/test access', value: 3, status: 'amber', items: [{ householdId: 'h-rev', email: 'rev@x', detail: 'reviewer · complimentary' }, { householdId: 'h-unc', email: 'unc@x', detail: 'unclassified · complimentary' }] },
+      { id: 'paid_not_proven', label: 'Paid membership recorded, money not proven', value: 1, status: 'amber', items: [{ householdId: 'h-payer', email: 'payer@x', detail: 'former paying' }] },
+      { id: 'non_paying_access', label: 'Complimentary/test access', value: 3, status: 'info', items: [{ householdId: 'h-rev', email: 'rev@x', detail: 'reviewer · complimentary' }, { householdId: 'h-unc', email: 'unc@x', detail: 'unclassified · complimentary' }] },
       { id: 'entitled_not_protected', label: 'Entitled but NOT protected', value: 2, status: 'amber', items: [{ householdId: 'h-new', email: 'new@x' }] },
       { id: 'mrr', label: 'MRR', value: 'Stripe TEST mode', status: 'grey', items: [] },
       { id: 'protected', label: 'Protected', value: 3, status: 'info', items: [] },
@@ -392,7 +392,7 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   check(att.every((x) => x.what && x.why && x.next && x.tab && Array.isArray(x.who)), 'attention: every item says WHAT, WHO, WHY and NEXT, and links to a tab');
   check(topic('provisioning').affected === 1 && topic('provisioning').who[0].label === 'prov@x', 'attention: the same household from the Overview card and from Customers is ONE affected entry, not two');
   check(topic('number_lifecycle').affected === 2 && topic('number_lifecycle').details.length === 2, 'attention: two lifecycle cards merge into one "number lifecycle" item, households de-duplicated (lapsed@x once)');
-  check(topic('classification').affected === 2 && topic('classification').who.map((w) => w.label).sort().join() === 'payer@x,unc@x', 'attention: classification = paid-but-unclassified + unclassified-with-access; reviewers (already classified) excluded');
+  check(!topic('classification') && topic('payments').who.map((w) => w.label).join() === 'payer@x' && !att.some((x) => x.who.some((w) => w.label === 'rev@x' || w.label === 'unc@x')), 'attention (MI-1): no "classification" topic; paid-but-money-not-proven is a payments item; complimentary/test access is informational, never a warning');
   check(!att.some((x) => x.who.some((w) => w.label === 'new@x')), 'attention: "entitled but not protected" (normal setup) is NOT in the list — no wall of warnings');
   check(topic('delivery').who[0].label === 'del@x' && topic('delivery').when === '2026-09-29T08:00:00Z' && topic('voice_sdk').who[0].label === 'app@x', 'attention: customer problems split by cause (delivery vs app registration), with WHEN from the evidence');
   check(!att.some((x) => x.who.some((w) => w.label === 'del@x' && x.topic !== 'delivery')) && !att.some((x) => x.who.some((w) => w.label === 'gone@x')), 'attention: each customer appears under one cause; deleted accounts excluded');
@@ -405,17 +405,20 @@ const ent = (householdId, type, startsAgo, extra = {}) => ({ household_id: house
   check(!/method\s*:|'POST'|\.remove\(|release\(/.test(ui.buildAttentionItems.toString()), 'attention: builds text only — no action, request or release');
   // Customers: every row says what kind of account it is.
   const rows = [
-    { householdId: 'g', classification: 'genuine_customer', account: { kind: 'paying' }, everPaid: true, health: 'healthy' },
-    { householdId: 'f', classification: 'genuine_customer', account: { kind: 'ended' }, everPaid: true, health: 'setup_incomplete' },
+    { householdId: 'g', classification: 'genuine_customer', genuinePaying: true, account: { kind: 'paying' }, everPaid: true, health: 'healthy' },
+    { householdId: 'f', classification: 'genuine_customer', genuinePaying: false, account: { kind: 'ended' }, everPaid: true, health: 'setup_incomplete' },
+    { householdId: 'p', classification: null, genuinePaying: true, account: { kind: 'paying' }, everPaid: true, health: 'healthy' },
     { householdId: 'u', classification: 'unclassified', account: { kind: 'complimentary' }, health: 'healthy' },
     { householdId: 'r', classification: 'reviewer', account: { kind: 'complimentary', testLabel: 'Reviewer' }, health: 'healthy' },
     { householdId: 'x', classification: 'genuine_customer', account: { kind: 'none' }, health: 'inactive' },
   ];
-  check(ui.audienceOfRow(rows[0]) === 'genuine' && ui.audienceOfRow(rows[2]) === 'unclassified' && ui.audienceOfRow({ classification: null }) === 'unclassified' && ui.audienceOfRow(rows[3]) === 'test', 'customers: audience is genuine / unclassified / test — a missing classification is never genuine');
-  check(ui.filterRowsByAudience(rows, 'genuine').map((r) => r.householdId).join() === 'g,f,x' && ui.filterRowsByAudience(rows, 'all').length === 5, 'customers: audience filter');
+  const byId = (id) => rows.find((r) => r.householdId === id);
+  check(ui.audienceOfRow(byId('g')) === 'genuine' && ui.audienceOfRow(byId('p')) === 'genuine' && ui.audienceOfRow(byId('u')) === 'unclassified' && ui.audienceOfRow({ classification: 'genuine_customer' }) === 'unclassified' && ui.audienceOfRow(byId('r')) === 'test', 'customers (MI-1): audience = canonical genuinePaying; a "genuine_customer" label alone is never genuine; an unlabelled proven payer is');
+  check(ui.audienceOfRow({ classification: 'genuine_customer' }) !== 'genuine' && ui.audienceOfRow(byId('f')) === 'unclassified', 'customers: label without proven current payment, or a former payer, is not "genuine paying"');
+  check(ui.filterRowsByAudience(rows, 'genuine').map((r) => r.householdId).join() === 'g,p' && ui.filterRowsByAudience(rows, 'all').length === 6, 'customers: audience filter');
   const ac = ui.countAudiences(rows);
-  check(ac.all === 4 && ac.genuine === 2 && ac.unclassified === 1 && ac.test === 1, 'customers: audience chip counts exclude inactive/deleted, like the health counts');
-  check(ui.describeAudienceBadges(rows[0]).map((b) => b.label).join() === 'Genuine' && ui.describeAudienceBadges(rows[1]).map((b) => b.label).join() === 'Genuine,Paid before' && ui.describeAudienceBadges(rows[2])[0].label === 'Unclassified' && ui.describeAudienceBadges(rows[3])[0].label === 'Reviewer', 'customers: badges — Genuine / Unclassified / Reviewer, plus "Paid before" for a former payer');
+  check(ac.all === 5 && ac.genuine === 2 && ac.unclassified === 2 && ac.test === 1, 'customers: audience chip counts exclude inactive/deleted, like the health counts');
+  check(ui.describeAudienceBadges(rows[0]).map((b) => b.label).join() === 'Genuine' && ui.describeAudienceBadges(byId('f')).map((b) => b.label).join() === 'Not genuine paying,Paid before' && ui.describeAudienceBadges(byId('u'))[0].label === 'Not genuine paying' && ui.describeAudienceBadges(byId('r'))[0].label === 'Reviewer', 'customers: badges — Genuine / Not genuine paying / Reviewer, plus "Paid before" for a former payer');
   const groups = ui.groupOverviewCards([{ id: 'mrr' }, { id: 'protected' }, { id: 'provider_numbers' }, { id: 'new_future_card' }]);
   check(groups.map((g) => g.title).join('|') === 'Customers & revenue|Protection|Numbers & cost|Other checks', 'overview cards grouped customers → protection → numbers; an unknown card is never dropped');
   check(elements.reconciliation.innerHTML.includes('First broken step') && elements.reconciliation.innerHTML.includes('What HCG pays for'), 'reconciliation shows the first broken lifecycle step and the number inventory');

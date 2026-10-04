@@ -162,7 +162,7 @@ async function getRecentCustomers(limit = 20) {
   const [{ data: entitlements, error: eErr }, { data: subscriptions, error: sErr }, dialOutcomes] = await Promise.all([
     supabaseAdmin
       .from("entitlements")
-      .select("household_id, entitlement_type, status, updated_at")
+      .select("household_id, entitlement_type, status, source, starts_at, ends_at, updated_at")
       .in("household_id", householdIds),
     supabaseAdmin
       .from("subscriptions")
@@ -177,8 +177,12 @@ async function getRecentCustomers(limit = 20) {
   const latestEntitlementByHousehold = latestRowPerHousehold(entitlements || []);
   const latestSubscriptionByHousehold = latestRowPerHousehold(subscriptions || []);
 
+  // 2026-10-04 (MI-2a): canonical protection (same truth as the apps).
+  const { deriveActivationState } = require("../services/lifecycle/activationState");
+  const { mergeProtection } = require("../services/lifecycle/canonicalProtection");
+  const entitlementsByHousehold = groupByHousehold(entitlements || []);
   return households.map((h, i) => {
-    const protection = computeProtectionStatus(h, now);
+    const protection = mergeProtection(computeProtectionStatus(h, now), deriveActivationState({ household: h, entitlements: entitlementsByHousehold.get(h.id) || [] }, now));
     const dialOutcome = dialOutcomes[i];
     return {
       householdId: h.id,
@@ -620,7 +624,10 @@ async function attachProtectionEvidence(households) {
   return Promise.all(
     households.map(async h => {
       const entitlement = await getActiveEntitlement(h.id);
-      const protection = computeProtectionStatus(h, now);
+      // 2026-10-04 (MI-2a): canonical protection (same truth as the apps).
+      const { deriveActivationState } = require("../services/lifecycle/activationState");
+      const { mergeProtection } = require("../services/lifecycle/canonicalProtection");
+      const protection = mergeProtection(computeProtectionStatus(h, now), deriveActivationState({ household: h, entitlements: entitlement ? [entitlement] : [] }, now));
       return { ...h, protectionEvidence: buildProtectionEvidence(h, entitlement, protection) };
     })
   );
@@ -796,14 +803,18 @@ function groupByHousehold(rows) {
 
 // Pure — one Customers-tab row from already-fetched pieces. `lastCall`
 // and `lastDial` are optional (older callers pass only lastCallAt).
-function buildOnboardingRow({ household, entitlements, subscription, lastCallAt, lastCall, lastDial, classification }, now) {
+// `activation` (2026-10-04, MI-2a): the canonical activation state from the
+// lifecycle snapshot (holds, quarantine, assignment time); derived from the
+// household + entitlements when absent. `commercial`: canonical status (MI-1).
+function buildOnboardingRow({ household, entitlements, subscription, lastCallAt, lastCall, lastDial, classification, activation = null }, now) {
   const effectiveLastCallAt = lastCall ? lastCall.created_at : lastCallAt || null;
-  const derived = deriveAdminCustomerState({ household, entitlements, lastCallAt: effectiveLastCallAt }, now);
+  const derived = deriveAdminCustomerState({ household, entitlements, lastCallAt: effectiveLastCallAt, activation }, now);
+  const commercial = require("../services/commercial/householdCommercialIndex").commercialStatusOf({ entitlements, classification }, now);
   const membershipStatus = derived.currentEntitlement
     ? deriveMembershipStatus(derived.currentEntitlement, subscription)
     : derived.latestEntitlement ? "inactive" : "none";
   const health = deriveCustomerHealth(
-    { household, entitlements, lastCallAt: effectiveLastCallAt, lastDial: lastDial || null, classification },
+    { household, entitlements, lastCallAt: effectiveLastCallAt, lastDial: lastDial || null, classification, activation },
     now
   );
 
@@ -824,6 +835,10 @@ function buildOnboardingRow({ household, entitlements, subscription, lastCallAt,
     appRegistered: derived.protection.deliveryReady,
     deliveryVerified: derived.protection.endToEndDeliveryVerified,
     fullyProtected: derived.protection.fullyProtected,
+    protectionStage: derived.protection.activationStage || null,
+    protectionBlockers: derived.protection.protectionBlockers || [],
+    commercialStatus: commercial.status,
+    genuinePaying: commercial.genuinePaying,
     setupClock: derived.setupClock,
     lastCallAt: derived.lastCallAt,
     // Admin control centre (2026-09-25) — services/adminCustomerHealth.js.
@@ -875,6 +890,18 @@ async function getOnboardingMonitor(now = new Date()) {
   const entitlementsByHousehold = groupByHousehold(entitlements);
   const latestSubscriptionByHousehold = latestRowPerHousehold(subscriptions || []);
   const evidenceByHousehold = await getLatestCallEvidenceByHousehold((households || []).map(h => h.id));
+  // 2026-10-04 (MI-2a): canonical activation per household from the bulk
+  // lifecycle snapshots (holds, quarantine, assignment time). Unreadable →
+  // each row derives it from its own household + entitlements.
+  const activationByHousehold = new Map();
+  try {
+    const { loadLifecycleSnapshots } = require("./lifecycleSnapshot");
+    const { deriveActivationState } = require("../services/lifecycle/activationState");
+    const loaded = await loadLifecycleSnapshots({ supabase: supabaseAdmin });
+    for (const snap of loaded.snapshots) activationByHousehold.set(snap.household.id, deriveActivationState(snap, now));
+  } catch (err) {
+    console.error("ADMIN METRICS: lifecycle snapshots unavailable for canonical protection:", err.message);
+  }
 
   const rows = (households || []).map(h => {
     const evidence = evidenceByHousehold.get(h.id) || { lastCall: null, lastDial: null };
@@ -886,6 +913,7 @@ async function getOnboardingMonitor(now = new Date()) {
         lastCall: evidence.lastCall,
         lastDial: evidence.lastDial,
         classification: classifyHousehold(h.id, classification.map),
+        activation: activationByHousehold.get(h.id) || null,
       },
       now
     );
@@ -949,7 +977,21 @@ async function getHouseholdStatusDetail(householdId, now = new Date()) {
 
   const lastCallAt = lastCallByHousehold.get(householdId) || null;
   const evidence = evidenceByHousehold.get(householdId) || { lastCall: null, lastDial: null };
-  const derived = deriveAdminCustomerState({ household, entitlements: entitlements || [], lastCallAt }, now);
+  // 2026-10-04 (MI-2a): the per-household detail uses the full canonical
+  // snapshot (holds, quarantine, assignment) plus live delivery health.
+  let activation = null;
+  try {
+    const { loadLifecycleSnapshots } = require("./lifecycleSnapshot");
+    const { deriveActivationState } = require("../services/lifecycle/activationState");
+    const { getHouseholdDeliveryHealth } = require("./deliveryEvidence");
+    const loaded = await loadLifecycleSnapshots({ supabase: supabaseAdmin, householdId });
+    const snap = loaded.snapshots[0];
+    const deliveryHealth = await getHouseholdDeliveryHealth({ supabase: supabaseAdmin, household }).catch(() => null);
+    if (snap) activation = deriveActivationState({ ...snap, deliveryHealth }, now);
+  } catch (err) {
+    console.error("ADMIN METRICS: canonical protection detail unavailable:", err.message);
+  }
+  const derived = deriveAdminCustomerState({ household, entitlements: entitlements || [], lastCallAt, activation }, now);
   const row = buildOnboardingRow(
     {
       household,
@@ -958,6 +1000,7 @@ async function getHouseholdStatusDetail(householdId, now = new Date()) {
       lastCallAt,
       lastCall: evidence.lastCall,
       lastDial: evidence.lastDial,
+      activation,
       classification: classifyHousehold(householdId, classification.map),
     },
     now

@@ -96,8 +96,12 @@ function categoriseInventoryRow(row) {
   if (!owner || !owner.accountClass) return 'unknown';
   if (owner.accountClass === 'reviewer') return 'reviewer';
   if (TEST_CLASSES.has(owner.accountClass)) return 'internal_test';
+  // 2026-10-04 (MI-1c): categories from the canonical commercial status.
+  if (owner.accountClass === 'genuine') return 'customer_active';
+  const status = owner.commercial && owner.commercial.status;
+  if (status === 'store_sandbox' || status === 'stripe_test') return 'internal_test';
+  if (owner.genuinePaymentHistory && owner.membership !== 'current' && owner.membership !== 'upcoming') return 'customer_cancelled_grace';
   if (owner.accountClass === 'unclassified') return 'unknown';
-  if (owner.accountClass === 'genuine') return owner.membership === 'current' || owner.membership === 'upcoming' ? 'customer_active' : 'customer_cancelled_grace';
   return 'other';
 }
 
@@ -185,7 +189,7 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
         subscriptions: (subscriptionsByHousehold && subscriptionsByHousehold.get(holder.id)) || [],
         classification: classificationMap.get(holder.id),
       }, now);
-      owner = { householdId: holder.id, email: holder.email || null, accountClass: biz.accountClass, membership: biz.membership, access: biz.access, protection: biz.protection, membershipEndedAt: biz.membershipEndedAt || null };
+      owner = { householdId: holder.id, email: holder.email || null, accountClass: biz.accountClass, membership: biz.membership, access: biz.access, protection: biz.protection, membershipEndedAt: biz.membershipEndedAt || null, commercial: biz.commercial, genuinePaymentHistory: biz.genuinePaymentHistory };
       const canonical = lifecycleState.deriveHouseholdLifecycle({ household: holder, entitlements: entitlementsByHousehold.get(holder.id) || [], quarantineRows: quarantines.filter((q) => q.household_id === holder.id) }, now);
       lifecycle = { membership: canonical.membership, blocksRelease: canonical.blocksRelease, releaseEligibleNow: canonical.releaseEligibleNow, numberState: canonical.numberState };
       const pendingMs = parseTimestampMs(holder.twilio_number_pending_release_at);
@@ -214,7 +218,7 @@ function buildNumberInventory({ providerNumbers, households, entitlementsByHouse
       const fromHousehold = open.household_id ? (households || []).find((h) => h.id === open.household_id) : null;
       if (fromHousehold) {
         const fromBiz = classifyHouseholdForBusiness({ household: fromHousehold, entitlements: entitlementsByHousehold.get(fromHousehold.id) || [], subscriptions: (subscriptionsByHousehold && subscriptionsByHousehold.get(fromHousehold.id)) || [], classification: classificationMap.get(fromHousehold.id) }, now);
-        owner = { householdId: fromHousehold.id, email: fromHousehold.email || null, accountClass: fromBiz.accountClass, membership: fromBiz.membership, access: fromBiz.access, protection: fromBiz.protection, membershipEndedAt: fromBiz.membershipEndedAt || null };
+        owner = { householdId: fromHousehold.id, email: fromHousehold.email || null, accountClass: fromBiz.accountClass, membership: fromBiz.membership, access: fromBiz.access, protection: fromBiz.protection, membershipEndedAt: fromBiz.membershipEndedAt || null, commercial: fromBiz.commercial, genuinePaymentHistory: fromBiz.genuinePaymentHistory };
         const canonical = lifecycleState.deriveHouseholdLifecycle({ household: fromHousehold, entitlements: entitlementsByHousehold.get(fromHousehold.id) || [], quarantineRows: [] }, now);
         lifecycle = { membership: canonical.membership, blocksRelease: canonical.blocksRelease, releaseEligibleNow: canonical.releaseEligibleNow, numberState: canonical.numberState };
         if (fromBiz.membership === 'current' || fromBiz.membership === 'upcoming') {

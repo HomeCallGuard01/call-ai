@@ -28,7 +28,8 @@ const DAY = 24 * HOUR;
 const NOW = new Date('2026-09-27T12:00:00.000Z');
 const ago = (ms) => new Date(NOW.getTime() - ms).toISOString();
 const ent = (type, startsAgo, extra = {}) => ({ entitlement_type: type, status: 'active', source: type === 'paid_subscription' ? 'stripe' : 'admin_manual', starts_at: ago(startsAgo), ends_at: null, updated_at: ago(startsAgo), ...extra });
-const protectedFields = { activation_verified_at: ago(DAY), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(DAY) };
+// 2026-10-04 (MI-2a): the canonical gates also need an ACTIVE number.
+const protectedFields = { activation_verified_at: ago(DAY), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(DAY), twilio_provisioning_status: 'active' };
 
 // ============================================================
 // 1. Business vocabulary (definitions.js)
@@ -49,7 +50,10 @@ const protectedFields = { activation_verified_at: ago(DAY), voice_client_registe
   check(testAcc.accountClass === 'internal_test' && testAcc.access === 'paid' && !testAcc.isGenuinePayingCustomer, 'internal test with paid access is NOT a genuine paying customer');
   const reviewer = cls({}, [ent('complimentary', 5 * DAY)], [], 'reviewer');
   check(reviewer.accountClass === 'reviewer' && !reviewer.isGenuine, 'reviewer: its own class, never genuine');
-  check(cls({}, [ent('paid_subscription', DAY)], [], undefined).accountClass === 'unclassified', 'unclassified: never defaulted to genuine');
+  // 2026-10-04 (MI-1): genuine = the canonical commercial status, not the label.
+  check(cls({}, [ent('paid_subscription', DAY)], [], undefined).isGenuinePayingCustomer === true, 'unlabelled account with a Stripe-live paid subscription IS a genuine paying customer (canonical commercial status)');
+  check(cls({}, [ent('paid_subscription', DAY, { source: 'apple_revenuecat', revenuecat_environment: 'sandbox' })], [], 'genuine_customer').isGenuinePayingCustomer === false, 'a genuine_customer-LABELLED account on an Apple sandbox/TestFlight purchase is NOT genuine paying');
+  check(cls({}, [ent('paid_subscription', DAY, { source: 'apple_revenuecat' })], [], undefined).commercial.status === 'store_environment_unverified', 'a store purchase whose environment was never recorded is unverified, never genuine');
   check(cls({ email: 'anonymized-x@deleted.homecallguard.internal' }, [], [], 'genuine_customer').accountClass === 'deleted', 'deleted accounts are their own class');
 
   const cancelled = cls({ twilio_number: '+44' }, [ent('paid_subscription', 60 * DAY, { status: 'expired', updated_at: ago(5 * DAY) })], [{ status: 'canceled', updated_at: ago(5 * DAY) }], 'genuine_customer');
@@ -198,10 +202,11 @@ const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.c
   const liveStripe = { available: true, mode: 'live', mrr: { genuine: { GBP: 4.99 }, genuineExVat: { GBP: 4.16 }, genuineSubscriptions: 1, excludedSubscriptions: 1 } };
   const o = computeControlOverview({ households, entitlementsByHousehold: ents, subscriptionsByHousehold: new Map(), classificationMap: classes, quarantineRows: [], inventory, stripeRevenue: liveStripe, releaseRecordingAvailable: false }, NOW);
   const card = (id) => o.cards.find((c) => c.id === id);
-  check(o.cards.length === 13, 'thirteen cards (twelve + paid-but-unclassified)');
+  check(o.cards.length === 13, 'thirteen cards (twelve + paid-but-money-not-proven)');
   check(o.cards.every((c) => c.rule && ['red', 'amber', 'green', 'grey', 'info'].includes(c.status)), 'every card has a stated rule and a defined status');
   check(card('genuine_paying').value === 1 && card('genuine_paying').status === 'info', 'genuine paying customers: 1 (count, no colour judgement)');
-  check(card('non_paying_access').value === 2 && card('non_paying_access').status === 'amber' && /1 reviewer/.test(card('non_paying_access').sub) && /1 unclassified/.test(card('non_paying_access').sub), 'complimentary/internal/test/reviewer: counted by class; amber because one account is unclassified');
+  check(card('non_paying_access').value === 2 && card('non_paying_access').status === 'info' && /1 reviewer/.test(card('non_paying_access').sub), 'complimentary/internal/test/reviewer: counted by class, informational (MI-1: classification is only an exclusion input)');
+  check(card('paid_not_proven').value === 0 && card('paid_not_proven').status === 'green', 'paid but money not proven: none (the only payer is Stripe live)');
   check(card('mrr').value === '£4.99' && /1 non-genuine subscription\(s\) excluded/.test(card('mrr').sub), 'MRR from genuine Stripe subscriptions only (£4.99), non-genuine excluded');
   check(card('protected').value === 1, 'protected households: 1');
   check(card('entitled_not_protected').value === 2 && card('entitled_not_protected').status === 'amber', 'entitled but not protected: 2 → amber');
@@ -288,7 +293,7 @@ const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.c
   const cancelledSub = [{ status: 'canceled', cancel_at_period_end: false, updated_at: ago(18 * DAY) }];
 
   const b = classifyHouseholdForBusiness({ household: { id: 'p', email: 'p@x' }, entitlements: cancelledPaid, subscriptions: cancelledSub, classification: 'genuine_customer' }, NOW);
-  check(b.everPaid && b.formerPaying && !b.isGenuinePayingCustomer && b.membership === 'cancelled' && b.audience === 'genuine' && b.paidSources.join() === 'stripe', 'definitions: a genuine customer who paid then cancelled is a FORMER paying customer (not paying now), with payment history from stripe');
+  check(b.everPaid && b.formerPaying && !b.isGenuinePayingCustomer && b.membership === 'cancelled' && b.genuinePaymentHistory === true && b.audience !== 'genuine' && b.paidSources.join() === 'stripe', 'definitions: a genuine customer who paid then cancelled is a FORMER paying customer (not paying now), with payment history from stripe');
   check(classifyHouseholdForBusiness({ household: { id: 'r', email: 'r@x' }, entitlements: [], subscriptions: [], classification: 'reviewer' }, NOW).audience === 'test', 'definitions: reviewer/test/admin/QA share one "test" audience badge');
   check(classifyHouseholdForBusiness({ household: { id: 'n', email: 'n@x' }, entitlements: [ent('complimentary', DAY)], subscriptions: [], classification: undefined }, NOW).everPaid === false, 'definitions: complimentary access is not payment history');
 
@@ -301,15 +306,28 @@ const prodHosts = resolveProductionHosts({ APP_URL: 'https://www.homecallguard.c
 
   const asGenuine = run('genuine_customer');
   check(card(asGenuine, 'genuine_paying').value === 0 && /1 ever paid · 1 former paying/.test(card(asGenuine, 'genuine_paying').sub) && card(asGenuine, 'genuine_paying').items.some((i) => /former paying · cancelled/.test(i.detail)), 'overview: classified genuine → "0 paying now" AND "1 ever paid · 1 former paying", with the account listed');
-  check(card(asGenuine, 'paid_unclassified').value === 0 && card(asGenuine, 'paid_unclassified').status === 'green', 'overview: nothing to classify when the payer is classified');
+  check(card(asGenuine, 'paid_not_proven').value === 0 && card(asGenuine, 'paid_not_proven').status === 'green', 'overview: proven Stripe-live money → nothing to verify');
 
-  const unclassified = run(null);
-  check(card(unclassified, 'genuine_paying').value === 0 && /0 ever paid/.test(card(unclassified, 'genuine_paying').sub), 'overview: an unclassified payer is not silently counted as genuine…');
-  check(card(unclassified, 'paid_unclassified').value === 1 && card(unclassified, 'paid_unclassified').status === 'amber' && /former paying · cancelled · stripe/.test(card(unclassified, 'paid_unclassified').items[0].detail), '…but is surfaced (amber) as "paid at some point, not classified" instead of vanishing');
-  check(unclassified.overall !== 'green', 'overview: an unclassified payer stops the overall status being green');
+  // 2026-10-04 (MI-1): ONE genuine definition — canonical commercial status.
+  // An unlabelled Stripe-live payer IS genuine payment history; the label is
+  // only an exclusion input (reviewer/test never genuine).
+  const unlabelled = run(null);
+  check(card(unlabelled, 'genuine_paying').value === 0 && /1 ever paid · 1 former paying/.test(card(unlabelled, 'genuine_paying').sub), 'overview: an unlabelled Stripe-live former payer counts as genuine payment history (canonical), not paying now');
+  check(card(unlabelled, 'paid_not_proven').value === 0, 'overview: proven money is never listed as "not proven"');
+  const asReviewer = run('reviewer');
+  check(card(asReviewer, 'genuine_paying').value === 0 && /0 ever paid/.test(card(asReviewer, 'genuine_paying').sub) && card(asReviewer, 'paid_not_proven').value === 0, 'overview: a reviewer-labelled payer is never genuine and not "unproven" either (known test)');
+  const sandboxPaid = [ent('paid_subscription', 21 * DAY, { source: 'revenuecat', revenuecat_environment: 'sandbox', status: 'revoked', updated_at: ago(18 * DAY) })];
+  const sandbox = computeControlOverview({
+    households: [{ id: 's', email: 's@x', twilio_number: null }],
+    entitlementsByHousehold: new Map([['s', sandboxPaid]]), subscriptionsByHousehold: new Map(),
+    classificationMap: new Map(), quarantineRows: [], inventory: null, stripeRevenue: null, releaseRecordingAvailable: true,
+  }, NOW);
+  check(card(sandbox, 'genuine_paying').value === 0 && /0 ever paid/.test(card(sandbox, 'genuine_paying').sub) && card(sandbox, 'paid_not_proven').value === 1 && card(sandbox, 'paid_not_proven').status === 'amber', 'overview: a store-sandbox "paid" membership is never genuine and is surfaced amber as money not proven');
 
   const sub = computeSubscriptionOverview({ households: [{ id: 'p', email: 'payer@x' }, { id: 'g', email: 'g@x' }], entitlements: [...cancelledPaid.map((e) => ({ ...e, household_id: 'p' })), { ...cancelledPaid[0], household_id: 'g' }], subscriptions: [], classificationMap: new Map([['g', 'genuine_customer']]) }, NOW);
-  check(sub.counts.paymentHistory.unclassifiedEverPaid === 1 && sub.counts.paymentHistory.genuineEverPaid === 1 && sub.counts.paymentHistory.genuineFormerPaying === 1, 'subscriptions: payment history counted per class (1 genuine former payer, 1 unclassified payer)');
+  check(sub.counts.paymentHistory.unclassifiedEverPaid === 0 && sub.counts.paymentHistory.genuineEverPaid === 2 && sub.counts.paymentHistory.genuineFormerPaying === 2, 'subscriptions: canonical payment history — both Stripe-live former payers are genuine, label or not (MI-1)');
+  const subR = computeSubscriptionOverview({ households: [{ id: 'r', email: 'r@x' }, { id: 's', email: 's@x' }], entitlements: [{ ...cancelledPaid[0], household_id: 'r' }, { ...cancelledPaid[0], source: 'revenuecat', revenuecat_environment: 'sandbox', household_id: 's' }], subscriptions: [], classificationMap: new Map([['r', 'reviewer']]) }, NOW);
+  check(subR.counts.paymentHistory.genuineEverPaid === 0 && subR.counts.paymentHistory.nonGenuineEverPaid === 1 && subR.counts.paymentHistory.unclassifiedEverPaid === 1, 'subscriptions: reviewer payer → non-genuine; store-sandbox payer → money not proven; neither genuine');
   check(sub.needsClassification.length === 1 && sub.needsClassification[0].householdId === 'p' && /paid before/.test(sub.needsClassification[0].reason), 'subscriptions: a former payer with no access still appears in "needs classification", with the reason');
 
   // Stripe: live payments from unclassified / unknown customers are

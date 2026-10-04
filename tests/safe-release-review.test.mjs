@@ -84,7 +84,7 @@ const due = bySid('PN_due');
 check(due.reviewable && due.blockers.length === 0 && due.confirmations.map((c) => c.id).join() === 'typed_last4,calls_checked,reason', 'genuine former customer, release overdue, last call 40 days ago → reviewable; confirmations: type digits, calls checked, reason');
 const q = bySid('PN_quar');
 check(q.reviewable && q.confirmations.some((c) => c.id === 'forwarding_removed'), 'quarantined (unconfirmed) former customer, no recent calls → reviewable, and must confirm carrier forwarding is removed');
-check(due.evidence.classification === 'genuine' && due.evidence.pendingReleaseAt && due.evidence.lastInboundCall && due.evidence.household === 'due@x' && due.evidence.membershipEndedAt, 'evidence shows household, classification, membership end, release date, last inbound call');
+check(due.evidence.classification === 'former_genuine' && due.evidence.pendingReleaseAt && due.evidence.lastInboundCall && due.evidence.household === 'due@x' && due.evidence.membershipEndedAt, 'evidence shows household, classification, membership end, release date, last inbound call');
 check(!JSON.stringify(inv).includes('+4470000002'), 'the review never exposes a full number (last four only)');
 
 // ---------- stale view ----------

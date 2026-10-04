@@ -195,14 +195,19 @@ function buildSetupTimeline({ household, currentEntitlement, protection, lastCal
 // "Forwarding proven" = activation_verified_at OR delivery_verified_at,
 // the same OR mobile/lib/homeStatus.ts's hasProvenActivation uses (a
 // delivered call is strictly stronger proof than activation alone).
-function deriveAdminCustomerState({ household, entitlements, lastCallAt }, now) {
+// 2026-10-04 (MI-2a): "Protected" is the canonical activation state —
+// supplied by the caller (bulk lifecycle snapshots incl. holds, quarantine,
+// assignment time) or derived here from the household + entitlements. The
+// legacy computeProtectionStatus fields remain only as evidence inputs.
+function deriveAdminCustomerState({ household, entitlements, lastCallAt, activation = null, financialHold, quarantineRows = [], currentNumberAssignedAt = null, deliveryHealth = null }, now) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new Error('deriveAdminCustomerState: now must be a valid Date');
   }
 
   const nowMs = now.getTime();
   const { current: currentEntitlement, latest: latestEntitlement } = pickEntitlements(entitlements, now);
-  const protection = computeProtectionStatus(household, now);
+  const canonical = activation || require('./lifecycle/activationState').deriveActivationState({ household, entitlements: entitlements || [], quarantineRows, financialHold, currentNumberAssignedAt, deliveryHealth }, now);
+  const protection = require('./lifecycle/canonicalProtection').mergeProtection(computeProtectionStatus(household, now, deliveryHealth), canonical);
   const forwardingProven = protection.forwardingVerified || protection.endToEndDeliveryVerified;
   const lastCallAtMs = parseTimestampMs(lastCallAt);
   const clock = resolveSetupClockStart(household, currentEntitlement);
@@ -239,8 +244,12 @@ function deriveAdminCustomerState({ household, entitlements, lastCallAt }, now) 
   }
 
   if (protection.fullyProtected) {
-    return result(ADMIN_STATES.PROTECTED, 'Forwarding and call delivery both proven');
+    return result(ADMIN_STATES.PROTECTED, 'Every protection check holds (same truth the customer sees)');
   }
+  // Canonical blockers that legacy timestamps cannot see (2026-10-04, MI-2a).
+  if (canonical.blockers.includes('notOnHold')) return result(ADMIN_STATES.NEEDS_ATTENTION, 'Financial hold: no HCG-funded call is authorised');
+  if (canonical.blockers.includes('numberNotQuarantined')) return result(ADMIN_STATES.NEEDS_ATTENTION, 'Entitled, but the live HCG number is in quarantine');
+  if (canonical.attention && canonical.attention.includes('evidence_predates_current_number')) return result(ADMIN_STATES.NEEDS_ATTENTION, 'Forwarding/delivery proof is for an older HCG number');
 
   if (!hasProvisionedNumber(household)) {
     return overThreshold

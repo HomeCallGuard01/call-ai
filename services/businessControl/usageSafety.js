@@ -222,7 +222,7 @@ function describeControls({ env, present }) {
 }
 
 // Pure.
-function computeUsageSafety({ calls, households = [], classificationMap = new Map(), env = {}, present = () => false, truncated = false }, now) {
+function computeUsageSafety({ calls, households = [], classificationMap = new Map(), commercialIndex = null, env = {}, present = () => false, truncated = false }, now) {
   const nowMs = now.getTime();
   const todayStart = startOfUtcDay(nowMs);
   const monthStart = startOfUtcMonth(nowMs);
@@ -246,9 +246,16 @@ function computeUsageSafety({ calls, households = [], classificationMap = new Ma
   }
 
   const hh = new Map((households || []).map((h) => [h.id, h]));
+  // 2026-10-04 (MI-1b): account class from the canonical commercial status;
+  // explicit test/reviewer/admin labels still shown as such.
+  const { commercialBucket } = require('../commercial/householdCommercialIndex');
+  const TEST_LABELS = new Set(['internal_test', 'reviewer', 'admin', 'qa_automation', 'other_non_customer']);
   const classOf = (id) => {
     const cls = classificationMap.get(id);
-    return cls === 'genuine_customer' ? 'genuine' : cls || 'unclassified';
+    if (TEST_LABELS.has(cls)) return cls;
+    const c = commercialIndex ? commercialIndex.byHousehold.get(id) : null;
+    const b = commercialBucket(c);
+    return b === 'genuine' ? 'genuine' : b === 'none' ? 'unclassified' : b;
   };
   const label = (id) => (hh.get(id) && hh.get(id).email) || String(id).slice(0, 8);
 
@@ -410,10 +417,13 @@ async function loadUsageSafety({ now = new Date(), env = process.env } = {}) {
   ]);
   if (hRes.error) return { available: false, reason: hRes.error.message };
 
+  const classMap = classification.available ? classification.map : new Map();
+  const commercialIndex = await require('../commercial/householdCommercialIndex').loadCommercialIndex(supabaseAdmin, classMap, now);
   return computeUsageSafety({
     calls,
     households: hRes.data || [],
-    classificationMap: classification.available ? classification.map : new Map(),
+    classificationMap: classMap,
+    commercialIndex,
     env,
     present: (rel) => fs.existsSync(path.join(ROOT, rel)),
     truncated,

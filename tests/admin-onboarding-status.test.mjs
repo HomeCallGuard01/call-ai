@@ -114,7 +114,10 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
     [activeEntitlement(72 * HOUR)]
   );
   check(r.forwardingProven === true, 'delivery_verified_at alone also counts as forwarding proven');
-  check(r.state === ADMIN_STATES.PROTECTED, 'delivered call + registered app → Protected even with activation_verified_at null');
+  // 2026-10-04 (MI-2a): the canonical gates also need forwarding proof for the
+  // current number (today's /voice stamps it on every real forwarded call, so
+  // this combination only exists in legacy data).
+  check(r.state !== ADMIN_STATES.PROTECTED && r.protection.fullyProtected === false && r.protection.protectionBlockers.includes('forwardingVerifiedForCurrentNumber'), 'delivered call + registered app but no forwarding stamp → NOT Protected (canonical gate forwardingVerifiedForCurrentNumber)');
 }
 {
   const r = derive(
@@ -196,12 +199,12 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
       for (const delivered of [null, ago(HOUR)]) {
         const h = household({ activation_verified_at: activation, voice_client_registered_at: registered, delivery_verified_at: delivered });
         const r = derive(h, [activeEntitlement(2 * HOUR)]);
-        const expected = computeProtectionStatus(h, NOW).fullyProtected;
+        const expected = require('../services/lifecycle/activationState').deriveActivationState({ household: h, entitlements: [activeEntitlement(2 * HOUR)] }, NOW).protected;
         if ((r.state === ADMIN_STATES.PROTECTED) !== expected) consistent = false;
       }
     }
   }
-  check(consistent, 'for every evidence combination, admin "Protected" ⇔ computeProtectionStatus().fullyProtected (definition not redefined)');
+  check(consistent, 'for every evidence combination, admin "Protected" ⇔ the canonical activation state (deriveActivationState().protected) — the same truth the apps show');
 }
 
 // --- 10. Dates & timezones ---
@@ -336,6 +339,7 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
   const allowedRowKeys = ['householdId', 'email', 'signedUpAt', 'classification', 'membershipStatus', 'provisioningStatus', 'state', 'reason', 'forwardingProven', 'appRegistered', 'deliveryVerified', 'fullyProtected', 'setupClock', 'lastCallAt',
     // admin control centre (2026-09-25)
     'health', 'healthReason', 'account', 'subscriptionIssue', 'setupLabel', 'network', 'device', 'app', 'lastConfirmed', 'latestCall', 'lastDelivery', 'deletedAccount',
+    'protectionStage', 'protectionBlockers', 'commercialStatus', 'genuinePaying', // 2026-10-04 canonical, non-personal
     // payment history (2026-09-28) — a boolean, no payment detail
     'everPaid'];
   check(monitor.rows.every((r) => Object.keys(r).every((k) => allowedRowKeys.includes(k))), 'list rows contain only the allow-listed fields');

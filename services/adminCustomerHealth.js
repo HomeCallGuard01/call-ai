@@ -203,8 +203,8 @@ function describeSetup(derived) {
 }
 
 // Pure — the one health answer for a customer row.
-function deriveCustomerHealth({ household, entitlements, lastCallAt, lastDial, classification }, now) {
-  const derived = deriveAdminCustomerState({ household, entitlements, lastCallAt }, now);
+function deriveCustomerHealth({ household, entitlements, lastCallAt, lastDial, classification, activation = null }, now) {
+  const derived = deriveAdminCustomerState({ household, entitlements, lastCallAt, activation }, now);
   const delivery = describeDeliveryEvidence(lastDial, household);
   const account = describeAccount({
     currentEntitlement: derived.currentEntitlement,

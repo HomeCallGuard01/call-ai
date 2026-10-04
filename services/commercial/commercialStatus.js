@@ -114,4 +114,16 @@ function decideNumberPurchaseByProvenance(activeEntitlements, { adminOverride = 
   return { allowed: false, reason: 'store_environment_unverified' };
 }
 
-module.exports = { STATUS, LABELS, TEST_CLASSIFICATIONS, entitlementProvenance, classifyCommercialStatus, decideNumberPurchaseByProvenance };
+/**
+ * Did this household ever pay PRODUCTION money (for churn, cancellations,
+ * payment history)? A paid entitlement whose provenance was Stripe live or a
+ * store PRODUCTION grant, on an account that is not internal/test/reviewer.
+ * (2026-10-04, MI-1: one genuine definition — "genuine now" is
+ * classifyCommercialStatus; this is its history counterpart.)
+ */
+function hasGenuinePaymentHistory(entitlements, classification = null) {
+  if (TEST_CLASSIFICATIONS.has(classification)) return false;
+  return (entitlements || []).some((e) => e && PAID_TYPES.has(e.entitlement_type) && ['stripe_live', 'store_production'].includes(entitlementProvenance(e).kind));
+}
+
+module.exports = { hasGenuinePaymentHistory, STATUS, LABELS, TEST_CLASSIFICATIONS, entitlementProvenance, classifyCommercialStatus, decideNumberPurchaseByProvenance };

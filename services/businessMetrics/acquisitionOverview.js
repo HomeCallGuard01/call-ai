@@ -64,11 +64,15 @@ function countByEventType(rows, eventType) {
 // no household_id at all (shouldn't occur for the two event types this
 // is ever called on, but handled defensively) count as unclassifiable,
 // never genuine.
-function splitByGenuineCustomer(rows, classificationMap) {
+// 2026-10-04 (MI-1b): "genuine" is the canonical commercial status
+// (commercialIndex: services/commercial/householdCommercialIndex.js). Without
+// an index nobody counts as genuine — never a second definition.
+function splitByGenuineCustomer(rows, classificationMap, commercialIndex = null) {
   let genuine = 0;
   let other = 0;
   for (const row of rows || []) {
-    if (row.household_id && classifyHousehold(row.household_id, classificationMap) === 'genuine_customer') {
+    const c = row.household_id && commercialIndex ? commercialIndex.byHousehold.get(row.household_id) : null;
+    if (c && c.genuinePaying) {
       genuine += 1;
     } else {
       other += 1;
@@ -97,12 +101,12 @@ function topUtmSources(rows, limit = 10) {
 // event rows, given the classification map. Directly unit-testable
 // with no database at all. Two funnels, always kept separate — see
 // this file's own header.
-function computeAcquisitionSnapshot(rows, classificationMap) {
+function computeAcquisitionSnapshot(rows, classificationMap, commercialIndex = null) {
   const checkoutRows = (rows || []).filter((r) => r.event_type === 'checkout_started');
   const paidConversionRows = (rows || []).filter((r) => r.event_type === 'paid_conversion');
 
-  const checkoutSplit = splitByGenuineCustomer(checkoutRows, classificationMap);
-  const paidConversionSplit = splitByGenuineCustomer(paidConversionRows, classificationMap);
+  const checkoutSplit = splitByGenuineCustomer(checkoutRows, classificationMap, commercialIndex);
+  const paidConversionSplit = splitByGenuineCustomer(paidConversionRows, classificationMap, commercialIndex);
 
   const genuineConversionRate =
     checkoutSplit.genuine > 0 ? Math.round((paidConversionSplit.genuine / checkoutSplit.genuine) * 1000) / 10 : null;
@@ -147,10 +151,11 @@ async function getAcquisitionOverview() {
   if (mtdError) return { available: false, reason: mtdError.message };
   if (!classification.available) return { available: false, reason: classification.reason };
 
+  const commercialIndex = await require('../commercial/householdCommercialIndex').loadCommercialIndex(supabaseAdmin, classification.map);
   return {
     available: true,
-    today: computeAcquisitionSnapshot(todayRows || [], classification.map),
-    monthToDate: computeAcquisitionSnapshot(mtdRows || [], classification.map),
+    today: computeAcquisitionSnapshot(todayRows || [], classification.map, commercialIndex),
+    monthToDate: computeAcquisitionSnapshot(mtdRows || [], classification.map, commercialIndex),
   };
 }
 

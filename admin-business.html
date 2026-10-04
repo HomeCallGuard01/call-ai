@@ -1015,12 +1015,14 @@ function describeLatestCallCell(row, nowMs) {
 // (account_classifications); a missing one is "Unclassified", never
 // assumed genuine.
 const AUDIENCE_FILTERS = ["all", "genuine", "unclassified", "test"];
-const AUDIENCE_LABELS = { all: "All kinds", genuine: "Genuine", unclassified: "Unclassified", test: "Test / reviewer / admin" };
+const AUDIENCE_LABELS = { all: "All kinds", genuine: "Genuine paying", unclassified: "Other (not genuine paying)", test: "Test / reviewer / admin" };
 
+// 2026-10-04 (MI-1): "genuine" is the server's canonical commercial status
+// (row.genuinePaying); classification only marks test/reviewer/admin rows.
 function audienceOfRow(row) {
-  if (row.classification === "genuine_customer") return "genuine";
-  if (!row.classification || row.classification === "unclassified") return "unclassified";
-  return "test";
+  if (row.genuinePaying === true) return "genuine";
+  if (row.classification && !["unclassified", "genuine_customer"].includes(row.classification)) return "test";
+  return "unclassified";
 }
 
 function filterRowsByAudience(rows, audience) {
@@ -1042,7 +1044,7 @@ function describeAudienceBadges(row) {
   const audience = audienceOfRow(row);
   const badges = [];
   if (audience === "genuine") badges.push({ label: "Genuine", className: "good" });
-  else if (audience === "unclassified") badges.push({ label: "Unclassified", className: "warn" });
+  else if (audience === "unclassified") badges.push({ label: "Not genuine paying", className: "" });
   else badges.push({ label: (row.account && row.account.testLabel) || "Test", className: "classification" });
   if (row.everPaid && !(row.account && row.account.kind === "paying")) badges.push({ label: "Paid before", className: "" });
   return badges;
@@ -2436,17 +2438,13 @@ function bcCard(label, value, sub, className) {
 // ---------- Overview ----------
 const GLOSSARY_ROWS = [
   ['Account / household', 'Any registered household. Neutral: not necessarily a customer.'],
-  ['Genuine paying customer (Overview, Customers)', 'The commercial classifier (services/commercial/commercialStatus.js): proven production money — Stripe live, or Apple/Google with RevenueCat environment = production — and not a test, reviewer, admin or QA account. Sandbox, TestFlight, App Review and unverified store purchases are never genuine.'],
-  ['Genuine customer (these detailed checks)', 'Explicitly classified as a genuine customer (account classification, migration 069). Still used by these checks, Stripe MRR attribution and number categories until the two definitions are converged (see docs/product/2026-10-04-ADMIN-CONTROL-CENTRE-REDESIGN.md).'],
+  ['Genuine paying customer', 'The commercial classifier (services/commercial/commercialStatus.js): proven production money — Stripe live, or Apple/Google with RevenueCat environment = production — and not a test, reviewer, admin or QA account. Sandbox, TestFlight, App Review and unverified store purchases are never genuine.'],
   ['Internal test / reviewer / admin / QA', 'Explicitly classified non-customer accounts. Visible everywhere, never counted as customers or revenue.'],
-  ['Unclassified', 'Not yet classified. Not counted as a customer or revenue until classified.'],
   ['Paid / complimentary / trial access', 'The type of the current entitlement.'],
-  ['Genuine paying customer', 'A genuine customer with paid access now.'],
   ['Payment history / former paying', 'A paid membership was recorded at some point (any status); former paying = no paid access now. Stripe test / Apple sandbox rows look the same, so this is not proof money was received.'],
   ['Cancelled', 'No current or upcoming membership; the subscription was cancelled or access revoked.'],
   ['Expired', 'No current or upcoming membership; the last one ended by date.'],
-  ['Protected (Overview, Customers)', 'Every canonical protection gate holds now (services/lifecycle/activationState.js): entitled, not on a financial hold, number active and not quarantined, forwarding and a delivered call for the CURRENT number, app reachable.'],
-  ['Protected (these detailed checks)', 'Legacy rule: current membership + delivery confirmed + app registered.'],
+  ['Protected', 'Every canonical protection gate holds now (services/lifecycle/activationState.js): entitled, not on a financial hold, number active and not quarantined, forwarding and a delivered call for the CURRENT number, app reachable.'],
   ['Entitled but not protected', 'Current membership, not (yet) Protected.'],
   ['Revenue / MRR', 'Money from genuine customers only, read from the payment provider. Never an entitlement count multiplied by the list price.'],
 ];
@@ -2454,7 +2452,7 @@ const GLOSSARY_ROWS = [
 // Overview cards in three groups, so the page reads top-down:
 // who are my customers → are they protected → what am I paying for.
 const OVERVIEW_GROUPS = [
-  { title: 'Customers & revenue', ids: ['genuine_paying', 'paid_unclassified', 'non_paying_access', 'mrr'] },
+  { title: 'Customers & revenue', ids: ['genuine_paying', 'paid_not_proven', 'non_paying_access', 'mrr'] },
   { title: 'Protection', ids: ['protected', 'entitled_not_protected', 'entitled_missing_number'] },
   { title: 'Numbers & cost', ids: ['provider_numbers', 'households_with_number', 'unmapped_numbers', 'lapsed_retaining_number', 'pending_release_quarantine', 'lifecycle_anomalies'] },
 ];
@@ -2482,7 +2480,6 @@ const ATTENTION_TOPICS = {
   setup_overdue: { title: 'Setup overdue', why: 'Paying for protection that is not active yet.', next: 'Contact the customer to finish forwarding setup; check network/device are recorded.', tab: 'customers' },
   number_lifecycle: { title: 'Number lifecycle anomalies', why: 'A number may be released from someone who still needs it, or kept (and billed) for someone who does not.', next: 'Open Numbers and follow each row\'s next step. Nothing is released from the dashboard.', tab: 'numbers' },
   numbers_cost: { title: 'Numbers billed with no customer behind them', why: 'Recurring rental for staging, orphan or unmapped numbers.', next: 'Open Numbers: check each number\'s inbound calls and environment before any decision.', tab: 'numbers' },
-  classification: { title: 'Accounts that need classifying', why: 'Unclassified accounts are in no customer or revenue figure — a real payer can be invisible.', next: 'Customers → View → Classification (reason required; no effect on access or billing).', tab: 'customers' },
   payments: { title: 'Payments not attributed', why: 'Revenue figures exclude these until they are.', next: 'Open Money; classify the paying account, or note App Store revenue is not connected.', tab: 'money' },
   finance: { title: 'Spend safety', why: 'Provider spend is above normal, or cannot be observed.', next: 'Open Money: read the level reasons and check the provider console. Recommended actions are listed; none are executed.', tab: 'money' },
   usage: { title: 'Unusual usage or unrecorded call outcomes', why: 'Monitored minutes and inbound minutes are billed per call, and only the per-call monitoring limit is enforced today.', next: 'Open Operations → Usage & cost safety: each signal lists its rule and the calls behind it. Nothing is blocked from the dashboard.', tab: 'operations' },
@@ -2492,8 +2489,8 @@ const ATTENTION_TOPICS = {
 };
 const CARD_TOPIC = {
   entitled_missing_number: 'provisioning', lifecycle_anomalies: 'number_lifecycle', lapsed_retaining_number: 'number_lifecycle',
-  pending_release_quarantine: 'number_lifecycle', unmapped_numbers: 'numbers_cost', paid_unclassified: 'classification',
-  non_paying_access: 'classification', mrr: 'payments',
+  pending_release_quarantine: 'number_lifecycle', unmapped_numbers: 'numbers_cost', paid_not_proven: 'payments',
+  non_paying_access: 'other_checks', mrr: 'payments',
 };
 const ATTENTION_SEVERITY_RANK = { red: 0, amber: 1 };
 
@@ -2531,9 +2528,8 @@ function buildAttentionItems(overview, customers, business) {
       // A new check without a topic is never dropped silently.
       const topic = CARD_TOPIC[c.id] || 'other_checks';
       // Only the unclassified part of "non-paying access" is actionable.
-      const items = c.id === 'non_paying_access' ? (c.items || []).filter((i) => /unclassified/.test(i.detail || '')) : (c.items || []);
-      if (c.id === 'non_paying_access' && !items.length) continue;
-      add(topic, c.status, { detail: c.label + ': ' + (c.id === 'non_paying_access' ? items.length + ' unclassified with access' : c.value), who: items });
+      const items = c.items || [];
+      add(topic, c.status, { detail: c.label + ': ' + c.value, who: items });
     }
   }
   if (overview && overview.financialSafety) {
@@ -2643,7 +2639,7 @@ async function renderSubscriptionsTab() {
   const p = c.protection || {};
   const ph = c.paymentHistory || {};
   let html = '<div class="section">' + sectionHeader('Memberships &amp; payment history', d.generatedAt, 'subscriptions');
-  html += '<p class="sub" style="margin-bottom:14px;">Counts per account kind. Genuine = explicitly classified genuine customer; test, reviewer, admin and unclassified accounts are never counted as customers or revenue. Protection counts are on Overview.</p>';
+  html += '<p class="sub" style="margin-bottom:14px;">Counts per account kind. Genuine paying = the one definition (proven production money now, not a test/reviewer account); sandbox, TestFlight, review and unverified store purchases never count. Protection counts are on Overview.</p>';
   html += '<div class="cards">' +
     bcCard('Genuine paying now', fmtNum(c.genuinePayingCustomers), 'genuine + current paid access', 'bc-primary') +
     bcCard('Genuine former paying', fmtNum(ph.genuineFormerPaying), fmtNum(ph.genuineEverPaid) + ' genuine account(s) ever paid') +
@@ -2660,11 +2656,8 @@ async function renderSubscriptionsTab() {
     bcCard('Churn (30 days)', d.churn.available ? escapeHtml(d.churn.rate) + '%' : '—', d.churn.available ? escapeHtml(d.churn.lost + ' of ' + d.churn.base + ' genuine paying customers') : escapeHtml(d.churn.reason)) +
     '</div>';
   html += '<div class="sub" style="margin-top:8px;">' + fmtNum(c.households) + ' accounts · ' + fmtNum(c.deletedAccounts) + ' deleted (anonymised) accounts excluded.</div>';
-  if (d.needsClassification.length) {
-    html += '<h3 style="margin-top:22px;">Needs classification (' + d.needsClassification.length + ')</h3>';
-    html += '<p class="sub">Classify each as genuine customer or test / reviewer / admin / QA (account_classifications). Until then it is in no customer or revenue figure.</p>';
-    html += '<table><tr><th>Account</th><th>Why it needs classifying</th><th>Access now</th></tr>' + d.needsClassification.map((n) => '<tr><td>' + escapeHtml(n.email) + '</td><td>' + escapeHtml(n.reason || 'has access') + '</td><td>' + escapeHtml(n.entitlementType || 'none') + '</td></tr>').join('') + '</table>';
-  }
+  // 2026-10-04 (MI-1d): classification no longer decides who counts as genuine, so the
+  // "needs classification" list is no longer a counting gap and is not shown.
   html += '</div>';
   document.getElementById('subscriptions').innerHTML = html;
 }

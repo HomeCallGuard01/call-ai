@@ -12,6 +12,7 @@
 // counted either way, so a real new customer is visible without ever
 // inflating genuine revenue figures.
 'use strict';
+const { hasGenuinePaymentHistory } = require('../commercial/commercialStatus');
 
 const { isEntitlementCurrentlyActive, parseTimestampMs } = require('../adminOnboardingStatus');
 const { classifyHousehold, UNCLASSIFIED } = require('../businessMetrics/accountClassification');
@@ -95,8 +96,12 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
   for (const h of households || []) {
     const deleted = typeof h.email === 'string' && h.email.endsWith(ANONYMISED_EMAIL_SUFFIX);
     const classification = classifyHousehold(h.id, classificationMap);
-    const genuine = classification === 'genuine_customer';
     const ents = entitlementsByHousehold.get(h.id) || [];
+    // 2026-10-04 (MI-1b): ONE genuine definition (services/commercial/
+    // commercialStatus.js). `genuine` = genuine PAYMENT HISTORY (production
+    // money ever, not a test/reviewer account) for history, cancellations
+    // and churn; "paying now" uses biz.isGenuinePayingCustomer below.
+    const genuine = hasGenuinePaymentHistory(ents, classificationMap && classificationMap.get(h.id));
     const current = ents.find((e) => isEntitlementCurrentlyActive(e, now)) || null;
     const latestSub = latestByUpdatedAt(subscriptionsByHousehold.get(h.id));
 
@@ -116,10 +121,12 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
       if (genuine) {
         counts.paymentHistory.genuineEverPaid += 1;
         if (biz.formerPaying) counts.paymentHistory.genuineFormerPaying += 1;
-      } else if (classification === UNCLASSIFIED) {
-        counts.paymentHistory.unclassifiedEverPaid += 1;
-      } else {
+      } else if (NON_GENUINE_CLASSIFICATIONS.includes(classification)) {
         counts.paymentHistory.nonGenuineEverPaid += 1;
+      } else {
+        // MI-1: paid recorded, production money not proven (store sandbox /
+        // environment unverified / Stripe test) and not a known test account.
+        counts.paymentHistory.unclassifiedEverPaid += 1;
       }
     }
     // Unclassified accounts that must be classified: anyone with access
@@ -140,7 +147,7 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
         counts.activePaidSubscriptions.total += 1;
         const src = current.source || 'unknown';
         counts.activePaidSubscriptions.bySource[src] = (counts.activePaidSubscriptions.bySource[src] || 0) + 1;
-        if (genuine) {
+        if (biz.isGenuinePayingCustomer) {
           counts.activePaidSubscriptions.genuine += 1;
           counts.genuinePayingCustomers += 1;
         }
@@ -172,7 +179,7 @@ function computeSubscriptionOverview({ households, entitlements, subscriptions, 
     if (genuine) {
       const paid = ents.filter((e) => PAID_TYPES.has(e.entitlement_type));
       const firstPaidMs = paid.map((e) => parseTimestampMs(e.starts_at)).filter((v) => v !== null).sort((a, b) => a - b)[0];
-      if (firstPaidMs !== undefined && current && PAID_TYPES.has(current.entitlement_type)) {
+      if (firstPaidMs !== undefined && current && PAID_TYPES.has(current.entitlement_type) && biz.isGenuinePayingCustomer) {
         if (nowMs - firstPaidMs <= 7 * DAY_MS) counts.newGenuinePayingLast7d += 1;
         if (nowMs - firstPaidMs <= 30 * DAY_MS) counts.newGenuinePayingLast30d += 1;
       }
@@ -222,7 +229,7 @@ async function getSubscriptionOverview(now = new Date()) {
 
   const [hRes, eRes, sRes, classification] = await Promise.all([
     supabaseAdmin.from('households').select('id, email, created_at, twilio_number, activation_verified_at, voice_client_registered_at, delivery_verified_at'),
-    supabaseAdmin.from('entitlements').select('household_id, entitlement_type, status, source, starts_at, ends_at, updated_at'),
+    require('../commercial/householdCommercialIndex').selectEntitlementsWithEnvironment(supabaseAdmin) /* 2026-10-04 MI-1: + store environment (053), tolerant */,
     supabaseAdmin.from('subscriptions').select('household_id, status, cancel_at_period_end, updated_at'),
     getClassificationMap(),
   ]);

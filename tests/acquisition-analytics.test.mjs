@@ -242,18 +242,35 @@ check(
   'countByEventType: correctly counts a different event type independently'
 );
 
+
+// 2026-10-04 (MI-1): genuine comes from the canonical commercial status, built
+// from entitlements (the 'genuine_customer' label alone no longer counts).
+const { buildCommercialIndex: __bci } = require('../services/commercial/householdCommercialIndex.js');
+const __paid = (source, extra = {}) => ({ entitlement_type: 'paid_subscription', status: 'active', source, starts_at: '2026-01-01T00:00:00Z', ends_at: null, ...extra });
+const __index = (ids, ents, classes) => __bci({ households: ids.map((id) => ({ id })), entitlementsByHousehold: new Map(Object.entries(ents)), classificationMap: classes }, new Date('2026-10-04T12:00:00Z'));
+const fixtureCommercialIndex = __index(['genuine-1', 'internal-test-1', 'unclassified-1'], {
+  'genuine-1': [__paid('stripe')],
+  'internal-test-1': [__paid('stripe')],
+  'unclassified-1': [__paid('apple_revenuecat', { revenuecat_environment: 'sandbox' })], // TestFlight/sandbox purchase
+}, fixtureClassificationMap);
 const checkoutSplit = splitByGenuineCustomer(
   fixtureRows.filter((r) => r.event_type === 'checkout_started'),
-  fixtureClassificationMap
+  fixtureClassificationMap,
+  fixtureCommercialIndex
 );
 check(
   checkoutSplit.genuine === 1 && checkoutSplit.total === 3,
-  'splitByGenuineCustomer: only the explicitly genuine_customer household counts as genuine — the internal_test household AND the unclassified household are both excluded from the real count'
+  'splitByGenuineCustomer: only the canonical genuine-paying household counts — the internal_test household AND the sandbox-purchase household are both excluded from the real count'
 );
 
 const paidConversionSplit = splitByGenuineCustomer(
   fixtureRows.filter((r) => r.event_type === 'paid_conversion'),
-  fixtureClassificationMap
+  fixtureClassificationMap,
+  fixtureCommercialIndex
+);
+check(
+  splitByGenuineCustomer(fixtureRows.filter((r) => r.event_type === 'checkout_started'), fixtureClassificationMap).genuine === 0,
+  'splitByGenuineCustomer: without the canonical index nobody counts as genuine — never a fallback to the label'
 );
 check(
   paidConversionSplit.genuine === 1 && paidConversionSplit.total === 1,
@@ -270,7 +287,7 @@ check(
   'topUtmSources: untagged rows are grouped under a labeled bucket, never silently dropped from the total'
 );
 
-const snapshot = computeAcquisitionSnapshot(fixtureRows, fixtureClassificationMap);
+const snapshot = computeAcquisitionSnapshot(fixtureRows, fixtureClassificationMap, fixtureCommercialIndex);
 
 check(
   snapshot.rawFunnel.landingVisits === 3 &&
@@ -283,7 +300,7 @@ check(
 
 check(
   snapshot.classifiedGenuineCustomerFunnel.checkoutsStarted === 1 && snapshot.classifiedGenuineCustomerFunnel.paidConversions === 1,
-  'computeAcquisitionSnapshot: the classified genuine-customer funnel exists as a completely separate object, containing ONLY the two stages that can actually be classified, and only counting explicitly genuine_customer households'
+  'computeAcquisitionSnapshot: the classified genuine-customer funnel exists as a completely separate object, containing ONLY the two stages that can actually be classified, and only counting canonical genuine-paying households'
 );
 
 check(

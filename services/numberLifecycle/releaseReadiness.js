@@ -55,7 +55,10 @@ function evaluateReleaseReadiness(row, { now, generatedAt } = {}) {
   if (row.category === 'other') add('RECORD_MISMATCH', 'HCG\'s record and the provider disagree about this number. Resolve that first.');
 
   if (owner) {
-    if (!owner.accountClass || owner.accountClass === 'unclassified') add('UNCLASSIFIED_HOLDER', 'The holder is not classified. Classify the account (Customers) before any decision about its number.');
+    // 2026-10-04 (MI-1): "genuine" now means paying NOW, so a former genuine
+    // payer reads as 'unclassified'. Who holds the number is still known when
+    // they have proven genuine payment history.
+    if ((!owner.accountClass || owner.accountClass === 'unclassified') && !owner.genuinePaymentHistory) add('UNCLASSIFIED_HOLDER', 'The holder is not classified. Classify the account (Customers) before any decision about its number.');
     if (lc && lc.membership === 'ambiguous') add('AMBIGUOUS_STATE', 'The household\'s entitlement state cannot be determined. Never release from an ambiguous state.');
     if (lc && lc.blocksRelease) add('ENTITLED', 'The household has a current or upcoming membership (migration 047 would refuse this release).');
   }
@@ -91,7 +94,7 @@ function evaluateReleaseReadiness(row, { now, generatedAt } = {}) {
       category: row.categoryLabel || row.category || null,
       environment: row.environment || null,
       household: owner ? (owner.email || owner.householdId) : null,
-      classification: owner ? owner.accountClass || 'unclassified' : null,
+      classification: owner ? (owner.accountClass === 'unclassified' && owner.genuinePaymentHistory ? 'former_genuine' : owner.accountClass || 'unclassified') : null,
       membership: owner ? owner.membership || null : null,
       access: owner ? owner.access || null : null,
       membershipEndedAt: owner ? owner.membershipEndedAt || null : null,
