@@ -199,3 +199,87 @@ Approved by Andrew: "staging backup and staging database preparation ONLY". Noth
 - then `start-staging-server.sh` (health and unsigned-403 checks only, no calls).
 
 The telephony window (pointing `…1883`, handset calls) follows, and needs the Mobile 1.0.2 staging APK.
+
+## 8. Configuration window + server-only staging window (executed 2026-10-04)
+
+Approved by Andrew: prepare the configuration window and run the server-only window. No telephony window was run. **`…1883` was not touched. No calls. No Twilio, Stripe, Apple, Google or production change.**
+
+### 8.1 Configuration: what each value is
+
+Private file `/Users/ad/hcg-staging-config/staging.env` (mode 600, outside every repo). Values are never printed. The file was regenerated once, after an unquoted value leaked a fragment of a staging-only, never-used token into a shell error; all generated values were rotated.
+
+| Variable(s) | Class | Notes |
+|---|---|---|
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | **1 · reused, safe** | from `.env.staging.local` (staging project; differs from production) |
+| `STRIPE_SECRET_KEY` | **1 · reused, safe** | the existing **test-mode** key (the same key appears in the primary `.env` as both `STRIPE_SECRET_KEY` and `STRIPE_TEST_SECRET_KEY`) |
+| `STRIPE_WEBHOOK_SECRET` | 1 · reused (test mode) | an existing `whsec_`. A test-mode endpoint **already exists** at `<staging ngrok>/billing/webhook` (3 events). **Whether this secret belongs to that endpoint is unverified**: confirm before the payment window |
+| `STRIPE_PRICE_ID` | 1 · reused, **interim** | the only test price is **£4.99**. **No £5.99 test price exists** (category 4) |
+| `ABUSE_AUDIT_HASH_SECRET`, `SAFETY_CALLER_KEY_SECRET` | **3 · generated** | 32 random bytes each, staging-only, distinct |
+| `REVENUECAT_WEBHOOK_AUTHORIZATION` | **3 · generated** | staging-only; no RevenueCat webhook points at staging |
+| `TWILIO_*` (account, token, Voice SDK key/secret, TwiML app, push credential) | **2 · production values available but NOT reused** in the server-only window | staging-only **placeholders** were generated instead. Staging therefore **cannot reach the production Twilio account at all**. Signed-webhook tests use the staging placeholder token. The real values are needed only for the attended telephony window |
+| `OPENAI_API_KEY` | **2 · available but NOT reused** in the server-only window | placeholder; no OpenAI spend is possible. For the telephony window: reuse bounded by the Fortress caps, ideally a **separate key with an OpenAI project spend limit** (category 4) |
+| `APP_URL` | config | the reserved ngrok domain (https). **ngrok was not started**; the server was reachable on localhost only |
+| `TRUST_PROXY_HOPS` | config | `1` (ngrok = one hop; verify `req.ip` in the telephony window) |
+| Webhook signing | config | Twilio signature enforcement on (default); admission requires a signature |
+| Financial containment | config + DB | D3 reject (degraded-mode variables unset); staging DB limits below |
+| Notifications | config | `OPS_NOTIFY_EMAIL_ENABLED` / `_PUSH_ENABLED` = false; `Resend_API_Key` unset (alerts only to logs, labelled STAGING); allowance notices off |
+| Numbers | config | `NUMBER_PROVISIONING_MODE=fake`, `NUMBER_LIFECYCLE_JOBS=disabled`, sweep off; plus placeholder Twilio credentials |
+| `TWILIO_VOICE_FALLBACK_URL`, `Resend_API_Key`, usage-trigger SIDs | 5 · optional / not yet | validator warnings only |
+
+**Validator:** `check-launch-config` → **would START** (2 recommended-only warnings).
+
+### 8.2 Staging financial limits (approved: £0.30 per household)
+
+Set through the audited Fortress functions (5 `fc_policy_audit` rows, actor `claude:staging-prep`):
+- **Profiles:** `standard`, `plus`, `complimentary` and `internal_test` = £0.20 budget + £0.07 reserve + £0.03 essential = **£0.30**. `sandbox` stays at £0.10 and `unentitled` at £0.20.
+- **Global policy:** hourly £0.50, daily £1.00, live exposure £0.50, worst case £1.00, at most 5 active calls, monitoring £0.30 per hour, unattributed £0.20 per day, **number purchases 0 per day**, automatic household hold at £0.50 per 24 h, **max call 600 s**.
+- `fc_check_invariants` ok.
+
+### 8.3 Server-only window results
+
+The staging server was started with `start-staging-server.sh` on localhost:3099:
+- no `.env` inherited;
+- `deployment: staging`;
+- D3 = reject;
+- lifecycle jobs not started.
+
+Results (synthetic HTTP requests only):
+
+| Check | Result |
+|---|---|
+| `GET /health` | 200 |
+| Unsigned `POST /voice`, `/call-status`, `/call-delivery-failed`, `/process`, `/webhooks/provider-usage-alert` | **403** each |
+| Invalid signature on `/voice` | **403** |
+| Signed `/voice` to a number with no household | **`<Reject/>`**, no answered apology (T4 fix) |
+| Signed `/voice` to an entitled staging household (`237957ef`, Stripe-test) whose app never registered | `<Say>` apology + `<Hangup/>`. One Fortress reservation, settled at 0 by the signed status callback. A replay gave identical TwiML and **no second reservation**. ⚠ See finding F-1 |
+| Kill switch ON → signed `/voice` | **`<Reject reason="busy"/>`**, `call_refused_kill_switch` logged. Reset by an audited call; breaker closed |
+| Canonical protection API (temporary staging user, `@example.com`, confirmed by admin so no email was sent) | `402 not_entitled` before entitlement. A **permanent HCG account number** was assigned. With complimentary access: `fullyProtected:false`, stage `awaiting_number`, blockers `numberActive, forwardingVerifiedForCurrentNumber, appReachable, deliveryVerifiedForCurrentNumber`. Under a Fortress hold, `notOnHold` is added |
+| Commercial classification over staging (31 households) | none 20 · genuine_paying 7 · complimentary 3 · internal_or_test 1. See finding F-2 |
+| Operational events (dry run, memory store) | 14 detected (7 new genuine, 7 needs attention); **0 sends; every delivery `disabled`; 0 rows written** |
+| Accounting capture | OFF; `accounting_source_events` = 0 |
+| Server log | **no Twilio API call, no OpenAI call**. All errors are the intended refusals |
+| Production fingerprint | **identical** before and after |
+| Server stopped | PID verified (`node server.js`, cwd = candidate worktree) and stopped; port free; ngrok never started |
+
+**Staging fixtures left in place (inert):**
+- household `7ab0cf71`: `internal_test`, entitlement revoked, hold released;
+- its temporary auth user `staging-servercheck-…@example.com`;
+- one settled synthetic reservation on `237957ef`.
+
+**Findings:**
+- **F-1. A household whose app is not registered gets an *answered* apology.** This is the existing `self_protecting_no_registered_client` branch. It is financially bounded (one short inbound leg, reservation settled), but it is the 6 Sep failure mode. Callers hear "cannot be connected" instead of the customer's phone ringing. Whether to keep it (honest message, small cost) or `<Reject/>` (unbilled, caller hears busy) is a **product decision**, not changed here.
+- **F-2. In staging, Stripe *test-mode* entitlements classify as `genuine_paying`,** because entitlements don't record `livemode`. This is consistent:
+  - production refuses to start with a test key, so it can only ever receive live events;
+  - in staging, test-mode is the stand-in for real payment (needed for gate G16);
+  - all its effects are neutralised (email off, fake numbers).
+
+  Documented; no code change.
+
+### 8.4 Ready for the handset/telephony window?
+
+**Not yet.** It needs:
+1. Andrew's approval of the window and of pointing `…1883` at staging (a Twilio change);
+2. the real Twilio and OpenAI values in the private file for that window (or a dedicated OpenAI key with a spend limit);
+3. ngrok started on the reserved domain;
+4. the Mobile 1.0.2 staging-pinned APK (separate workstream; the old APK expires on 16 Oct and lacks the candidate's app changes);
+5. for the payment tests, a **£5.99 test-mode price** and confirmation of the test webhook secret.
