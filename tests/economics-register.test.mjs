@@ -126,5 +126,12 @@ const generated = execFileSync(process.execPath, [path.join(ROOT, 'scripts/hcg-u
 const committed = readFileSync(path.join(ROOT, 'docs/finance/HCG_UNIT_ECONOMICS_V1_TABLES.md'), 'utf8');
 check(generated === committed, 'docs/finance/HCG_UNIT_ECONOMICS_V1_TABLES.md matches the register (regenerate: node scripts/hcg-unit-economics.js > docs/finance/HCG_UNIT_ECONOMICS_V1_TABLES.md)');
 
+// Soft-launch integration 2026-10-04 (D19): no runtime file outside the register re-states a provider rate.
+{
+  const { execSync } = await import('node:child_process');
+  const hits = execSync("git grep -nE '0\\.007558|0\\.00316|0\\.003329|0\\.00474|0\\.042325' -- '*.js' ':!tests' ':!scripts' ':!mobile' ':!services/finance' || true", { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(Boolean).filter((l) => !/^\S+:\d+:\s*(\/\/|\*)/.test(l));
+  check(hits.length === 0, `no duplicated provider-rate literal in runtime code outside the register (${hits.join(' | ') || 'none'})`);
+}
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exitCode = failures === 0 ? 0 : 1;

@@ -16,6 +16,7 @@ const path = require("path");
 const { requireAuth } = require("../middleware/requireAuth");
 const { requireAdmin } = require("../middleware/requireAdmin");
 const { supabaseAdmin } = require("../services/supabaseClients");
+const economicsRegister = require("../services/finance/economicsRegister");
 const { stripe } = require("../services/stripeClient");
 const {
   getBusinessOverview,
@@ -186,7 +187,10 @@ router.get("/admin/api/business/overview", requireAuth, requireAdmin, async (req
 
     const costPerMonitoredMinuteGbp = twilio.available
       ? estimateCostPerMonitoredMinuteGbp({
-          twilioInboundPerMinuteGbp: 0.007558, // confirmed live against this Twilio account, 2026-09 — see docs/session record; not re-fetched per-request to avoid an extra Pricing API call on every dashboard load
+          // Soft-launch integration 2026-10-04 (brief §6 D19): from the one
+          // economics register (expected/billed basis — this is a dashboard
+          // estimate, not enforcement), no longer a duplicated literal.
+          twilioInboundPerMinuteGbp: economicsRegister.rates({ basis: "expected" }).inboundPerMin,
         })
       : null;
 
