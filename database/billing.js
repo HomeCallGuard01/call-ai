@@ -43,6 +43,32 @@ async function getHouseholdByStripeCustomerId(stripeCustomerId) {
   return data;
 }
 
+// Soft-launch integration 2026-10-04 (lifecycle F-03): the facts needed to
+// tell an anonymised (deleted) household apart. Throws on a read error so the
+// webhook returns 500 and Stripe retries — never guesses.
+async function getHouseholdDeletionFacts(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+  const { data, error } = await supabaseAdmin
+    .from("households")
+    .select("id, status, email, auth_user_id, stripe_customer_id")
+    .eq("id", householdId)
+    .maybeSingle();
+  if (error) throw new Error(`household deletion facts unreadable: ${error.message || error}`);
+  return data || null;
+}
+
+// Records an already-claimed event as terminal 'ignored' with its reason
+// (only from 'received', i.e. the claim this request owns). Throws on error.
+async function markWebhookEventIgnored({ stripeEventId, reason }) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+  const { error } = await supabaseAdmin
+    .from("stripe_webhook_events")
+    .update({ status: "ignored", processed_at: new Date().toISOString(), error: reason })
+    .eq("stripe_event_id", stripeEventId)
+    .eq("status", "received");
+  if (error) throw new Error(`could not mark webhook event ignored: ${error.message || error}`);
+}
+
 // Claims a webhook event for processing via the dedup RPC (see that
 // migration's comment for the full claim/retry semantics). Returns true if
 // this call should proceed to process the event, false if it's already
@@ -564,6 +590,8 @@ async function revokeStripeEntitlementForDeletion(householdId, deps = {}) {
 }
 
 module.exports = {
+  getHouseholdDeletionFacts,
+  markWebhookEventIgnored,
   setHouseholdStripeCustomerId,
   getHouseholdByStripeCustomerId,
   claimWebhookEvent,

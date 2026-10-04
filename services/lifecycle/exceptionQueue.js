@@ -52,7 +52,8 @@ const EXCEPTIONS = Object.freeze({
   RETURNING_CUSTOMER_OLD_NUMBER_QUARANTINED: { severity: 'action', owner: 'ops', automation: 'automatable_after_decision', action: 'Entitled again with a new number while the old one is still quarantined (and billed). Decide: reinstate the old number or confirm its deactivation.' },
   QUARANTINE_WITHOUT_HOUSEHOLD: { severity: 'action', owner: 'ops', automation: 'manual', action: 'Quarantined number whose household row is gone (household_id NULL). No route can confirm it; it is billed until released by hand.' },
   STRIPE_EVENT_FAILED: { severity: 'action', owner: 'engineering', automation: 'manual', action: 'A Stripe subscription event failed to process. Check stripe_webhook_events.error and reprocess.' },
-  STRIPE_EVENT_FOR_DELETED_HOUSEHOLD: { severity: 'watch', owner: 'engineering', automation: 'automatable_after_decision', action: 'Known defect: after in-app account deletion Stripe keeps retrying subscription.deleted, which fails because the household was anonymised. Entitlement is already revoked; acknowledge (fix proposed in the lifecycle doc F-03).' },
+  STRIPE_EVENT_FOR_DELETED_HOUSEHOLD: { severity: 'watch', owner: 'engineering', automation: 'manual', action: 'A Stripe event for a deleted household FAILED before the F-03 fix (2026-10-04; new ones are recorded as ignored). Entitlement is already revoked; acknowledge.' },
+  DELETED_HOUSEHOLD_SUBSCRIPTION_LIVE: { severity: 'action', owner: 'ops', automation: 'manual', action: 'Stripe reported a LIVE subscription (trialing/active/past_due) for a deleted account: the customer may still be paying with no service. Cancel it in Stripe; refund per decision D-B3.' },
   ACCOUNT_DELETED_NUMBER_RETAINED: { severity: 'critical', owner: 'ops', automation: 'manual', action: 'An anonymised household still holds a number. Should be impossible (029 refuses) — investigate.' },
 });
 
@@ -118,6 +119,9 @@ function householdExceptions(snapshot, now, thresholds = THRESHOLDS) {
     if (h.twilio_number) items.push(item('ACCOUNT_DELETED_NUMBER_RETAINED', ctx, h.twilio_number));
     for (const ev of snapshot.failedStripeEvents || []) {
       items.push({ ...item('STRIPE_EVENT_FOR_DELETED_HOUSEHOLD', ctx, `${ev.event_type} ${ev.stripe_event_id}`, ev.last_attempt_at || ev.received_at), dedupeKey: `STRIPE_EVENT_FOR_DELETED_HOUSEHOLD:${ev.stripe_event_id}` });
+    }
+    for (const ev of snapshot.liveSubscriptionEventsAfterDeletion || []) {
+      items.push({ ...item('DELETED_HOUSEHOLD_SUBSCRIPTION_LIVE', ctx, `${ev.event_type} ${ev.stripe_event_id}`, ev.processed_at || ev.received_at), dedupeKey: `DELETED_HOUSEHOLD_SUBSCRIPTION_LIVE:${ev.stripe_event_id}` });
     }
   } else {
     for (const ev of snapshot.failedStripeEvents || []) {

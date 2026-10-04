@@ -7,6 +7,8 @@ const {
   setHouseholdStripeCustomerId,
   getHouseholdByStripeCustomerId,
   claimWebhookEvent,
+  getHouseholdDeletionFacts,
+  markWebhookEventIgnored,
   processWebhookEvent,
   getActiveEntitlement,
   getSubscriptionByHouseholdId,
@@ -26,6 +28,7 @@ const { setHouseholdCarrierCompatibility, recordTermsAcceptance } = require("../
 const { TERMS_VERSION, PRIVACY_VERSION } = require("../services/legalVersions");
 const { CHECKOUT_SUBMIT_MESSAGE, createOfferHandler } = require("../services/subscriptionPricing");
 const { accountingCapture } = require("../services/accounting/capture");
+const { decideDeletedHouseholdEvent } = require("../services/stripeDeletedHousehold");
 
 const router = express.Router();
 
@@ -651,6 +654,19 @@ router.post(
     }
 
     try {
+      // Lifecycle F-03 (soft-launch integration 2026-10-04): an event for an
+      // anonymised (deleted) household can never succeed in the entitlement
+      // RPC (stripe_customer_id was nulled by 029) — it used to fail and be
+      // retried by Stripe indefinitely. Decided BEFORE the claim; a read error
+      // throws → 500 → Stripe retries (never a guess).
+      const deletion = householdId
+        ? decideDeletedHouseholdEvent({
+          household: await getHouseholdDeletionFacts(householdId),
+          eventType: event.type,
+          subscriptionStatus: subscription.status,
+        })
+        : null;
+
       const claimed = await claimWebhookEvent({
         stripeEventId: event.id,
         eventType: event.type,
@@ -662,6 +678,21 @@ router.post(
       if (!claimed) {
         // Already processed/ignored (done), or another attempt currently
         // owns it — either way, nothing further to do right now.
+        return res.sendStatus(200);
+      }
+
+      if (deletion) {
+        // Recorded as terminal 'ignored' (idempotent on replay) and never
+        // passed to process_stripe_webhook_event: a deleted account can
+        // never be re-entitled by a late or replayed event.
+        await markWebhookEventIgnored({ stripeEventId: event.id, reason: deletion.reason });
+        if (deletion.alert) {
+          sendCriticalAlert("stripe_event_for_deleted_household_live_subscription", `Stripe ${event.type} (status ${subscription.status}) for a DELETED household — the customer may still be paying with no service`, {
+            stripeEventId: event.id,
+            eventType: event.type,
+            householdId,
+          }).catch(() => {});
+        }
         return res.sendStatus(200);
       }
 

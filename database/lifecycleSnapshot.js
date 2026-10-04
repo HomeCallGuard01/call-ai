@@ -66,6 +66,9 @@ async function loadLifecycleSnapshots({ supabase, householdId = null }) {
     optional(() => scoped(supabase.from('routing_assignments').select('household_id, e164_number, state, is_primary, state_changed_at').eq('state', 'active').eq('is_primary', true)).order('id', { ascending: true })),
     optional(() => scoped(supabase.from('stripe_webhook_events').select('stripe_event_id, event_type, household_id, error, received_at, last_attempt_at').eq('status', 'failed')).order('stripe_event_id', { ascending: true })),
   ]);
+  // F-03 fix (2026-10-04): events for a deleted household are now recorded as
+  // 'ignored'; the ones whose subscription was still LIVE need a human.
+  const liveForDeleted = await optional(() => scoped(supabase.from('stripe_webhook_events').select('stripe_event_id, event_type, household_id, error, received_at, processed_at').eq('status', 'ignored').eq('error', 'ignored:deleted_household_subscription_live')).order('stripe_event_id', { ascending: true }));
 
   const entsBy = groupBy(entitlements.rows, 'household_id');
   const quarBy = groupBy(quarantine.rows, 'household_id');
@@ -73,6 +76,7 @@ async function loadLifecycleSnapshots({ supabase, householdId = null }) {
   const holdBy = groupBy(holds.rows, 'household_id');
   const assignBy = groupBy(assignments.rows, 'household_id');
   const eventsBy = groupBy(failedEvents.rows, 'household_id');
+  const liveDeletedBy = groupBy(liveForDeleted.rows, 'household_id');
 
   const snapshots = households.rows.map((household) => {
     const subs = (subsBy.get(household.id) || []).slice()
@@ -90,6 +94,7 @@ async function loadLifecycleSnapshots({ supabase, householdId = null }) {
       financialHold,
       currentNumberAssignedAt: assignment ? assignment.state_changed_at : null,
       failedStripeEvents: eventsBy.get(household.id) || [],
+      liveSubscriptionEventsAfterDeletion: liveDeletedBy.get(household.id) || [],
       deliveryHealth: null,
     };
   });
@@ -97,8 +102,8 @@ async function loadLifecycleSnapshots({ supabase, householdId = null }) {
   return {
     snapshots,
     orphanQuarantineRows: householdId ? [] : quarantine.rows.filter((q) => !q.household_id),
-    sources: { subscriptions: subscriptions.state, financialHolds: holds.state, routingAssignments: assignments.state, stripeWebhookEvents: failedEvents.state, deliveryHealth: householdId ? 'per_household' : 'not_loaded_in_bulk' },
-    truncated: [households, entitlements, quarantine, subscriptions, holds, assignments, failedEvents].some((r) => r.truncated),
+    sources: { subscriptions: subscriptions.state, financialHolds: holds.state, routingAssignments: assignments.state, stripeWebhookEvents: failedEvents.state, liveSubscriptionAfterDeletion: liveForDeleted.state, deliveryHealth: householdId ? 'per_household' : 'not_loaded_in_bulk' },
+    truncated: [households, entitlements, quarantine, subscriptions, holds, assignments, failedEvents, liveForDeleted].some((r) => r.truncated),
   };
 }
 
