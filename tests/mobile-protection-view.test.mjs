@@ -148,6 +148,8 @@ const stepState = (input, key) => buildSetupChecklist(input).find((s) => s.key =
   const v = view(input);
   check(p.activationStage === 'on_hold' && v.tone === 'attention' && v.action.kind === 'contact_support', '7 financial hold → attention + contact support');
   check(!/financ|hold|spend|fortress/i.test(v.body), '7 hold wording never mentions finance/hold internals');
+  check(v.body === "Protection is paused on your account, so forwarded calls can't reach you right now. Callers hear a busy tone. Contact us and we'll sort it out. If you need your calls straight away, turn off call forwarding." && v.action.label === 'Contact support', '7 D-C5 approved wording, exactly: says calls are not reaching them, the busy tone, and how to get calls back');
+  check(!isServerProtected(input), '7 a held household is never shown as protected');
   check(stepState(input, 'membership') === 'todo', '7 checklist: membership step not ticked while held');
 }
 

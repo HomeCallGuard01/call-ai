@@ -214,7 +214,10 @@ export function describeProtection(input: ProtectionInput, device: DeviceInput):
     case "membership_upcoming":
       return t("setup", "Your membership hasn't started yet. Protection will begin as soon as it does.", null);
     case "on_hold":
-      return t("attention", "Protection on your account is paused. Please contact us and we'll sort it out.", {
+      // D-C5 (approved by Andrew 2026-10-04): a hold rejects every forwarded
+      // call as busy (trusted contacts included), so the customer must be
+      // told their calls are not reaching them, and how to get them back.
+      return t("attention", "Protection is paused on your account, so forwarded calls can't reach you right now. Callers hear a busy tone. Contact us and we'll sort it out. If you need your calls straight away, turn off call forwarding.", {
         kind: "contact_support",
         label: "Contact support",
       });

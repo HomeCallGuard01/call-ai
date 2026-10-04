@@ -54,7 +54,7 @@ Recommended (headline unchanged: "PROTECTION NEEDS ATTENTION"; action: "Contact 
 
 > **Protection is paused on your account, so forwarded calls can't reach you right now. Callers hear a busy tone. Contact us and we'll sort it out. If you need your calls straight away, turn off call forwarding.**
 
-The web dashboard should use the same sentence. Not applied: it is customer copy for a launch-critical state.
+**APPROVED by Andrew (2026-10-04) and APPLIED** in `mobile/lib/protectionView.ts` (`on_hold`), with an exact-text test in `tests/mobile-protection-view.test.mjs`. The web dashboard has no hold-specific copy today: a held household sees the generic "not yet protected" path, which is still never "protected". Adding the sentence there is a separate web change.
 
 ## 6. Verification
 
