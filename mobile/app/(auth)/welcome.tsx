@@ -27,21 +27,25 @@ import { colors, spacing, typography } from "../../lib/theme";
 
 type PanelIcon = keyof typeof Ionicons.glyphMap;
 
+// 1.0.2 (2026-10-04): the same three messages as the approved App Store
+// screenshots 01 / 04 / 05, so the store page and the first screen of the app
+// tell one story. Accurate to shipped behaviour (support FAQ): unknown calls
+// are checked while you talk; trusted contacts are never monitored.
 const PANELS: { icon: PanelIcon; headline: string; body: string }[] = [
   {
     icon: "shield-checkmark",
-    headline: "Stop scam calls, not the people you trust",
-    body: "Protect your phone from nuisance and scam callers in just a few clicks.",
+    headline: "Scam call protection that goes beyond blocking numbers",
+    body: "Scammers can change their numbers. Home Call Guard checks unknown calls while you talk.",
   },
   {
     icon: "people",
-    headline: "Keep your number, keep your family's calls coming through exactly as normal",
-    body: "Friends and family ring through immediately — nothing changes for them.",
+    headline: "Trusted people ring straight through",
+    body: "Keep your number. Family and friends connect as normal, and their calls are never monitored.",
   },
   {
     icon: "time",
-    headline: "You stay in control",
-    body: "See how each call was handled.",
+    headline: "Know when you're protected",
+    body: "One clear answer on your home screen, and see how every call was handled.",
   },
 ];
 

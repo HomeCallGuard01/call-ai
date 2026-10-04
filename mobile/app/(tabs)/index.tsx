@@ -21,7 +21,7 @@
 // "awaiting_confirmation" state this adds, and lib/setupFlow.ts's for why
 // resumeSetupAt needed it too.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Text, View, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable, Linking, AppState } from "react-native";
+import { Text, View, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable, Linking, AppState, Platform } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PrimaryButton } from "../../components/PrimaryButton";
@@ -39,7 +39,7 @@ import { deriveLoadOutcome, hasProvenActivation } from "../../lib/homeStatus";
 import { describeProtection, buildSetupChecklist, isServerProtected, describeMembership, type ProtectionAction } from "../../lib/protectionView";
 import { ProtectionChecklist } from "../../components/ProtectionChecklist";
 import { getCallReadiness } from "../../lib/callReadiness";
-import { canPresentCalls } from "../../lib/callReadinessModel";
+import { canPresentCalls, readinessMessage, readinessProblem } from "../../lib/callReadinessModel";
 import { classifyLoadFailure, type LoadFailureReason } from "../../lib/loadFailure";
 import { getActiveCall, registerForIncomingCalls, resetVoiceRegistrationState, unregisterForIncomingCalls } from "../../lib/voiceClient";
 import { resumeSetupAt } from "../../lib/setupFlow";
@@ -164,6 +164,7 @@ export default function Home() {
   // notification permission). Unknown is treated as able — only a definite
   // denial changes the hero (lib/callReadinessModel.ts canPresentCalls).
   const [deviceCanPresentCalls, setDeviceCanPresentCalls] = useState(true);
+  const [deviceProblemMessage, setDeviceProblemMessage] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectNote, setReconnectNote] = useState<string | null>(null);
 
@@ -277,8 +278,14 @@ export default function Home() {
 
   const refreshDeviceReadiness = useCallback(() => {
     getCallReadiness()
-      .then(r => setDeviceCanPresentCalls(canPresentCalls(r)))
-      .catch(() => setDeviceCanPresentCalls(true));
+      .then(r => {
+        setDeviceCanPresentCalls(canPresentCalls(r));
+        setDeviceProblemMessage(readinessMessage(readinessProblem(r), Platform.OS === "ios" ? "ios" : "android"));
+      })
+      .catch(() => {
+        setDeviceCanPresentCalls(true);
+        setDeviceProblemMessage(null);
+      });
   }, []);
 
   useEffect(() => {
@@ -460,6 +467,7 @@ export default function Home() {
   };
   const view = describeProtection(protectionInput, {
     canPresentCalls: deviceCanPresentCalls,
+    problemMessage: deviceProblemMessage,
     hasCompletedActivationStep,
   });
   const checklist = buildSetupChecklist(protectionInput);

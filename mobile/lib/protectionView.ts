@@ -102,6 +102,11 @@ export interface DeviceInput {
   // false only when a microphone/notification permission is definitely off
   // (lib/callReadinessModel.ts canPresentCalls). Unknown counts as true.
   canPresentCalls: boolean;
+  // The device's own explanation of WHY it can't present calls (lib/
+  // callReadinessModel.ts readinessMessage — e.g. on iPhone a call still
+  // rings but the caller can't hear you). Changes only the sentence, never
+  // the verdict, so both platforms still reach the same tone and action.
+  problemMessage?: string | null;
   // Local, per-device "the customer finished the forwarding step" marker
   // (lib/setupCompletionStorage.ts). Only ever used by the legacy fallback
   // for older backends — never to tick a checklist step.
@@ -170,7 +175,7 @@ export function describeProtection(input: ProtectionInput, device: DeviceInput):
   }
 
   if (isServerProtected(input)) {
-    if (!device.canPresentCalls) return t("attention", DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
+    if (!device.canPresentCalls) return t("attention", device.problemMessage || DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
     if (paymentIssue) {
       return t("attention", "There's a problem with your payment. Update your payment details to keep your protection running.", {
         kind: "update_payment",
@@ -240,14 +245,14 @@ export function describeProtection(input: ProtectionInput, device: DeviceInput):
     case "reconnect_needed":
       // The September incident: forwarding works (calls reach HCG) but this
       // phone is not registered to receive them. Always prominent.
-      if (!device.canPresentCalls) return t("attention", DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
+      if (!device.canPresentCalls) return t("attention", device.problemMessage || DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
       return t(
         "attention",
         "Calls are reaching Home Call Guard, but this phone isn't connected to receive them. Reconnect now — until you do, protected calls can't reach you.",
         { kind: "reconnect_app", label: "Reconnect this phone" }
       );
     case "awaiting_first_delivery":
-      if (!device.canPresentCalls) return t("attention", DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
+      if (!device.canPresentCalls) return t("attention", device.problemMessage || DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
       return t("setup", "Everything is set up. Protection will be confirmed when your first protected call reaches this phone.", null);
     default:
       // A stage this app version doesn't know: never protected, never guessed.
@@ -266,7 +271,7 @@ function legacyDescribe(input: ProtectionInput, device: DeviceInput): Protection
   const p = input.protection;
   const legacy = legacyHomeState(p, !!device.hasCompletedActivationStep);
   if (!device.canPresentCalls && legacy !== "setting_up") {
-    return t("attention", DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
+    return t("attention", device.problemMessage || DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
   }
   switch (legacy) {
     case "setting_up":

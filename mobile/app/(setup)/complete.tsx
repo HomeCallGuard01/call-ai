@@ -38,18 +38,27 @@
 // customer journey. See mobile/app/(tabs)/index.tsx for the same removal
 // on the Home tab's own optional links.
 import { useEffect, useState } from "react";
-import { Text, StyleSheet } from "react-native";
+import { Text, StyleSheet, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { fetchDashboard } from "../../lib/api";
 import { useAuth } from "../../lib/AuthContext";
 import { markSetupCompleted } from "../../lib/setupCompletionStorage";
+import { buildSetupChecklist, describeProtection, type ChecklistStep, type ProtectionHeadline } from "../../lib/protectionView";
+import { ProtectionChecklist } from "../../components/ProtectionChecklist";
 import { colors, spacing, typography } from "../../lib/theme";
 
 export default function SetupComplete() {
   const { session } = useAuth();
   const [contactCount, setContactCount] = useState<number | null>(null);
+  // 1.0.2: the server's verdict and setup gates, read once here so the end of
+  // setup shows what is actually confirmed — never "nothing else to do"
+  // unless the server agrees (the September incident ended exactly here:
+  // forwarding done, app never registered, customer told all was well).
+  const [steps, setSteps] = useState<ChecklistStep[] | null>(null);
+  const [verdict, setVerdict] = useState<ProtectionHeadline | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     // Fire-and-forget, best-effort — see markSetupCompleted's own
@@ -63,10 +72,23 @@ export default function SetupComplete() {
     let isMounted = true;
     fetchDashboard(session?.access_token)
       .then(data => {
-        if (isMounted) setContactCount(data.contacts.length);
+        if (!isMounted) return;
+        setContactCount(data.contacts.length);
+        const input = {
+          protection: data.protection,
+          membership: data.membership,
+          testPurchase: data.customerAllowance?.membership?.testPurchase === true,
+          allowance: data.customerAllowance ?? null,
+        };
+        setSteps(buildSetupChecklist(input));
+        // Device permissions are checked on Home; here only the server's view.
+        setVerdict(describeProtection(input, { canPresentCalls: true }));
       })
       .catch(() => {
         if (isMounted) setContactCount(null);
+      })
+      .finally(() => {
+        if (isMounted) setLoaded(true);
       });
     return () => {
       isMounted = false;
@@ -95,11 +117,21 @@ export default function SetupComplete() {
           2026-09-23: replaces the old one-line "check the Home tab" with
           the approved explicit explanation of what happens next and why
           no further action is required. */}
-      <Text style={styles.title} accessibilityRole="header">Home Call Guard is set up</Text>
-      <Text style={styles.body}>
-        We'll confirm your protection automatically when your first forwarded call reaches Home Call Guard — you
-        don't need to do anything else. Check the Home tab any time to see your current status.
+      <Text style={styles.title} accessibilityRole="header">
+        {verdict?.isProtected ? "Your phone is protected" : "Your setup steps are done"}
       </Text>
+      <Text style={styles.body}>
+        {verdict?.isProtected
+          ? "Home Call Guard has confirmed every step. Your Home screen shows your status any time."
+          : verdict?.tone === "attention"
+            ? verdict.body
+            : "Home Call Guard confirms each step as it happens. Your Home screen shows what's confirmed, and tells you straight away if anything needs your attention."}
+      </Text>
+      {!loaded ? (
+        <ActivityIndicator color={colors.accent} style={styles.loading} accessibilityLabel="Checking your setup" />
+      ) : (
+        steps && !verdict?.isProtected && verdict?.tone !== "unknown" && <ProtectionChecklist steps={steps} />
+      )}
       <Text style={styles.body}>{contactsLine}</Text>
       <Text style={styles.priceNote}>Your membership renews monthly. You can cancel anytime.</Text>
       <PrimaryButton label="Go to my dashboard" onPress={() => router.replace("/(tabs)")} />
@@ -117,6 +149,9 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.text,
     marginBottom: spacing.md,
+  },
+  loading: {
+    marginBottom: spacing.lg,
   },
   priceNote: {
     ...typography.caption,
