@@ -62,10 +62,15 @@ const SALES_CHANNELS = ['stripe', 'apple', 'google'];
 // once enrolment is verified.
 const DEFAULT_FEE_MODEL = { stripe: 'stripe', apple: 'apple30', google: 'store15' };
 
+// From the authoritative register (services/finance/assumptions/). Note the
+// top-up reserve (10%) is a DIFFERENT register entry from the plan reserve
+// (economicPolicy, 15%): see docs/finance/HCG_UNIT_ECONOMICS_V1.md §7.
+const register = require('../finance/economicsRegister');
+
 const DEFAULTS = {
-  vatRate: 0.2,
-  targetMargin: 0.4,
-  safetyReserve: 0.1,
+  vatRate: register.value('vatRate'),
+  targetMargin: register.value('targetGrossMargin'),
+  safetyReserve: register.value('topUpSafetyReserveRatio'),
   // Don't sell a top-up that would expire almost immediately: top-up
   // minutes belong to the current allowance period (see topUpCredit.js).
   minHoursBeforeReset: 24,

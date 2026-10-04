@@ -1,0 +1,98 @@
+{
+  "_purpose": "THE authoritative register of every input to HCG's unit economics and to the runtime financial-policy DEFAULTS. Runtime modules (costModel, economicPolicy, unitEconomics, carrierComparison, pricingScenarios, productCatalog) read their defaults from here; tests/economics-register.test.mjs fails if any runtime default, the migration 067 SQL defaults/seeds or docs/finance/carrier-quotes.json drift from it. Changing a value here changes NO price, NO allowance and NO database policy: the database (fc_policy, fc_budget_profiles) stays authoritative for enforcement and is changed only through the audited functions. Explained in docs/finance/HCG_UNIT_ECONOMICS_V1.md.",
+  "version": "1.0.0",
+  "asOf": "2026-10-04",
+  "currency": "GBP unless the key says otherwise; all provider prices ex-VAT",
+  "statusKey": {
+    "KNOWN": "Verified from HCG's own billing/records, law, or HCG's own published terms",
+    "CONFIGURED": "A value currently set in HCG code, migrations or env defaults (a fact about the system, not about the world)",
+    "ESTIMATED": "A published list price, a reasoned assumption or a modelling convention; not verified against an HCG invoice",
+    "UNKNOWN": "No evidence either way; the value shown is a placeholder so the model can run",
+    "PROVIDER_CONFIRMATION_REQUIRED": "Public/list information exists but the rate HCG actually pays (or whether it applies) must be confirmed with the provider or from an invoice"
+  },
+  "kindKey": {
+    "fact": "Describes the world (a price, a rate, a law)",
+    "policy": "A choice HCG makes (margin target, reserve, allowance); placeholders until Andrew decides",
+    "modelling": "A convention needed to turn facts into a per-customer figure"
+  },
+  "assumptions": {
+    "priceIncVatGbp": { "value": 5.99, "unit": "GBP/month incl VAT", "status": "CONFIGURED", "kind": "policy", "source": "services/containment/economicPolicy.js DEFAULT_ECONOMICS; Andrew's brief 2026-10-04", "note": "Candidate price, NOT approved for release. Live Apple IAP is £4.99; terms.html states £4.99." },
+    "vatRate": { "value": 0.2, "unit": "ratio", "status": "KNOWN", "kind": "fact", "source": "UK standard rate; AFMD Ltd is VAT-registered (GB379120684, public/terms.html)", "note": "Stores (Apple/Google) account for UK VAT on in-app sales as deemed supplier; commission is modelled on the ex-VAT price." },
+
+    "stripeCardPct": { "value": 0.015, "unit": "ratio of gross", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "Stripe UK public pricing, standard UK cards 1.5% + 20p", "note": "Non-UK/EEA/premium cards cost more; HCG's account pricing not read (live Stripe read denied 2026-09-30)." },
+    "stripeCardFixedGbp": { "value": 0.2, "unit": "GBP per charge", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "Stripe UK public pricing", "note": "Dominates the Stripe fee at £5.99 (56% of it)." },
+    "stripeBillingPct": { "value": 0.007, "unit": "ratio of gross", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "Stripe Billing pay-as-you-go (0.7%; some secondary sources still quote 0.5%)", "note": "Invoiced separately from the charge fee, so it is invisible in balance transactions." },
+    "stripeTaxPct": { "value": 0.005, "unit": "ratio of gross", "status": "UNKNOWN", "kind": "fact", "source": "Stripe Tax 0.5% per transaction IF enabled", "note": "Whether Stripe Tax is enabled is unverified; prices use tax_behavior=inclusive, which does not require it. Kept in (conservative)." },
+    "appleStandardRate": { "value": 0.3, "unit": "ratio of ex-VAT price", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "App Store standard commission", "note": "Subscriptions drop to 15% after one year of paid service per subscriber." },
+    "appleSmallBusinessRate": { "value": 0.15, "unit": "ratio of ex-VAT price", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "App Store Small Business Program", "note": "HCG's enrolment is UNKNOWN. productCatalog defaults Apple to 30% until confirmed." },
+    "appleSmallBusinessEnrolled": { "value": null, "unit": "boolean", "status": "UNKNOWN", "kind": "fact", "source": "No App Store Connect access (memory: Apple Build 12 investigation)", "note": "Single largest Apple-channel unknown: 30% vs 15% moves the Apple safe budget by ~£0.75/month." },
+    "googlePlayServiceFeeRate": { "value": 0.15, "unit": "ratio of ex-VAT price", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "Google Play: 15% on auto-renewing subscriptions from day one (since 2022)", "note": "NOT APPLICABLE TODAY: no Play Billing product exists; Android subscribers pay via Stripe. Play Billing is likely required before Play Production (memory: Android Play Billing compliance)." },
+    "revenueCatRateAboveThreshold": { "value": 0.01, "unit": "ratio of gross tracked revenue", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "RevenueCat public pricing: free to $2,500 monthly tracked revenue, then 1%", "note": "Applies to Apple (and future Google) subscribers only. £0 today (far below threshold)." },
+    "revenueCatFreeMtrUsd": { "value": 2500, "unit": "USD monthly tracked revenue", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "RevenueCat public pricing", "note": "≈ 525 Apple subscribers at £5.99 before any RevenueCat fee." },
+    "revenueLeakageRate": { "value": 0.02, "unit": "ratio of net revenue", "status": "UNKNOWN", "kind": "modelling", "source": "No refund/chargeback/failed-payment history (0 genuine paying customers as of 2026-09-27)", "note": "Refunds, chargebacks (Stripe dispute fee £20 each), failed renewals already served. 2% placeholder." },
+
+    "numberRentalGbpPerMonth": { "value": 0.86917, "unit": "GBP/number/month", "status": "KNOWN", "kind": "fact", "source": "Twilio Pricing API + 45 billed number-months at exactly this rate (2026-09)", "note": "Billed per number held, whether or not the customer uses it." },
+    "numberPurchaseGbpCeiling": { "value": 1.15, "unit": "GBP per purchase", "status": "CONFIGURED", "kind": "policy", "source": "migration 067 fc_policy.number_purchase_gbp", "note": "Containment's conservative charge per purchase; the observed cost is the first month's rental." },
+    "numberHeldAfterChurnMonths": { "value": 1, "unit": "months", "status": "ESTIMATED", "kind": "modelling", "source": "Number lifecycle quarantine/grace (memory: number inventory; quarantine never auto-released before the 2026-09-30 clean-up)", "note": "Rental paid on a churned customer's number until release." },
+    "monthlyChurnRate": { "value": 0.05, "unit": "ratio", "status": "UNKNOWN", "kind": "modelling", "source": "No customer history", "note": "Only used to spread churned-number rental over active customers." },
+
+    "twilioInboundGbpPerMin": { "value": 0.007558, "unit": "GBP per started minute", "status": "KNOWN", "kind": "fact", "source": "Twilio Pricing API; real call CA43b447… 239 s billed 4 × £0.00756; Twilio Support (2026-09): billable for the whole connected call incl. <Dial><Client>", "note": "Applies to TRUSTED calls too: forwarding is unconditional (**21*) so every inbound minute crosses Twilio." },
+    "twilioBillingIncrementSec": { "value": 60, "unit": "seconds", "status": "KNOWN", "kind": "fact", "source": "Twilio billing records (per started minute)" },
+    "twilioAppLegBilledGbpPerMin": { "value": 0, "unit": "GBP/min", "status": "KNOWN", "kind": "fact", "source": "100 <Dial><Client> legs with no price; calls-client usage category never appeared", "note": "Observation, not a contract: Twilio may start billing it." },
+    "twilioAppLegListUsdPerMin": { "value": 0.004, "unit": "USD/min", "status": "PROVIDER_CONFIRMATION_REQUIRED", "kind": "fact", "source": "Twilio public Voice SDK list price", "note": "Containment and costModel price the app leg at this list rate (conservative)." },
+    "twilioMediaStreamGbpPerMin": { "value": 0.003329, "unit": "GBP per started stream minute", "status": "KNOWN", "kind": "fact", "source": "Billing: 41 min = £0.13647" },
+    "twilioPollyGbpPerCall": { "value": 0.0006, "unit": "GBP per unknown-caller greeting", "status": "KNOWN", "kind": "fact", "source": "Billing: 38 uses = £0.02282" },
+    "twilioSmsGbpPerSegment": { "value": 0.042325, "unit": "GBP per segment", "status": "KNOWN", "kind": "fact", "source": "Twilio Pricing API", "note": "Warning SMS = 1 segment; red-line/post-call/limit messages = 2 segments. Warning SMS currently fail (error 21661)." },
+    "twilioOutboundUkMobileGbpPerMin": { "value": 0.023052, "unit": "GBP/min", "status": "KNOWN", "kind": "fact", "source": "Twilio Pricing API", "note": "Not used by the current architecture (pre-23-Aug dial-back only). Outbound geo permissions all disabled 2026-09-30." },
+    "twilioPlatformFeesGbpPerMonth": { "value": 0, "unit": "GBP/month", "status": "KNOWN", "kind": "fact", "source": "Twilio billing history: only a £0.00152 failed-message fee ever" },
+
+    "transcriptionUsdPerMin": { "value": 0.006, "unit": "USD per audio minute", "status": "ESTIMATED", "kind": "fact", "source": "OpenAI list price, whisper-1 (services/liveMonitoring/transcribeChunk.js model 'whisper-1')", "note": "The OpenAI project key cannot read costs: unverified against an invoice. gpt-4o-mini-transcribe lists at $0.003/min (not in use)." },
+    "transcriptionAudioMultiplier": { "value": 1, "unit": "audio minutes transcribed per monitored minute", "status": "CONFIGURED", "kind": "fact", "source": "speechSegmenter.js non-overlapping segments (e56e776, in production since eb43368); <Stream> default inbound_track only", "note": "Was 2.0 with the old 4 s/2 s overlap window." },
+    "usdToGbp": { "value": 0.79, "unit": "GBP per USD", "status": "ESTIMATED", "kind": "modelling", "source": "Convention used by costModel.js and carrierComparison.js", "note": "research/carrier-routing-v2 used 0.75: a second, conflicting FX convention. Affects transcription and any USD carrier quote." },
+    "liveRiskScoringGbpPerMin": { "value": 0, "unit": "GBP/min", "status": "KNOWN", "kind": "fact", "source": "Rule-based scorer; no LLM on the live call path" },
+    "aiClassifierGbpPerRequest": { "value": 0.001, "unit": "GBP per request", "status": "CONFIGURED", "kind": "policy", "source": "migration 067 fc_policy.ai_request_gbp", "note": "POST /process (gpt-4o-mini) is unreachable from Twilio today: £0 in the model." },
+    "openAiRetryMultiplier": { "value": 1, "unit": "ratio", "status": "UNKNOWN", "kind": "modelling", "source": "OpenAI SDK maxRetries=2 default", "note": "Retries could multiply transcription cost by up to 3× on a bad day; no per-request cost data exists." },
+
+    "avgCallMinutes": { "value": 4, "unit": "minutes", "status": "ESTIMATED", "kind": "modelling", "source": "carrierComparison.js DEFAULT_ASSUMPTIONS" },
+    "roundUpMinutesPerCall": { "value": 0.55, "unit": "extra billed minutes per call", "status": "ESTIMATED", "kind": "modelling", "source": "pricingScenarios.js / carrierComparison.js (60/60 billing incl. ringing, observed calls)" },
+    "roundUpMinutesPerCallPerSecondBilling": { "value": 0.1, "unit": "extra billed minutes per call", "status": "ESTIMATED", "kind": "modelling", "source": "carrierComparison.js (ring/greeting under per-second billing)" },
+    "streamRoundUpPerMonitoredCall": { "value": 0.5, "unit": "extra stream minutes per monitored call", "status": "ESTIMATED", "kind": "modelling", "source": "pricingScenarios.js" },
+    "smsSegmentsPerWarning": { "value": 1, "unit": "segments", "status": "CONFIGURED", "kind": "fact", "source": "message text on main" },
+    "warningSmsPerMonth": { "value": 1, "unit": "messages/household/month", "status": "ESTIMATED", "kind": "modelling", "source": "carrierComparison.js" },
+
+    "infrastructureFixedGbpPerMonth": { "value": 40, "unit": "GBP/month company-wide", "status": "ESTIMATED", "kind": "fact", "source": "Railway Hobby $5 + ~$0.95 usage (seen); Supabase very likely Pro $25+ (invoice unverified); Resend, IONOS/domain, Apple $99/yr, Google $25 once: UNKNOWN/unallocated", "note": "Higgsfield $59/mo is marketing, not cost of service. Fixed: per-customer share falls with scale." },
+    "infrastructureAllocationGbpPerCustomer": { "value": 0.25, "unit": "GBP/customer/month", "status": "CONFIGURED", "kind": "policy", "source": "services/containment/economicPolicy.js DEFAULT_ECONOMICS.infrastructureGbp (placeholder)", "note": "Equals £40/month ÷ 160 customers. At 1,000 customers the true share is ~£0.04." },
+
+    "targetGrossMargin": { "value": 0.4, "unit": "ratio of net (ex-VAT) revenue", "status": "CONFIGURED", "kind": "policy", "source": "Andrew's brief (~40%); ALLOWANCE_TARGET_MARGIN default; economicPolicy deliveryCostCeilingRatio = 1 − 0.4", "note": "Gross margin here = (net revenue − payment/store fee − leakage − every per-customer cost of service) ÷ net revenue. Company overheads (staff, marketing) are NOT deducted." },
+    "planSafetyReserveRatio": { "value": 0.15, "unit": "ratio of variable budget", "status": "CONFIGURED", "kind": "policy", "source": "economicPolicy.js safetyReserveRatio (fraud/estimate-error reserve)" },
+    "topUpSafetyReserveRatio": { "value": 0.1, "unit": "ratio of top-up delivery cost", "status": "CONFIGURED", "kind": "policy", "source": "productCatalog.js DEFAULTS.safetyReserve", "note": "A DIFFERENT reserve from the plan reserve (0.15). Intentional or not, it is now visible; DECISION." },
+    "overrunAllowanceGbp": { "value": 0.1, "unit": "GBP/customer/month", "status": "CONFIGURED", "kind": "policy", "source": "economicPolicy.js overrunAllowanceGbp (lease granularity/termination latency)" },
+    "fortressEstimateUplift": { "value": 1.1, "unit": "multiplier on every estimated cost", "status": "CONFIGURED", "kind": "policy", "source": "migration 067 fc_policy.estimate_uplift" },
+    "planBudgetSplit": { "value": { "budget": 0.58, "deliveryReserve": 0.3, "essential": 0.12 }, "unit": "share of variable envelope", "status": "CONFIGURED", "kind": "policy", "source": "economicPolicy.js suggestedProfile" },
+
+    "fortressSeedBudgetGbp": { "value": { "budget": 0.5, "deliveryReserve": 0.25, "essential": 0.1 }, "unit": "GBP per household per period (standard/plus/complimentary/internal_test)", "status": "CONFIGURED", "kind": "policy", "source": "migration 067 fc_budget_profiles seed (placeholders, DECISION D1); 067 not applied anywhere in production" },
+    "fortressConnectedRateGbpPerMin": { "value": 0.010718, "unit": "GBP/min (enforcement basis)", "status": "CONFIGURED", "kind": "policy", "source": "migration 067 fc_policy default = inbound £0.007558 + app leg at list £0.00316", "note": "42% above the cost actually billed today (£0.007558)." },
+    "fortressMonitoringRateGbpPerMin": { "value": 0.008069, "unit": "GBP/min (enforcement basis)", "status": "CONFIGURED", "kind": "policy", "source": "migration 067 fc_policy default = stream £0.003329 + transcription £0.00474" },
+    "fortressMonitoringMaxSeconds": { "value": 1800, "unit": "seconds per call", "status": "CONFIGURED", "kind": "policy", "source": "migration 067 / 056 30-minute per-call cap" },
+    "planAllowanceMinutes": { "value": { "standard": 100, "plus": 200 }, "unit": "monitored minutes per period", "status": "CONFIGURED", "kind": "policy", "source": "services/usage/plans.js PLAN_DEFAULTS (placeholders)", "note": "Metered from Media Stream start: greeting + ringing + unanswered calls count." },
+    "planWarningPoints": { "value": [0.75, 0.9], "unit": "fractions of allowance", "status": "CONFIGURED", "kind": "policy", "source": "services/usage/plans.js DEFAULT_WARNING_POINTS" },
+
+    "ofcomAverageOutgoingMinutesPerMonth": { "value": 146, "unit": "minutes/connection/month", "status": "ESTIMATED", "kind": "fact", "source": "Ofcom average outgoing (research/commercial-network-viability)", "note": "Only an external anchor: HCG pays for INCOMING minutes, which Ofcom does not publish per user." },
+    "customerUsageDistribution": { "value": null, "unit": "minutes/household/month", "status": "UNKNOWN", "kind": "fact", "source": "0 genuine paying customers (admin/usage audit 2026-09-27)", "note": "THE biggest unknown. Profiles below are illustrative." }
+  },
+  "usageProfiles": {
+    "_status": "ESTIMATED (illustrative; no measured distribution exists). Same shapes as services/finance/pricingScenarios.js PROFILES.",
+    "light": { "label": "Light", "trusted": 60, "unknownMinutes": 15, "trustedCalls": 20, "unknownCalls": 6, "sms": 0 },
+    "typical": { "label": "Typical", "trusted": 150, "unknownMinutes": 40, "trustedCalls": 45, "unknownCalls": 15, "sms": 1 },
+    "heavy": { "label": "Heavy family", "trusted": 400, "unknownMinutes": 80, "trustedCalls": 100, "unknownCalls": 30, "sms": 2 },
+    "veryHeavy": { "label": "Very heavy", "trusted": 800, "unknownMinutes": 200, "trustedCalls": 200, "unknownCalls": 60, "sms": 3 }
+  },
+  "futureCarrierScenarios": {
+    "_status": "HYPOTHETICAL. Published list prices or placeholders; none quoted to HCG. PROVIDER_CONFIRMATION_REQUIRED for every value.",
+    "twilioToday": { "label": "Twilio today (billed)", "numberGbp": 0.86917, "trustedPerMinGbp": 0.007558, "unknownConnectedPerMinGbp": 0.007558, "streamPerMinGbp": 0.003329, "incrementSec": 60, "fixedGbpPerMonth": 0, "source": "KNOWN (register above)" },
+    "twilioAppLegBilled": { "label": "Twilio, app leg billed at list", "numberGbp": 0.86917, "trustedPerMinGbp": 0.010718, "unknownConnectedPerMinGbp": 0.010718, "streamPerMinGbp": 0.003329, "incrementSec": 60, "fixedGbpPerMonth": 0, "source": "Risk scenario: +$0.004/min list" },
+    "telnyxPerMinute": { "label": "Telnyx Call Control + WebRTC (list)", "numberGbp": 0.86917, "trustedPerMinGbp": 0.00711, "unknownConnectedPerMinGbp": 0.00711, "streamPerMinGbp": 0.002765, "incrementSec": 60, "fixedGbpPerMonth": 0, "source": "telnyx.com/pricing.md 2026-10-03: GB local origination $0.005 + Voice API $0.002 + WebRTC $0.002 = $0.009 × 0.79; streaming $0.0035 × 0.79; number price UNKNOWN (Twilio's used); increment UNKNOWN (60 s assumed)" },
+    "magratheaFreeInbound": { "label": "Magrathea free inbound + HCG-hosted SIP/WebRTC", "numberGbp": 0.5, "trustedPerMinGbp": 0, "unknownConnectedPerMinGbp": 0, "streamPerMinGbp": 0, "incrementSec": 1, "fixedGbpPerMonth": 100, "source": "Magrathea Annex 3 v6.0: free inbound, £0.50/number, £100/month minimum. HCG SIP/media/push infrastructure cost UNKNOWN (not included beyond the £100 minimum)" },
+    "networkTrustedRouting": { "label": "AQL/MVNO/FMC network-side trusted routing", "numberGbp": 0.86917, "trustedPerMinGbp": 0, "unknownConnectedPerMinGbp": 0.007558, "streamPerMinGbp": 0.003329, "incrementSec": 60, "fixedGbpPerMonth": 0, "source": "R3 concept (next-gen telephony report): trusted calls never reach HCG; unknown path unchanged; per-subscriber MNO/AQL fee UNKNOWN (not included)" }
+  }
+}

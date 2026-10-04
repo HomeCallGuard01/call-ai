@@ -24,6 +24,7 @@
 const { deriveVariableEnvelope, DEFAULT_ECONOMICS } = require('../containment/economicPolicy');
 const { resolveTopUpProducts } = require('../allowance/productCatalog');
 const { resolveCostRates } = require('../usage/costModel');
+const { checkEconomicsConsistency } = require('./economicsConsistency');
 
 const PAID_PROFILES = ['standard', 'plus'];
 
@@ -112,12 +113,21 @@ function validateCommercialConfiguration({ env = process.env, profiles = null } 
   }
   if (topUpsEnabled && products.length === 0) warnings.push({ code: 'topups_enabled_without_products', detail: 'ALLOWANCE_TOPUPS_ENABLED=true but no valid ALLOWANCE_TOPUP_PRODUCTS' });
 
+  // Register consistency (unit economics v1): runtime rates vs the
+  // authoritative register, plan minutes vs £ seeds, basis/channel caveats.
+  const consistency = checkEconomicsConsistency({ env, profiles });
+  for (const f of consistency.findings) {
+    if (f.severity === 'error') errors.push({ code: f.code, detail: f.detail });
+    else if (f.severity === 'warning') warnings.push({ code: f.code, detail: f.detail });
+  }
+
   return {
     ok: errors.length === 0,
     errors,
     warnings,
     envelope: envelope ? { variableEnvelopeGbp: envelope.variableEnvelopeGbp, netRevenueGbp: envelope.netRevenueGbp, fixedPerCustomerGbp: envelope.fixedPerCustomerGbp, suggestedProfile: envelope.suggestedProfile } : null,
     profiles: profileReport,
+    economicsRegister: { version: consistency.registerVersion, findings: consistency.findings },
     includedMinutes: minutesReport,
     topUps: { enabled: topUpsEnabled, costPerMinuteGbp: economics.costPerMinuteGbp, costPerMinuteIsAssumption: economics.costPerMinuteIsAssumption, products: products.map((p) => ({ code: p.code, budgetGbp: p.budgetGbp, minutes: p.minutes, priceGbpInclVat: p.priceGbpInclVat, channels: Object.fromEntries(Object.entries(p.channels).map(([k, c]) => [k, { viable: c.viable, maxBudgetGbp: c.maxBudgetGbp }])) })) },
     decisionsRequired: [

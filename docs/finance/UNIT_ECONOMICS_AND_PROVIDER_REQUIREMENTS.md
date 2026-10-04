@@ -1,5 +1,7 @@
 # HCG unit economics, pricing scenarios and carrier comparison requirements
 
+> **Superseded for decisions by [`HCG_UNIT_ECONOMICS_V1.md`](HCG_UNIT_ECONOMICS_V1.md) (2026-10-04)**, which uses one authoritative assumption register (`services/finance/assumptions/hcg-unit-economics.v1.json`) and reconciles the £0.50 / £0.86 / £1.25 / £2.07 figures. Kept as the historical record.
+
 Prepared 2026-09-27. Internal analysis only: **no public price, allowance, customer term or provider change is implied or made.**
 
 **Labels used throughout:**

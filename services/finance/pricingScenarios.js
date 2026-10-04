@@ -22,13 +22,15 @@
 'use strict';
 
 const { CHANNELS } = require('./unitEconomics');
+const register = require('./economicsRegister');
 
+// From the authoritative register (services/finance/assumptions/).
 const ASSUMPTIONS = {
-  vatRate: 0.2,
-  roundUpMinutesPerCall: 0.55,       // ASSUMPTION (60/60 billing, observed calls)
-  streamRoundUpPerMonitoredCall: 0.5, // ASSUMPTION
-  transcriptionGbpPerMin: 0.006 * 0.79, // ESTIMATED: OpenAI whisper list × FX
-  smsSegmentsPerWarning: 1,
+  vatRate: register.value('vatRate'),
+  roundUpMinutesPerCall: register.value('roundUpMinutesPerCall'),                 // ASSUMPTION (60/60 billing, observed calls)
+  streamRoundUpPerMonitoredCall: register.value('streamRoundUpPerMonitoredCall'), // ASSUMPTION
+  transcriptionGbpPerMin: register.transcriptionGbpPerMin(),                     // ESTIMATED: OpenAI whisper list × FX
+  smsSegmentsPerWarning: register.value('smsSegmentsPerWarning'),
 };
 
 // Illustrative monthly usage shapes (ASSUMPTIONS — no real distribution exists
@@ -47,7 +49,7 @@ const PROFILES = {
 function rates(quote, { stress = 0, appLegBilled = false } = {}, a = ASSUMPTIONS) {
   const fx = Number(quote.fxToGbp ?? 1);
   const k = (1 + stress) * fx;
-  const appLeg = appLegBilled ? Math.max(Number(quote.appLegPerMin || 0), 0.004 * 0.79) : Number(quote.appLegPerMin || 0);
+  const appLeg = appLegBilled ? Math.max(Number(quote.appLegPerMin || 0), register.appLegListGbpPerMin()) : Number(quote.appLegPerMin || 0);
   return {
     number: Number(quote.numberMonthly) * k,
     connected: (Number(quote.inboundPerMin) + appLeg + Number(quote.apiFeePerMin || 0)) * k,
