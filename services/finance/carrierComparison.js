@@ -20,14 +20,17 @@
 
 const REQUIRED = ['numberMonthly', 'inboundPerMin', 'billingIncrementSec', 'appLegPerMin', 'apiFeePerMin', 'streamPerMin', 'ttsPerUse', 'smsPerSegment'];
 
+// From the authoritative register (services/finance/assumptions/).
+const register = require('./economicsRegister');
+
 const DEFAULT_ASSUMPTIONS = {
-  avgCallMinutes: 4,             // ASSUMPTION
-  roundUpPerCallAt60s: 0.55,     // ASSUMPTION: extra started minute per call under 60/60 billing
-  roundUpPerCallAt1s: 0.1,       // ASSUMPTION: ring/greeting seconds under per-second billing
-  warningSmsPerMonth: 1,         // ASSUMPTION
-  smsSegmentsPerWarning: 1,
-  transcriptionGbpPerMonitoredMin: 0.006 * 0.79, // ESTIMATED (OpenAI, provider-independent)
-  vatRate: 0.2,
+  avgCallMinutes: register.value('avgCallMinutes'),                                // ASSUMPTION
+  roundUpPerCallAt60s: register.value('roundUpMinutesPerCall'),                    // ASSUMPTION: extra started minute per call under 60/60 billing
+  roundUpPerCallAt1s: register.value('roundUpMinutesPerCallPerSecondBilling'),     // ASSUMPTION: ring/greeting seconds under per-second billing
+  warningSmsPerMonth: register.value('warningSmsPerMonth'),                        // ASSUMPTION
+  smsSegmentsPerWarning: register.value('smsSegmentsPerWarning'),
+  transcriptionGbpPerMonitoredMin: register.transcriptionGbpPerMin(),              // ESTIMATED (OpenAI, provider-independent)
+  vatRate: register.value('vatRate'),
 };
 
 function missingFields(quote) {

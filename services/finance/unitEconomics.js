@@ -10,11 +10,17 @@
 'use strict';
 
 const { DEFAULT_ASSUMPTIONS } = require('./carrierComparison');
+const register = require('./economicsRegister');
 
+// Fee models from the authoritative register (PROVIDER CONFIRMATION REQUIRED
+// for every rate; see docs/finance/HCG_UNIT_ECONOMICS_V1.md §3).
+const STRIPE = register.stripeFeeParts();                 // 1.5% + 20p + Billing 0.7% + Tax 0.5%
+const STORE15 = register.value('googlePlayServiceFeeRate'); // Google Play subs / Apple SBP: 15% of ex-VAT
+const APPLE30 = register.value('appleStandardRate');        // Apple standard: 30% of ex-VAT
 const CHANNELS = {
-  stripe: { label: 'Stripe (web)', fee: (gross) => gross * 0.027 + 0.2 },               // ESTIMATED: 1.5% + 20p + Billing 0.7% + Tax 0.5%
-  store15: { label: 'Google Play / Apple SBP 15%', fee: (gross, net) => net * 0.15 },  // ESTIMATED: standard store rates
-  apple30: { label: 'Apple 30% (no SBP)', fee: (gross, net) => net * 0.3 },
+  stripe: { label: 'Stripe (web)', fee: (gross) => gross * STRIPE.pct + STRIPE.fixedGbp },
+  store15: { label: 'Google Play / Apple SBP 15%', fee: (gross, net) => net * STORE15 },
+  apple30: { label: 'Apple 30% (no SBP)', fee: (gross, net) => net * APPLE30 },
 };
 
 function componentCosts(quote, { totalMinutes, monitoredShare }, a = DEFAULT_ASSUMPTIONS) {

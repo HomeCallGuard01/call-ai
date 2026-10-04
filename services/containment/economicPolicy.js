@@ -20,20 +20,25 @@
 //                  = budget + delivery reserve + essential pool ≤ envelope
 'use strict';
 
-// Every input is DECISION REQUIRED; these are the 2026-10 evidence values
-// (docs/finance/*, project unit-economics memory): Twilio number £0.86917/mo;
-// worst channel = Apple/Google 15% of ex-VAT; infrastructure is a placeholder.
+// Every input is DECISION REQUIRED. Defaults come from the authoritative
+// register (services/finance/assumptions/hcg-unit-economics.v1.json; see
+// docs/finance/HCG_UNIT_ECONOMICS_V1.md): Twilio number £0.86917/mo; "worst
+// channel" = Apple SBP/Google 15% of ex-VAT (NOT Apple's 30% standard rate —
+// see the doc §4); infrastructure is a placeholder allocation.
+const register = require('../finance/economicsRegister');
+
 const DEFAULT_ECONOMICS = Object.freeze({
-  priceIncVatGbp: 5.99,
-  vatRate: 0.2,
-  deliveryCostCeilingRatio: 0.6,
+  priceIncVatGbp: register.value('priceIncVatGbp'),
+  vatRate: register.value('vatRate'),
+  deliveryCostCeilingRatio: register.r6(1 - register.value('targetGrossMargin')),
   includePlatformFeeInCeiling: true,
-  platformFeeRate: 0.15,
-  numberRentalGbp: 0.86917,
-  infrastructureGbp: 0.25,
-  safetyReserveRatio: 0.15,
-  overrunAllowanceGbp: 0.1,
+  platformFeeRate: register.value('googlePlayServiceFeeRate'),
+  numberRentalGbp: register.value('numberRentalGbpPerMonth'),
+  infrastructureGbp: register.value('infrastructureAllocationGbpPerCustomer'),
+  safetyReserveRatio: register.value('planSafetyReserveRatio'),
+  overrunAllowanceGbp: register.value('overrunAllowanceGbp'),
 });
+const SPLIT = register.value('planBudgetSplit');
 
 function finite(n, name, { min = -Infinity, max = Infinity } = {}) {
   const v = Number(n);
@@ -72,9 +77,9 @@ function deriveVariableEnvelope(inputs = {}) {
     // the budget (monitoring + telephony), a reserve for unmonitored
     // delivery after it runs out, a small essential pool.
     suggestedProfile: {
-      periodBudgetGbp: Math.floor(envelope * 0.58 * 100) / 100,
-      deliveryReserveGbp: Math.floor(envelope * 0.3 * 100) / 100,
-      essentialReserveGbp: Math.floor(envelope * 0.12 * 100) / 100,
+      periodBudgetGbp: Math.floor(envelope * SPLIT.budget * 100) / 100,
+      deliveryReserveGbp: Math.floor(envelope * SPLIT.deliveryReserve * 100) / 100,
+      essentialReserveGbp: Math.floor(envelope * SPLIT.essential * 100) / 100,
     },
   };
 }

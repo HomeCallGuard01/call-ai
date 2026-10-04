@@ -14,17 +14,22 @@
 //                SAFETY_COST_APP_LEG_GBP_PER_MIN=0 to price it at today's £0.)
 //   monitoring — only while a call is monitored: Media Stream + transcription.
 //
-// Defaults: Twilio Pricing API / billed usage for this account (2026-09),
-// OpenAI list price × 0.79. Overridable via SAFETY_COST_*.
+// Defaults: the enforcement-basis rates of the authoritative register
+// (services/finance/assumptions/hcg-unit-economics.v1.json — Twilio Pricing
+// API / billed usage for this account, OpenAI list price × FX; app leg at
+// list). Overridable via SAFETY_COST_*.
 'use strict';
 
-const DEFAULT_RATES = {
-  inboundPerMin: 0.007558,
-  appLegPerMin: 0.00316,
-  mediaStreamPerMin: 0.003329,
-  transcriptionPerMin: 0.00474,
-  smsPerSegment: 0.042325,
-};
+const register = require('../finance/economicsRegister');
+
+const ENFORCEMENT = register.rates({ basis: 'enforcement' });
+const DEFAULT_RATES = Object.freeze({
+  inboundPerMin: ENFORCEMENT.inboundPerMin,
+  appLegPerMin: ENFORCEMENT.appLegPerMin,
+  mediaStreamPerMin: ENFORCEMENT.mediaStreamPerMin,
+  transcriptionPerMin: ENFORCEMENT.transcriptionPerMin,
+  smsPerSegment: ENFORCEMENT.smsPerSegment,
+});
 
 function rate(env, key, fallback) {
   if (env[key] === undefined || env[key] === '') return fallback;

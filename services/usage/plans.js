@@ -18,17 +18,22 @@
 // MONITORING_WARNING_POINTS (e.g. "0.75,0.9").
 'use strict';
 
+const register = require('../finance/economicsRegister');
+
 const DEFAULT_PLAN_CODE = 'standard';
+// Placeholder minutes and warning points live in the authoritative register
+// (services/finance/assumptions/hcg-unit-economics.v1.json).
+const REGISTER_MINUTES = register.value('planAllowanceMinutes');
 
 const PLAN_DEFAULTS = {
-  standard: { code: 'standard', name: 'Home Call Guard', allowanceMinutes: 100 },
+  standard: { code: 'standard', name: 'Home Call Guard', allowanceMinutes: REGISTER_MINUTES.standard },
   // Defined so a second tier / upgrade path is exercised end to end. NOT on
   // sale: no Stripe price or store product exists and nothing sets it.
-  plus: { code: 'plus', name: 'Home Call Guard Plus', allowanceMinutes: 200 },
+  plus: { code: 'plus', name: 'Home Call Guard Plus', allowanceMinutes: REGISTER_MINUTES.plus },
 };
 
 // Warning points before 100% (100% itself is always the exhaustion point).
-const DEFAULT_WARNING_POINTS = [0.75, 0.9];
+const DEFAULT_WARNING_POINTS = Object.freeze([...register.value('planWarningPoints')]);
 // A monitored call in progress when the allowance runs out keeps its
 // monitoring for at most this long, then monitoring stops (the call
 // continues). Bounds the post-exhaustion AI cost explicitly: with 2
