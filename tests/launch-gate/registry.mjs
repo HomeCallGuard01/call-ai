@@ -110,7 +110,8 @@ export const CONTROLS = [
     evidence: [ci('mediaStreamHandler.js:277-294 SMS to/from from client stream params')], probes: ['PR-02'],
     branchFix: 'security/voice-surface-p0: numbers from server-side registry; 3 SMS/household/day, 30/hour' },
   { id: 'C10', area: 'C', title: 'Provider-level guardrails (geo permissions, usage triggers that suspend, low balance/auto-recharge off)', status: 'UNPROVEN', blocker: true, owner: 'OPS',
-    evidence: [doc('memory 2026-09-30: voice geo off; SMS geo + auto-recharge pending')], note: 'Needs a dated console export (provider-config-export).' },
+    evidence: [doc('memory 2026-09-30: voice geo off; SMS geo + auto-recharge pending'), doc('docs/integration/2026-10-04-PROVIDER_FINANCIAL_CONTAINMENT_FINAL.md §2 (official-docs classification, 2026-10-04)')],
+    note: 'Needs a dated console export (provider-config-export). Twilio documents NO account spend limit; usage triggers are alert-only; voice geo is API-changeable (SMS geo is not); balance stop leaks (in-progress calls, undocumented negative). Checklist: docs/integration/2026-10-04-TWILIO_CONTAINMENT_CHECKLIST.md (not executed).' },
 
   // -------------------------------------------------------------- D BILLING
   { id: 'D1', area: 'D', title: '£5.99 entitlement (price as approved, consistent across channels)', status: 'UNPROVEN', blocker: true, owner: 'WS-BILL / OPS',
@@ -277,7 +278,8 @@ export const SCENARIOS = [
   { id: 'S20', title: 'Compromised credentials create calls', owner: 'OPS / WS-SEC', mode: 'manual', status: 'FAIL', controls: ['A7', 'G5', 'C10'],
     precondition: 'Attacker holds Twilio auth token (or a Voice SDK token, or forges /media-stream).', action: 'Place outbound calls/SMS via REST or forged streams.',
     expected: 'Backend uses a scoped API key; outbound geo off; usage triggers SUSPEND (not just email); rotation runbook executed in drill.',
-    maxExposure: 'Unbounded at Twilio account level (master token).', evidence: 'provider-config-export of keys, geo, usage triggers + dated rotation drill.' },
+    maxExposure: 'Unbounded at Twilio account level (master token). Best achievable after subaccount + offline master + Restricted key: prepaid balance + undocumented overrun, pending Twilio written answers (PROVIDER_FINANCIAL_CONTAINMENT_FINAL.md §4, §7).',
+    evidence: 'provider-config-export of keys, geo, usage triggers + dated rotation drill + Twilio written answers Q1–Q4.' },
   { id: 'S21', title: 'Customer tampers with client allowance', owner: 'WS-BILL', mode: 'automated', status: 'UNPROVEN', controls: ['B2'], contract: ['FC-4', 'FC-5'],
     precondition: 'Modified app sends forged usage/allowance values.', action: 'Call any usage endpoint with negative/huge values.',
     expected: 'Server is sole authority; client values ignored; negative usage never credits.', maxExposure: 'n/a on main (no allowance).',
