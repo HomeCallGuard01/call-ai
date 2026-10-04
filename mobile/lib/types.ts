@@ -24,7 +24,16 @@ export interface ProtectionStep {
 }
 
 export interface ProtectionGuidance {
-  key: "number_pending" | "forwarding_not_detected" | "app_not_ready" | "confirming_delivery" | "reconnecting";
+  key:
+    | "number_pending"
+    | "forwarding_not_detected"
+    | "app_not_ready"
+    | "confirming_delivery"
+    | "reconnecting"
+    // Sent by services/customerProtectionSteps.js since the delivery-health
+    // work (2026-09-29) but never declared here until 1.0.2.
+    | "calls_not_reaching_app"
+    | "delivery_needs_attention";
   message: string;
 }
 
@@ -128,6 +137,12 @@ export interface DashboardResponse {
     // to their membership, not just whichever platform they're on.
     billingSource: string;
   };
+  // Permanent HCG account number (migration 062, routes/mobileApi.js
+  // `account: { accountNumber }`) — the customer's support identity, never
+  // the routing number. Null until 062 is applied / a number is assigned;
+  // optional because older backends don't send `account` at all. Display
+  // only through lib/protectionView.ts's displayAccountNumber.
+  account?: { accountNumber: string | null };
   contacts: DashboardContact[];
   // Canonical customer allowance read model (backend
   // services/allowance/customerAllowance.js, 2026-10-03). Optional: older
