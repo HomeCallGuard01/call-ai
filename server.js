@@ -1,5 +1,13 @@
 require("dotenv").config();
 
+// Soft-launch integration 2026-10-04: production/staging refuse to start in
+// an unsafe financial/security configuration (missing hash secrets, proxy
+// hops, webhook signing, D3 reject, …) — services/config/launchConfig.js.
+// Runs before anything else is constructed; logs key names, never values.
+require("./services/config/launchConfig").enforceLaunchConfig({
+  alert: (...args) => require("./services/alerting").sendCriticalAlert(...args),
+});
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const twilio = require("twilio");
