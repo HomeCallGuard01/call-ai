@@ -16,7 +16,7 @@
 | Backend | Local staging server (port 3099) behind the reserved ngrok domain `ferret-augmented-distrust.ngrok-free.dev`. Staging Supabase `tigwgmayeuisrxjjykqd` (migrations 052–072). |
 | Staging number | **`…1883`** (Andrew calls it "…883"), production Twilio account. Voice URL **empty** outside the window. **Never released, never re-purposed.** |
 | Staging household | `ffc4cfe1…` with active entitlement `935e230e…` |
-| Phones (corrected 2026-10-05) | **Subscriber (runs HCG Build 16): Andrew's iPhone, its own number `…2700`.** **Caller: the Motorola** (its own SIM number, written `…MOTO` below; Andrew confirms it at GO). `…2700` is **never** a trusted contact on the test household while the iPhone is the subscriber. |
+| Phones (corrected 2026-10-05) | **Subscriber (runs HCG Build 16): Andrew's iPhone, its own number `…2700`.** **Caller: the Motorola** (its own SIM number, confirmed by Andrew 2026-10-05, ends `…3030`; the full number is used only in the staging fixture, never committed). `…2700` is **never** a trusted contact on the test household while the iPhone is the subscriber. |
 | Fortress limits (unchanged) | **£0.30 per household** (£0.20 budget + £0.07 reserve + £0.03 essential), **£0.50 per hour**, **£1 per day**, **0 number purchases**, **600 s max call**, auto-hold at £0.50 per 24 h, at most 5 active calls |
 | Expected spend | About £0.15–£0.40 in total. Hard ceiling £1/day from the Fortress, plus abort rule A3. |
 | Never | production deploy or migrations, live Stripe/App Store/Play/RevenueCat changes, purchases, number purchase/release, any production household, call forwarding without explicit approval (§3, T12) |
@@ -45,7 +45,7 @@ Optional extras, each needing a separate "yes": **T12 call forwarding**, **T15b 
 | S4 | Build the window env: copy `/Users/ad/hcg-staging-config/staging.env` to `window-2026-10-05.env` (mode 600). Replace the placeholders with the real `TWILIO_*` values (from the production `.env`, never printed), add `TWILIO_VOICE_PUSH_CREDENTIAL_SID_IOS` and `OPENAI_API_KEY`. Keep `NUMBER_PROVISIONING_MODE=fake`, the sweep off, ops email off, Xero off, `HCG_DEPLOYMENT=staging`. | No `.env` in the worktree; the file is mode 600 |
 | S5 | `STAGING_ENV_FILE=…/window-2026-10-05.env scripts/staging/start-staging-server.sh` (it refuses on non-staging Supabase, a live Stripe key or real provisioning) | `check-launch-config` → START |
 | S6 | `ngrok http --url=ferret-augmented-distrust.ngrok-free.dev 3099`, plus `caffeinate -ims -w <ngrok pid>`. Record all PIDs. | `/health` 200 via the tunnel; unsigned `/voice` → 403 |
-| S7 | Create the temporary login (admin `createUser`, email confirmed): `hcg-staging-iphone@example.com` with a one-time password, linked to `ffc4cfe1` (`auth_user_id`, `user_roles`). Seed one trusted contact = **the Motorola's number `…MOTO`** (never `…2700`). **Fixture corrections (preflight 2026-10-05), originals recorded first:** `phone_number` (`…0456`) → null so no warning SMS can be sent; `twilio_provisioning_status` `pending` → `active` so the number step can tick. | Login works via the API (bootstrap 200) |
+| S7 | Create the temporary login (admin `createUser`, email confirmed): `hcg-staging-iphone@example.com` with a one-time password, linked to `ffc4cfe1` (`auth_user_id`, `user_roles`). Seed one trusted contact = **the Motorola's number `…3030`** (never `…2700`). **Fixture corrections (preflight 2026-10-05), originals recorded first:** `phone_number` (`…0456`) → null so no warning SMS can be sent; `twilio_provisioning_status` `pending` → `active` so the number step can tick. | Login works via the API (bootstrap 200) |
 | S8 | Point `…1883` Voice URL to `https://ferret-augmented-distrust.ngrok-free.dev/voice` (POST), then read it back | Read-back matches. **Window is now LIVE.** Time recorded |
 | S9 | Start capture: `idevicesyslog` → evidence file (filtered to HomeCallGuard / CallKit / PushKit / TwilioVoice), staging server log, Fortress snapshot every 10 minutes | Capture running |
 
@@ -68,13 +68,13 @@ Claude watches the iPhone log live and checks the server/DB after each step, so 
 | T1 | Backend online: health, tunnel, number pointed | 💻 | – | S5–S8 green |
 | T2 | Open HCG; sign in with the email/password Claude gives you | 📱 | "signed in" + what Home says | bootstrap + dashboard 200 for `ffc4cfe1`; no other household touched |
 | T3 | Home: protection state + **HCG account number** | 📱 (look) | the account number shown + headline | Matches `households.account_number` and the canonical stage/blockers from the API |
-| T4 | Tap Contacts, Membership, Help & Account (and "See setup steps") | 📱 | "all open" (or which didn't) | Contact `…MOTO` (the Motorola) listed; membership label matches the entitlement; no £ price shown for staging; setup steps = canonical gates |
+| T4 | Tap Contacts, Membership, Help & Account (and "See setup steps") | 📱 | "all open" (or which didn't) | Contact `…3030` (the Motorola) listed; membership label matches the entitlement; no £ price shown for staging; setup steps = canonical gates |
 | T5 | Allow **microphone** (and notifications if asked) when prompted | 📱 | "allowed" | Device readiness report: mic granted; Voice SDK registration with the **iOS** push credential; `voice_client_registered_at` set |
 | T6 | Trusted call, **app in foreground**: call `…1883` from the Motorola; answer on the iPhone; talk 15 s; hang up | ☎️📱 | rang? answered? both hear each other? | `<Dial timeLimit>` present; 1 reservation; no stream/announcement; `delivery_verified_at` set; call row |
 | T7 | Same, **app in background** (home screen) | ☎️📱 | rang (CallKit)? answered? | PushKit → CallKit in the iPhone log; reservation released |
 | T8 | Same, **phone locked** | ☎️📱 | full-screen call UI? answered? | Same as T7 |
 | T9 | Home after T6–T8 | 📱 (look) | headline | Expected **not "protected"** unless forwarding is verified (direct dial may count; record which). Stage and blockers recorded. |
-| T10 | 💻 removes the Motorola (`…MOTO`) from trusted contacts (staging DB) | 💻 | – | Contact gone; app Contacts reflects it after refresh |
+| T10 | 💻 removes the Motorola (`…3030`) from trusted contacts (staging DB) | 💻 | – | Contact gone; app Contacts reflects it after refresh |
 | T11 | **Unknown caller, monitored**: call `…1883` from the Motorola; listen to the announcement; answer; normal chat 30 s; hang up | ☎️📱 | announcement heard? rang? audio OK? | Announcement TwiML; media stream + transcription ran; Fortress monitoring reservation; spend recorded; no SMS |
 | T12 | *(OPTIONAL, separate "yes")* Call forwarding from the iPhone's own number to `…1883` via the app's setup guide, then **switched off again** with the code the app shows | 📱 | done / not done | Forwarding verification for the current number. **Default: SKIP.** It routes Andrew's real incoming calls through staging while it is on. |
 | T13 | **Warning path**: unknown call again; as the caller, read the warning script (Appendix A) | ☎️📱 | anything shown/heard? | Warning threshold reached in logs; recorded outcome; **SMS not sent** (household has no `phone_number`) |
@@ -147,7 +147,7 @@ The iPhone keeps Build 16 installed (harmless; it shows "couldn't confirm" while
 
 **Roles swap for the Android section (corrected 2026-10-05):** the Motorola becomes the HCG subscriber (vc 22) and **the iPhone (`…2700`) becomes the caller**. Before M7:
 - **sign out of HCG Build 16 on the iPhone** (Account → Sign out), so only the Motorola is registered for the staging household and a call can't ring both phones;
-- 💻 replaces the trusted contact with `…2700` (the iPhone, now the caller) and removes `…MOTO`, so the Motorola is never its own trusted caller.
+- 💻 replaces the trusted contact with `…2700` (the iPhone, now the caller) and removes `…3030`, so the Motorola is never its own trusted caller.
 
 The Motorola's normal mobile service is never changed by being the caller in §3: outgoing calls only, no forwarding or settings touched.
 
