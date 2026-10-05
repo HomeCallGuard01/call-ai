@@ -17,6 +17,7 @@ import { reportDeviceReadiness } from "./api";
 import { getCallReadiness } from "./callReadiness";
 import { canPresentCalls, readinessKey } from "./callReadinessModel";
 import { isRegistrationOverdue, isInviteForIdentity, withTimeout, hasDeviceTokenChanged } from "./registrationFreshness";
+import { reduceActiveCall, IDLE_CALL, type ActiveCallState, type ActiveCallEvent } from "./activeCallModel";
 
 // Diagnostic instrumentation (2026-09-24, migration 045) — read once at
 // module load, not per-call: these are static facts about the installed
@@ -57,6 +58,102 @@ async function reportWithRetry(fn: () => Promise<void>): Promise<void> {
 const voice = new Voice();
 
 let activeCall: Call | null = null;
+// DT-1 (real-device finding, 2026-10-05): the answered call's state, for the
+// in-app call screen (components/ActiveCallScreen.tsx). On an unlocked iPhone
+// iOS hands the screen to HCG after the customer answers on the CallKit
+// banner; without this HCG had no way to show End/Mute/Speaker.
+let activeCallState: ActiveCallState = IDLE_CALL;
+const activeCallListeners = new Set<(state: ActiveCallState) => void>();
+
+function dispatchActiveCall(event: ActiveCallEvent): void {
+  activeCallState = reduceActiveCall(activeCallState, event);
+  for (const listener of activeCallListeners) {
+    try {
+      listener(activeCallState);
+    } catch (err) {
+      console.error("ACTIVE CALL LISTENER FAILED:", err);
+    }
+  }
+}
+
+/** Subscribe to the active call's state; immediately called with the current state. */
+export function subscribeActiveCall(listener: (state: ActiveCallState) => void): () => void {
+  activeCallListeners.add(listener);
+  listener(activeCallState);
+  return () => {
+    activeCallListeners.delete(listener);
+  };
+}
+
+export function getActiveCallState(): ActiveCallState {
+  return activeCallState;
+}
+
+// Hang up from the app. Call.disconnect() is the SDK's CallKit end-call
+// transaction on iOS (CXEndCallAction via CXCallController), so CallKit and
+// the app stay in step; on Android it ends the call through the SDK.
+export async function endActiveCall(): Promise<void> {
+  const call = activeCall;
+  if (!call) return;
+  dispatchActiveCall({ type: "end_requested" });
+  try {
+    await call.disconnect();
+  } catch (err) {
+    console.error("END CALL FAILED:", err);
+    dispatchActiveCall({ type: "control_failed", control: "end" });
+  }
+}
+
+export async function setActiveCallMuted(muted: boolean): Promise<void> {
+  const call = activeCall;
+  if (!call) return;
+  try {
+    const result = await call.mute(muted);
+    dispatchActiveCall({ type: "muted", muted: typeof result === "boolean" ? result : muted });
+  } catch (err) {
+    console.error("MUTE FAILED:", err);
+    dispatchActiveCall({ type: "control_failed", control: "mute" });
+  }
+}
+
+// Speaker on/off for the active call only, at the customer's request. Uses
+// the SDK's own audio-device API (iOS: AVAudioSession speaker override;
+// Android: the SDK's audio switch). Ringing-time routing is unchanged.
+export async function setActiveCallSpeaker(speaker: boolean): Promise<void> {
+  if (!activeCall) return;
+  try {
+    const { audioDevices } = await voice.getAudioDevices();
+    const wanted = speaker ? AudioDevice.Type.Speaker : AudioDevice.Type.Earpiece;
+    const device = audioDevices.find((d) => d.type === wanted);
+    if (!device) throw new Error(`no ${wanted} audio device`);
+    await device.select();
+    dispatchActiveCall({ type: "speaker", speaker });
+  } catch (err) {
+    console.error("SPEAKER SWITCH FAILED:", err);
+    dispatchActiveCall({ type: "control_failed", control: "speaker" });
+  }
+}
+
+function trackAcceptedCall(call: Call, callSid: string | null): void {
+  activeCall = call;
+  let from: string | null = null;
+  try {
+    from = call.getFrom() ?? null;
+  } catch {
+    from = null;
+  }
+  dispatchActiveCall({ type: "accepted", callSid, from });
+  const clear = () => {
+    if (activeCall === call) activeCall = null;
+    dispatchActiveCall({ type: "ended" });
+  };
+  call.on(Call.Event.Connected, () => dispatchActiveCall({ type: "connected", atMs: Date.now() }));
+  call.on(Call.Event.Reconnecting, () => dispatchActiveCall({ type: "reconnecting" }));
+  call.on(Call.Event.Reconnected, () => dispatchActiveCall({ type: "reconnected" }));
+  call.on(Call.Event.Disconnected, clear);
+  call.on(Call.Event.ConnectFailure, clear);
+}
+
 let registered = false;
 // Wall-clock time of the last successful voice.register() and the TTL it
 // was issued with (2026-09-29, P0 call-delivery resilience) — lets the
@@ -560,6 +657,9 @@ voice.on(Voice.Event.CallInvite, (callInvite: CallInvite) => {
   // touched here.
   callInvite.on(CallInvite.Event.Accepted, (acceptedCall: Call) => {
     reportWithRetry(() => reportCallInviteOutcome(callSid, "accepted")).catch(() => {});
+    // DT-1: keep the answered call so the in-app call screen can show End,
+    // Mute and Speaker. Listener-only — answering itself is unchanged.
+    trackAcceptedCall(acceptedCall, callSid);
     // 2026-09-30: media is up on the device — the last stage of the
     // delivery timeline (both platforms). Separate from the Android-only
     // Earpiece switch below, which is untouched.

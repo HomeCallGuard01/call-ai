@@ -22,3 +22,16 @@ export async function unregisterForIncomingCalls(): Promise<boolean> {
   // no-op on web — there is no push binding to remove
   return false;
 }
+
+// DT-1 call-screen API (web: there is never an active call).
+import { IDLE_CALL, type ActiveCallState } from "./activeCallModel";
+export function subscribeActiveCall(listener: (state: ActiveCallState) => void): () => void {
+  listener(IDLE_CALL);
+  return () => {};
+}
+export function getActiveCallState(): ActiveCallState {
+  return IDLE_CALL;
+}
+export async function endActiveCall(): Promise<void> {}
+export async function setActiveCallMuted(_muted: boolean): Promise<void> {}
+export async function setActiveCallSpeaker(_speaker: boolean): Promise<void> {}

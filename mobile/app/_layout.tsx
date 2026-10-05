@@ -20,6 +20,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "../lib/AuthContext";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { ActiveCallScreen } from "../components/ActiveCallScreen";
 import { colors, spacing, typography } from "../lib/theme";
 
 // Startup safety net (2026-10-04, after iOS 1.0.2 Build 15 stayed on the
@@ -74,6 +75,9 @@ export default function RootLayout() {
           <Stack.Screen name="(setup)" />
           <Stack.Screen name="(tabs)" />
         </Stack>
+        {/* DT-1 (2026-10-05): End / Mute / Speaker whenever a call is active —
+            iOS hands an answered CallKit call to the app on an unlocked phone. */}
+        <ActiveCallScreen />
       </AuthProvider>
     </SafeAreaProvider>
   );
