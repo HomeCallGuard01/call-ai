@@ -55,11 +55,17 @@ function createNoticeEnqueuer({ enqueue, env = process.env, log = console }) {
 
 // DRAFT customer wording — product decision, not approved. Plain, calm,
 // never implies the phone line itself stops working.
-function noticeEmail(kind, allowance) {
+function noticeEmail(kind, allowance, readModel = null) {
   const resets = allowance && allowance.resetsAt
     ? new Date(allowance.resetsAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'Europe/London' })
     : 'your next renewal';
   const remaining = allowance && Number.isFinite(allowance.remainingPercent) ? allowance.remainingPercent : null;
+  // DT-2 (real-device finding 2026-10-05): on the Fortress £ basis every
+  // handled call uses the allowance (trusted calls included) and, once budget
+  // and the trusted-only reserve are used, forwarded calls can be REFUSED —
+  // so the email must say so, not "calls still reach you".
+  const spend = !!readModel && (readModel.basis === 'protection_spend' || readModel.trustedCallsUseAllowance === true);
+  if (spend) return spendBasisNoticeEmail(kind, resets, remaining, readModel);
   if (kind === 'exhausted_100') {
     return {
       subject: "You've used this month's Home Call Guard call checking",
@@ -85,6 +91,34 @@ function noticeEmail(kind, allowance) {
       'It resets on ' + resets + '. Your phone and your trusted contacts are not affected.',
       '',
       'You can see your usage in the Home Call Guard app or at homecallguard.co.uk/dashboard.',
+    ].join('\n'),
+  };
+}
+
+function spendBasisNoticeEmail(kind, resets, remaining, readModel) {
+  const footer = ['', 'You can see your usage in the Home Call Guard app or at homecallguard.co.uk/dashboard.'];
+  if (kind === 'exhausted_100') {
+    const callsContinue = readModel.callsContinue !== false;
+    const trustedContinue = readModel.trustedCallersContinue !== false;
+    const body = callsContinue
+      ? ['Calls still reach you. Until your allowance resets on ' + resets + ', Home Call Guard will not check calls from unknown numbers for scam warning signs.']
+      : trustedContinue
+        ? ['Calls from your trusted contacts still get through. Until your allowance resets on ' + resets + ', other calls forwarded to Home Call Guard may not get through.',
+          '', 'If you need all your calls straight away, you can turn off call forwarding — the app shows you how. Or contact support@homecallguard.co.uk and we will help.']
+        : ['Until your allowance resets on ' + resets + ', calls forwarded to Home Call Guard may not get through.',
+          '', 'If you need your calls straight away, you can turn off call forwarding — the app shows you how. Or contact support@homecallguard.co.uk and we will help.'];
+    return {
+      subject: "You've used this month's Home Call Guard protection allowance",
+      text: ["You've used all of this month's protection allowance.", '', ...body, ...footer].join('\n'),
+    };
+  }
+  return {
+    subject: 'Home Call Guard: ' + (remaining === null ? 'protection allowance running low' : `${remaining}% of this month's protection allowance left`),
+    text: [
+      remaining === null ? "You're running low on this month's protection allowance." : `You have about ${remaining}% of this month's protection allowance left.`,
+      '',
+      'Every call Home Call Guard handles uses a little of it, and checking calls from unknown numbers uses the most. It resets on ' + resets + '.',
+      ...footer,
     ].join('\n'),
   };
 }
@@ -146,7 +180,7 @@ async function processAllowanceNotices({ deps, now = new Date(), env = process.e
         await finish('suppressed', { error: 'no_longer_applicable' }); continue;
       }
 
-      const sent = await sendEmail({ to: household.email, ...noticeEmail(row.kind, allowance) });
+      const sent = await sendEmail({ to: household.email, ...noticeEmail(row.kind, allowance, current) });
       if (sent && sent.ok) { await finish('sent'); continue; }
       throw new Error((sent && sent.error) || 'send_failed');
     } catch (err) {

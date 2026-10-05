@@ -154,6 +154,10 @@ const RULES = [
   R('ops_events_schedule', 'Email/comms', ['OPS_EVENTS_SCHEDULE_ENABLED'], REC_BOTH,
     (e) => (e.OPS_EVENTS_SCHEDULE_ENABLED === 'true' ? null : 'off'),
     'Without the schedule (needs migration 072) no NEW_GENUINE_CUSTOMER / needs-attention events are recorded, so Andrew is not told when a genuine customer joins (services/opsEvents/scheduler.js).'),
+  // ── Customer allowance display (DT-2, real-device finding 2026-10-05) ──
+  R('allowance_display_matches_enforcement', 'Customer allowance', ['ALLOWANCE_SOURCE'], REC_BOTH,
+    (e) => (e.ALLOWANCE_SOURCE === 'fortress' ? null : 'meter_shows_minutes_while_fortress_enforces_gbp'),
+    'Fortress enforces a £ protection budget; without ALLOWANCE_SOURCE=fortress the customer meter shows monitored minutes instead, so it would not match what actually limits calls (decision AL-1).'),
   // ── Accounting / Xero (credentials only when posting is on) ───────────
   R('xero_posting_credentials', 'Accounting/Xero', ['ACCOUNTING_XERO_POSTING_ENABLED', 'XERO_CLIENT_ID', 'XERO_CLIENT_SECRET', 'XERO_TENANT_ID'], REQ_BOTH,
     (e) => (e.ACCOUNTING_XERO_POSTING_ENABLED === 'true' && !(present(e.XERO_CLIENT_ID) && present(e.XERO_CLIENT_SECRET) && present(e.XERO_TENANT_ID)) ? 'posting_enabled_without_credentials' : null),

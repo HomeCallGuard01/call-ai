@@ -387,6 +387,9 @@ const read = (deps, o = {}) => getCustomerAllowance({ household: HH, entitlement
   check(limited.source === 'fortress' && limited.status === 'calls_limited' && limited.callsContinue === false && limited.tone === 'critical' && limited.monitoringActive === false, 'read model on the Fortress source: calls_limited, callsContinue false — never "calls continue"');
   const def = await read(deps);
   check(def.source === 'monitoring_minutes' && def.callsContinue === true, 'without ALLOWANCE_SOURCE=fortress the 056 minutes source is used (today\'s default)');
+  // DT-2 (real-device finding 2026-10-05): the payload says what the % measures.
+  check(limited.basis === 'protection_spend' && limited.trustedCallsUseAllowance === true && limited.allowance.includedMinutes === null, 'Fortress source: basis protection_spend, trusted calls use it, and NO minute figure is offered');
+  check(def.basis === 'monitored_minutes' && def.trustedCallsUseAllowance === false && def.allowance.includedMinutes === 100, '056 source: basis monitored_minutes, trusted calls do not use it, included minutes shown');
   const fcDown = await read({ ...fakeDeps({}), getFortressHouseholdStatus: async () => { throw new Error('down'); } }, { env: { ALLOWANCE_SOURCE: 'fortress' } });
   check(fcDown.status === 'unavailable' && fcDown.monitoringActive === null, 'Fortress status unreadable → unavailable, never "protected"');
 

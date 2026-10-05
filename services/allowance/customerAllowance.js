@@ -132,6 +132,18 @@ async function getCustomerAllowance({ household, entitlement, subscription = nul
     // though other callers may not (trusted-only delivery reserve).
     trustedCallersContinue: monitoring.trustedCallersContinue === undefined ? monitoring.callsContinue !== false : monitoring.trustedCallersContinue !== false,
     source: monitoring.source === 'fortress' ? 'fortress' : 'monitoring_minutes',
+    // DT-2 (real-device finding 2026-10-05): what the percentage actually
+    // measures, so the app/web can word it truthfully.
+    //   'monitored_minutes' (056 source): minutes of checking unknown calls;
+    //                        trusted calls do not use it.
+    //   'protection_spend'  (Fortress):   the household's monthly protection
+    //                        budget in £; EVERY handled call uses some of it
+    //                        (trusted calls included — on staging two short
+    //                        trusted calls took 12%). No minute count is
+    //                        offered for this basis: Fortress does not enforce
+    //                        minutes, so none may be promised.
+    basis: monitoring.source === 'fortress' ? 'protection_spend' : 'monitored_minutes',
+    trustedCallsUseAllowance: monitoring.source === 'fortress',
     enforced: monitoring.enforced,
     membership: {
       state: membership.state,
@@ -143,7 +155,8 @@ async function getCustomerAllowance({ household, entitlement, subscription = nul
       testPurchase: membership.testPurchase,
     },
     allowance: {
-      includedMinutes,
+      // Never a minute figure on the £ (Fortress) basis — see `basis`.
+      includedMinutes: monitoring.source === 'fortress' ? null : includedMinutes,
       topUpMinutes: Math.floor(credits.topUpSeconds / 60),
       adjustmentMinutes: Math.trunc(credits.adjustmentSeconds / 60),
       totalMinutes: monitoring.allowanceMinutes,

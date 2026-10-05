@@ -160,6 +160,10 @@ export interface DashboardResponse {
 export type CustomerAllowanceStatus = "ok" | "low" | "very_low" | "used_up" | "calls_limited" | "paused" | "unavailable" | "inactive";
 
 export interface CustomerAllowance {
+  /** DT-2: what the percentage measures (absent on older servers ⇒ treat as monitored_minutes). */
+  basis?: "monitored_minutes" | "protection_spend";
+  /** true when trusted callers' calls also use the allowance (Fortress £ basis). */
+  trustedCallsUseAllowance?: boolean;
   version: 1;
   status: CustomerAllowanceStatus;
   tone: "good" | "caution" | "critical" | "neutral";
@@ -184,7 +188,8 @@ export interface CustomerAllowance {
     testPurchase: boolean;
   };
   allowance: {
-    includedMinutes: number;
+    /** null on the 'protection_spend' basis: no minute figure may be promised. */
+    includedMinutes: number | null;
     topUpMinutes: number;
     adjustmentMinutes: number;
     totalMinutes: number;

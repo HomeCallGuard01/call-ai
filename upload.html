@@ -1680,8 +1680,8 @@
 
     <section class="card allowance-card" id="allowanceCard" data-tone="good" hidden aria-labelledby="allowanceHeading">
       <h2 class="section-heading" id="allowanceHeading">
-        Call checking this month
-        <span class="help-hint" tabindex="0" aria-label="Your membership includes a monthly amount of time for Home Call Guard to listen to calls from unknown numbers for scam warning signs. Calls from people you trust don't use it." title="Your membership includes a monthly amount of time for Home Call Guard to listen to calls from unknown numbers for scam warning signs. Calls from people you trust don't use it.">?</span>
+        <span id="allowanceTitle">Call checking this month</span>
+        <span class="help-hint" id="allowanceHint" tabindex="0" aria-label="Your membership includes a monthly amount of time for Home Call Guard to listen to calls from unknown numbers for scam warning signs. Calls from people you trust don't use it." title="Your membership includes a monthly amount of time for Home Call Guard to listen to calls from unknown numbers for scam warning signs. Calls from people you trust don't use it.">?</span>
       </h2>
       <div class="allowance-headline">
         <span class="allowance-percent" id="allowancePercent">—</span>
@@ -2068,15 +2068,34 @@
     return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Europe/London" });
   }
 
+  // DT-2 (real-device finding 2026-10-05): on the Fortress basis the meter is
+  // the monthly protection spend — every handled call uses some of it,
+  // trusted calls included — so it is called "protection allowance" and never
+  // says trusted calls don't use it. Same rules as the app's AllowanceMeter.
+  function isSpendBasis(a) {
+    return a.basis === "protection_spend" || a.trustedCallsUseAllowance === true;
+  }
+  const SPEND_BASIS_HINT = "Your membership includes a monthly protection allowance. Every call Home Call Guard handles uses a little of it, and checking calls from unknown numbers uses the most. We'll let you know if it's running low.";
+
   function allowanceMessage(a) {
     const resets = formatAllowanceDate(a.allowance && a.allowance.resetsAt);
     const until = resets ? " until it resets on " + resets : " until it resets";
+    const spend = isSpendBasis(a);
     switch (a.status) {
       case "low":
-        return "You've used most of this month's call checking. Calls from people you trust don't use it.";
+        return spend
+          ? "You've used most of this month's protection allowance."
+          : "You've used most of this month's call checking. Calls from people you trust don't use it.";
       case "very_low":
-        return "You're nearly out of this month's call checking. Calls from people you trust don't use it.";
+        return spend
+          ? "You're nearly out of this month's protection allowance. Calls from unknown numbers use it fastest."
+          : "You're nearly out of this month's call checking. Calls from people you trust don't use it.";
       case "used_up":
+        if (spend) {
+          return a.monitoringActive === false
+            ? "This month's protection allowance is used up. Calls still reach you, but calls from unknown numbers won't be checked for scams" + until + "."
+            : "This month's protection allowance is used up. We're still checking calls from unknown numbers for now.";
+        }
         return a.monitoringActive === false
           ? "You've used this month's call checking. Your phone still works normally and every call still reaches you, but calls from unknown numbers won't be checked for scams" + until + "."
           : "You've used this month's included call checking. We're still checking calls from unknown numbers for now.";
@@ -2085,7 +2104,9 @@
           ? "You've used this month's protection allowance. Calls from people you trust still get through. Until it resets" + (resets ? " on " + resets : "") + ", other calls forwarded to Home Call Guard may not get through. Please contact support@homecallguard.co.uk if you need help."
           : "You've used this month's protection allowance. Until it resets" + (resets ? " on " + resets : "") + ", calls forwarded to Home Call Guard may not get through. Please contact support@homecallguard.co.uk if you need help.";
       case "paused":
-        return "Call checking is paused for a short while. Your phone still works normally and every call still reaches you.";
+        return spend
+          ? "Scam checking is paused for a short while. Your phone still works normally and every call still reaches you."
+          : "Call checking is paused for a short while. Your phone still works normally and every call still reaches you.";
       case "unavailable":
         return "We can't show your usage right now. Please check back shortly.";
       default:
@@ -2102,6 +2123,11 @@
     }
     card.hidden = false;
     card.dataset.tone = a.tone || "neutral";
+    const spendBasis = isSpendBasis(a);
+    const titleEl = document.getElementById("allowanceTitle");
+    if (titleEl) titleEl.textContent = spendBasis ? "Protection allowance this month" : "Call checking this month";
+    const hintEl = document.getElementById("allowanceHint");
+    if (hintEl && spendBasis) { hintEl.setAttribute("aria-label", SPEND_BASIS_HINT); hintEl.setAttribute("title", SPEND_BASIS_HINT); }
 
     const remaining = a.allowance.remainingPercent;
     const known = typeof remaining === "number";
@@ -2113,6 +2139,7 @@
     if (labelEl) labelEl.textContent = known ? "left this month" : "";
     if (fillEl) fillEl.style.width = (known ? Math.max(0, Math.min(100, remaining)) : 0) + "%";
     if (meterEl) meterEl.setAttribute("aria-valuenow", String(known ? remaining : 0));
+    if (meterEl) meterEl.setAttribute("aria-label", spendBasis ? "Protection allowance left this month" : "Call checking left this month");
 
     const resetEl = document.getElementById("allowanceReset");
     const resets = formatAllowanceDate(a.allowance.resetsAt);
@@ -2146,14 +2173,17 @@
           const button = document.createElement("button");
           button.type = "submit";
           button.className = "secondary-action-button";
-          button.textContent = "Add " + p.minutes + " minutes · £" + Number(p.priceGbpInclVat).toFixed(2);
+          // DT-2: never a minute figure on the £ (Fortress) basis.
+          button.textContent = spendBasis
+            ? "Add more protection allowance · £" + Number(p.priceGbpInclVat).toFixed(2)
+            : "Add " + p.minutes + " minutes · £" + Number(p.priceGbpInclVat).toFixed(2);
           form.appendChild(input);
           form.appendChild(button);
           topUpEl.appendChild(form);
         });
         const note = document.createElement("p");
         note.className = "account-support-note";
-        note.textContent = "Extra minutes last until your allowance resets" + (resets ? " on " + resets : "") + ".";
+        note.textContent = (spendBasis ? "Extra allowance lasts until your allowance resets" : "Extra minutes last until your allowance resets") + (resets ? " on " + resets : "") + ".";
         topUpEl.appendChild(note);
       }
     }
