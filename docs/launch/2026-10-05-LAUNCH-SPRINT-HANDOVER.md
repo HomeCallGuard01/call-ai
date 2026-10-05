@@ -147,3 +147,148 @@ Runbook M1–M14, all RED:
 
 - An accidental `node -e "require('./server.js')"` was started in the candidate worktree while checking module loading. It had no `.env` or credentials, exited by itself, and nothing was listening. I verified no stray process remained, and an unrelated pre-existing node process (PID 946) was left alone.
 - All four research reviews were read-only. Their findings are folded into the documents above.
+
+---
+
+# MORNING REPORT 2 (after the attended device test, night of 5→6 Oct)
+
+Commits (pushed): `f01fd8d` DT-1 call screen · `1db5d53` DT-2 wording · `015bd01` evidence · plus the mobile-app test locator fix.
+Details:
+- `docs/launch/2026-10-05-DEVICE-TEST-EVIDENCE.md`
+- `docs/launch/2026-10-05-DT2-ALLOWANCE-AND-ECONOMICS.md`
+
+## RESET CONFIRMED
+
+- …1883 made inert **first**: Voice URL, fallback, status callback and SMS URL all empty (read back 18:24:26 UTC).
+- Staging fixtures restored from the recorded originals: phone `…0456`, status `pending`, device and network empty, original email, unlinked.
+- Motorola contact removed; temporary login and its role deleted; window secrets file deleted.
+- Server, tunnel, keep-awake and iPhone log capture stopped (PIDs verified).
+- Fortress: kill switch off, breaker closed, 0 holds, 0 live calls, £0 reserved, invariants OK.
+- Twilio for the window: exactly 2 inbound + 2 app legs, **0 SMS**.
+- **Production identical** to the start-of-window snapshot.
+- Andrew's mobile service and call forwarding were never touched.
+- **Andrew was told SAFE TO UNPLUG IPHONE.**
+- Kept as evidence: call rows, `voice_client_registered_at` / `delivery_verified_at` on the staging household, and migration **073 applied to staging**.
+
+## TONIGHT'S DEVICE TEST RESULT
+
+- **PASS:**
+  - Build 16 launch and staging sign-in;
+  - account number HCG-00010306;
+  - Membership / Contacts (Motorola listed) / Help & Account;
+  - setup 4 of 5;
+  - iOS VoIP registration (mic granted);
+  - **Motorola → …1883 → HCG → iPhone rang, answered, two-way audio**, on two separate trusted calls (42 s, 41 s).
+  - Each call followed known contact → no monitoring → push → presented within about 1.5 s → answered → delivered.
+- **FAIL (usability):** DT-1.
+- **Diagnosed:** DT-2.
+- **Not run:** T7 (true background), T8 (locked), T9–T23; Motorola.
+
+## DT-1 ROOT CAUSE
+
+- The calls were answered on the CallKit banner of an unlocked iPhone. iOS then brought HCG to the foreground (log: 19:13:28.9), which is iOS's design: the app is expected to show its own in-call screen.
+- **HCG had none, and `voiceClient` never kept the answered call.** Andrew lost the obvious way to hang up and ended from the Motorola.
+- CallKit itself worked correctly.
+
+## DT-1 FIX
+
+- **Change (`f01fd8d`):**
+  - `voiceClient` now tracks the accepted call (listener-only; ringing and answering unchanged);
+  - a full-screen **"Call in progress"** screen at the app root shows the caller, a timer, a **big red labelled "End call"**, **Mute** and **Speaker**, plus plain guidance if a control fails.
+- **How it works:** End uses `Call.disconnect()`, which on iOS is the SDK's **CallKit end-call transaction**, so iOS and the app stay in step. Speaker uses the SDK's audio-device API.
+- **Verified:** `tests/mobile-active-call.test.mjs` (28 checks); `tsc` 0; iOS bundle export OK.
+- **Build 17 must prove it on a device** (see below).
+
+## DT-2 ROOT CAUSE
+
+- The 88% was correct arithmetic: two calls × £0.01239 = £0.02478 of a **£0.20** staging budget.
+- There was no duplicate metering; reserves were released; 0 live reservations.
+- The meter is **£-based** (Fortress), but the wording said "call checking" and "**calls from people you trust don't use it**". That is **false on the £ basis**: the 12% came entirely from trusted calls. The 100% email also said "calls still reach you" even when the trusted-only reserve means other calls can be refused.
+
+## DT-2 CUSTOMER-UI FIX/RECOMMENDATION
+
+- **Change (`1db5d53`):**
+  - the server sends `basis` (`protection_spend` / `monitored_minutes`) and `trustedCallsUseAllowance`, and **no minute figure on the £ basis**;
+  - the app meter, web dashboard and 75/90/100% emails say **"protection allowance"** and explain plainly that every handled call uses some of it;
+  - they never promise minutes or exempt trusted calls;
+  - the 100% email states the real refusal behaviour and how to get calls back.
+- **Unchanged:** warning points and Fortress maths, budgets and reservations.
+- **Guards:** `tests/allowance-truthful-wording.test.mjs` plus a startup warning if the production meter wouldn't match enforcement.
+
+## UNIT-ECONOMICS / ALLOWANCE DECISION
+
+**A genuine commercial issue, now confirmed by real calls:**
+- a trusted call of 60 s or less costs **£0.01239** at the Fortress estimate (10 s costs the same as 60 s);
+- the safe budget at £5.99 is **£1.07** (Stripe) / **£0.74** (stores); at Fortress basis £1.54 / £1.06 that's about 124 / 86 short calls, or 131 / 90 trusted minutes;
+- the model's typical household (150 trusted + 40 unknown min) **exceeds** this;
+- trusted minutes on HCG's bill are the root cause; only network-side routing (C5) fixes it.
+
+**Decisions before the first five:**
+- **AL-1** `ALLOWANCE_SOURCE=fortress` in production;
+- **AL-2** production profile values (= C12; recommended C2-style £1.54 Stripe-basis profile with trusted reserve, watched weekly);
+- **AL-3** wording sign-off and one terms sentence;
+- **AL-4** Apple SBP.
+
+Nothing has been set or activated.
+
+## OTHER LOG FINDINGS
+
+- **LF-2 (High, launch-blocking): a customer can be shown "Protected" without call forwarding.**
+  - Reproduced on the device: after the first call the household was `protected` although …2700 forwards nothing.
+  - **Any** inbound call to the HCG number stamps "forwarding verified" (direct dials and stray calls included).
+  - Twilio's `ForwardedFrom` can't distinguish a forwarded call (184 production calls checked on 8 Sep).
+  - **Options:** **A** a verification call to the customer's own mobile (needs an allow-listed outbound path; design change); **B** stop auto-stamping on arbitrary calls; **C** honest Home wording until A.
+  - Not implemented: needs Andrew's decision.
+- **LF-3 (Medium):** "App ready" was ticked from another device's old registration before the iPhone registered. Fold into the LF-2 design.
+- **LF-1 (Medium, latent):** the Supabase session exceeds Expo SecureStore's 2048-byte guidance (warning in the log); a future SDK could sign customers out. Fix before the next SDK upgrade.
+- **Clean:**
+  - no duplicate events, no server errors or retries;
+  - registration recovered correctly;
+  - CallKit normal;
+  - reservations correct;
+  - Fortress estimates ≥ Twilio actual durations;
+  - no SMS, no uncontrolled cost.
+
+## AUTOMATED TEST RESULTS
+
+- Full suite **210/210 files, 9,092 checks, 0 failures**, including the real-PostgreSQL suites (15 / 10 / 9).
+- Mobile `tsc` 0 errors.
+- Migration numbering clean (69 files).
+- New: `mobile-active-call` (28), `allowance-truthful-wording` (13).
+- One existing test (`mobile-app`) had its source locator made precise after DT-1; the property it guards is unchanged.
+
+## NEEDS DEVICE RETEST (Build 17 must prove)
+
+1. **DT-1, iPhone unlocked, HCG in the foreground:**
+   - answer on the banner → the "Call in progress" screen appears;
+   - **End call** hangs up (the Motorola hears the call end);
+   - Mute (the Motorola can't hear) and unmute;
+   - Speaker on and off.
+2. DT-1, HCG in the background (true T7) → the same screen when HCG is opened; End works.
+3. DT-1, **locked** (T8) → iOS's own full-screen call UI with End. After unlocking, the HCG screen is consistent and ends correctly.
+4. The remote party hangs up → the screen disappears by itself; a second call starts clean (not muted).
+5. DT-2: the meter reads "Protection allowance this month" with the explanation; no "minutes" or "trusted don't use it" anywhere.
+6. The rest of the plan (T9–T23): monitored unknown call, warning, red line, hold (D-C5 wording), kill switch, sign-out / reconnect, backend down.
+7. LF-2: once decided, prove the chosen forwarding proof (T12 with forwarding approved).
+8. Then the Motorola (Android vc 22/23) section.
+
+**Build 17 is NOT created.** Build numbers 17+ are free.
+
+## BLOCKS FIRST 5 CUSTOMERS
+
+Everything in runbook M1–M14, **plus**:
+- **LF-2 decision and fix** (no customer may be shown Protected on today's evidence);
+- **DT-1 proven on Build ≥ 17**;
+- **AL-1/AL-2 allowance decisions** (production profile = C12).
+
+## BLOCKS SCALING
+
+As before, plus:
+- the trusted-minute economics: C5 network-side routing, or a pricing change, after real usage data;
+- LF-1 session-storage fix before the next Expo SDK upgrade.
+
+## RECOMMENDED NEXT ACTION TOMORROW
+
+1. Decide **LF-2** (A + B recommended) and **AL-1 / AL-2**.
+2. Approve the **Build 17 (staging)** build from the current branch so DT-1 can be proven.
+3. Book a short attended window for items 1–6 above (and T12 forwarding, if LF-2 option A is chosen).

@@ -1177,7 +1177,11 @@ function check(condition, message) {
   // Call.Event.Connected -> selectEarpieceForConnectedCall, which is what
   // these three checks are actually about.
   const acceptedListenerIndex = voiceClientSource.lastIndexOf('callInvite.on(CallInvite.Event.Accepted');
-  const connectedListenerIndex = voiceClientSource.indexOf('call.on(Call.Event.Connected');
+  // DT-1 (2026-10-05) added trackAcceptedCall, which also listens for
+  // Call.Event.Connected (for the in-app call screen); search from the
+  // Android-gated Accepted listener located above so this still checks the
+  // listener that wires the Earpiece switch.
+  const connectedListenerIndex = voiceClientSource.indexOf('call.on(Call.Event.Connected', acceptedListenerIndex);
   const earpieceCallIndex = voiceClientSource.indexOf('selectEarpieceForConnectedCall();');
   check(
     acceptedListenerIndex !== -1 && connectedListenerIndex !== -1 && earpieceCallIndex !== -1 &&
