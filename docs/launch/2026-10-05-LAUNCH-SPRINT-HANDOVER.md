@@ -272,7 +272,7 @@ Nothing has been set or activated.
 7. LF-2: once decided, prove the chosen forwarding proof (T12 with forwarding approved).
 8. Then the Motorola (Android vc 22/23) section.
 
-**Build 17 is NOT created.** Build numbers 17+ are free.
+**Build 17 is NOT created.** Build numbers 17+ are free. *(Superseded: see Morning report 3. Build 17 was created and uploaded on 2026-10-06.)*
 
 ## BLOCKS FIRST 5 CUSTOMERS
 
@@ -292,3 +292,45 @@ As before, plus:
 1. Decide **LF-2** (A + B recommended) and **AL-1 / AL-2**.
 2. Approve the **Build 17 (staging)** build from the current branch so DT-1 can be proven.
 3. Book a short attended window for items 1–6 above (and T12 forwarding, if LF-2 option A is chosen).
+
+---
+
+# MORNING REPORT 3 (2026-10-06): LF-2 B+C, Build 17
+
+## DECISIONS APPLIED (Andrew, 2026-10-06)
+
+- **LF-2 B+C: implemented** (`ee3fab1`).
+  - An inbound/direct call no longer counts as forwarding proof. `activation_verified_at` is now evidence only.
+  - New column `forwarding_proven_at` (migration 074) is the only forwarding-gate input; nothing writes it yet.
+  - New stage `forwarding_unconfirmed` with truthful wording in the app, web and legacy step list. Admin/ops get `FORWARDING_NOT_PROVEN` / `forwarding_not_proven`.
+  - **Consequence: nobody is shown Protected until forwarding proof exists.**
+- **LF-2 option A: design only.** See `docs/launch/2026-10-06-LF2-VERIFICATION-CALL-DESIGN.md`. Nothing implemented, enabled or purchased.
+- **AL-1 approved and preserved:** the meter shows the real enforced protection allowance, with no minutes promise.
+- **AL-2 NOT approved:** no £1.54 or other production budget, pending the AQL carrier discussion.
+- DT-1 and DT-2 fixes preserved.
+
+## MIGRATION 074
+
+DRAFT. **Not applied anywhere** (staging has 052–073; production untouched). Additive, nullable, idempotent; the rollback refuses while proof is recorded. Pglite test: 8 checks.
+
+## BUILD 17
+
+- iOS 1.0.2 (17), STAGING only, from `ee3fab1`.
+- EAS build `eeccee2e…` FINISHED.
+- EAS Submit `920f523d…` FINISHED 07:36 UTC with no error: internal TestFlight upload only.
+
+Details are in `docs/releases/2026-10-04-STAGING-TEST-BUILDS-1.0.2.md`.
+
+## BUILD 17 MUST PROVE (next attended window, not started)
+
+1. DT-1 foreground, background (T7) and locked (T8): End, Mute, Speaker. The screen auto-dismisses on a remote hang-up, and the next call starts unmuted.
+2. DT-2: "Protection allowance this month" wording.
+3. LF-2: the staging household shows "can't yet confirm your phone's call forwarding" and **never Protected**.
+4. T9–T23, then the Motorola section.
+
+## AQL INPUTS (discussion today)
+
+- Can trusted calls bypass HCG's Twilio legs network-side? That decides £5.99 trusted-minute economics and AL-2.
+- Per-minute rates.
+- CLI preservation on diversion.
+- Can the carrier expose diversion state? That would give genuine forwarding proof, an alternative to option A.

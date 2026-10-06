@@ -70,3 +70,18 @@ Andrew's decision: build numbers are disposable. Build 15 stays as the historica
 Installed from TestFlight on the test iPhone. The app gets past the native splash and opens, showing the "protection unconfirmed" state. That is expected while the staging backend is offline. **Startup: PASS.** The launch crash (missing `ExpoAsset`) is fixed on a real device.
 
 Not yet tested: everything that needs the staging backend (sign-in, dashboard, call delivery). That is the controlled staging device test, next session. Android vc 22 remains untested and on hold (Motorola install failed).
+
+## iOS 1.0.2 Build 17: STAGING build with DT-1, DT-2 and LF-2 fixes (2026-10-06)
+
+Approved by Andrew on 2026-10-06 (morning decisions, item 6) after the full suite, typecheck and native checks passed. Same rules as Builds 15/16: **STAGING only, TestFlight internal only; never review, external testing or release.** The production/store candidate will use the next build number after the staging test passes.
+
+| | |
+|---|---|
+| EAS build | `eeccee2e-ec7f-4fd4-9f31-56858cdb5337`, FINISHED, from `ee3fab1`, profile `staging-ios-testflight` |
+| Contains | DT-1 in-app active-call screen (End / Mute / Speaker; `f01fd8d`); DT-2 truthful £-based allowance wording (`1db5d53`); LF-2 B+C: no Protected without forwarding proof (`ee3fab1`) |
+| Binary | Info.plist 1.0.2 (17), MinimumOSVersion 15.1, `AssetModule` linked. JS bundle contains "Call in progress", "End call", "PROTECTION ALLOWANCE THIS MONTH", "can't yet confirm your phone's call forwarding" and the D-C5 wording |
+| Endpoints | JS bundle: staging URLs ×1, production backend/Supabase ×0 |
+| Pre-build checks | 212/212 test files (9,127 checks), `tsc` 0 errors, native SDK compat 7/7, startup safety 12/12, real-PG pass |
+| TestFlight | EAS Submit `920f523d-e886-47c2-a66c-9d07d0fbbbb3` FINISHED 2026-10-06 07:36:04 UTC, error none (re-checked read-only after the session resumed). **Upload only.** Apple's processing state is visible only in App Store Connect / the TestFlight app; not re-uploaded |
+
+Staging note: migration 074 is **not** applied on staging. The app treats the absent `forwarding_proven_at` column as "not proven", so the staging household must show `forwarding_unconfirmed` and never Protected.
