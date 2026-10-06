@@ -60,7 +60,7 @@ const H1 = '11111111-2222-4333-8444-000000000001'; // protected
 const H2 = '11111111-2222-4333-8444-000000000002'; // held
 const H3 = '11111111-2222-4333-8444-000000000003'; // stalled setup
 const hh = (id, extra) => ({ id, status: 'active', email: `${id}@example.com`, auth_user_id: `a-${id}`, account_number: null, twilio_number: null, twilio_provisioning_status: 'pending', twilio_number_pending_release_at: null, activation_verified_at: null, voice_client_registered_at: null, delivery_verified_at: null, ...extra });
-const done = { twilio_number: '+441632960001', twilio_provisioning_status: 'active', twilio_provisioning_updated_at: '2026-10-01T09:05:00Z', activation_verified_at: '2026-10-02T10:00:00Z', voice_client_registered_at: '2026-10-08T10:00:00Z', delivery_verified_at: '2026-10-02T10:05:00Z' };
+const done = { twilio_number: '+441632960001', twilio_provisioning_status: 'active', twilio_provisioning_updated_at: '2026-10-01T09:05:00Z', activation_verified_at: '2026-10-02T10:00:00Z', forwarding_proven_at: '2026-10-02T10:00:00Z', voice_client_registered_at: '2026-10-08T10:00:00Z', delivery_verified_at: '2026-10-02T10:05:00Z' };
 const ent = (hid) => ({ id: `e-${hid}`, household_id: hid, entitlement_type: 'paid_subscription', status: 'active', source: 'stripe', starts_at: '2026-10-01T09:00:00Z', ends_at: null });
 const tables = {
   households: [hh(H1, done), hh(H2, { ...done, twilio_number: '+441632960002' }), hh(H3, { twilio_number: '+441632960003', twilio_provisioning_status: 'active', twilio_provisioning_updated_at: '2026-10-01T09:05:00Z' })],

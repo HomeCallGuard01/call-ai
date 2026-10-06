@@ -32,7 +32,7 @@ const ent = (hh, type, startsAgo, extra = {}) => ({ household_id: hh, entitlemen
 
 const IDS = { g: '11111111-1111-4111-8111-111111111111', f: '22222222-2222-4222-8222-222222222222', r: '33333333-3333-4333-8333-333333333333', u: '44444444-4444-4444-8444-444444444444' };
 const households = [
-  { id: IDS.g, email: 'real.customer@example.com', twilio_number: '+447000000301', activation_verified_at: ago(DAY), voice_client_registered_at: ago(DAY), delivery_verified_at: ago(DAY), twilio_provisioning_status: 'active' },
+  { id: IDS.g, email: 'real.customer@example.com', twilio_number: '+447000000301', activation_verified_at: ago(DAY), forwarding_proven_at: ago(DAY), voice_client_registered_at: ago(DAY), delivery_verified_at: ago(DAY), twilio_provisioning_status: 'active' },
   { id: IDS.f, email: 'former.customer@example.com', twilio_number: '+447000000302', twilio_number_pending_release_at: ago(-5 * DAY) },
   { id: IDS.r, email: 'appreview@example.com', twilio_number: '+447000000303' },
   { id: IDS.u, email: 'someone@example.com', twilio_number: null },

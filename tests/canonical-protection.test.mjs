@@ -23,7 +23,7 @@ const iso = (d) => new Date(NOW.getTime() - d * 86400e3).toISOString();
 const HH = {
   id: 'hh-canon', status: 'active', email: 'c@example.com', auth_user_id: 'auth-c', stripe_customer_id: 'cus_c',
   twilio_number: '+441234567890', twilio_provisioning_status: 'active',
-  activation_verified_at: iso(5), delivery_verified_at: iso(4), voice_client_registered_at: iso(3),
+  activation_verified_at: iso(5), forwarding_proven_at: iso(5), delivery_verified_at: iso(4), voice_client_registered_at: iso(3),
 };
 const ENT = { id: 'e1', household_id: HH.id, entitlement_type: 'paid_subscription', status: 'active', starts_at: iso(20), ends_at: null, source: 'stripe' };
 const base = { household: HH, entitlements: [ENT], subscription: null, quarantineRows: [], financialHold: null, currentNumberAssignedAt: iso(10), failedStripeEvents: [] };

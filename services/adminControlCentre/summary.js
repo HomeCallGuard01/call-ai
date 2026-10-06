@@ -60,6 +60,8 @@ const STAGE_DISPLAY = Object.freeze({
   [STAGES.AWAITING_FORWARDING]: { label: 'Waiting for call forwarding', tone: 'setup' },
   [STAGES.AWAITING_APP]: { label: 'App not registered', tone: 'setup' },
   [STAGES.AWAITING_FIRST_DELIVERY]: { label: 'Waiting for first protected call', tone: 'setup' },
+  // LF-2 (2026-10-06): calls arrive and are delivered, forwarding not proven.
+  [STAGES.FORWARDING_UNCONFIRMED]: { label: 'Calls arriving — forwarding not proven', tone: 'setup' },
   [STAGES.MEMBERSHIP_UPCOMING]: { label: 'Membership starts soon', tone: 'setup' },
   [STAGES.RECONNECT_NEEDED]: { label: 'App offline — reconnect needed', tone: 'bad' },
   [STAGES.NUMBER_FAILED]: { label: 'HCG number could not be set up', tone: 'bad' },
@@ -98,6 +100,7 @@ const ATTENTION_TITLES = Object.freeze({
   PAYMENT_ENVIRONMENT_UNVERIFIED: 'Store purchase not verified as real money',
   STORE_SANDBOX_HOLDS_NUMBER: 'Sandbox/TestFlight account holds a billed number',
   FIRST_DELIVERY_UNCONFIRMED_LONG: 'No protected call confirmed for a week',
+  FORWARDING_NOT_PROVEN: 'Calls arriving, but call forwarding not proven',
   EVIDENCE_PREDATES_CURRENT_NUMBER: 'Customer must re-dial forwarding for their new number',
   RETURNING_CUSTOMER_OLD_NUMBER_QUARANTINED: 'Old number still quarantined (and billed)',
   QUARANTINE_WITHOUT_HOUSEHOLD: 'Quarantined number with no customer',
@@ -121,7 +124,7 @@ const ATTENTION_TITLES = Object.freeze({
 const AREA_OF = Object.freeze({
   CALLS_ARRIVING_APP_NOT_REGISTERED: 'protection', SETUP_STALLED: 'protection', PROTECTION_LOST: 'protection',
   NUMBER_PROVISIONING_FAILED: 'telephony', NUMBER_CONFLICT: 'telephony', LIFECYCLE_STATE_AMBIGUOUS: 'protection',
-  FIRST_DELIVERY_UNCONFIRMED_LONG: 'protection', EVIDENCE_PREDATES_CURRENT_NUMBER: 'protection',
+  FIRST_DELIVERY_UNCONFIRMED_LONG: 'protection', FORWARDING_NOT_PROVEN: 'protection', EVIDENCE_PREDATES_CURRENT_NUMBER: 'protection',
   HOUSEHOLD_ON_HOLD: 'financial', PAYMENT_ISSUE: 'payments', PAYMENT_ENVIRONMENT_UNVERIFIED: 'payments',
   STRIPE_EVENT_FAILED: 'payments', STRIPE_EVENT_FOR_DELETED_HOUSEHOLD: 'payments', DELETED_HOUSEHOLD_SUBSCRIPTION_LIVE: 'payments',
 });

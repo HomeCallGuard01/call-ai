@@ -36,7 +36,7 @@ const iso = (d) => new Date(NOW.getTime() - d * 86400e3).toISOString();
 const HH = {
   id: 'hh-view-test', status: 'active', email: 'test@example.com', auth_user_id: 'auth-test', stripe_customer_id: 'cus_test',
   twilio_number: '+447700900001', twilio_provisioning_status: 'active',
-  activation_verified_at: iso(5), delivery_verified_at: iso(4), voice_client_registered_at: iso(3),
+  activation_verified_at: iso(5), forwarding_proven_at: iso(5), delivery_verified_at: iso(4), voice_client_registered_at: iso(3),
 };
 const ENT = { id: 'e1', household_id: HH.id, entitlement_type: 'paid_subscription', status: 'active', starts_at: iso(20), ends_at: null, source: 'stripe' };
 const BASE = { entitlements: [ENT], subscription: null, quarantineRows: [], financialHold: null, currentNumberAssignedAt: iso(10), failedStripeEvents: [] };
@@ -103,7 +103,7 @@ const stepState = (input, key) => buildSetupChecklist(input).find((s) => s.key =
 
 // ── 3. paying + forwarding incomplete ───────────────────────────────────
 {
-  const p = await dashboard({ hh: { activation_verified_at: null, delivery_verified_at: null, voice_client_registered_at: iso(1) } });
+  const p = await dashboard({ hh: { activation_verified_at: null, forwarding_proven_at: null, delivery_verified_at: null, voice_client_registered_at: iso(1) } });
   const input = { protection: p, membership: { status: 'active' } };
   const v = view(input);
   check(p.activationStage === 'awaiting_forwarding' && v.tone === 'setup' && v.headline === HEADLINES.setup, '3 forwarding incomplete → FINISH SETTING UP PROTECTION');
@@ -113,12 +113,12 @@ const stepState = (input, key) => buildSetupChecklist(input).find((s) => s.key =
 
 // ── 4. membership active + number not ready ─────────────────────────────
 {
-  const p = await dashboard({ hh: { twilio_provisioning_status: 'pending', activation_verified_at: null, delivery_verified_at: null } });
+  const p = await dashboard({ hh: { twilio_provisioning_status: 'pending', activation_verified_at: null, forwarding_proven_at: null, delivery_verified_at: null } });
   const input = { protection: p, membership: { status: 'active' } };
   const v = view(input);
   check(p.activationStage === 'awaiting_number' && v.tone === 'setup' && /number ready/.test(v.body), '4 number not ready → setup, "getting your protected number ready"');
   check(stepState(input, 'membership') === 'done' && stepState(input, 'number') === 'todo', '4 checklist: membership ✓ number ○');
-  const f = await dashboard({ hh: { twilio_provisioning_status: 'failed', twilio_number: null, activation_verified_at: null, delivery_verified_at: null } });
+  const f = await dashboard({ hh: { twilio_provisioning_status: 'failed', twilio_number: null, activation_verified_at: null, forwarding_proven_at: null, delivery_verified_at: null } });
   const vf = view({ protection: f, membership: { status: 'active' } });
   check(f.activationStage === 'number_failed' && vf.tone === 'attention' && vf.action.kind === 'contact_support', '4b number provisioning failed → attention + contact support');
 }
@@ -198,7 +198,7 @@ const stepState = (input, key) => buildSetupChecklist(input).find((s) => s.key =
 // ── 12. sandbox Apple entitlement ───────────────────────────────────────
 {
   // Sandbox grants get no real number (services/twilioProvisioning.js).
-  const p = await dashboard({ snap: { entitlements: [{ ...ENT, source: 'apple_revenuecat' }] }, hh: { twilio_provisioning_status: 'pending', twilio_number: null, activation_verified_at: null, delivery_verified_at: null } });
+  const p = await dashboard({ snap: { entitlements: [{ ...ENT, source: 'apple_revenuecat' }] }, hh: { twilio_provisioning_status: 'pending', twilio_number: null, activation_verified_at: null, forwarding_proven_at: null, delivery_verified_at: null } });
   const v = view({ protection: p, membership: { status: 'active' }, testPurchase: true });
   check(p.activationStage === 'awaiting_number' && v.tone === 'setup' && /test purchase/.test(v.body) && v.action === null, '12 sandbox Apple purchase → setup, explains test purchase, no endless "check again"');
   check(describeMembership({ status: 'active', testPurchase: true }, (d) => d).label === 'Test purchase', '12 membership label: Test purchase');
@@ -209,7 +209,7 @@ const stepState = (input, key) => buildSetupChecklist(input).find((s) => s.key =
   // A pre-provisioned complimentary household (routes/mobileApi.js). Its
   // classification is admin-only and never sent to the app, so it follows
   // exactly the same evidence rules as any customer.
-  const fresh = await dashboard({ snap: { entitlements: [{ ...ENT, entitlement_type: 'complimentary', source: 'admin_manual' }] }, hh: { activation_verified_at: null, delivery_verified_at: null, voice_client_registered_at: null } });
+  const fresh = await dashboard({ snap: { entitlements: [{ ...ENT, entitlement_type: 'complimentary', source: 'admin_manual' }] }, hh: { activation_verified_at: null, forwarding_proven_at: null, delivery_verified_at: null, voice_client_registered_at: null } });
   const v = view({ protection: fresh, membership: { status: 'active' } });
   check(v.tone === 'setup' && v.action.kind === 'set_up_forwarding' && !v.isProtected, '13 reviewer account before forwarding → setup (never shown protected without evidence)');
 }

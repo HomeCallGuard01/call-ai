@@ -49,6 +49,9 @@ const EXCEPTIONS = Object.freeze({
   STORE_SANDBOX_HOLDS_NUMBER: { severity: 'action', owner: 'ops', automation: 'manual', action: 'A store sandbox / TestFlight / App Review grant (no revenue) holds a real, billed HCG number. Decide whether to keep it for the tester or release it (manual confirmation).' },
   PAYMENT_ENVIRONMENT_UNVERIFIED: { severity: 'action', owner: 'ops', automation: 'manual', action: 'A store (Apple/Google) entitlement whose environment HCG never recorded (granted before migration 053). Check the customer in the RevenueCat dashboard: production → classify genuine; sandbox → not revenue. Not counted as paying until verified; new number purchases are refused meanwhile.' },
   FIRST_DELIVERY_UNCONFIRMED_LONG: { severity: 'watch', owner: 'support', automation: 'manual', action: 'Forwarding and app look ready but no protected call has been confirmed delivered for a week. Ask the customer to test or check their divert.' },
+  // LF-2 (2026-10-06): calls arrive and are delivered but the customer's own forwarding is not
+  // proven (no verification-call proof yet). Support confirms forwarding with the customer.
+  FORWARDING_NOT_PROVEN: { severity: 'watch', owner: 'support', automation: 'manual', action: 'Calls reach HCG and the app, but forwarding from the customer\'s own phone is not proven. Check with the customer that call forwarding is on (and to the CURRENT HCG number). Never tell them they are fully protected until it is proven.' },
   PROTECTION_LOST: { severity: 'action', owner: 'support', automation: 'automatable_after_decision', action: 'Delivery worked before but the app is now unreachable. Ask the customer to open the app (re-register).' },
   EVIDENCE_PREDATES_CURRENT_NUMBER: { severity: 'action', owner: 'support', automation: 'manual', action: 'The household has a new HCG number; its forwarding/delivery proof is for the old one. The customer must re-dial the forwarding code for the new number.' },
   PAYMENT_ISSUE: { severity: 'action', owner: 'support', automation: 'automatable_after_decision', action: 'Stripe subscription past_due/unpaid; access continues meanwhile. Stripe dunning (if enabled in the Dashboard) is the only customer message today.' },
@@ -166,6 +169,10 @@ function householdExceptions(snapshot, now, thresholds = THRESHOLDS) {
       break;
     case STAGES.AWAITING_FIRST_DELIVERY:
       if (age !== null && age > thresholds.firstDeliveryLongMs) items.push(item('FIRST_DELIVERY_UNCONFIRMED_LONG', ctx, null, sinceIso));
+      break;
+    case STAGES.FORWARDING_UNCONFIRMED:
+      // LF-2: raised immediately for a genuine paying customer (support-led check).
+      if (commercial.genuinePaying) items.push(item('FORWARDING_NOT_PROVEN', ctx, 'calls arrive; forwarding unproven'));
       break;
     case STAGES.RECONNECT_NEEDED:
       items.push(item('PROTECTION_LOST', ctx, activation.attention.includes('delivery_unreachable') ? 'delivery health UNREACHABLE' : 'app not registered'));

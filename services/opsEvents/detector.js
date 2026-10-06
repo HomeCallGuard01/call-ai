@@ -49,6 +49,10 @@ function detectOpsEvents(snapshot, now, { thresholds = DEFAULT_THRESHOLDS, planL
     // that changed (hold time / last delivery proof), else the calendar day.
     const anchor = (snapshot.financialHold && snapshot.financialHold.heldAt) || household.delivery_verified_at || new Date(nowMs).toISOString().slice(0, 10);
     events.push(buildEvent({ ...base, type: TYPES.CUSTOMER_NEEDS_ATTENTION, reason: lossReason, episode: String(anchor), occurredAt: nowMs }));
+  } else if (activation.stage === STAGES.FORWARDING_UNCONFIRMED) {
+    // LF-2 (2026-10-06): everything works except proof of the customer's own
+    // forwarding — told immediately, with its own reason (support checks it).
+    events.push(buildEvent({ ...base, type: TYPES.CUSTOMER_NEEDS_ATTENTION, reason: 'forwarding_not_proven', episode: String(household.twilio_number || 'number'), occurredAt: nowMs }));
   } else if (!activation.protected) {
     const clock = setupClockStartMs(snapshot);
     if (clock !== null && nowMs - clock > thresholds.onboardingWindowMs) {

@@ -1929,7 +1929,11 @@
       protectedNumberAssigned: computeProtectionState(data) === "active",
       phoneNumberAdded: !!(data && data.phoneNumberAdded),
       contactsUploaded: !!(data && data.contactsUploaded > 0),
-      callForwardingCompleted: !!(data && data.activationVerifiedAt),
+      // LF-2 (2026-10-06): with the canonical status, forwarding counts only
+      // when genuinely proven — never because a call reached Home Call Guard.
+      callForwardingCompleted: data && data.protection && typeof data.protection.activationStage === "string"
+        ? data.protection.forwardingVerified === true
+        : !!(data && data.activationVerifiedAt),
     };
   }
   // TEST-EXTRACT-END: computeSetupChecklist
@@ -2220,6 +2224,16 @@
       };
     }
 
+    // LF-2 (2026-10-06): calls arrive and are delivered, but the customer's own
+    // call forwarding is not proven — truthful, never "protected".
+    if (state === "active" && data && data.protection && data.protection.activationStage === "forwarding_unconfirmed") {
+      return {
+        variant: "confirming-delivery",
+        title: "Calls are reaching you — call forwarding not yet confirmed",
+        sub: "Calls are reaching this phone through Home Call Guard, but we haven't been able to confirm that your phone's call forwarding is switched on. Check your call forwarding settings, or contact support@homecallguard.co.uk and we'll check it with you.",
+      };
+    }
+
     if (state === "failed") {
       return {
         variant: "failed",
@@ -2235,7 +2249,7 @@
       return {
         variant: "confirming-delivery",
         title: "Almost there — confirming your protection",
-        sub: "Your call forwarding is set up correctly. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.",
+        sub: "Calls are reaching Home Call Guard. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.",
       };
     }
 

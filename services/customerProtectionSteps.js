@@ -73,7 +73,7 @@ const GUIDANCE = {
   confirming_delivery: {
     key: 'confirming_delivery',
     message:
-      "Your call forwarding is set up correctly. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.",
+      "Calls are reaching Home Call Guard. We're just confirming we can reach your phone with a protected call — this completes automatically the next time a real call comes through.",
   },
   // Step 4 was satisfied before (delivery has genuinely worked at least
   // once) but the app isn't currently reachable — "temporary
@@ -84,7 +84,7 @@ const GUIDANCE = {
   reconnecting: {
     key: 'reconnecting',
     message:
-      "Home Call Guard has protected you before — we just can't currently reach this app. Keep it open for a moment to reconnect. You don't need to redo call forwarding.",
+      "Calls have reached this phone before — we just can't currently reach this app. Keep it open for a moment to reconnect. You don't need to redo call forwarding.",
   },
   // All 5 steps done — nothing to show; the caller should treat this as
   // "no outstanding guidance needed", not render this row at all.
@@ -93,6 +93,13 @@ const GUIDANCE = {
   // Deliberately plain: no FCM/Twilio/push-token language. Neither tells
   // the customer to turn off call forwarding — whether to recommend that
   // is an open product decision (docs/launch/CALL_DELIVERY_RESILIENCE.md).
+  // LF-2 (2026-10-06): calls arrive and reach this phone, but forwarding from
+  // the customer's own phone is not proven — never claimed as protected.
+  forwarding_unconfirmed: {
+    key: 'forwarding_unconfirmed',
+    message:
+      "Calls are reaching this phone through Home Call Guard, but we haven't been able to confirm that your phone's call forwarding is switched on. Check your call forwarding settings, or contact us and we'll check it with you.",
+  },
   calls_not_reaching_app: {
     key: 'calls_not_reaching_app',
     message:
@@ -128,11 +135,17 @@ function buildCustomerProtectionSteps(household, now, deliveryHealth = null, can
   // condition exactly (forwardingVerified OR endToEndDeliveryVerified) —
   // a household that has ever had a real delivered call has, by
   // definition, also had forwarding work.
-  const forwardingDetected = protectionStatus.forwardingVerified || protectionStatus.endToEndDeliveryVerified;
+  // LF-2 (2026-10-06): with the canonical status, "forwarding" ticks ONLY on
+  // genuine forwarding proof (forwarding_proven_at) — never because a call
+  // reached HCG or was delivered (a direct dial or stray call can do both).
+  const canonicalStage = canonicalProtection && typeof canonicalProtection.activationStage === 'string' ? canonicalProtection.activationStage : null;
+  const forwardingDetected = canonicalStage
+    ? protectionStatus.forwardingVerified === true
+    : protectionStatus.forwardingVerified || protectionStatus.endToEndDeliveryVerified;
 
   const steps = [
     { key: 'number_active', label: 'HCG number active', done: numberActive },
-    { key: 'forwarding_detected', label: 'Call forwarding detected', done: forwardingDetected },
+    { key: 'forwarding_detected', label: canonicalStage ? 'Call forwarding confirmed' : 'Call forwarding detected', done: forwardingDetected },
     { key: 'app_registered', label: 'Home Call Guard app ready', done: protectionStatus.deliveryReady },
     // The exact deliveryConfirmed signal, unmodified — see this file's
     // own header for why this is a direct pass-through, never re-derived.
@@ -141,6 +154,21 @@ function buildCustomerProtectionSteps(household, now, deliveryHealth = null, can
   ];
 
   let guidance = null;
+  if (canonicalStage) {
+    // LF-2: guidance follows the canonical stage (one truth for every surface).
+    const unreachable = healthState === 'UNREACHABLE' && protectionStatus.endToEndDeliveryVerified;
+    const byStage = {
+      awaiting_number: GUIDANCE.number_pending,
+      awaiting_forwarding: GUIDANCE.forwarding_not_detected,
+      awaiting_app: GUIDANCE.app_not_ready,
+      reconnect_needed: unreachable ? GUIDANCE.calls_not_reaching_app : GUIDANCE.reconnecting,
+      awaiting_first_delivery: GUIDANCE.confirming_delivery,
+      forwarding_unconfirmed: GUIDANCE.forwarding_unconfirmed,
+      protected: healthState === 'SUSPECT' ? GUIDANCE.delivery_needs_attention : null,
+    };
+    guidance = Object.prototype.hasOwnProperty.call(byStage, canonicalStage) ? byStage[canonicalStage] : null;
+    return { steps, guidance };
+  }
   if (!numberActive) {
     guidance = GUIDANCE.number_pending;
   } else if (!forwardingDetected) {

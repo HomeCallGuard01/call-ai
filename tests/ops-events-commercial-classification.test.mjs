@@ -96,9 +96,9 @@ for (const [name, input] of CASES.filter(([, , s]) => s !== STATUS.GENUINE_PAYIN
   check(fresh.events.map((e) => e.event_type).join() === TYPES.NEW_GENUINE_CUSTOMER, 'genuine customer, just joined → NEW_GENUINE_CUSTOMER only');
   const late = detectOpsEvents(snap(), NOW);
   check(late.events.some((e) => e.event_type === TYPES.CUSTOMER_NEEDS_ATTENTION && e.payload.reason === 'not_protected_within_onboarding_window'), 'genuine customer not protected after the onboarding window → CUSTOMER_NEEDS_ATTENTION');
-  const prot = detectOpsEvents(snap({ household: { activation_verified_at: iso(90), delivery_verified_at: iso(89), voice_client_registered_at: iso(91) } }), NOW);
+  const prot = detectOpsEvents(snap({ household: { activation_verified_at: iso(90), forwarding_proven_at: iso(90), delivery_verified_at: iso(89), voice_client_registered_at: iso(91) } }), NOW);
   check(prot.events.map((e) => e.event_type).sort().join() === [TYPES.CUSTOMER_PROTECTED, TYPES.NEW_GENUINE_CUSTOMER].sort().join(), 'genuine customer protected → CUSTOMER_PROTECTED (+ the one-off NEW event key)');
-  const held = detectOpsEvents(snap({ financialHold: { held: true, source: 'financial', reason: 'x', heldAt: iso(3) }, household: { activation_verified_at: iso(90), delivery_verified_at: iso(89), voice_client_registered_at: iso(91) } }), NOW);
+  const held = detectOpsEvents(snap({ financialHold: { held: true, source: 'financial', reason: 'x', heldAt: iso(3) }, household: { activation_verified_at: iso(90), forwarding_proven_at: iso(90), delivery_verified_at: iso(89), voice_client_registered_at: iso(91) } }), NOW);
   check(held.events.some((e) => e.event_type === TYPES.CUSTOMER_NEEDS_ATTENTION && e.payload.reason === 'financial_hold'), 'protected customer placed on a financial hold → NEEDS_ATTENTION (financial_hold)');
   const e = late.events.find((x) => x.event_type === TYPES.NEW_GENUINE_CUSTOMER);
   check(e.account_number === 'HCG-00000042' && e.payload.channelLabel === 'Web (Stripe)' && e.payload.numberState === 'active' && e.payload.onboardingStage && e.payload.protected === false && 'joinedAt' in e.payload, 'event carries account number, joined, channel, number STATE, onboarding stage, protection');

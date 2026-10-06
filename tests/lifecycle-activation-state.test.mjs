@@ -11,7 +11,7 @@
 // Run with: node tests/lifecycle-activation-state.test.mjs
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { deriveActivationState, classifyTransition, STAGES, PROTECTION_GATES } = require('../services/lifecycle/activationState');
+const { deriveActivationState, classifyTransition, STAGES, PROTECTION_GATES, HAPPY_PATH } = require('../services/lifecycle/activationState');
 const { computeProtectionStatus } = require('../services/callRouting');
 
 let failures = 0;
@@ -40,6 +40,10 @@ function snapshot(t = {}) {
     twilio_provisioning_status: 'active',
     twilio_number_pending_release_at: null,
     activation_verified_at: '2026-10-02T10:00:00Z',
+    // LF-2 (2026-10-06): genuine forwarding proof (migration 074) — the ONLY
+    // forwarding input to `protected`. activation_verified_at above now only
+    // means "a call reached the HCG number".
+    forwarding_proven_at: '2026-10-02T10:00:00Z',
     voice_client_registered_at: '2026-10-04T08:00:00Z',
     delivery_verified_at: '2026-10-02T10:05:00Z',
   };
@@ -56,7 +60,8 @@ function snapshot(t = {}) {
   if (t.noNumber) household.twilio_number = null;
   if (t.provisioningPending) household.twilio_provisioning_status = 'pending';
   if (t.quarantined) quarantineRows = [{ id: 'q1', household_id: HH, twilio_number: NUMBER, quarantined_at: '2026-10-03T00:00:00Z', released_at: null, deactivation_confirmed: false }];
-  if (t.noForwarding) household.activation_verified_at = null;
+  if (t.noForwarding) household.forwarding_proven_at = null;
+  if (t.noCallsReachHcg) household.activation_verified_at = null;
   if (t.noRegistration) household.voice_client_registered_at = null;
   if (t.unreachable) deliveryHealth = { state: 'UNREACHABLE' };
   if (t.noDelivery) household.delivery_verified_at = null;
@@ -104,7 +109,7 @@ function snapshot(t = {}) {
 {
   const onlyPaid = deriveActivationState(snapshot({ noNumber: true, provisioningPending: true, noForwarding: true, noRegistration: true, noDelivery: true }), NOW);
   check(!onlyPaid.protected && onlyPaid.stage === STAGES.AWAITING_NUMBER, 'paid only ⇒ awaiting_number, not protected');
-  const paidAndNumber = deriveActivationState(snapshot({ noForwarding: true, noRegistration: true, noDelivery: true }), NOW);
+  const paidAndNumber = deriveActivationState(snapshot({ noForwarding: true, noCallsReachHcg: true, noRegistration: true, noDelivery: true }), NOW);
   check(!paidAndNumber.protected && paidAndNumber.stage === STAGES.AWAITING_FORWARDING, 'paid + number ⇒ awaiting_forwarding');
   const forwarded = deriveActivationState(snapshot({ noRegistration: true, noDelivery: true }), NOW);
   check(!forwarded.protected && forwarded.stage === STAGES.AWAITING_APP, 'paid + number + forwarding ⇒ awaiting_app');
@@ -115,8 +120,8 @@ function snapshot(t = {}) {
   const neverPaid = deriveActivationState({ ...snapshot({ noNumber: true }), entitlements: [] }, NOW);
   check(neverPaid.stage === STAGES.SIGNED_UP && !neverPaid.protected, 'an account that never had a membership ⇒ signed_up');
   const deliveredNoForwardStamp = deriveActivationState(snapshot({ noForwarding: true }), NOW);
-  check(!deliveredNoForwardStamp.protected && deliveredNoForwardStamp.stage === STAGES.AWAITING_FORWARDING,
-    'a delivery stamp without a forwarding stamp is NOT protected (both proofs required)');
+  check(!deliveredNoForwardStamp.protected && deliveredNoForwardStamp.stage === STAGES.FORWARDING_UNCONFIRMED,
+    'calls reach HCG and are delivered but forwarding is NOT proven ⇒ forwarding_unconfirmed, never protected (LF-2)');
 }
 
 // ---------------------------------------------------------------

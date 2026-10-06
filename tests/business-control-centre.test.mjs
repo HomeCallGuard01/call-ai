@@ -29,7 +29,7 @@ const NOW = new Date('2026-09-27T12:00:00.000Z');
 const ago = (ms) => new Date(NOW.getTime() - ms).toISOString();
 const ent = (type, startsAgo, extra = {}) => ({ entitlement_type: type, status: 'active', source: type === 'paid_subscription' ? 'stripe' : 'admin_manual', starts_at: ago(startsAgo), ends_at: null, updated_at: ago(startsAgo), ...extra });
 // 2026-10-04 (MI-2a): the canonical gates also need an ACTIVE number.
-const protectedFields = { activation_verified_at: ago(DAY), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(DAY), twilio_provisioning_status: 'active' };
+const protectedFields = { activation_verified_at: ago(DAY), forwarding_proven_at: ago(DAY), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(DAY), twilio_provisioning_status: 'active' };
 
 // ============================================================
 // 1. Business vocabulary (definitions.js)

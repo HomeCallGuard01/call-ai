@@ -43,6 +43,10 @@ const STAGES = Object.freeze({
   AWAITING_FORWARDING: 'awaiting_forwarding',
   AWAITING_APP: 'awaiting_app',
   AWAITING_FIRST_DELIVERY: 'awaiting_first_delivery',
+  // LF-2 (2026-10-06): calls reach HCG and are delivered to the app, but the
+  // customer's own phone forwarding is NOT proven (an ordinary inbound call —
+  // even a direct dial or a stray call — cannot prove it). Never "protected".
+  FORWARDING_UNCONFIRMED: 'forwarding_unconfirmed',
   RECONNECT_NEEDED: 'reconnect_needed', // delivery worked before; app now unreachable
   PROTECTED: 'protected',
   MEMBERSHIP_ENDED: 'membership_ended', // had a membership; none in effect now
@@ -57,6 +61,7 @@ const HAPPY_PATH = Object.freeze([
   STAGES.AWAITING_FORWARDING,
   STAGES.AWAITING_APP,
   STAGES.AWAITING_FIRST_DELIVERY,
+  STAGES.FORWARDING_UNCONFIRMED,
   STAGES.PROTECTED,
 ]);
 
@@ -146,11 +151,18 @@ function deriveActivationState(input, now) {
   const currentNumberQuarantined = !!number && liveQuarantine.some((q) => q.twilio_number === number);
   const knownUnreachable = !!(deliveryHealth && deliveryHealth.state === 'UNREACHABLE');
 
-  const forwardingCurrent = evidenceForCurrentNumber(household && household.activation_verified_at, assignedAtMs);
+  // LF-2 (2026-10-06): forwarding is proven ONLY by forwarding_proven_at
+  // (migration 074) — never by activation_verified_at, which any inbound call
+  // to the HCG number stamps (direct dials and stray calls included). Absent
+  // column (074 not applied) ⇒ undefined ⇒ not proven.
+  const forwardingCurrent = evidenceForCurrentNumber(household && household.forwarding_proven_at, assignedAtMs);
+  // "A call reached the HCG number" (evidence only; drives wording, not protection).
+  const callsReachHcgCurrent = evidenceForCurrentNumber(household && household.activation_verified_at, assignedAtMs);
   const deliveryCurrent = evidenceForCurrentNumber(household && household.delivery_verified_at, assignedAtMs);
   const deliveryEver = !!(household && household.delivery_verified_at);
   const staleEvidence = assignedAtMs !== null && (
-    (!!(household && household.activation_verified_at) && !forwardingCurrent)
+    (!!(household && household.activation_verified_at) && !callsReachHcgCurrent)
+    || (!!(household && household.forwarding_proven_at) && !forwardingCurrent)
     || (deliveryEver && !deliveryCurrent)
   );
 
@@ -177,13 +189,13 @@ function deriveActivationState(input, now) {
   else if (household.twilio_provisioning_status === 'failed' && !number) stage = STAGES.NUMBER_FAILED;
   else if (!gates.numberActive) stage = STAGES.AWAITING_NUMBER;
   else if (!gates.numberNotQuarantined) stage = STAGES.NUMBER_CONFLICT;
-  else if (!gates.forwardingVerifiedForCurrentNumber && !gates.deliveryVerifiedForCurrentNumber) stage = STAGES.AWAITING_FORWARDING;
+  // No proof AND no sign of calls arriving yet: forwarding still to be set up.
+  else if (!gates.forwardingVerifiedForCurrentNumber && !callsReachHcgCurrent && !gates.deliveryVerifiedForCurrentNumber) stage = STAGES.AWAITING_FORWARDING;
   else if (!gates.appReachable) stage = deliveryEver && !staleEvidence ? STAGES.RECONNECT_NEEDED : STAGES.AWAITING_APP;
-  // A confirmed delivery for the current number with no forwarding stamp
-  // cannot happen through /voice (it stamps first); treated as still
-  // awaiting forwarding proof rather than protected.
-  else if (!gates.forwardingVerifiedForCurrentNumber) stage = STAGES.AWAITING_FORWARDING;
   else if (!gates.deliveryVerifiedForCurrentNumber) stage = STAGES.AWAITING_FIRST_DELIVERY;
+  // LF-2: calls arrive and are delivered, but the customer's forwarding is not
+  // proven — truthful "not yet confirmed", never protected.
+  else if (!gates.forwardingVerifiedForCurrentNumber) stage = STAGES.FORWARDING_UNCONFIRMED;
   else stage = STAGES.PROTECTED;
 
   // Invariant, asserted rather than assumed: the stage label and the gate
@@ -224,6 +236,9 @@ function deriveActivationState(input, now) {
       numberAssignedAtKnown: assignedAtMs !== null,
       deliveryHealthChecked: !!deliveryHealth,
       activationVerifiedAt: (household && household.activation_verified_at) || null,
+      // LF-2: "a call reached the HCG number" (evidence) vs genuine forwarding proof.
+      callsReachHcg: callsReachHcgCurrent,
+      forwardingProvenAt: (household && household.forwarding_proven_at) || null,
       deliveryVerifiedAt: (household && household.delivery_verified_at) || null,
       voiceClientRegisteredAt: (household && household.voice_client_registered_at) || null,
     },

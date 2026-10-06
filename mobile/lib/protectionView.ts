@@ -256,7 +256,17 @@ export function describeProtection(input: ProtectionInput, device: DeviceInput):
       );
     case "awaiting_first_delivery":
       if (!device.canPresentCalls) return t("attention", device.problemMessage || DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
-      return t("setup", "Everything is set up. Protection will be confirmed when your first protected call reaches this phone.", null);
+      return t("setup", "This phone is ready. We'll confirm calls can reach it when the first call comes through.", null);
+    case "forwarding_unconfirmed":
+      // LF-2 (2026-10-06): calls arrive and reach this phone, but the
+      // customer's own call forwarding is not proven (an ordinary call to the
+      // HCG number can't prove it). Truthful; never "protected".
+      if (!device.canPresentCalls) return t("attention", device.problemMessage || DEVICE_BODY, { kind: "open_settings", label: "Open Settings" });
+      return t(
+        "setup",
+        "Calls are reaching this phone through Home Call Guard, but we can't yet confirm your phone's call forwarding is switched on. Check your call forwarding settings, or contact us and we'll check it with you.",
+        { kind: "set_up_forwarding", label: "Check call forwarding" }
+      );
     default:
       // A stage this app version doesn't know: never protected, never guessed.
       return t("unknown", "We couldn't confirm your protection just now. Pull down to refresh, or contact us if this continues.", {

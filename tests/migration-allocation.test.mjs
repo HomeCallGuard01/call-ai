@@ -1,4 +1,4 @@
-// Frozen migration allocation 046–073 — integration 2026-10-03 (+071 accounting automation, +072 operational events, 2026-10-04; +073 Apple store lifecycle state, launch sprint 2026-10-05)
+// Frozen migration allocation 046–074 — integration 2026-10-03 (+071 accounting automation, +072 operational events, 2026-10-04; +073 Apple store lifecycle state, launch sprint 2026-10-05)
 // (docs/integration/2026-10-03-MIGRATION_RECONCILIATION.md §4).
 // A migration already APPLIED somewhere keeps its identity; this test fails if
 // any of them is renamed, renumbered or removed, or if a number collides.
@@ -35,6 +35,7 @@ const EXPECTED = {
   '070': ['070_stripe_entitlement_canonical_decision.sql', 'draft (new; replaces 027\'s function)'],
   '071': ['071_accounting_transactions.sql', 'draft (accounting automation, 2026-10-04)'],
   '072': ['072_operational_events.sql', 'draft (operational events / notifications, soft-launch integration 2026-10-04)'],
+  '074': ['074_households_forwarding_proof.sql', 'draft (LF-2 forwarding proof, 2026-10-06; 074 verified free on all branches/worktrees)'],
   '073': ['073_entitlements_store_subscription_state.sql', 'draft (Apple/RevenueCat cancellation + billing-issue state, launch sprint 2026-10-05; 073 verified free on all branches/worktrees)'],
 };
 const BURNED = ['048', '049', '050'];
@@ -48,8 +49,8 @@ for (const [n, [file, state]] of Object.entries(EXPECTED)) {
 }
 for (const n of BURNED) check(!byNumber.has(n), `burned number ${n} is never reused`);
 const highest = Math.max(...files.map((f) => Number(f.slice(0, 3))));
-check(highest === 73, `highest migration is 073 (found ${String(highest).padStart(3, '0')}); a new one needs this allocation updated deliberately`);
-for (const n of ['062', '063', '064', '065', '066', '067', '068', '069', '070', '071', '072', '073']) {
+check(highest === 74, `highest migration is 074 (found ${String(highest).padStart(3, '0')}); a new one needs this allocation updated deliberately`);
+for (const n of ['062', '063', '064', '065', '066', '067', '068', '069', '070', '071', '072', '073', '074']) {
   const f = EXPECTED[n][0].replace(/^(\d{3})_/, '$1_rollback_');
   check(existsSync(path.join(DIR, '_rollbacks', f)), `${n} has a rollback file (${f})`);
 }

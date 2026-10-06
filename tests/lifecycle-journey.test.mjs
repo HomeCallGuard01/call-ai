@@ -72,7 +72,9 @@ step('number assigned', snap(numbered, ctx), at('2026-10-01T10:00:00Z'), { stage
 step('setup stalled 26h', snap(numbered, ctx), at('2026-10-02T11:05:00Z'),
   { stage: STAGES.AWAITING_FORWARDING, exceptions: ['SETUP_STALLED'], comms: ['setup_incomplete'] });
 // 4. Forwarding verified.
-const fwd = { ...numbered, activation_verified_at: '2026-10-02T12:00:00Z' };
+// LF-2 (2026-10-06): this journey models GENUINE forwarding, so the step
+// carries forwarding proof (migration 074) as well as the call-arrival stamp.
+const fwd = { ...numbered, activation_verified_at: '2026-10-02T12:00:00Z', forwarding_proven_at: '2026-10-02T12:00:00Z' };
 step('forwarding verified', snap(fwd, ctx), at('2026-10-02T12:01:00Z'), { stage: STAGES.AWAITING_APP, exceptions: ['SETUP_STALLED'] });
 // 5. App registered, no delivery yet.
 const app = { ...fwd, voice_client_registered_at: '2026-10-02T12:10:00Z' };

@@ -102,9 +102,9 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
     household({ twilio_provisioning_updated_at: ago(72 * HOUR), activation_verified_at: ago(70 * HOUR), voice_client_registered_at: ago(1 * HOUR) }),
     [activeEntitlement(72 * HOUR)]
   );
-  check(r.state === ADMIN_STATES.SETTING_UP, 'forwarding verified + app registered, no delivered call yet → Setting up (not Needs attention, even 72h later)');
-  check(r.forwardingProven === true, 'activation_verified_at counts as forwarding proven');
-  check(/waiting for first delivered call/.test(r.reason), 'reason says forwarding is confirmed and delivery is pending');
+  check(r.state === ADMIN_STATES.SETTING_UP, 'calls reaching HCG + app registered, no delivered call yet → Setting up (not Needs attention, even 72h later)');
+  check(r.forwardingProven === false, 'LF-2: activation_verified_at (a call reached HCG) is NOT forwarding proof');
+  check(/Calls reaching HCG — waiting for first delivered call/.test(r.reason), 'reason says calls are reaching HCG and delivery is pending (never "forwarding confirmed")');
 }
 {
   // Mirrors mobile/lib/homeStatus.ts hasProvenActivation: a delivered call
@@ -113,7 +113,7 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
     household({ twilio_provisioning_updated_at: ago(72 * HOUR), delivery_verified_at: ago(5 * HOUR), voice_client_registered_at: ago(6 * HOUR) }),
     [activeEntitlement(72 * HOUR)]
   );
-  check(r.forwardingProven === true, 'delivery_verified_at alone also counts as forwarding proven');
+  check(r.forwardingProven === false, 'LF-2: a delivered call alone is NOT forwarding proof (a direct dial can be delivered)');
   // 2026-10-04 (MI-2a): the canonical gates also need forwarding proof for the
   // current number (today's /voice stamps it on every real forwarded call, so
   // this combination only exists in legacy data).
@@ -130,9 +130,11 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
 
 // --- 5. Fully Protected ---
 {
-  const h = household({ activation_verified_at: ago(20 * HOUR), voice_client_registered_at: ago(1 * HOUR), delivery_verified_at: ago(10 * HOUR) });
+  const h = household({ activation_verified_at: ago(20 * HOUR), forwarding_proven_at: ago(20 * HOUR), voice_client_registered_at: ago(1 * HOUR), delivery_verified_at: ago(10 * HOUR) });
   const r = derive(h, [activeEntitlement(21 * HOUR)], ago(10 * HOUR));
-  check(r.state === ADMIN_STATES.PROTECTED, 'forwarding + registration + delivered call → Protected');
+  check(r.state === ADMIN_STATES.PROTECTED, 'forwarding PROVEN + registration + delivered call → Protected');
+  const lf2 = derive({ ...h, forwarding_proven_at: null }, [activeEntitlement(21 * HOUR)], ago(10 * HOUR));
+  check(lf2.state === ADMIN_STATES.NEEDS_ATTENTION && /not proven/.test(lf2.reason) && lf2.protection.fullyProtected === false, 'LF-2 (device-test shape): calls arrive + registered + delivered, forwarding unproven → Needs attention, never Protected');
   check(r.lastCallAt === ago(10 * HOUR), 'last call timestamp passed through');
 }
 
@@ -142,6 +144,7 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
     created_at: '2026-06-01T09:00:00+00:00',
     twilio_provisioning_updated_at: null, // backfilled by migration 016 with no timestamp
     activation_verified_at: '2026-06-02T10:00:00+00:00',
+    forwarding_proven_at: '2026-06-02T10:00:00+00:00',
     voice_client_registered_at: '2026-06-02T10:05:00+00:00',
     delivery_verified_at: '2026-07-01T10:00:00+00:00',
   });
@@ -152,7 +155,7 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
 
 // --- 7. Inactive entitlement ---
 {
-  const fully = household({ activation_verified_at: ago(HOUR), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(HOUR) });
+  const fully = household({ activation_verified_at: ago(HOUR), forwarding_proven_at: ago(HOUR), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(HOUR) });
   check(derive(fully, []).state === ADMIN_STATES.INACTIVE, 'no entitlement at all → Inactive (even with protection evidence)');
   check(derive(fully, []).reason === 'Never had a membership', 'never-member reason');
   check(derive(fully, [{ ...activeEntitlement(10 * HOUR), status: 'expired' }]).state === ADMIN_STATES.INACTIVE, 'expired entitlement → Inactive');
@@ -248,12 +251,12 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
 {
   const r = derive(household({ voice_client_registered_at: ago(HOUR) }), [activeEntitlement(3 * HOUR)]);
   const keys = r.timeline.map((s) => s.key);
-  check(JSON.stringify(keys) === JSON.stringify(['membership', 'number', 'app', 'forwarding', 'delivery', 'last_call']), 'timeline has the six stages in order');
+  check(JSON.stringify(keys) === JSON.stringify(['membership', 'number', 'app', 'calls_reaching', 'forwarding', 'delivery', 'last_call']), 'timeline has the seven stages in order (LF-2: calls reaching HCG and forwarding PROVEN are separate)');
   const flagged = r.timeline.filter((s) => s.firstIncomplete);
-  check(flagged.length === 1 && flagged[0].key === 'forwarding', 'first missing stage (forwarding) is the only one highlighted');
+  check(flagged.length === 1 && flagged[0].key === 'calls_reaching', 'first missing stage (calls reaching HCG) is the only one highlighted');
   check(r.timeline.find((s) => s.key === 'last_call').informational === true, 'last call is informational, never the highlighted blocker');
 
-  const p = derive(household({ activation_verified_at: ago(HOUR), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(HOUR) }), [activeEntitlement(3 * HOUR)]);
+  const p = derive(household({ activation_verified_at: ago(HOUR), forwarding_proven_at: ago(HOUR), voice_client_registered_at: ago(HOUR), delivery_verified_at: ago(HOUR) }), [activeEntitlement(3 * HOUR)]);
   check(!p.timeline.some((s) => s.firstIncomplete), 'a Protected customer has no highlighted stage');
 }
 
@@ -348,7 +351,7 @@ check(ONBOARDING_ATTENTION_THRESHOLD_MS === 24 * HOUR, 'threshold is exactly 24 
 
   const detail = await getHouseholdStatusDetail('11111111-1111-4111-8111-111111111111', NOW);
   check(detail.found && detail.customer.state === 'setting_up', 'detail returns the same derived state as the list');
-  check(detail.timeline.length === 6, 'detail includes the six-stage timeline');
+  check(detail.timeline.length === 7, 'detail includes the seven-stage timeline');
   check(detail.technical.hcgNumber === '+447700900001' && detail.technical.carrierProviderKey === 'ee', 'detail technical section includes HCG number and carrier');
   check(!/cus_SECRET|PN_SECRET|auth-uuid|\+447700900999/.test(JSON.stringify(detail)), 'detail response never contains Stripe/Twilio SIDs, auth IDs or the customer’s own phone number');
 

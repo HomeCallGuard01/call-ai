@@ -144,11 +144,19 @@ function buildSetupTimeline({ household, currentEntitlement, protection, lastCal
       at: toIso(parseTimestampMs(household.voice_client_registered_at)),
       atLabel: 'last registered',
     },
+    // LF-2 (2026-10-06): "a call reached HCG" is evidence, not forwarding
+    // proof (a direct dial or stray call stamps it). Two separate steps.
+    {
+      key: 'calls_reaching',
+      label: 'Calls reaching HCG',
+      done: !!household.activation_verified_at || protection.endToEndDeliveryVerified,
+      at: toIso(parseTimestampMs(household.activation_verified_at)),
+    },
     {
       key: 'forwarding',
-      label: 'Forwarding confirmed',
-      done: protection.forwardingVerified || protection.endToEndDeliveryVerified,
-      at: toIso(parseTimestampMs(household.activation_verified_at)),
+      label: 'Forwarding proven',
+      done: protection.forwardingVerified === true,
+      at: toIso(parseTimestampMs(household.forwarding_proven_at)),
     },
     {
       key: 'delivery',
@@ -208,7 +216,10 @@ function deriveAdminCustomerState({ household, entitlements, lastCallAt, activat
   const { current: currentEntitlement, latest: latestEntitlement } = pickEntitlements(entitlements, now);
   const canonical = activation || require('./lifecycle/activationState').deriveActivationState({ household, entitlements: entitlements || [], quarantineRows, financialHold, currentNumberAssignedAt, deliveryHealth }, now);
   const protection = require('./lifecycle/canonicalProtection').mergeProtection(computeProtectionStatus(household, now, deliveryHealth), canonical);
-  const forwardingProven = protection.forwardingVerified || protection.endToEndDeliveryVerified;
+  // LF-2 (2026-10-06): forwarding is proven ONLY by the canonical gate
+  // (forwarding_proven_at). Calls reaching HCG is weaker evidence.
+  const forwardingProven = protection.forwardingVerified === true;
+  const callsReachHcg = !!(canonical.evidence && canonical.evidence.callsReachHcg) || protection.endToEndDeliveryVerified === true;
   const lastCallAtMs = parseTimestampMs(lastCallAt);
   const clock = resolveSetupClockStart(household, currentEntitlement);
   const elapsedMs = clock.atMs === null ? null : nowMs - clock.atMs;
@@ -257,11 +268,14 @@ function deriveAdminCustomerState({ household, entitlements, lastCallAt, activat
       : result(ADMIN_STATES.SETTING_UP, 'Waiting for HCG number');
   }
 
-  if (forwardingProven) {
+  if (canonical.stage === 'forwarding_unconfirmed') {
+    return result(ADMIN_STATES.NEEDS_ATTENTION, 'Calls arrive and are delivered, but forwarding from the customer\'s phone is not proven — check it with the customer');
+  }
+  if (callsReachHcg) {
     if (!protection.deliveryReady) {
       return result(ADMIN_STATES.NEEDS_ATTENTION, 'Calls reach HCG but the app has never registered to receive them');
     }
-    return result(ADMIN_STATES.SETTING_UP, 'Forwarding confirmed — waiting for first delivered call');
+    return result(ADMIN_STATES.SETTING_UP, 'Calls reaching HCG — waiting for first delivered call');
   }
 
   if (clock.atMs === null) {

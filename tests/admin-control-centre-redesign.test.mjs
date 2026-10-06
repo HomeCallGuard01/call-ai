@@ -55,7 +55,7 @@ function snap({ household = {}, entitlements = [], classification = null, subscr
 }
 const stripePaid = { entitlement_type: 'paid_subscription', source: 'stripe' };
 const numberActive = (at = ago(3 * 24 * H)) => ({ twilio_number: '+442079460123', twilio_provisioning_status: 'active', twilio_provisioning_updated_at: at });
-const protectedFacts = { activation_verified_at: ago(2 * 24 * H), voice_client_registered_at: ago(H), delivery_verified_at: ago(2 * 24 * H) };
+const protectedFacts = { activation_verified_at: ago(2 * 24 * H), forwarding_proven_at: ago(2 * 24 * H), voice_client_registered_at: ago(H), delivery_verified_at: ago(2 * 24 * H) };
 
 // --- 1. Canonical classification ------------------------------------------
 {

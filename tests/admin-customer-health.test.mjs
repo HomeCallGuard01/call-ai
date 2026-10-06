@@ -55,6 +55,7 @@ function protectedHousehold(extra = {}) {
     twilio_provisioning_status: 'active',
     twilio_provisioning_updated_at: ago(60 * DAY),
     activation_verified_at: ago(59 * DAY),
+    forwarding_proven_at: ago(59 * DAY), // LF-2: genuine forwarding proof (migration 074)
     voice_client_registered_at: ago(2 * HOUR),
     delivery_verified_at: ago(58 * DAY),
     device_type: 'mobile',
