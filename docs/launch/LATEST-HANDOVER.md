@@ -1,4 +1,44 @@
-# LATEST HANDOVER (updated 2026-10-06, ~19:35 UTC)
+# LATEST HANDOVER (updated 2026-10-08: Magrathea trial prepared; Build 17 state below unchanged since 2026-10-06 ~19:35 UTC)
+
+## 0. NEW 2026-10-08: Magrathea trial, PREPARE ONLY
+
+**Plan:** [`../carriers/MAGRATHEA-TRIAL-PLAN.md`](../carriers/MAGRATHEA-TRIAL-PLAN.md)
+**Branch:** `research/magrathea-trial-poc`. Worktree: `/Users/ad/call-ai-magrathea-trial`. Base: `ad545a1`.
+
+**What Magrathea provisioned:**
+- trial DDI `0330 088 4327`;
+- REST/NTS API access;
+- outbound SIP account `112168` @ `sipgw.magrathea.net`.
+
+**Done:**
+- read the official REST guide v1.2.9, the live resource docs, the NTSAPI guide, Handbook v1.5, the CDR definition and Schedule 3 plus its annex;
+- wrote the plan;
+- prepared a **dry-run-default** read-only probe, `scripts/carriers/magrathea-readonly-probe.sh` (7 allowlisted GETs; Keychain credentials; output outside the repo).
+
+**Not done:** zero API calls, calls, purchases, forwarding changes, transfers, SIP registration, rotation or provider configuration. Credentials have never been seen and are not stored anywhere in the repo. The Build 17 test, Twilio, production, pricing and customer records were not touched.
+
+**Key findings:**
+- **The HTTP method is not a safety signal:**
+  - `account/transfer` moves money and is a **GET**;
+  - `number/feature` reads or writes through one PUT.
+  - So probes use an exact-path allowlist.
+- **No per-call routing, webhook or spend-cap API.**
+  - Prepaid is **not** a proven hard cap. The handbook says some forwarding costs are deducted "at the end of the month".
+- **Trusted £0 can only be decided before diversion,** at the handset with CFB/CFNRy. A Magrathea PSTN forward is a paid leg and loops under CFU.
+- **Inbound to the DDI, delivered over SIP, is £0 according to the docs.** The live test must verify this.
+- **The outbound account `112168` is NOT needed** for the first live tests. It matters only for LF-2 option A placed through Magrathea.
+- **LF-2 carrier route:** Network Mode `Diversion` header plus the CSV `LDLI` field could give **passive** forwarding proof on each MNO. This needs Magrathea's written OK (network numbers must never reach end users) and a live T8 test on each MNO.
+- **Trial terms:** no commercial use, 2 channels. Use **Andrew's devices only.** Do not use the Build 17 iPhone or the production Motorola as the forwarding test handset.
+
+**Approvals needed, in order:**
+- **A1:** Andrew rotates the passwords and enters them in Keychain (plan §2).
+- **A2:** read-only probes R1–R7.
+- **A3:** send the 13 questions to Magrathea.
+- **A4:** E-SIP capture VM plus `number/set` of the DDI.
+- **A5a/b/c:** live call sessions (plus the test handset's forwarding change).
+- **Phase 6:** HCG monitoring integration, as a separate plan.
+
+---
 
 **The single "where are we" page.** Older detail:
 - [`2026-10-05-LAUNCH-SPRINT-HANDOVER.md`](2026-10-05-LAUNCH-SPRINT-HANDOVER.md) (morning reports 1–3)
@@ -129,6 +169,6 @@ On any of these → `…1883` inert immediately.
 - No store submission or review; no TestFlight purchases.
 - No real forwarding change or real SMS without explicit approval.
 - Never release `…1883`.
-- No Magrathea work until the trial number arrives.
+- Magrathea: plan and prepare only (§0). No API call, live call, configuration change or credential handling without the listed approvals. Never put Magrathea credentials in chat, the repo or handovers.
 - Never weaken Fortress or raise budgets.
 - Never run the Supabase CLI in `/Users/ad/call-ai` (production-linked).
