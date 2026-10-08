@@ -1,10 +1,10 @@
-# Magrathea: first live inbound SIP call (runbook, PREPARED, NOT EXECUTED)
+# Magrathea: first live inbound SIP call (runbook; EXECUTED 2026-10-08, PASS)
 
 **Date:** 2026-10-08. **Goal:** one direct-dial call to `0330 088 4327` reaches an isolated HCG test endpoint, with full INVITE headers captured and two-way audio proven. Billing evidence is collected for the same call.
 
 **Out of scope for this call:** forwarding changes (T3–T8), transfer (TX1), production, Twilio and HCG monitoring.
 
-**Status:** nothing below has been done. Each step marked **[APPROVAL]** needs Andrew's explicit yes. No live API call, SIP registration, server, routing change or real call happens without it.
+**Status (updated 2026-10-08):** L2 (VM) done; the trial number was pointed at the VM; the L4 direct-dial call at 18:01 UTC (19:01 BST) **PASSED**: see [`MAGRATHEA-LIVE-CALL-EVIDENCE.md`](MAGRATHEA-LIVE-CALL-EVIDENCE.md). Billing proof (check 7) is pending. Originally: nothing below had been done. Each step marked **[APPROVAL]** needs Andrew's explicit yes. No live API call, SIP registration, server, routing change or real call happens without it.
 
 Parent documents: [`MAGRATHEA-SIP-TRIAL-PLAN.md`](MAGRATHEA-SIP-TRIAL-PLAN.md), [`MAGRATHEA-TRIAL-PLAN.md`](MAGRATHEA-TRIAL-PLAN.md).
 

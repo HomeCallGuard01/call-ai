@@ -1,6 +1,6 @@
 # LATEST HANDOVER (updated 2026-10-08: Magrathea trial prepared; Build 17 state below unchanged since 2026-10-06 ~19:35 UTC)
 
-## 0. NEW 2026-10-08: Magrathea trial, PREPARE ONLY
+## 0. NEW 2026-10-08: Magrathea trial, first live call PASSED
 
 **Plan:** [`../carriers/MAGRATHEA-TRIAL-PLAN.md`](../carriers/MAGRATHEA-TRIAL-PLAN.md)
 **Branch:** `research/magrathea-trial-poc`. Worktree: `/Users/ad/call-ai-magrathea-trial`. Base: `ad545a1`.
@@ -15,7 +15,30 @@
 - wrote the plan;
 - prepared a **dry-run-default** read-only probe, `scripts/carriers/magrathea-readonly-probe.sh` (7 allowlisted GETs; Keychain credentials; output outside the repo).
 
-**First live call runbook (2026-10-08, PREPARED, NOT EXECUTED):** [`../carriers/MAGRATHEA-FIRST-LIVE-CALL.md`](../carriers/MAGRATHEA-FIRST-LIVE-CALL.md)
+**L2 DONE: E-SIP test server LIVE since 2026-10-08 16:07 UTC (approved by Andrew, £5 ceiling):**
+- **Resources:** DigitalOcean `lon1`, `s-1vcpu-512mb-10gb` (512 MiB), Ubuntu 24.04, droplet `607324203`, public IP **`159.65.27.229`**.
+  - Billed per second at $0.00595/h; capped at $4/month ($4.80 incl. VAT ≈ £3.60–3.85 worst case).
+  - Plus firewall `a76c14a2-…`, SSH key `59937436` and tag `hcg-magrathea-trial` (all free). Nothing else was created.
+- **SIP destination for Magrathea:** `S:443300884327@159.65.27.229`, UDP 5060. RTP on UDP 40000–40019.
+- **Firewalls:**
+  - Cloud firewall plus host ufw: inbound SIP/RTP from the Magrathea handbook's 6 IPs and 6 /26 subnets only; SSH from Andrew's IP only.
+  - Outbound: UDP to Magrathea plus DNS/NTP only. No outbound TCP, verified blocked to Twilio, Supabase and OpenAI.
+- **Endpoint:** `sip-lab` from `416051e` (tests on the VM: 14/14 and 16/16).
+  - `esip.service` runs as unprivileged `esip` in `answer_hold` mode, with a 120 s call cap; **test window extended to 2026-10-09 12:00 UTC (13:00 BST)**: `esip-stop.timer` stops the endpoint and capture then; an `ExecStartPre` guard refuses any start after it; services are enabled so they survive a reboot. The VM and evidence are **not** deleted automatically.
+  - `esip-pcap.service` captures SIP and RTP only.
+  - Evidence is kept private on the VM (`/home/esip/evidence`, `/var/lib/esip-pcap`, mode 700).
+- **Not done from this session:** no Magrathea routing change (the target was set outside this session by 16:25 UTC), no SIP registration. The first call is recorded below.
+- **Teardown:** `/Users/ad/hcg-magrathea-trial/teardown-do.sh` (outside git). It copies the evidence, deletes the droplet, firewall, key and tag, and verifies each is gone. Afterwards, revoke the DO token and delete the Keychain item.
+
+**FIRST LIVE CALL PASSED, 2026-10-08 18:01 UTC (19:01 BST):** [`../carriers/MAGRATHEA-LIVE-CALL-EVIDENCE.md`](../carriers/MAGRATHEA-LIVE-CALL-EVIDENCE.md)
+- Andrew direct-dialled `0330 088 4327` from his iPhone. INVITE from Magrathea `87.238.73.129` → 180 → 200 after 2 s → ACK → caller BYE at 18:01:39 → 200. One INVITE, clean teardown. `cdr=6AC7DA6BAF3B522D`.
+- Two-way G.711 A-law audio (1,044 sent / 1,026 received RTP at 50/s; media from `213.166.4.133`, so the subnet allowlist was needed). A 20.5 s WAV was recorded. The beep was sent exactly 0.4 s every 2.00 s; Andrew perceived about 1 s (handset/network side, unresolved).
+- **Identity:** CLI in `From`/RPID only, **no PAI**, so the call is `presentation_only` and not trust-grade. Asked of Magrathea (M-Q3/M-Q7).
+- **Earlier unexplained call** at 16:25:59 UTC from another number, 5 s, two-way audio (`cdr=6AC7C417GF374B24`). Possibly Magrathea's post-change test; to confirm.
+- **Evidence:** on the VM, plus a SHA-256-verified sealed copy at `/Users/ad/hcg-magrathea-trial/evidence-live-20261008/` (mode 700). **Not in git.**
+- **Billing proof PENDING (M-Q2 CDRs).** Draft for Jay and the next-test review are in the evidence doc §8–§9. Not sent; nothing further approved.
+
+**First live call runbook (2026-10-08; EXECUTED, see above):** [`../carriers/MAGRATHEA-FIRST-LIVE-CALL.md`](../carriers/MAGRATHEA-FIRST-LIVE-CALL.md)
 - UK VM + firewall (Magrathea 6 IPs + 6 /26 subnets).
 - Magrathea support sets target 1 → `S:443300884327@VM_IP`, because our `/number/*` access still returns 401.
 - One direct-dial call with beep + WAV two-way audio proof; rollback.
