@@ -38,7 +38,7 @@
 - **Evidence:** on the VM, plus a SHA-256-verified sealed copy at `/Users/ad/hcg-magrathea-trial/evidence-live-20261008/` (mode 700). **Not in git.**
 - **TEST 2 PASSED, 18:16:35 UTC (19:16 BST):** after 10.12 s, **our server sent the BYE**; Magrathea replied `200 OK` (`CSeq 1 BYE`) in 5 ms; media stopped at the BYE; the VM sent nothing else (`cdr=6AC7DE025F3BB2F9`). Temporary `answer_bye` drop-in removed; `answer_hold` restored at 18:18:23 UTC.
 - **SAFETY-1 OPEN (fix before wider testing):** the BYE is sent once with no retransmission, and the 120 s backstop does nothing after any BYE, so a lost BYE or 200 OK leaves the carrier leg up. Also SAFETY-2 (re-INVITE gets 405) and PRIV-1 (BYE R-URI logged unmasked). Evidence doc §11.
-- **Test 3 (withheld, `141` prefix) READY** in `answer_hold`; evidence doc §12.
+- **TEST 3 PASSED, 18:21:25 UTC (19:21 BST), withheld via the iPhone setting:** `From: anonymous`; **no RPID, PAI or Privacy**; Andrew's number was in no header or SDP; classifier `withheld: true`, `grade: absent`; caller BYE, clean (`cdr=6AC7DF255F3BD120`). HCG can detect "no CLI" but cannot yet tell withheld from unavailable (M-Q3). **No call today carried PAI.** Evidence doc §12.
 - **Billing proof PENDING (M-Q2 CDRs).** Draft for Jay and the next-test review are in the evidence doc §8–§9. Not sent; nothing further approved.
 
 **First live call runbook (2026-10-08; EXECUTED, see above):** [`../carriers/MAGRATHEA-FIRST-LIVE-CALL.md`](../carriers/MAGRATHEA-FIRST-LIVE-CALL.md)

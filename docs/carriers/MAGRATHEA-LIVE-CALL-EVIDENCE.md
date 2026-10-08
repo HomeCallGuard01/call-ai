@@ -1,6 +1,6 @@
 # Magrathea: first live direct-dial call, evidence record
 
-**Result: Call 1 PASS; Test 2 (our BYE) PASS (§10); Test 3 withheld READY (§12).** Billing proof is still pending (M-Q2). **SAFETY-1 open (§11).**
+**Result: Call 1 PASS; Test 2 (our BYE) PASS (§10); Test 3 withheld PASS (§12).** Billing proof is still pending (M-Q2). **SAFETY-1 open (§11).**
 **Date:** Thursday 2026-10-08. **Call:** 18:01:16–18:01:39 UTC (**19:01 BST**), attended by Andrew.
 **Runbook:** [`MAGRATHEA-FIRST-LIVE-CALL.md`](MAGRATHEA-FIRST-LIVE-CALL.md) §5. **Plan:** [`MAGRATHEA-SIP-TRIAL-PLAN.md`](MAGRATHEA-SIP-TRIAL-PLAN.md).
 
@@ -146,12 +146,15 @@ By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 mi
 > - **Signalling:** INVITE from 87.238.73.129 to `S:443300884327@159.65.27.229`; we sent 180 then 200 OK after 2 s; your ACK arrived 118 ms later; the caller cleared with BYE at 18:01:39 and we replied 200 OK. One INVITE, no retransmissions.
 > - **Media:** G.711 A-law both ways at 50 packets/s, RTP from 213.166.4.133. About 1,040 packets each way, with a clean recording on our side.
 >
+> We also ran two follow-up calls: at 18:16 UTC our endpoint cleared the call with BYE (`cdr=6AC7DE025F3BB2F9`; your 200 OK came back in 5 ms), and at 18:21 UTC a withheld-CLI call (`cdr=6AC7DF255F3BD120`) arrived with `From: anonymous`, no RPID, PAI or Privacy header.
+>
 > Could you help with:
 >
 > 1. **Earlier call.** We also received a 5-second call at 16:25:59 UTC (`cdr=6AC7C417GF374B24`) from a number other than our test phone. Was this your post-change test call?
 > 2. **Caller identity verification.** Both calls carried the CLI in `From` and `Remote-Party-ID` (`screen=yes`) only, with no `P-Asserted-Identity`.
 >    - Under Network Mode, would PAI be supplied?
 >    - Is `screen=yes` set by Magrathea after network verification, or passed through from upstream?
+>    - For withheld and unavailable callers (international, payphone), do you ever send a `Privacy` header or a reason, so we can tell them apart?
 >    - Can a VoIP-originated caller set `RPID`, `PAI` or `Diversion` values that reach us unchanged?
 >    - When a customer's mobile diverts to the number (busy / no-answer / unconditional), which headers carry the diverting line (`Diversion` / LDLI), and does that vary by mobile network?
 > 3. **Network-assisted transfer.** After our endpoint has screened a call, we want to pass a trusted caller through to the customer's existing mobile.
@@ -221,15 +224,43 @@ By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 mi
 
 **Until fixed:** every test call stays attended, and the stop rule applies. *If our BYE is not answered with 200 OK within about 1 s, the caller hangs up and testing stops.* No unattended or forwarded-call test (T3–T8, TX1) runs on this code.
 
-## 12. Test 3: withheld caller ID (READY, awaiting Andrew's call)
+## 12. Test 3: withheld caller ID. **PASS (call); CLI withheld**
 
-- **Endpoint:** the normal `answer_hold` mode (restored 18:18:23 UTC), `max_call_s` 120. It answers after 2 s, beeps, and records.
-- **Andrew:** dials **`141 0330 088 4327`** from his iPhone (the UK per-call withhold prefix), and hangs up after about 15 s.
-- **To examine:**
-  - `From` (expected `anonymous`, or the number with a privacy marker);
-  - `Remote-Party-ID` (`privacy=` and `screen=`);
-  - `P-Asserted-Identity`, and whether it is present only when withheld;
-  - `Privacy` (`id`/`header`/`user`);
-  - `X-CALLINFO`;
-  - the classifier's `withheld` and `grade`.
-- **Rule:** a number in any header is **not** treated as verified. The trust grade comes only from PAI, and only after Magrathea confirms its semantics (M-Q3/M-Q7). A withheld number must never be displayed (Schedule 3 §5).
+**Call** at **18:21:25 UTC (19:21 BST)**. Andrew turned off *Settings → Phone → Show My Caller ID* on his iPhone (rather than dialling the `141` prefix) and dialled the DDI normally. Call-ID `e9aad32f-…`, **`X-CALLINFO: cdr=6AC7DF255F3BD120`**. The endpoint was in the normal `answer_hold` mode.
+
+**Method (privacy):** the analysis ran on the VM. Every run of six or more digits was replaced by a tag, and the reference mobile number came from Call 1's raw INVITE in memory, so no number was displayed. Andrew's number is **not** in this record.
+
+### 12.1 Identity headers received (masked)
+
+| Header | Value |
+|---|---|
+| Request-URI | `INVITE sip:<DDI>@159.65.27.229` |
+| `From` | `<sip:anonymous@213.166.3.70>;tag=…` |
+| `Contact` | `<sip:anonymous@213.166.3.70>` |
+| `To` | `<sip:+<DDI>@sip.e.e164.org.uk>` |
+| `Remote-Party-ID` | **absent** (in Calls 1 and 2 it was present: `party=calling;screen=yes;privacy=off`) |
+| `P-Asserted-Identity` | **absent** |
+| `Privacy` | **absent** |
+| Screening indicator | **none** (`screen=` only ever appeared inside RPID, which was removed) |
+| `Diversion` / `History-Info` | absent (direct dial) |
+| `X-CALLINFO` | `cdr=6AC7DF255F3BD120;` |
+| Others | `Record-Route` (`87.238.73.130`, a third edge proxy), 2 × `Via` (`87.238.73.130` ← `213.166.3.70`), `User-Agent: mss-sc V1.0 1015`, `Session-Expires`, `Min-SE`, `Allow`, `Supported` |
+
+**Andrew's mobile number appeared in no header and not in the SDP** (checked every header and the SDP body against the reference number).
+
+Classifier: `presented: null`, `network: null`, **`withheld: true`**, `grade: absent`, `match_identity: null`, `problems: []`. The routing decision would be `monitor`, reason `no_usable_cli`.
+
+### 12.2 Results
+
+| # | Question | Result |
+|---|---|---|
+| 1 | Delivered successfully | **PASS.** INVITE from Magrathea `87.238.73.130` → 100/180 → 200 after 2 s → ACK. Two-way PCMA audio: 1,050 packets sent / 1,039 received. A 20.78 s WAV was recorded |
+| 2 | CLI actually withheld | **YES.** `From` and `Contact` were `anonymous`. Magrathea removed RPID rather than sending it with `privacy=full` |
+| 3 | Field contents | §12.1 |
+| 4 | Any header exposing the mobile | **NONE**, in headers or SDP. No PAI carried the network number either; it is withheld end to end towards us |
+| 5 | Can HCG reliably recognise "withheld" | **It can recognise "no caller ID delivered"** (`From: anonymous`, no RPID or PAI). That fails safe: the call is never trusted and the number is never displayed. **It cannot yet tell *withheld* from *unavailable*** (international, payphone, network-unavailable). Magrathea sent no `Privacy` header or reason code, and we have no unavailable-CLI sample (T10b). Also, a VoIP caller can set `From: anonymous` themselves; that is harmless, because it only ever lowers trust. **PENDING-M (M-Q3):** what does an "unavailable" CLI look like, and is a `Privacy` header or a cause code ever sent? |
+| 6 | Correct termination, nothing unexpected | **PASS.** Caller BYE at 18:21:48.338 (CSeq `BYE`) → our 200 OK 1 ms later. 21.0 s connected. RTP ended at the BYE. **Zero packets from the VM after it.** The only destinations were Magrathea's proxy and the call's media address. No other INVITE arrived (4 on disk in total: 16:25, 18:01, 18:16, 18:21) |
+
+**Evidence:** sealed copy `evidence-live-20261008/vm-evidence-20261008T1822Z-test3.tar.gz` + `vm-sha256-test3.txt` (10 files, checksums match the VM). Outside git, mode 700.
+
+**Summary of identity across the three calls:** no call carried `P-Asserted-Identity`. With CLI shown, the number arrives only in caller-settable `From`/RPID (`screen=yes`). With it withheld, all identity is removed. On today's evidence, HCG has **no network-asserted caller identity** from Magrathea. Trust decisions must not rely on these headers until M-Q3/M-Q7 are answered.
