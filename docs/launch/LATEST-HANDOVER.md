@@ -15,6 +15,13 @@
 - wrote the plan;
 - prepared a **dry-run-default** read-only probe, `scripts/carriers/magrathea-readonly-probe.sh` (7 allowlisted GETs; Keychain credentials; output outside the repo).
 
+**First live call runbook (2026-10-08, PREPARED, NOT EXECUTED):** [`../carriers/MAGRATHEA-FIRST-LIVE-CALL.md`](../carriers/MAGRATHEA-FIRST-LIVE-CALL.md)
+- UK VM + firewall (Magrathea 6 IPs + 6 /26 subnets).
+- Magrathea support sets target 1 → `S:443300884327@VM_IP`, because our `/number/*` access still returns 401.
+- One direct-dial call with beep + WAV two-way audio proof; rollback.
+- Approvals **L1** email, **L2** VM, **L3** routing change, **L4** call.
+- E-SIP now has a subnet allowlist, PCMA/PCMU negotiation, beep out / WAV in, and a 120 s per-call cap (16/16 loopback, 14/14 identity tests; RTP only to allowlisted addresses).
+
 **SIP trial prepared (2026-10-08, local tooling only, nothing deployed):** [`../carriers/MAGRATHEA-SIP-TRIAL-PLAN.md`](../carriers/MAGRATHEA-SIP-TRIAL-PLAN.md)
 - Header-trust model, handset-decided trusted routing, REFER/3xx/transfer all PENDING-M (undocumented by Magrathea).
 - Billing-cessation method, tests T9–T12/T5c/TX1, provider comparison against £5.99, approvals A3–A5-TX, questions M-Q1–M-Q11.

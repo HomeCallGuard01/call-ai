@@ -13,15 +13,31 @@ Header semantics come from Magrathea Schedule 3 s5 (Network Mode CLI):
 - Diversion carries the last diverting line (the CDR's LDLI is the *last* Diversion);
 - privacy=full|yes on RPID/Diversion, or a Privacy header for PAI, means withheld.
 """
+import ipaddress
 import re
 
 DDI_E164 = "+443300884327"
 DDI_RURI_USERS = {"443300884327", "03300884327", "3300884327", "+443300884327"}
-# Documented Magrathea signalling IPs (handbook). Anything else is rejected.
+# Documented Magrathea source addresses (handbook 2025.1, "Firewalls and whitelisting").
+# The six SIP IPs are the minimum; the handbook adds that traffic "may originate from any
+# of the IP addresses contained in the following subnets on any port > 1024".
 MAGRATHEA_SIP_IPS = {
     "87.238.72.129", "87.238.72.130", "87.238.73.129",
     "87.238.73.130", "213.166.3.129", "213.166.3.130",
 }
+MAGRATHEA_SUBNETS = (
+    "87.238.72.128/26", "87.238.73.128/26", "87.238.77.128/26",
+    "213.166.2.128/26", "213.166.3.128/26", "213.166.4.128/26",
+)
+_NETS = [ipaddress.ip_network(n) for n in MAGRATHEA_SUBNETS]
+
+
+def is_magrathea(ip):
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return ip in MAGRATHEA_SIP_IPS or any(addr in n for n in _NETS)
 
 _URI_USER = re.compile(r"<?\s*(?:sips?|tel):\+?([^@;>]*)", re.I)
 
@@ -77,7 +93,7 @@ def classify(raw_invite, source_ip):
     first = lambda n: (h.get(n) or [None])[0]
     problems = []
 
-    if source_ip not in MAGRATHEA_SIP_IPS:
+    if not is_magrathea(source_ip):
         problems.append("source_ip_not_magrathea")
 
     ruri = request_line.split(" ")[1] if " " in request_line else ""

@@ -1,17 +1,23 @@
 {
-  "_comment": "E-SIP template. No secrets: Magrathea delivers to an IP SIP URI, with no auth. public_ip is filled in only at approval A4. evidence_dir must be OUTSIDE the repo.",
+  "_comment": "E-SIP template. No secrets: Magrathea delivers to an IP SIP URI, with no auth. public_ip is filled in only at approval A4. evidence_dir must be OUTSIDE the repo. Allowlist = Magrathea handbook 2025.1 'Firewalls and whitelisting': 6 SIP IPs plus 6 /26 subnets.",
   "listen_ip": "0.0.0.0",
   "listen_port": 5060,
   "public_ip": "REPLACE_AT_A4",
   "rtp_port": 40000,
+  "rtp_slots": 10,
   "allow_ips": [
     "87.238.72.129", "87.238.72.130",
     "87.238.73.129", "87.238.73.130",
     "213.166.3.129", "213.166.3.130"
   ],
-  "mode": "busy",
+  "allow_cidrs": [
+    "87.238.72.128/26", "87.238.73.128/26", "87.238.77.128/26",
+    "213.166.2.128/26", "213.166.3.128/26", "213.166.4.128/26"
+  ],
+  "mode": "answer_hold",
   "ring_s": 2,
-  "bye_after_s": 10,
+  "bye_after_s": 60,
+  "max_call_s": 120,
   "max_runtime_s": 14400,
-  "evidence_dir": "/Users/ad/hcg-magrathea-trial/esip-REPLACE_UTC"
+  "evidence_dir": "/home/esip/evidence"
 }

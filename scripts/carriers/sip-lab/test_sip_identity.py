@@ -112,6 +112,14 @@ def non_magrathea_source_rejected():
 
 
 @case
+def magrathea_subnet_source_accepted():
+    for ip in ("87.238.77.140", "213.166.4.190", "87.238.72.130"):
+        assert s.decide(s.classify(invite(pai=STRANGER), ip), HOUSEHOLD)[0] == "monitor", ip
+    for ip in ("87.238.72.127", "87.238.74.140", "not-an-ip"):
+        assert s.decide(s.classify(invite(pai=STRANGER), ip), HOUSEHOLD)[0] == "reject_403", ip
+
+
+@case
 def wrong_ddi_rejected():
     i = s.classify(invite(ruri_user="441632960999", pai=STRANGER), MAG)
     assert s.decide(i, HOUSEHOLD)[0] == "reject_403"
