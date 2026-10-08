@@ -3,7 +3,7 @@
 **Date:** 2026-10-08.
 **Branch:** `research/magrathea-trial-poc`. Its worktree is `/Users/ad/call-ai-magrathea-trial`, and its base is `ad545a1` (the soft-launch candidate head).
 
-**Status:** plan only. Nothing has been called, purchased, configured, registered, rotated or changed. No Magrathea API request of any kind has been made. Credentials are not in this repo, this document or any handover. They have not been seen in this session.
+**Status:** plan only, plus approved read-only probes (A2, §2.3–2.4: five GETs on 2026-10-08 (R1 ×3, R2, R6); only one returned 200). Nothing has been called, purchased, configured, registered, rotated or changed. Credentials are not in this repo, this document or any handover. They have not been seen in this session.
 
 **Isolation:** this workstream does not touch:
 - the Build 17 staging test (plan `8d3b60e`, handover `ad545a1`);
@@ -27,6 +27,8 @@ Labels used below:
 | Trial DDI | `0330 088 4327` (+44 330 088 4327) | Non-geographic 03 number. Magrathea's Schedule 3 defines "Geographic" as including 01/02/03, and the handbook says 03 numbers carry "no charge … no out-payment" (DOC). Its current target is **unknown**, so read it first (R6) |
 | REST / NTS API access | `https://restapi.magrathea.net:8443/v1/` (Basic auth). NTSAPI raw TCP is `api.magrathea-telecom.co.uk:777` | REST is preferred: "new features will go into REST only" (DOC) |
 | Outbound SIP account | `112168` @ `sipgw.magrathea.net` | **Outbound** (origination) account, prepaid (DOC). Not needed for inbound delivery (see §5) |
+| Inbound account | `WHBILL1172` | Confirmed by Magrathea on 2026-10-08. This is the inbound (numbering) account. It is **not** `112168` (see §2.4) |
+| Trial API scope | REST limited to **managing the trial number** | Magrathea (Hayley), 2026-10-08. "Additional features" and **encrypted CDRs via FTP** are full-account only (§2.4, §3.5) |
 | Credentials | Received separately by Andrew | **Never** in chat, the repo, docs, logs or shell history. Rotate before any test (§2) |
 
 **Contract constraints that apply to the trial (DOC, Schedule 3 v2026.6 §8):**
@@ -125,6 +127,69 @@ Further shape checks would require reading the secret back out of the Keychain. 
 
 **Question to Magrathea:** which account ID is the REST login scoped to (for `account/detail`, `balance`, `gettariff` and `cdrs`)? Is it the same as the SIP account 112168? Once Magrathea confirms the ID, it goes in the script's `ACCOUNT` constant, and the next run needs a fresh approval.
 
+**Run 4 (approved: R6 and R7 only), 2026-10-08 14:12:05 UTC:**
+- The probe gained `--only=` (it can only narrow the allowlist; unknown IDs or paths exit 2) and now stops on **any** non-200 response (exit 5), not just 401/403.
+- **R6 `GET /number/status/03300884327` returned HTTP 401.**
+  - The body was **not** Magrathea's JSON error. It was a generic Apache Tomcat 9.0.31 "HTTP Status 401 – Unauthorized" HTML page ("lacks valid authentication credentials for the target resource").
+- The script stopped. **R7 was not sent.** One request in total.
+- Raw output: `/Users/ad/hcg-magrathea-trial/probe-20261008T141205Z/`.
+
+**Interpretation (inference, not confirmed):**
+- The same credentials returned 200 on `account/services` nine minutes earlier.
+- The differing 401 here suggests a container-level role check on `/number/*`. That points to the REST user lacking the number-management permission; the account-scope problem seen on `account/detail` is a separate issue.
+- R1 reported only `CPORTAL` and `NTSAPIUSER`. The guide's permission list also includes others (for example `ACCMGMT`), which may be needed for number and account resources.
+
+**Status: A2 PARTIAL. R1 passed. R2 and R6 were refused. R3–R5 and R7 were not run.**
+- No trial-number status, routing, restriction or expiry data was obtained.
+
+**Questions to Magrathea:**
+1. Which account ID is the REST login scoped to?
+2. Which permissions does it need for `number/status`, `block/info`, `account/detail`, `balance`, `gettariff` and `cdrs`, and can they be granted read-only?
+3. What are the trial DDI's current routing target and expiry date? Magrathea can also answer this directly while API access is sorted.
+
+### 2.4 Magrathea clarification and 401 analysis (2026-10-08, documents and existing redacted results only, no requests)
+
+**Magrathea stated (CONFIRMED by Magrathea, relayed by Andrew):**
+- The inbound account number is **`WHBILL1172`**.
+- Hayley: REST API access on the trial is **limited to managing our trial number**.
+- Additional features, and **encrypted CDRs via FTP**, need a full account.
+
+**What this explains:**
+- **R2's 401 on `account/detail/112168` is now explained** (inference, strongly supported):
+  - `112168` is the outbound SIP account, not the inbound account;
+  - account resources are outside the trial REST scope anyway.
+  - R2–R5 (`detail`, `balance`, `gettariff`, `cdrs`) should be treated as **not available on the trial**. Do not try `WHBILL1172` with them unless Magrathea says account endpoints are in scope; that would need a script change and a fresh approval.
+  - The script's `ACCOUNT` constant stays `112168` for now and is not edited.
+
+**Why `number/status` returned 401 (R6, run 4). Each candidate cause, checked against the docs and existing evidence:**
+
+| Candidate | Evidence | Verdict |
+|---|---|---|
+| **Endpoint wrong** | The live docs list `GET /number/status/{FullNumber}` exactly. The guide's examples use the same 11-digit national format (`01234567890`) as ours (`03300884327`). `block/info/{FullNumber}` also matches the docs. | **Ruled out** (DOC) |
+| **Request configuration** | Same script, the same Keychain items and the same Basic auth that got **200 on R1** nine minutes earlier. A loopback test proved the auth header is formed correctly. We send `Accept: application/json` without `Content-Type`; the docs' curl sample sends both, but a GET has no body. | **Very unlikely** |
+| **Number not ours** | The docs say this case returns the application's **JSON** `{error=Wrong username,password or account}` (documented 401), or 400 "Account not Active", or 404 "not activated". We got none of those. | **Unlikely** as the direct cause |
+| **Permission / authentication layer** | The body was a **generic Tomcat 9.0.31 HTML 401** ("lacks valid authentication credentials for the target resource"). So the request was refused **before** the application code that produces the documented JSON errors. That points to a separate, container-level check on `/number/*` that did not accept this login. Typical Tomcat behaviour is 401 for "not authenticated" and 403 for "authenticated but no role". So this suggests the `/number/*` credential check rejected the login outright, rather than a missing role. | **Most likely** (INFERRED) |
+
+**What could sit behind that layer (cannot be told apart without Magrathea or another request):**
+- (a) The login is **not yet enabled for number management**, even though Hayley describes that as the trial scope.
+  - Number operations are the NTSAPI functions exposed over REST.
+  - R1's `NTSAPIUSER` field holds a **non-flag value**. It may be a linked NTSAPI identity that `/number/*` authenticates against. It stayed redacted and was not inspected further.
+- (b) The login was **locked out or changed** between 14:03 and 14:12. Four refusals so far: 12:48, 12:56, 14:03 R2, 14:12 R6. A container lockout is possible but unproven.
+- (c) The trial DDI is on `WHBILL1172` and the login is linked to a different customer context.
+
+**So:** the endpoint and our request are almost certainly correct. The refusal is on Magrathea's side: permission or authentication provisioning for `/number/*`. Only Magrathea can confirm which.
+
+**What this means for the plan:**
+1. **Balance, tariff restriction and CDRs cannot be verified by API on the trial.**
+   - Test 6 (per-leg charges) and test 7 (spend and destination limits) must rely on:
+     - Magrathea's written answers;
+     - the **MAGIC portal**: R1 showed `CPORTAL = 1`, so Andrew can look himself, by hand, with no API call;
+     - and, for MNO legs, the handset bills.
+2. **LF-2 proof cannot use the CSV `LDLI` field on the trial,** because FTP CDRs are full-account only.
+   - The trial can still test the **Network Mode `Diversion` header** captured at E-SIP (T8). That is the only LF-2 evidence source available before a full account.
+3. **Financial protection:** nothing here changes §7. Prepaid is still not a proven cap. On the trial, HCG cannot read the balance or restriction by API, so it cannot monitor spend automatically either.
+4. **Possible conflict to confirm (Q12):** the handbook's inbound-pricing table, as extracted from the PDF, has a passage saying incoming-call costs are "deducted from your prepaid account balance … depending on whether they originate from a mobile network or a landline". The PDF column layout makes it unclear which product that applies to.
+
 The probe now writes `raw/` and `redacted/` (`scripts/carriers/magrathea-redact.py`). Only `redacted/` is ever read in-session.
 
 `-w` as the last argument makes `security` prompt for the password. If the macOS version does not prompt, stop and do not pass the password on the command line.
@@ -199,6 +264,30 @@ NTSAPI (TCP 777) is not used at all: same commands, no extra read value.
 - **No spend cap API.** There is no daily or monthly limit, no hard stop and no alert. The only controls are tariff *restriction* (destination price class) and a prepaid balance.
 - **No real-time call or CDR feed.** `account/cdrs` gives the "last few calls" with limited fields. Full CDRs (including `inbound`, `outbound`, `result`, `cpacc`, `cpstop`, **`LDLI`**) are a daily CSV ZIP, available the day after, downloaded through MAGIC/FTP. Access is **CONFIRM** (Q8).
 - **No number-level diversion data in the API.** Diversion identity appears only in **SIP headers** (Network Mode) and in the CSV `LDLI` field.
+
+### 3.5 What "managing the trial number" should cover (guide v1.2.9 §4, Schedule 3 §8, handbook; Magrathea to CONFIRM)
+
+The trial package is the NTSAPI numbering product: "access to our NTSAPI where you can provision up to 25 numbers, with 2 channels each" (handbook; Schedule 3 §8.1). On REST, number management is the `/number/*` resource (plus `blkinfo`).
+
+| Operation | Effect | Expected on trial | Use in this trial |
+|---|---|---|---|
+| `GET /number/status/{n}` | **Read**: status (`ACTIVATED`/Y/N), **expiry**, targets | Yes | R6. **First call once access works** |
+| `GET /block/info/{n}` | **Read**: is the number in a block | Probably | R7 |
+| `PUT /number/feature/{n}/{CALLERID or ACR}` (no `enabled`) | Read a feature flag (docs: "feature is only retrieved") | Probably | Tier R2. Same PUT as the write form, so only with explicit approval |
+| `POST /number/set/{n}` | **Write**: set target 1–3 (SIP / PSTN / fax) | Yes | A4 (C1: SIP target to E-SIP) |
+| `PUT /number/order/{n}/{i}/{DEWS}` | **Write**: failover order and time of day | Yes | Not needed. Default is target 1 |
+| `PUT /number/feature/{n}/{f}?enabled=` | **Write**: CALLERID / ACR | Yes | Not planned. CALLERID would replace the caller's CLI, which breaks test 2 |
+| `POST /number/info/{n}` | **Write**: 80-character info text | Yes | Not needed |
+| `PUT /number/setpin/{n}` | **Write**: PIN | Yes | Not needed |
+| `allocate` / `activate` / `alist` / `deactivate` / `reactivate` | **Write**: obtain or release numbers (≤25 on trial) | Possibly | **Never** in this trial. Deactivation loses the number |
+| `account/*`, FTP CDRs, `nine/*`, porting | | **No** (Magrathea: full account only; Schedule 3 §8.4: no porting) | R2–R5 out of scope |
+
+**Gap this leaves:**
+- With account endpoints and CDRs unavailable on the trial, **every money question is answered outside the API**:
+  - portal (MAGIC, `CPORTAL = 1`);
+  - Magrathea's written answers;
+  - handset bills.
+- Plan these as manual evidence steps in A5. Do not build automation on them.
 
 ---
 

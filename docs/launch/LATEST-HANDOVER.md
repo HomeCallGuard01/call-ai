@@ -15,7 +15,19 @@
 - wrote the plan;
 - prepared a **dry-run-default** read-only probe, `scripts/carriers/magrathea-readonly-probe.sh` (7 allowlisted GETs; Keychain credentials; output outside the repo).
 
-**Not done:** zero API calls, calls, purchases, forwarding changes, transfers, SIP registration, rotation or provider configuration. Credentials have never been seen and are not stored anywhere in the repo. The Build 17 test, Twilio, production, pricing and customer records were not touched.
+**Magrathea clarification (2026-10-08, after run 4). Analysis is in plan §2.4 and §3.5; no further requests were made:**
+- **The inbound account is `WHBILL1172`.** `112168` is outbound only, which explains R2's 401.
+- **Trial REST access is limited to managing the trial number.** Account endpoints (balance, tariff, CDRs) and **encrypted FTP CDRs are full-account only**. So R2–R5 are out of trial scope; do not run them against `WHBILL1172` without Magrathea saying they are in scope.
+- **R6 401 cause:**
+  - The endpoint and number format match the docs (ruled out).
+  - The request is the same one that got 200 on R1 (very unlikely to be the cause).
+  - The Tomcat HTML 401 (not the documented JSON 401) means a container-level check on `/number/*` refused the login. Magrathea needs to enable or confirm number access for this login, or confirm there was no lockout.
+- **Consequences:**
+  - money questions on the trial (balance, restriction, per-leg charges) come from the MAGIC portal (`CPORTAL = 1`), Magrathea's written answers and handset bills, not the API;
+  - LF-2 trial evidence = the SIP `Diversion` header only, because `LDLI` needs FTP CDRs.
+- **Proposed next step:** Magrathea confirms `/number/status` access for this login on `03300884327`, then **one** approved run of `--only=R6,R7`.
+
+**Not done (earlier entries; five read-only GETs have since been made under A2, see below):** zero API calls, calls, purchases, forwarding changes, transfers, SIP registration, rotation or provider configuration. Credentials have never been seen and are not stored anywhere in the repo. The Build 17 test, Twilio, production, pricing and customer records were not touched.
 
 **Key findings:**
 - **The HTTP method is not a safety signal:**
@@ -29,6 +41,13 @@
 - **The outbound account `112168` is NOT needed** for the first live tests. It matters only for LF-2 option A placed through Magrathea.
 - **LF-2 carrier route:** Network Mode `Diversion` header plus the CSV `LDLI` field could give **passive** forwarding proof on each MNO. This needs Magrathea's written OK (network numbers must never reach end users) and a live T8 test on each MNO.
 - **Trial terms:** no commercial use, 2 channels. Use **Andrew's devices only.** Do not use the Build 17 iPhone or the production Motorola as the forwarding test handset.
+
+**A2 run 4 (2026-10-08 14:12 UTC), R6 and R7 only (approved): R6 refused.**
+- **R6 `number/status/03300884327` returned HTTP 401**, a generic Tomcat page, not Magrathea's JSON error. The script stopped; **R7 was not sent.** One request.
+- **Likely cause (inference):** the REST user lacks the number permission. This is separate from the account-scope problem on R2.
+- **No number status, routing, restriction or expiry data was obtained.**
+- The probe now has `--only=` (it can only narrow the allowlist) and stops on any non-200 response. This script change is uncommitted.
+- **Next:** ask Magrathea for the REST account ID, the read-only permissions for number and account resources, and the DDI's current routing and expiry (plan §2.3, run 4). Then a fresh approval for any re-run.
 
 **A2 run 3 (2026-10-08 14:03 UTC), after Magrathea reset the password: PARTIAL.**
 - **R1 `account/services` returned HTTP 200, so authentication works.** `CPORTAL = 1`; the `NTSAPIUSER` field is redacted.
@@ -56,7 +75,7 @@
 
 **Approvals needed, in order:**
 - **A1:** done. Credentials are in Keychain (`hcg-magrathea-rest-user`, `hcg-magrathea-rest`); rotation deferred as F-1.
-- **A2:** read-only probes R1–R7. **Partial:** R1 passed (14:03 UTC); R2 returned 401 because of account scope. Waiting for Magrathea to confirm the REST account ID (plan §2.3).
+- **A2:** read-only probes. **Partial:** R1 passed (14:03 UTC). R2–R5 are out of trial scope (inbound account `WHBILL1172`; account endpoints are full-account only). R6 returned a Tomcat 401 (14:12 UTC), and Magrathea must enable or confirm `/number/*` access before one approved R6+R7 run (plan §2.4).
 - **A3:** send the 13 questions to Magrathea.
 - **A4:** E-SIP capture VM plus `number/set` of the DDI.
 - **A5a/b/c:** live call sessions (plus the test handset's forwarding change).
