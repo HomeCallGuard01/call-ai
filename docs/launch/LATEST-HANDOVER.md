@@ -15,6 +15,12 @@
 - wrote the plan;
 - prepared a **dry-run-default** read-only probe, `scripts/carriers/magrathea-readonly-probe.sh` (7 allowlisted GETs; Keychain credentials; output outside the repo).
 
+**SIP trial prepared (2026-10-08, local tooling only, nothing deployed):** [`../carriers/MAGRATHEA-SIP-TRIAL-PLAN.md`](../carriers/MAGRATHEA-SIP-TRIAL-PLAN.md)
+- Header-trust model, handset-decided trusted routing, REFER/3xx/transfer all PENDING-M (undocumented by Magrathea).
+- Billing-cessation method, tests T9–T12/T5c/TX1, provider comparison against £5.99, approvals A3–A5-TX, questions M-Q1–M-Q11.
+- Tooling in `scripts/carriers/sip-lab/`: identity classifier (13/13 offline tests) and answer-only E-SIP capture endpoint (10/10 loopback tests).
+- Nothing deployed, registered or called.
+
 **Magrathea clarification (2026-10-08, after run 4). Analysis is in plan §2.4 and §3.5; no further requests were made:**
 - **The inbound account is `WHBILL1172`.** `112168` is outbound only, which explains R2's 401.
 - **Trial REST access is limited to managing the trial number.** Account endpoints (balance, tariff, CDRs) and **encrypted FTP CDRs are full-account only**. So R2–R5 are out of trial scope; do not run them against `WHBILL1172` without Magrathea saying they are in scope.

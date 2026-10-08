@@ -1,0 +1,17 @@
+{
+  "_comment": "E-SIP template. No secrets: Magrathea delivers to an IP SIP URI, with no auth. public_ip is filled in only at approval A4. evidence_dir must be OUTSIDE the repo.",
+  "listen_ip": "0.0.0.0",
+  "listen_port": 5060,
+  "public_ip": "REPLACE_AT_A4",
+  "rtp_port": 40000,
+  "allow_ips": [
+    "87.238.72.129", "87.238.72.130",
+    "87.238.73.129", "87.238.73.130",
+    "213.166.3.129", "213.166.3.130"
+  ],
+  "mode": "busy",
+  "ring_s": 2,
+  "bye_after_s": 10,
+  "max_runtime_s": 14400,
+  "evidence_dir": "/Users/ad/hcg-magrathea-trial/esip-REPLACE_UTC"
+}
