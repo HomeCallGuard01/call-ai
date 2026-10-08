@@ -30,6 +30,16 @@
 - **LF-2 carrier route:** Network Mode `Diversion` header plus the CSV `LDLI` field could give **passive** forwarding proof on each MNO. This needs Magrathea's written OK (network numbers must never reach end users) and a live T8 test on each MNO.
 - **Trial terms:** no commercial use, 2 channels. Use **Andrew's devices only.** Do not use the Build 17 iPhone or the production Motorola as the forwarding test handset.
 
+**A2 run 3 (2026-10-08 14:03 UTC), after Magrathea reset the password: PARTIAL.**
+- **R1 `account/services` returned HTTP 200, so authentication works.** `CPORTAL = 1`; the `NTSAPIUSER` field is redacted.
+- **R2 `account/detail/112168` returned HTTP 401** "Wrong username, password or account". The script stopped; R3–R7 were not sent. Two requests in total.
+- **Likely cause (inference):** `112168` is the SIP account ID, not the account the REST login is scoped to.
+- **Next:**
+  - ask Magrathea for the correct REST account ID, and do not guess it;
+  - then a fresh approval to run R2–R7.
+  - R6/R7 (number status, block info) don't use the account ID and could run alone with approval.
+- Still unknown: account status, number status, balance, tariff and CDRs. Plan §2.3.
+
 **A2 status after the retry (2026-10-08 12:56 UTC): still BLOCKED on authentication. Two requests in total, both R1, both HTTP 401.**
 - Andrew corrected the username; it was verified at 7 characters without being displayed.
 - The approved single retry returned the same "Wrong username, password or account". R2–R7 were not sent.
@@ -46,7 +56,7 @@
 
 **Approvals needed, in order:**
 - **A1:** done. Credentials are in Keychain (`hcg-magrathea-rest-user`, `hcg-magrathea-rest`); rotation deferred as F-1.
-- **A2:** read-only probes R1–R7. **Blocked:** two 401s; waiting for Magrathea to confirm the REST login (plan §2.3).
+- **A2:** read-only probes R1–R7. **Partial:** R1 passed (14:03 UTC); R2 returned 401 because of account scope. Waiting for Magrathea to confirm the REST account ID (plan §2.3).
 - **A3:** send the 13 questions to Magrathea.
 - **A4:** E-SIP capture VM plus `number/set` of the DDI.
 - **A5a/b/c:** live call sessions (plus the test handset's forwarding change).

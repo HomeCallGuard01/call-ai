@@ -104,6 +104,27 @@ Further shape checks would require reading the secret back out of the Keychain. 
 - Is there any source-IP restriction?
 - Are the REST and NTSAPI/portal credentials the same?
 
+**Run 3 (approved after Magrathea reset the password), 2026-10-08 14:03:00 UTC:**
+- Before the run, Magrathea (Jay Dhaliwal) confirmed the REST API password had been amended. Andrew updated the `hcg-magrathea-rest` Keychain item; the username is unchanged.
+- **R1 `GET /account/services` returned HTTP 200. Authentication now works.**
+  - Redacted body: `CPORTAL = "1"`, plus an `NTSAPIUSER` field.
+  - The `NTSAPIUSER` value is not a 0/1 flag, so it may be an identifier. It stays redacted and was not displayed.
+- **R2 `GET /account/detail/112168` returned HTTP 401** with `{"error": "Wrong username, password or account"}`.
+  - The same login authenticated one request earlier, so the likely cause is the account ID: this REST login is not authorised for account `112168`.
+  - That ID came from the outbound SIP account (§1). It may not be the customer/billing account that the REST login belongs to. This is an inference, not confirmed.
+- The script stopped on the 401 as designed. **R3–R7 were not sent.** Two requests in total.
+- Raw output: `/Users/ad/hcg-magrathea-trial/probe-20261008T140300Z/`.
+- No other account IDs were tried. Guessing would breach the misuse clause.
+
+**Status: A2 PARTIAL.**
+- R1 passed.
+- R2 was blocked, apparently by account scope.
+- R3–R7 were not run:
+  - R3–R5 (balance, tariff, CDRs) are blocked until the correct account ID is known;
+  - R6–R7 (number status, block info) have no account ID in the path, so they could run on their own with a fresh approval.
+
+**Question to Magrathea:** which account ID is the REST login scoped to (for `account/detail`, `balance`, `gettariff` and `cdrs`)? Is it the same as the SIP account 112168? Once Magrathea confirms the ID, it goes in the script's `ACCOUNT` constant, and the next run needs a fresh approval.
+
 The probe now writes `raw/` and `redacted/` (`scripts/carriers/magrathea-redact.py`). Only `redacted/` is ever read in-session.
 
 `-w` as the last argument makes `security` prompt for the password. If the macOS version does not prompt, stop and do not pass the password on the command line.
