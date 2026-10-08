@@ -32,11 +32,33 @@ ALLOWLIST=(
 )
 
 EXECUTE=0
-case "${1:-}" in
-  "") ;;
-  --execute) EXECUTE=1 ;;
-  *) echo "usage: $0 [--execute]" >&2; exit 2 ;;
-esac
+ONLY=""
+for arg in "$@"; do
+  case "$arg" in
+    --execute) EXECUTE=1 ;;
+    --only=*) ONLY="${arg#--only=}"      # comma-separated IDs, e.g. --only=R6,R7
+              [[ -n "$ONLY" ]] || { echo "--only needs at least one probe id" >&2; exit 2; } ;;
+    *) echo "usage: $0 [--execute] [--only=R1,R2,...]" >&2; exit 2 ;;
+  esac
+done
+
+# --only can only narrow the allowlist, never add to it.
+if [[ -n "$ONLY" ]]; then
+  SELECTED=()
+  IFS=',' read -r -a WANT <<< "$ONLY"
+  for w in "${WANT[@]}"; do
+    # Each probe runs at most once (Magrathea misuse clause).
+    for s in "${SELECTED[@]+"${SELECTED[@]}"}"; do
+      [[ "${s%% *}" == "$w" ]] && { echo "duplicate probe id '$w'" >&2; exit 2; }
+    done
+    found=0
+    for entry in "${ALLOWLIST[@]}"; do
+      [[ "${entry%% *}" == "$w" ]] && { SELECTED+=("$entry"); found=1; }
+    done
+    [[ $found -eq 1 ]] || { echo "unknown probe id '$w' (not in allowlist)" >&2; exit 2; }
+  done
+  ALLOWLIST=("${SELECTED[@]}")
+fi
 
 if [[ $EXECUTE -eq 0 ]]; then
   echo "DRY RUN: no network calls. Would GET, once each:"
@@ -78,6 +100,10 @@ for entry in "${ALLOWLIST[@]}"; do
   # do not guess credentials).
   if [[ "$code" == "401" || "$code" == "403" ]]; then
     echo "STOP: authentication refused on $id; no further requests made." >&2; exit 4
+  fi
+  # Any other non-200 is unexpected: stop rather than carry on blind.
+  if [[ "$code" != "200" ]]; then
+    echo "STOP: unexpected HTTP $code on $id; no further requests made." >&2; exit 5
   fi
 done
 
