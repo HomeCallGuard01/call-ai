@@ -17,7 +17,8 @@ set +x
 API="https://restapi.magrathea.net:8443/v1"
 ACCOUNT="112168"
 DDI="03300884327"
-KEYCHAIN_SERVICE="hcg-magrathea-rest"
+KEYCHAIN_SERVICE="hcg-magrathea-rest"            # password
+KEYCHAIN_USER_SERVICE="hcg-magrathea-rest-user"  # username
 EVIDENCE_ROOT="/Users/ad/hcg-magrathea-trial"
 
 ALLOWLIST=(
@@ -44,30 +45,40 @@ if [[ $EXECUTE -eq 0 ]]; then
   exit 0
 fi
 
-# Credentials: account name and secret both from Keychain; never printed.
-USER_NAME="$(security find-generic-password -s "$KEYCHAIN_SERVICE" 2>/dev/null \
-  | sed -n 's/^ *"acct"<blob>="\(.*\)"$/\1/p')"
-if [[ -z "$USER_NAME" ]]; then
-  echo "Keychain item '$KEYCHAIN_SERVICE' not found; see plan §2.2." >&2; exit 3
+# Credentials: username and password are separate Keychain items (both entered at a
+# hidden prompt, so neither appears in any command line or history); never printed.
+kc() { security find-generic-password -s "$1" -w 2>/dev/null; }
+# curl config quoting: escape backslash and double quote.
+cfg_escape() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+if ! kc "$KEYCHAIN_USER_SERVICE" >/dev/null || ! kc "$KEYCHAIN_SERVICE" >/dev/null; then
+  echo "Keychain items '$KEYCHAIN_USER_SERVICE' / '$KEYCHAIN_SERVICE' not found; see plan §2.2." >&2; exit 3
 fi
 
 umask 077
 OUT="${EVIDENCE_ROOT}/probe-$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -p "$OUT"
-chmod 700 "$EVIDENCE_ROOT" "$OUT"
+mkdir -p "$OUT/raw" "$OUT/redacted"
+chmod 700 "$EVIDENCE_ROOT" "$OUT" "$OUT/raw" "$OUT/redacted"
+REDACT="$(cd "$(dirname "$0")" && pwd)/magrathea-redact.py"
 
 for entry in "${ALLOWLIST[@]}"; do
   id="${entry%% *}"; path="${entry#* }"
   code="$(
-    { printf 'user = "%s:' "$USER_NAME"
-      security find-generic-password -s "$KEYCHAIN_SERVICE" -w | tr -d '\n'
-      printf '"\n'
+    { printf 'user = "%s:%s"\n' \
+        "$(kc "$KEYCHAIN_USER_SERVICE" | tr -d '\n' | cfg_escape)" \
+        "$(kc "$KEYCHAIN_SERVICE" | tr -d '\n' | cfg_escape)"
     } | curl -sS -K - -X GET --max-time 20 \
           -H 'Accept: application/json' \
-          -o "$OUT/${id}.json" -w '%{http_code}' "${API}${path}"
+          -o "$OUT/raw/${id}.json" -w '%{http_code}' "${API}${path}"
   )" || code="curl-error"
   printf '%s\t%s\tGET %s\n' "$(date -u +%FT%TZ)" "$code" "$path" >> "$OUT/index.tsv"
-  echo "$id GET $path -> $code (body in $OUT/${id}.json)"
+  python3 -I "$REDACT" "$OUT/raw/${id}.json" > "$OUT/redacted/${id}.json" 2>/dev/null \
+    || echo '{"_redaction":"failed; raw not shown"}' > "$OUT/redacted/${id}.json"
+  echo "$id GET $path -> HTTP $code"
+  # Never retry or continue on an authentication failure (Magrathea misuse clause:
+  # do not guess credentials).
+  if [[ "$code" == "401" || "$code" == "403" ]]; then
+    echo "STOP: authentication refused on $id; no further requests made." >&2; exit 4
+  fi
 done
 
-echo "Done. Review $OUT; do not copy contents into the repo or chat."
+echo "Done. Raw: $OUT/raw (private). Redacted: $OUT/redacted. Never copy raw into the repo or chat."
