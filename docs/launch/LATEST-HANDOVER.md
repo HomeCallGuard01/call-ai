@@ -30,9 +30,23 @@
 - **LF-2 carrier route:** Network Mode `Diversion` header plus the CSV `LDLI` field could give **passive** forwarding proof on each MNO. This needs Magrathea's written OK (network numbers must never reach end users) and a live T8 test on each MNO.
 - **Trial terms:** no commercial use, 2 channels. Use **Andrew's devices only.** Do not use the Build 17 iPhone or the production Motorola as the forwarding test handset.
 
+**A2 status after the retry (2026-10-08 12:56 UTC): still BLOCKED on authentication. Two requests in total, both R1, both HTTP 401.**
+- Andrew corrected the username; it was verified at 7 characters without being displayed.
+- The approved single retry returned the same "Wrong username, password or account". R2–R7 were not sent.
+- A local fake-credential test proved that the script sends Basic auth correctly, so the cause is the credentials or the account's REST enablement.
+- **Do not retry** until Magrathea confirms which REST login, permissions and IP rules apply (plan §2.3).
+- Still unknown: account status, number status, balance, tariff and CDRs.
+
+**First attempt (2026-10-08 12:48 UTC): BLOCKED on authentication.**
+- Andrew approved A2 and said rotation should not delay the trial; rotation is follow-up **F-1**.
+- R1 returned **HTTP 401** "Wrong username, password or account". The script stopped, so R2–R7 were not sent (one request in total, no retry).
+- **No account, number, balance, tariff or CDR data was obtained.**
+- The stored username is 69 characters long, so a mis-paste is likely. Andrew needs to check it locally and re-enter it, or confirm with Magrathea which REST credentials and permissions apply.
+- Details are in plan §2.3.
+
 **Approvals needed, in order:**
-- **A1:** Andrew rotates the passwords and enters them in Keychain (plan §2).
-- **A2:** read-only probes R1–R7.
+- **A1:** done. Credentials are in Keychain (`hcg-magrathea-rest-user`, `hcg-magrathea-rest`); rotation deferred as F-1.
+- **A2:** read-only probes R1–R7. **Blocked:** two 401s; waiting for Magrathea to confirm the REST login (plan §2.3).
 - **A3:** send the 13 questions to Magrathea.
 - **A4:** E-SIP capture VM plus `number/set` of the DDI.
 - **A5a/b/c:** live call sessions (plus the test handset's forwarding change).

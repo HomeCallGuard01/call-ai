@@ -47,12 +47,64 @@ The passwords have been transmitted outside a secret store, so treat them as exp
 - **Also ask** (Q2): restrict 112168 to **IP authentication or dual authentication** rather than registration-only, and confirm that nothing is registered to it today.
 
 ### 2.2 Local entry (nothing typed into chat)
-Store both secrets in the macOS login Keychain, entered by Andrew at an interactive prompt. Andrew runs these himself with the `!` prefix, so the prompt appears in his terminal and the value never appears in the conversation:
+**Revised 2026-10-08.** Andrew stores the REST username and password as two Keychain items, typed at hidden prompts in a **separate Terminal window**, not via `!`. No secret then appears on any command line, in shell history or in this session:
 
 ```
-! security add-generic-password -U -s hcg-magrathea-rest -a "<rest-username>" -w
-! security add-generic-password -U -s hcg-magrathea-sip-112168 -a "112168" -w
+security add-generic-password -U -s hcg-magrathea-rest-user -a hcg -w   # REST username
+security add-generic-password -U -s hcg-magrathea-rest      -a hcg -w   # REST password
 ```
+
+The SIP secret for 112168 is not needed until an outbound test is approved, so it is not stored. **Andrew decided (2026-10-08) not to delay the trial for rotation. The existing trial credentials are used, and rotation is a recorded follow-up (F-1).**
+
+### 2.3 A2 execution log
+
+**Run 1, 2026-10-08 12:48:36 UTC:**
+- **R1 `GET /account/services` returned HTTP 401** with the redacted body `{"error": "Wrong username, password or account"}`.
+- The script stopped by design. **R2–R7 were not sent.** There was one request in total, and no retry.
+- Raw output is in `/Users/ad/hcg-magrathea-trial/probe-20261008T124836Z/` (outside the repo).
+
+**Confirmed (non-revealing checks):**
+- both Keychain items exist;
+- neither value has leading or trailing whitespace, control or non-ASCII characters, or characters that need curl-config escaping;
+- the password is 10 characters;
+- **the stored username is 69 characters long, which is unusually long for an API username.** Most likely a wrong value was pasted, such as a whole line or label, or the wrong field.
+
+**Not established:**
+- whether the REST login is a different credential from the one stored (for example, the outbound SIP account's username or password);
+- whether the REST user lacks a permission (CPORTAL / NTSAPIUSER);
+- whether Magrathea restricts REST access by source IP.
+
+Further shape checks would require reading the secret back out of the Keychain. The session's permission system blocked that, and it was not worked around.
+
+**Next:**
+1. Andrew checks the stored username himself, in his own Terminal, and re-enters it if wrong.
+2. If it is correct, ask Magrathea which username and permissions the REST API expects (this can go in A3).
+3. Only then one re-run, with the same allowlist and the same stop-on-401 rule.
+
+**Run 2 (approved single retry), 2026-10-08 12:56:11 UTC:**
+- Before the run, Andrew corrected the username, and it was **verified as 7 characters** (length only; the value was not displayed).
+- **R1 returned HTTP 401 again**, with the same redacted body `{"error": "Wrong username, password or account"}`. The script stopped, and **R2–R7 were not sent.**
+- Raw output: `/Users/ad/hcg-magrathea-trial/probe-20261008T125610Z/`.
+
+**Script mechanics ruled out:**
+- A local loopback test with fake credentials containing `$`, `"` and `\` showed that `curl -K -` sends exactly `user:password` as Basic auth to the right path with GET.
+- No traffic went to Magrathea during this test.
+
+**Status: A2 BLOCKED on authentication after two attempts in total (2 requests).** No further attempts until Magrathea confirms the REST login. This respects their misuse clause ("do not try to guess user credentials") and avoids a possible lockout.
+
+**Likely causes (to confirm with Magrathea; not established):**
+- the credentials supplied are for the MAGIC portal, NTSAPI or the SIP account, not a REST API user;
+- the REST user lacks the required permission (the guide says it needs "a main account and one or more of CPORTAL, ACCMGMT, … NTSAPIUSER");
+- the password is wrong;
+- REST access is not yet enabled on the trial account.
+
+**Questions to Magrathea (can be sent on their own, ahead of A3):**
+- Which username format does the REST API expect for our account?
+- Is REST access enabled, and with which permissions?
+- Is there any source-IP restriction?
+- Are the REST and NTSAPI/portal credentials the same?
+
+The probe now writes `raw/` and `redacted/` (`scripts/carriers/magrathea-redact.py`). Only `redacted/` is ever read in-session.
 
 `-w` as the last argument makes `security` prompt for the password. If the macOS version does not prompt, stop and do not pass the password on the command line.
 
