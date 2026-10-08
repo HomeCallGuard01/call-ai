@@ -1,6 +1,6 @@
 # Magrathea: first live direct-dial call, evidence record
 
-**Result: PASS** (technical). Billing proof is still pending (M-Q2).
+**Result: Call 1 PASS; Test 2 (our BYE) PASS (§10); Test 3 withheld READY (§12).** Billing proof is still pending (M-Q2). **SAFETY-1 open (§11).**
 **Date:** Thursday 2026-10-08. **Call:** 18:01:16–18:01:39 UTC (**19:01 BST**), attended by Andrew.
 **Runbook:** [`MAGRATHEA-FIRST-LIVE-CALL.md`](MAGRATHEA-FIRST-LIVE-CALL.md) §5. **Plan:** [`MAGRATHEA-SIP-TRIAL-PLAN.md`](MAGRATHEA-SIP-TRIAL-PLAN.md).
 
@@ -158,9 +158,78 @@ By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 mi
 >    - Do you support SIP REFER, or follow a 302 redirect from our endpoint, on inbound calls?
 >    - If so, does your leg leave the path or stay up, and what is charged for the new leg, to whom and at what rate?
 >    - Is there any other provider-assisted way to do this?
-> 4. **Billing evidence.** Could you send the CDRs for both calls (`result`, duration, `debit`, inbound charge), and confirm whether the prepaid balance is a hard stop?
+> 4. **Billing evidence.** Could you send the CDRs for these calls (also `cdr=6AC7DE025F3BB2F9`, 18:16 UTC, where our endpoint cleared with BYE) (`result`, duration, `debit`, inbound charge), and confirm whether the prepaid balance is a hard stop?
 >
 > Our test endpoint is scheduled to stop at 13:00 BST on Fri 9 Oct. After that, calls to the number will fail until we arrange the next test window with you.
 >
 > Thanks,
 > Andrew
+
+---
+
+## 10. Test 2: HCG-controlled termination (BYE from our side). **PASS**
+
+**Approved by Andrew 2026-10-08 (Tests 2 and 3).** Call at **18:16:35 UTC (19:16 BST)**, direct dial from Andrew's iPhone. Call-ID `3cb313be-3de7-1240-5c97-005056a51fcb`, **`X-CALLINFO: cdr=6AC7DE025F3BB2F9`**.
+
+**Set-up (temporary, now removed):** a systemd drop-in `esip.service.d/zz-test2.conf` ran E-SIP with `--mode answer_bye` and a copy of the config with `bye_after_s: 10`. Everything else was unchanged: `max_call_s` 120, the 12 allowlist ranges, firewalls, capture and the 13:00 BST stop/guard.
+
+**Pre-flight (before asking Andrew to call):** a loopback check against a Magrathea-shaped INVITE (Record-Route, two Vias, Contact on another host, real values 10 s / 120 s). **13/13 PASS on the Mac and 13/13 on the VM** (127.0.0.1 only). Existing suites: 16/16 and 14/14.
+
+| UTC | Direction | Message |
+|---|---|---|
+| 18:16:35.005 | Magrathea `87.238.72.129` → E-SIP | `INVITE` (a different edge proxy from Call 1's `.73.129`) |
+| 18:16:35.007 | E-SIP → Magrathea | `100 Trying`, `180 Ringing` |
+| 18:16:37.008 | E-SIP → Magrathea | `200 OK` (PCMA) |
+| 18:16:37.126 | Magrathea → E-SIP | `ACK` |
+| **18:16:47.129** | **E-SIP → Magrathea** | **`BYE`** (timeline event `bye`, reason `bye_after_s`), with `Route: <sip:87.238.72.129;lr;…>`; Request-URI = the caller UA Contact on `213.166.3.70` |
+| **18:16:47.135** | **Magrathea → E-SIP** | **`200 OK`, `CSeq: 1 BYE`** (5 ms later) |
+
+| Check | Result | Evidence |
+|---|---|---|
+| 1. Our server initiated the disconnection with BYE | **PASS** | Timeline `bye` / `bye_after_s`; the pcap shows the BYE leaving `159.65.27.229`. Andrew did not hang up; the call dropped on his iPhone |
+| 2. Magrathea acknowledged it | **PASS** | `200 OK` with `CSeq: 1 BYE` from the same proxy, 5 ms later. Single BYE, no retransmission needed |
+| 3. Duration; media stopped | **PASS** | Answer → BYE = **10.12 s** (ring 2.0 s; INVITE → BYE 12.12 s). RTP out: 501 packets, 18:16:37.128–18:16:47.128, ending at the BYE. RTP in: 493 packets, last at 18:16:47.158, which is in flight. **Zero packets from the VM after BYE + 50 ms, and zero packets to the VM after BYE + 1 s.** WAV 9.82 s, `two_way_audio: true` |
+| 4. No further activity or charges initiated by us | **PASS (our side)** | Since 18:16:30 the VM sent packets **only** to Magrathea's proxy `87.238.72.129` and the call's media address `213.166.3.182`. No INVITE, REFER or 3xx was sent (the `send()` guard). Nothing arrived after the call. Magrathea's own charge for the inbound leg is **pending its CDR** (M-Q2) |
+
+**Beep:** 5 complete beeps of 0.40 s at exactly 2.00 s intervals, plus a single 20 ms frame at 10.00 s as the BYE fired. Andrew reported hearing "approximately 10 beeps". That is the same 2:1 ratio as Call 1 ("about every second"). So the server sends one beep per 2 s, and the handset hears roughly two events per 2 s, consistently. This is **unexplained**. Hypotheses, not verified: the abrupt start and stop of each tone are heard as two clicks; or echo or processing in the mobile path. It doesn't affect any PASS. It is worth a ramped-tone check in a later approved call.
+
+**Restored:** the drop-in and test config were removed at 18:18:23 UTC. The `start` event shows `answer_hold`, `max_call_s` 120 and 12 ranges. The deadline guard is present; the timer still fires at Fri 12:00 UTC; ufw still has 25 rules.
+
+**Evidence:** sealed copy `evidence-live-20261008/vm-evidence-20261008T1817Z-test2.tar.gz` + `vm-sha256-test2.txt` (8 files, checksums match the VM). Outside git, mode 700.
+
+## 11. SAFETY-1: the 120 s backstop does not cover an unacknowledged BYE (fix before wider testing)
+
+**Found:** 2026-10-08 during Test 2 review (code reading; it did **not** occur in any call). **Status: OPEN.** Not fixed, to keep the VM's code unchanged during the approved window.
+
+**Defect** (`scripts/carriers/sip-lab/esip_capture.py`, `send_bye`):
+1. `send_bye` sends the BYE **once** over UDP and sets `state = "bye_sent"` immediately. There is no retransmission (RFC 3261 non-INVITE Timer E: 0.5 s, doubling to 4 s, until Timer F = 32 s).
+2. The 120 s `max_call_s` timer calls the same `send_bye`, which returns early unless `state == "up"`. **After any BYE has been sent, the backstop is a no-op.**
+3. **Failure scenario:** our BYE, or Magrathea's 200 OK, is lost. Our media stops (the RTP loop needs `state == "up"`), but **Magrathea's leg, the caller and any forwarding leg stay up** until the caller hangs up. That could be a paid leg on a forwarded call. Nothing on our side would ever retry, and the only record would be a `bye` event with no inbound `200 OK`.
+4. The same applies when the 120 s cap BYE itself is lost in `answer_hold` mode.
+
+**Related findings (same review):**
+- **SAFETY-2:** an in-dialog re-INVITE (for example a session refresh; Magrathea sends `Session-Expires: 1900;refresher=uac`) is treated as an unknown method and gets **405**, not 200 OK with the same SDP. This is irrelevant under a 120 s cap, but it must be handled before any call can last near 1,900 s.
+- **PRIV-1:** the timeline logs the BYE Request-URI unmasked, and that URI contains the caller's number (the INVITE Contact). The timeline is private (mode 600, outside git), but the design intent is that the timeline holds only masked numbers.
+
+**Fix to make before wider testing (needs approval to deploy):**
+- Retransmit the BYE on Timers E/F until a final response.
+- On a 2xx/481, mark the call `done`. On a timeout, log `bye_unconfirmed` and raise it as a stop-rule event.
+- Let the `max_call_s` timer re-send the BYE when the state is `bye_sent` and unconfirmed.
+- Answer re-INVITEs with 200 OK and the same SDP.
+- Mask the Request-URI user in logged lines.
+- Add loopback tests that drop the first BYE and the first 200 OK.
+
+**Until fixed:** every test call stays attended, and the stop rule applies. *If our BYE is not answered with 200 OK within about 1 s, the caller hangs up and testing stops.* No unattended or forwarded-call test (T3–T8, TX1) runs on this code.
+
+## 12. Test 3: withheld caller ID (READY, awaiting Andrew's call)
+
+- **Endpoint:** the normal `answer_hold` mode (restored 18:18:23 UTC), `max_call_s` 120. It answers after 2 s, beeps, and records.
+- **Andrew:** dials **`141 0330 088 4327`** from his iPhone (the UK per-call withhold prefix), and hangs up after about 15 s.
+- **To examine:**
+  - `From` (expected `anonymous`, or the number with a privacy marker);
+  - `Remote-Party-ID` (`privacy=` and `screen=`);
+  - `P-Asserted-Identity`, and whether it is present only when withheld;
+  - `Privacy` (`id`/`header`/`user`);
+  - `X-CALLINFO`;
+  - the classifier's `withheld` and `grade`.
+- **Rule:** a number in any header is **not** treated as verified. The trust grade comes only from PAI, and only after Magrathea confirms its semantics (M-Q3/M-Q7). A withheld number must never be displayed (Schedule 3 §5).
