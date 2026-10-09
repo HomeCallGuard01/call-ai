@@ -360,13 +360,13 @@ The script was syntax-checked, and its refusal path was tested (exit 2).
 
 | ID | Decision | Notes |
 |---|---|---|
-| **D1** | ~~Send the §2 questions to Jay~~ **Answered in part by Ben, ticket LKV-51353-279 (§0).** New: send the §8 questions to Ben | No cost. Blocks the bridge decision (§6), the commercial decision (§7) and the per-call billing proof |
+| **D1** | **APPROVED 2026-10-09 to prepare; Andrew sends.** Draft: [`MAGRATHEA-QUESTIONS-FOR-BEN-DRAFT.md`](MAGRATHEA-QUESTIONS-FOR-BEN-DRAFT.md). Not sent automatically | No cost |
 | **D2** | ~~Deploy the fixed E-SIP to the VM~~ **DONE 2026-10-09 08:05 UTC** (`827c6bb`, §1.2); rollback copy kept | — |
 | **D3** | ~~Approve Test 4~~ **DONE: PASS 2026-10-09 09:58 UTC** | Motorola busy-divert to be restored via Lebara support |
 | **D4** | ~~Window~~ **DONE: extended to Sat 13:00 BST** | Endpoint self-stops ≈ Sat 09:06 BST (24 h limit) |
-| **D5** | ~~Test 5 (REFER)~~ **CANCELLED: REFER not supported.** New: whether to pursue a two-leg bridge at all (§6) | Recommendation: **not** until §8 B1–B3 are answered; it fails the hard-exposure rule today |
-| **D6** | Teardown: approve `DEAC` (or ask Magrathea to un-route) and, once un-routing is confirmed, run `teardown-do.sh --magrathea-confirmed "…"` | DEAC is a routing change: separate approval |
-| **D7** | Commercial: whether Magrathea is worth pursuing at HCG's current scale (§7) | Recommendation: not as the primary carrier now; revisit at scale or with a different commercial arrangement |
+| **D5** | ~~Test 5 (REFER)~~ **CANCELLED.** **Andrew 2026-10-09: do not build or test a two-leg bridge or REFER** | — |
+| **D6** | **HOLD (Andrew 2026-10-09):** do not run DEAC and do not delete the server yet. The services still stop at Sat 13:00 BST; the droplet keeps billing (≤ $4.80/month) until teardown | Later: DEAC/un-routing confirmed in writing, then `teardown-do.sh --magrathea-confirmed "…"` |
+| **D7** | **DECIDED (Andrew 2026-10-09): Magrathea PARKED as primary carrier at current volumes; retained as a possible future option** (§7) | Revisit at scale or with a start-up arrangement |
 
 ---
 
