@@ -1,6 +1,19 @@
-# LATEST HANDOVER (updated 2026-10-08: Magrathea trial prepared; Build 17 state below unchanged since 2026-10-06 ~19:35 UTC)
+# LATEST HANDOVER (updated 2026-10-09: Magrathea Test 4 PASSED, provider answers recorded; Build 17 state below unchanged since 2026-10-06 ~19:35 UTC)
 
-## 0. NEW 2026-10-09: Magrathea transfer readiness (safety fixes done, test plan PROPOSED)
+## 0. NEW 2026-10-09 (afternoon): Magrathea answered; Test 4 PASSED; REFER not supported
+
+[`../carriers/MAGRATHEA-TRANSFER-READINESS.md`](../carriers/MAGRATHEA-TRANSFER-READINESS.md) §0, §6–§8; evidence §13.
+- **Magrathea (Ben, ticket LKV-51353-279), confirmed:**
+  - REFER not supported; inbound to SIP free;
+  - UK mobile outbound £0.0069/min, £0.01 minimum (live; trial may differ), billed for the full connected duration;
+  - prepaid stops new calls but **no limit ends a call in progress**;
+  - live numbering account **£100/month minimum**; Network Mode CLI needs an agreement; trial number can be deactivated with `DEAC`;
+  - the 2026-10-08 16:25 UTC call was their test.
+- **Test 4 PASS** (09:58 UTC, CDR `6AC8BAC7JF4CE809`): Lebara iPhone → Lebara Motorola busy-divert → DDI. Caller in From/RPID, **diverting mobile in `Diversion`**, no PAI, no alerts. The Motorola's busy-divert then went inactive and re-registration is refused; restore via Lebara support.
+- **Test 5 (REFER) cancelled.** Two-leg bridge assessed (§6): buildable, but **not safe** without a Magrathea network-side bound on connected outbound calls. Commercial (§7): **not suitable now** (£100/month ≈ 115 Twilio numbers' rental; ≈ 22 Stripe subscribers' contribution); possibly at ≥150–300 subscribers, best for app delivery. Questions for Ben B1–B7 (§8), not sent.
+- **Server:** deadline extended to **Sat 2026-10-10 12:00 UTC (13:00 BST)**; the endpoint self-stops ≈ Sat 08:06 UTC (24 h limit). Teardown needs DEAC/un-routing approval (D6).
+
+## 0b. 2026-10-09 (morning): Magrathea transfer readiness (safety fixes done, test plan PROPOSED)
 
 [`../carriers/MAGRATHEA-TRANSFER-READINESS.md`](../carriers/MAGRATHEA-TRANSFER-READINESS.md)
 - **D2 DONE 2026-10-09 08:05 UTC:** fixes deployed to the VM (`827c6bb`; rollback `/opt/sip-lab.rollback-416051e`; config unchanged; health check passed without a call; 12:00 UTC stop unchanged). Test 4 revised: the spare mobile forwards, the iPhone only calls.

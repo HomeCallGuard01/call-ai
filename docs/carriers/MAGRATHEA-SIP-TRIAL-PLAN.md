@@ -73,6 +73,8 @@
 
 ## 5. REFER, redirect and provider-assisted transfer: all PENDING-M
 
+> **Update 2026-10-09 (Magrathea, Ben, ticket LKV-51353-279): SIP REFER is NOT supported.** 302/redirect and provider-assisted transfer remain unanswered (PENDING-M). See `MAGRATHEA-TRANSFER-READINESS.md` §0 and §6.
+
 Magrathea's guide, handbook, NTSAPI guide and resource docs contain **no** mention of SIP REFER, 3xx redirect handling or call transfer (searched 2026-10-08). The only "transfer" in the REST API moves funds. So:
 - **Nothing in this group is tested unless Magrathea confirms support in writing.** E-SIP's guard blocks REFER and 3xx today.
 - If Magrathea confirms one, the gated test is:

@@ -1,6 +1,6 @@
 # Magrathea: first live direct-dial call, evidence record
 
-**Result: Call 1 PASS; Test 2 (our BYE) PASS (§10); Test 3 withheld PASS (§12).** Billing proof is still pending (M-Q2). **SAFETY-1 open (§11).**
+**Result: Call 1 PASS; Test 2 (our BYE) PASS (§10); Test 3 withheld PASS (§12); Test 4 forwarded call PASS (§13, 2026-10-09).** Per-call billing proof (CDR durations and debits) is still pending. **SAFETY-1 fixed and deployed 2026-10-09** (`MAGRATHEA-TRANSFER-READINESS.md` §1). Magrathea's written answers (ticket LKV-51353-279) are recorded in `MAGRATHEA-TRANSFER-READINESS.md` §0.
 **Date:** Thursday 2026-10-08. **Call:** 18:01:16–18:01:39 UTC (**19:01 BST**), attended by Andrew.
 **Runbook:** [`MAGRATHEA-FIRST-LIVE-CALL.md`](MAGRATHEA-FIRST-LIVE-CALL.md) §5. **Plan:** [`MAGRATHEA-SIP-TRIAL-PLAN.md`](MAGRATHEA-SIP-TRIAL-PLAN.md).
 
@@ -81,7 +81,9 @@ Open with Magrathea (M-Q3, M-Q7): is PAI added under Network Mode, and is the RP
 | Caller | A **different** UK number from Andrew's mobile (masked; `presentation_only`, no PAI) |
 | Outcome | Answered 16:26:01.527; BYE from the caller side at 16:26:06.431 (about 4.9 s talk); two-way audio (240 sent / 239 received); 4.78 s WAV recorded |
 
-By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 minutes after the endpoint started (16:07 UTC). The routing change and this call were not made from this session. **To confirm with Magrathea:** was this their own post-change test call?
+By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 minutes after the endpoint started (16:07 UTC). The routing change and this call were not made from this session.
+
+**Answered 2026-10-09 (Magrathea, Ben, ticket LKV-51353-279, as relayed by Andrew):** this was Magrathea's own test call (their "17:26" = 16:25:59 UTC = 17:25:59 BST), and the inbound calls were free.
 
 ## 6. Evidence custody (outside git)
 
@@ -96,10 +98,12 @@ By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 mi
 
 - **Account:** exactly 1 droplet (`607324203`, `s-1vcpu-512mb-10gb`, created 16:07:33 UTC), 1 firewall, 1 SSH key. No volumes, no reserved IPs.
 - **Cost:** $0.00595/h, capped at $4.00/month by DigitalOcean.
-  - To 13:00 BST Friday (about 44 h): about **$0.26**.
+  - To 13:00 BST Friday (about 20 h): about **$0.12**. *Corrected 2026-10-09: this line said "about 44 h, $0.26"; 16:07 UTC Thu to 12:00 UTC Fri is 19.9 h. 44 h / $0.26 is the figure to Saturday 12:00 UTC.*
+  - **Deadline extended 2026-10-09 10:10 UTC to Sat 2026-10-10 12:00 UTC (13:00 BST), approved by Andrew:** about 43.9 h × $0.00595 = **$0.26 (≈ $0.31 incl. VAT, ≈ £0.24)**. The timer does not affect billing; the droplet bills until `teardown-do.sh` runs.
   - Worst case if never torn down: $4.80 including VAT (≈ £3.60–3.85) per month. **Within the £5 ceiling.**
   - Billing continues after the SIP services stop until `teardown-do.sh` is run.
-- **Window:** `esip-stop.timer` stops the endpoint and capture at **Fri 2026-10-09 12:00:00 UTC = 13:00 BST**. An `ExecStartPre` guard (epoch `1791547200`) refuses any start after then. The VM and evidence are kept.
+- **Window (original):** `esip-stop.timer` stops the endpoint and capture at **Fri 2026-10-09 12:00:00 UTC = 13:00 BST**. An `ExecStartPre` guard (epoch `1791547200`) refuses any start after then. The VM and evidence are kept.
+- **Window (extended 2026-10-09 10:10 UTC):** **Sat 2026-10-10 12:00:00 UTC = 13:00 BST**; guard epoch `1791633600` on both services. Rollback copy of the changed unit files: `/root/pre-extend-20261009T1010Z`. Firewall rules, SIP config, code and main units were unchanged (checksums), and the running process was not restarted. **Separately**, the endpoint's own `max_runtime_s` 86400 stops it about **Sat 08:06 UTC (09:06 BST)**, 24 h after its 08:05:57 UTC start; `Restart=no` keeps it down. Capture runs to the deadline.
 
 ## 8. Next isolated test: what it must establish (review only; nothing implemented or approved)
 
@@ -264,3 +268,56 @@ Classifier: `presented: null`, `network: null`, **`withheld: true`**, `grade: ab
 **Evidence:** sealed copy `evidence-live-20261008/vm-evidence-20261008T1822Z-test3.tar.gz` + `vm-sha256-test3.txt` (10 files, checksums match the VM). Outside git, mode 700.
 
 **Summary of identity across the three calls:** no call carried `P-Asserted-Identity`. With CLI shown, the number arrives only in caller-settable `From`/RPID (`screen=yes`). With it withheld, all identity is removed. On today's evidence, HCG has **no network-asserted caller identity** from Magrathea. Trust decisions must not rely on these headers until M-Q3/M-Q7 are answered.
+
+---
+
+## 13. Test 4: mobile busy-divert reaches HCG. **PASS** (Fri 2026-10-09)
+
+**Call** at **09:58:31 UTC (10:58 BST)**, attended by Andrew. Call-ID `d33cdc73-…`, **`X-CALLINFO: cdr=6AC8BAC7JF4CE809`**.
+
+**Route:** Andrew's iPhone (Lebara) called a spare **Motorola on a Lebara UK monthly SIM**. Andrew declined on the Motorola, whose busy-divert (`**67*`) had been set to `0330 088 4327` for the test. The Lebara network diverted the call to Magrathea, which delivered it to E-SIP. The endpoint ran its normal deployed `answer_hold` mode (`827c6bb`, 120 s cap); no config change was made for the test. No onward leg, no transfer, no outbound call.
+
+**Lebara note:** Lebara's help page says "call forwarding isn't available at the moment". In practice the `**67*` registration to the 03 number was accepted and worked once. Afterwards the Motorola's `*#67#` showed **inactive**, and both re-registration attempts (`**67*03300884327#`, `**67*+443300884327#`) returned Android's generic "Connection problem or invalid MMI code". The cause is unconfirmed (Lebara-side removal or barring, or the handset's supplementary-service path). The Motorola's original busy destination has to be restored via Lebara support. HCG's own activation code is `**21*` (forward all calls), so earlier HCG successes on Lebara were a different service and destination type.
+
+### 13.1 Signalling and media (timeline and pcap agree)
+
+| Time (UTC) | Direction | Message |
+|---|---|---|
+| 09:58:31.668 | Magrathea `87.238.72.129` → VM | INVITE (CSeq …163) |
+| 09:58:31.672–.673 | VM → Magrathea | 100 Trying, 180 Ringing |
+| 09:58:33.674 | VM → Magrathea | 200 OK (2 s ring, as configured) |
+| 09:58:33.784 | Magrathea → VM | ACK |
+| 09:58:40.514 | Magrathea → VM | **BYE (caller side)** |
+| 09:58:40.515 | VM → Magrathea | 200 OK (1 ms) |
+
+- **Connected about 6.8 s** (200 OK to BYE). Andrew hung up before the planned 20 s; that is within the approved bound.
+- Two-way PCMA audio: 337 packets sent / 335 received (pcap), media from `213.166.4.136`. 6.68 s recorded.
+- **Zero packets from the VM more than 1 s after the last SIP message.** The only destinations were Magrathea's proxy and the call's media address. No other call arrived.
+- **No ALERT events.** This was the first live call on the deployed safety code; the caller-BYE path worked (the new BYE-retransmit paths were not needed).
+
+### 13.2 Identity headers (masked; analysed on the VM, reference number compared in memory only)
+
+| Header | Value |
+|---|---|
+| `From`, `Contact` | `<sip:<CALLER>@87.238.73.155>`: **the original caller (Andrew's iPhone)**, matching Call 1's reference number |
+| `Remote-Party-ID` | `<sip:<CALLER>@…>;party=calling;screen=yes;privacy=off` |
+| **`Diversion`** | **`<sip:<FORWARDING MOBILE>@87.238.73.155>;privacy=off;screen=yes;reason=unknown`**: an 11-digit national number ending …030, **the Motorola that diverted the call** (Andrew to confirm the last digits) |
+| `P-Asserted-Identity`, `Privacy`, `History-Info` | **absent** |
+| `X-CALLINFO` | `cdr=6AC8BAC7JF4CE809;` |
+| Others | `Record-Route` `87.238.72.129`; 2 × `Via` (`87.238.72.129` ← `87.238.73.155`); `User-Agent: mss-sc V1.0 1015`; `Allow: INVITE, BYE, CANCEL, ACK` (no REFER, as on every call); `Supported: timer`; `Session-Expires: 1900;refresher=uac` |
+
+Classifier: caller `presentation_only`; diversion `identity …030`, `source diversion`, `reason unknown`, `count 1`, `grade unverified`; `problems: []`. The caller's number was not in the SDP.
+
+### 13.3 Results
+
+| # | Question | Result |
+|---|---|---|
+| 1 | A mobile busy-divert to the Magrathea 03 number is delivered to HCG's SIP endpoint | **PASS** (Lebara; other networks untested) |
+| 2 | Original caller identifiable | **YES, as presented CLI only** (`From`/RPID, `screen=yes`). Still no PAI; not network-asserted to us |
+| 3 | Forwarding customer identifiable | **YES**: `Diversion` carries the diverting mobile. This is the header HCG would use to map a call to a customer. `reason=unknown` (not `user-busy`), so the divert type is not reliably reported |
+| 4 | HCG cleared correctly, nothing unexpected | **PASS** (caller BYE → 200 OK in 1 ms; no packets afterwards; no alerts) |
+| 5 | Magrathea agrees | Andrew reports that Magrathea (Ben, ticket LKV-51353-279) confirmed Test 4 passed, with the caller in RPID/From and the forwarding number in Diversion |
+| 6 | Billing | **PENDING**: CDR `6AC8BAC7JF4CE809` duration and charge; Lebara usage on both SIMs |
+
+**Evidence:** sealed copy `evidence-live-20261008/20261009T1008Z-test4.tar` + `.sha256` (outside git, mode 600 in a 700 folder). Re-verified 2026-10-09 11:4x UTC: archive checksum OK, and all 11 non-pcap files match the VM (the pcap is still being appended to). The archive holds the complete evidence set for all five calls.
+

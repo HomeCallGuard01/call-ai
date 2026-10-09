@@ -1,13 +1,43 @@
 # Magrathea: screened-call transfer readiness (Fri 2026-10-09)
 
 **Goal:** prove whether Magrathea can support a **financially viable** transfer of a screened call to a customer's existing mobile.
-**Status:**
-- Phase 1 safety fixes are done and tested, and **deployed to the VM 2026-10-09 08:05 UTC (D2, commit `827c6bb`)**; see §1.2.
-- Phase 2 questions are ready (not sent).
-- Phase 3 plans are **proposed, not approved**.
-- Phase 4 teardown is prepared (not run).
+**Status (updated 2026-10-09 afternoon):**
+- **Magrathea has answered in writing (ticket LKV-51353-279): SIP REFER is NOT supported.** Provider facts in §0.
+- Phase 1 safety fixes are done, tested and **deployed to the VM (D2, `827c6bb`)**; §1.2.
+- **Test 4 (mobile busy-divert → HCG) PASSED** 09:58 UTC; §3.1 and the evidence doc §13.
+- **Test 5 (REFER transfer) is CANCELLED**: REFER is unsupported. No REFER test is proposed and none will be implemented. The only remaining route is an HCG-controlled **two-leg bridge**, assessed in §6 (not approved, not built).
+- Commercial fit at £5.99 vs Twilio: §7. Remaining questions for Ben: §8.
+- Server deadline extended to **Sat 2026-10-10 13:00 BST** (§4). Teardown prepared, not run.
 
-**Nothing in this document originated a call, enabled forwarding or transfer, or changed routing.**
+**Nothing in this document originated a call, enabled outbound SIP, forwarding or transfer, or changed routing.**
+
+---
+
+## 0. Provider facts: Magrathea's written answers (2026-10-09)
+
+**Source:** a written reply from **Ben at Magrathea**, ticket **LKV-51353-279**, as relayed to us by Andrew (we hold Andrew's summary, not the email itself). Each item below is **CONFIRMED (Magrathea)** unless marked otherwise.
+
+| # | Topic | Magrathea's answer | Status / caveat |
+|---|---|---|---|
+| P1 | SIP REFER | **Not supported** | CONFIRMED. Consistent with every INVITE's `Allow: INVITE, BYE, CANCEL, ACK`. 302/redirect and provider-assisted transfer were **not** answered: still unconfirmed (§8) |
+| P2 | Ordinary inbound calls to our SIP server | **Free** | CONFIRMED. Includes the trial calls (P9) |
+| P3 | UK mobile outbound termination | **£0.0069/min, minimum charge £0.01**, on a **live** account | CONFIRMED for live. **Trial rates may differ.** Billing increment, connection charge, VAT basis and per-network variation not stated (§8) |
+| P4 | Outbound billing duration | **Billed for the entire connected duration** | CONFIRMED |
+| P5 | Spending limits | Trial prepaid balance **prevents further chargeable calls** once exhausted; **spending limits do NOT terminate calls already in progress** | CONFIRMED. So no Magrathea limit bounds a call that is already connected. Whether the **live** account has the same new-call stop is not stated |
+| P6 | Live inbound numbering account | **Contractual £100/month minimum**; outbound charges are separate | CONFIRMED. Whether usage or rentals count towards the minimum is not stated (§8) |
+| P7 | Network Mode CLI | Available, **subject to an additional agreement** | CONFIRMED. Whether it brings P-Asserted-Identity is not stated |
+| P8 | Trial number deactivation | Possible with the **`DEAC` API command** | CONFIRMED. Running it is a routing change: **separate approval** (D6). Our REST `/number/*` access returned 401, so which interface/credentials apply is open |
+| P9 | The earlier 2026-10-08 call (their "17:26" = our 16:25:59 UTC) | **Magrathea's own test**; inbound calls were free | CONFIRMED |
+| P10 | Test 4 | Passed: original caller in RPID/From, forwarded customer's number in `Diversion` | CONFIRMED by Magrathea, and matches our own evidence (evidence §13). CDR `6AC8BAC7JF4CE809` |
+
+**Still assumptions or unknowns (do not treat as facts):**
+- per-call **durations and debits** for the five CDRs (none received);
+- trial outbound rates; billing increment; connection charges; VAT basis;
+- any **network-side maximum call duration**, session-timer enforcement on outbound legs, or a way to clear a live call;
+- whether the live account has a hard stop for new calls, alerts, or channel/destination restrictions on outbound `112168`;
+- whether 302/redirect or any provider-assisted transfer exists;
+- whether a two-leg bridge via `112168` is permitted, and on what terms;
+- `Diversion` population on EE, Vodafone, O2 and Three (Test 4 proves Lebara only).
 
 Evidence: [`MAGRATHEA-LIVE-CALL-EVIDENCE.md`](MAGRATHEA-LIVE-CALL-EVIDENCE.md). Plans: [`MAGRATHEA-SIP-TRIAL-PLAN.md`](MAGRATHEA-SIP-TRIAL-PLAN.md), [`MAGRATHEA-TRIAL-PLAN.md`](MAGRATHEA-TRIAL-PLAN.md).
 
@@ -97,7 +127,9 @@ New tests S15 (a real process, SIGTERM mid-call: BYE confirmed, exit < 1 s) and 
 
 ---
 
-## 2. Phase 2: remaining questions for Jay (supersedes the open items in the evidence doc §9)
+## 2. Phase 2: questions for Jay (2026-10-09 morning) — **SUPERSEDED by §0 and §8**
+
+Status of each question after Ben's reply: Q1(a) REFER **answered: not supported**; Q1(b)/(c) **open**; Q2 **moot for REFER**, open for any other method; Q3 **partly answered** (full connected duration billed; no limit ends a live call); Q4 **partly answered** (mobile £0.0069/min live, £0.01 minimum; £100/month minimum); Q5 open; Q6 open; Q7 **partly answered** (Network Mode CLI needs an agreement); Q8 **partly answered** (P5); Q9 **partly answered** (16:25 call was Magrathea's; inbound free; no CDR durations or debits yet); Q10 **partly answered** (DEAC exists). The open parts are carried into §8. The original text is kept below for the record.
 
 Background to send with them:
 - Three successful calls on 2026-10-08 (CDR refs below), each answered and recorded;
@@ -164,10 +196,22 @@ Two separate phones:
 E-SIP runs the **fixed** code (D2). The tests are attended and one call at a time. The parent stop rules apply, plus: *no 200 OK to our BYE within 1 s, or any ALERT event → stop*.
 
 Splitting this into two tests is deliberate.
-- **Test 4 needs nothing from Magrathea** and has no HCG-billed onward leg.
-- **Test 5 (the actual transfer) is blocked** on Magrathea's answers (Q1–Q6, Q8) and on an E-SIP code change: the output guard forbids REFER and 3xx today.
+- **Test 4 needs nothing from Magrathea** and has no HCG-billed onward leg. **EXECUTED, PASS** (§3.1).
+- **Test 5 (REFER transfer) is CANCELLED**: Magrathea does not support REFER (§0 P1). The output guard still forbids REFER and 3xx, and stays that way.
 
-### 3.1 Test 4: forwarded call reaches HCG; HCG clears it. Ready on approval (D3)
+### 3.1 Test 4: forwarded call reaches HCG. **EXECUTED 2026-10-09 09:58 UTC: PASS**
+
+**Result** (full record: evidence doc §13):
+- Andrew's iPhone (Lebara) → spare **Motorola on Lebara** (busy-divert `**67*` to the DDI; Andrew declined) → Magrathea → E-SIP. CDR `6AC8BAC7JF4CE809`.
+- Original caller in `From`/RPID (`screen=yes`); **the Motorola in `Diversion`** (`reason=unknown`); no PAI.
+- About 6.8 s connected; the **caller hung up** (Magrathea BYE → our 200 OK in 1 ms); no packets afterwards; **no alerts** (first live call on `827c6bb`).
+
+**Deviations from the plan below:**
+- the endpoint stayed in its deployed `answer_hold` mode (no `answer_bye` drop-in, no config change); the planned 20 s became a caller hang-up at about 7 s;
+- P-B was the Lebara Motorola, so the Lebara help page's "call forwarding isn't available" did not hold in practice for one registration;
+- **after the call the Motorola's busy-divert showed inactive and re-registration was refused** ("Connection problem or invalid MMI code"). Its original destination must be restored through Lebara support. Cause unconfirmed.
+
+The original plan is kept below for the record.
 
 **Revised 2026-10-09 at Andrew's request:** a **spare mobile** is the forwarding "customer" phone, so **no setting changes on Andrew's personal iPhone**.
 - **P-A, caller:** Andrew's personal iPhone. Nothing changed on it, apart from making sure *Show My Caller ID* is **back ON** (it was turned off for Test 3).
@@ -228,7 +272,9 @@ A spare **PAYG SIM with a small credit balance (or a contract with an Ofcom spen
 | 8 | Is the iPhone's number stored as a contact on the spare (irrelevant to the network, but it avoids confusion) | — |
 | 9 | Confirmation that the spare SIM and iPhone are **not** HCG customer or production numbers, and have no HCG forwarding today | No production impact |
 
-### 3.2 Test 5: screened-call transfer to the customer mobile. BLOCKED
+### 3.2 Test 5: screened-call transfer to the customer mobile. **CANCELLED (REFER not supported)**
+
+> **2026-10-09:** Magrathea confirmed SIP REFER is not supported (§0 P1). This REFER-based test will not be run, and no REFER code will be written. A 302/redirect is unanswered but would still create a paid onward leg billed for its full duration (P4), so it is not pursued as a test. The remaining option, an HCG-controlled two-leg bridge, is assessed in §6. The text below is historical.
 
 **Proposed route** (only once Magrathea confirms a method in writing):
 1. P-A → P-B (CFB/CFNRy) → divert to `0330 088 4327`.
@@ -283,19 +329,21 @@ A hairpin is recorded as **FAIL for cost**.
 
 ## 4. Phase 4: trial lifecycle
 
-**Stop at 13:00 BST today** (verified 07:42 UTC):
-- `esip-stop.timer` → Fri 12:00:00 UTC (it then had 4 h 17 min left), enabled;
-- the `ExecStartPre` guard (epoch `1791547200`) refuses any start afterwards;
-- all three units are active.
+**Stop: extended to Sat 2026-10-10 12:00 UTC (13:00 BST)**, approved by Andrew, done 2026-10-09 10:10 UTC:
+- `esip-stop.timer` `OnCalendar=2026-10-10 12:00:00 UTC`, `Persistent=true`; both `ExecStartPre` guards now epoch `1791633600` (tested: allow now, refuse after);
+- rollback copy of the changed unit files: `/root/pre-extend-20261009T1010Z`;
+- firewall rules, SIP config, code and main unit files unchanged (checksums); the endpoint process was **not** restarted;
+- **separate 24 h limit:** `max_runtime_s` 86400 stops the endpoint itself at about **Sat 08:06 UTC (09:06 BST)**; with `Restart=no` it stays down. Capture runs to the deadline.
 
-The VM and evidence are not deleted. The deadline is **not** extended, and no paid resources were created.
+**Cost:** the timer does not affect billing; the droplet bills until teardown. To Sat 12:00 UTC: about $0.26 ($0.31 incl. VAT, ≈ £0.24). Worst case if never torn down: $4.80/month incl. VAT. Within the £5 ceiling. (The earlier "Friday ≈ 44 h, $0.26" figure was wrong; Friday was ≈ 20 h, $0.12.) No paid resources were created.
 
 **Evidence:**
-- Yesterday's sealed copies (Call 1, Test 2, Test 3) are in `~/hcg-magrathea-trial/evidence-live-20261008/` (mode 700).
+- Yesterday's sealed copies (Call 1, Test 2, Test 3) are in `~/hcg-magrathea-trial/evidence-live-20261008/` (mode 700). Re-verified 2026-10-09: 6/6, 8/8 and 10/10 files match their VM checksums.
+- **Test 4:** `20261009T1008Z-test4.tar` (+ `.sha256`), the full evidence set for all five calls; archive checksum OK and 11/11 non-pcap files match the VM.
 - At 07:4x UTC today the VM's 10 evidence files were checked: **identical to the Test 3 sealed copy**. There have been no calls since.
 
 **Teardown** (prepared, not run): `~/hcg-magrathea-trial/teardown-do.sh` was hardened today; the old version is kept as `.bak-20261008`.
-1. **Refuses to run** without `--magrathea-confirmed "<date/ref>"`, which is Magrathea's written confirmation that the number no longer targets `159.65.27.229`. We cannot check it ourselves (REST `/number/*` → 401), and deleting first would let DigitalOcean's next holder of that IP receive our number's calls.
+1. **Refuses to run** without `--magrathea-confirmed "<date/ref>"`, which is Magrathea's written confirmation that the number no longer targets `159.65.27.229`. Magrathea says the trial number can be deactivated with the `DEAC` API command (§0 P8); running it is a routing change needing separate approval, and its result must still be confirmed before deletion. We cannot check it ourselves (REST `/number/*` → 401), and deleting first would let DigitalOcean's next holder of that IP receive our number's calls.
 2. Checks that the droplet still holds `159.65.27.229`.
 3. Stops the services, and SHA-256s every evidence file on the VM.
 4. Copies the files to `final-<UTC>/` and **aborts with nothing deleted if any checksum mismatches**.
@@ -312,9 +360,130 @@ The script was syntax-checked, and its refusal path was tested (exit 2).
 
 | ID | Decision | Notes |
 |---|---|---|
-| **D1** | Send the §2 questions to Jay (with the 4 CDR refs and the routing-back request) | Blocks Test 5, the cost model and teardown. No cost |
+| **D1** | ~~Send the §2 questions to Jay~~ **Answered in part by Ben, ticket LKV-51353-279 (§0).** New: send the §8 questions to Ben | No cost. Blocks the bridge decision (§6), the commercial decision (§7) and the per-call billing proof |
 | **D2** | ~~Deploy the fixed E-SIP to the VM~~ **DONE 2026-10-09 08:05 UTC** (`827c6bb`, §1.2); rollback copy kept | — |
-| **D3** | Approve Test 4 (spare mobile = P-B), with the §3.1 items answered and the cost ceiling accepted | Forwarding on the spare is enabled and removed by Andrew. Must finish by 12:00 UTC unless D4 |
-| **D4** | Leave the 13:00 BST stop as is (recommended), or approve a new window for Test 4 later | Extending keeps the VM about $0.14 per day; the £5 ceiling holds |
-| **D5** | Test 5: only after Magrathea's written answers to Q1–Q6 and Q8, plus a stated maximum cost; needs a code change and possibly the paid Chargeable Translation | Not requested yet |
-| **D6** | Teardown after Magrathea's written un-routing confirmation | `teardown-do.sh --magrathea-confirmed "…"` |
+| **D3** | ~~Approve Test 4~~ **DONE: PASS 2026-10-09 09:58 UTC** | Motorola busy-divert to be restored via Lebara support |
+| **D4** | ~~Window~~ **DONE: extended to Sat 13:00 BST** | Endpoint self-stops ≈ Sat 09:06 BST (24 h limit) |
+| **D5** | ~~Test 5 (REFER)~~ **CANCELLED: REFER not supported.** New: whether to pursue a two-leg bridge at all (§6) | Recommendation: **not** until §8 B1–B3 are answered; it fails the hard-exposure rule today |
+| **D6** | Teardown: approve `DEAC` (or ask Magrathea to un-route) and, once un-routing is confirmed, run `teardown-do.sh --magrathea-confirmed "…"` | DEAC is a routing change: separate approval |
+| **D7** | Commercial: whether Magrathea is worth pursuing at HCG's current scale (§7) | Recommendation: not as the primary carrier now; revisit at scale or with a different commercial arrangement |
+
+---
+
+## 6. Assessment: an HCG-controlled two-leg SIP bridge (NOT approved, NOT built)
+
+**What it would be.** REFER is unsupported, so the only way to put a screened, trusted caller through to the customer's existing mobile is for HCG to **stay in the call**: E-SIP answers the inbound leg (A, free per P2), places a **new outbound call** (leg B) through account `112168` to the customer's mobile, and bridges the two, relaying media. This is a back-to-back user agent (B2BUA). HCG pays leg B for its **entire connected duration** (P4) at £0.0069/min live (P3).
+
+**Today's E-SIP cannot do this, by design:** its output guard forbids INVITE, REFER and 3xx. A bridge is a new component, not a configuration change. It also needs outbound SIP registration or authentication on `112168`, which is **not approved**.
+
+### 6.1 Duration enforcement: what would bound a call
+
+| Layer | Bounds a call when… | Fails when… | Evidence today |
+|---|---|---|---|
+| E-SIP cap timer (BYE both legs at N s) | the process is alive and can reach Magrathea | process crash, VM loss, network loss, BYE not honoured | BYE + 200 OK proven on an **inbound** leg (Test 2). **Never tested on an outbound leg** |
+| BYE retransmit/backstop (SAFETY-1) | a BYE or 200 is lost | the VM is gone | loopback only |
+| Persisted dialog state + restart sweep (BYE every dialog found on disk at start) | the process restarts within minutes | VM or disk loss; `Restart=no` today | **not built** |
+| Independent watchdog (second process or second host holding the dialog data) | the main process hangs | both die together | **not built** |
+| RFC 4028 session timer on leg B (we as UAC request a short `Session-Expires`, e.g. 300 s, refresher = us) | **if Magrathea tears down a leg whose refresh stops** | Magrathea does not enforce expiry on outbound | **UNCONFIRMED (§8 B1)**. Magrathea's own inbound INVITEs request 1900 s with refresher = them |
+| Magrathea per-call maximum duration | always, network-side | — | **UNCONFIRMED (§8 B1)**; P5 says spending limits do not end live calls |
+| Prepaid balance | stops **new** chargeable calls (trial) | **does not end calls in progress** (P5) | CONFIRMED for trial; live unknown |
+| The people on the call | almost always: someone hangs up | a call answered by voicemail/IVR, or an unattended open line | — |
+
+**Conclusion:** today, the only **provider-side** bound on a connected leg B is the humans hanging up. Everything else is HCG-side and fails with HCG's server.
+
+### 6.2 Failure modes
+
+| # | Failure | Consequence | Mitigation (all unbuilt) |
+|---|---|---|---|
+| F1 | E-SIP process crash mid-bridge | Both legs keep media until a party hangs up; **leg B billed throughout** | persisted dialogs + restart sweep; `Restart=on-failure`; paging |
+| F2 | VM or network loss | No BYE can be sent at all; leg B billed until a human hangs up or a network-side limit (unknown) fires | **only a provider-side limit fixes this** (B1); multi-host watchdog reduces it |
+| F3 | Lost or ignored BYE on leg B | Leg B stays up | SAFETY-1 retransmit + backstop, then `clear_failed_manual_action` → manual Magrathea support |
+| F4 | Leg A ends but leg B is not torn down (or the reverse) | One-sided open line billed on B | B2BUA must tie the legs: any BYE/CANCEL/failure on one → BYE/CANCEL on the other; tested per path |
+| F5 | Leg B answered by the customer's **voicemail** | Billed while voicemail records; usually short, but length is the MNO's | treat answer < N s with no speech as voicemail? Risky; better: cap leg B hard (e.g. 30–60 min) and accept the cost |
+| F6 | **Forwarding loop**: leg B rings the customer, who is busy/declines/doesn't answer; their CFB/CFNRy diverts it **back to our DDI** | A new inbound call with `Diversion` = the customer. If we answer and bridge again: repeated leg-B charges; if CFU is set: an immediate loop on every call | **reject (486, never answer) any inbound whose `Diversion` = a customer we currently have a leg B ringing**; at most one bridge attempt per (caller, customer) per call; per-customer concurrency 1; refuse to bridge for customers with CFU. Test 4 proves `Diversion` arrives on Lebara; other networks unproven (B7) |
+| F7 | Early media / ringback on leg B | Probably not billed (P4 says *connected* duration) | confirm (B2) |
+| F8 | Leg B fails or is rejected | Caller must be released or sent to monitoring; no charge if not connected | standard |
+| F9 | `112168` credentials on an internet-facing server are stolen | **Toll fraud**: arbitrary outbound calls until the prepaid balance runs out, and in-progress calls are not stopped (P5) | outbound restricted to UK mobile ranges + a small channel limit at Magrathea (B5); low prepaid balance; IP-locked auth |
+| F10 | Many concurrent calls | channels × per-call exposure | Magrathea channel limit (B5); HCG concurrency cap |
+
+### 6.3 Hard financial exposure
+
+With Magrathea's confirmed terms, the worst case is:
+
+> **Exposure = (new-call spend until the prepaid balance is exhausted) + Σ over connected legs B of (£0.0069 × minutes until the call is actually released)**
+
+- The first term is bounded **only on prepaid accounts that hard-stop** (confirmed for trial, unknown for live).
+- The second term has **no provable bound** today: no Magrathea limit ends a live call (P5), and session-timer enforcement or a per-call maximum is unconfirmed.
+- Scale of a stuck leg at £0.0069/min: **£0.41/hour, £9.94/day, ≈ £25 over a 60 h weekend**, per leg. With a 10-channel limit, a whole-platform outage over a weekend could approach **£250**, although in practice each leg ends when a person hangs up.
+- **If** Magrathea confirms a network-side maximum (or session-timer enforcement, e.g. 300 s), the second term becomes provable: channels × (cap + refresh interval) × £0.0069, e.g. 10 × 35 min × £0.0069 ≈ **£2.42**.
+
+**Verdict:** a bridge is **technically buildable**, and E-SIP's tested BYE/retransmit/shutdown logic is a reasonable base. It is **not safe to build or test** until Magrathea confirms (B1) a network-side bound on connected outbound calls and (B5) outbound restrictions. Without those it fails HCG's provable-maximum-loss rule. It also **does not achieve the original aim** of keeping trusted calls off HCG's bill: every trusted minute becomes an HCG-paid leg B, as with Twilio today.
+
+**If it were ever pursued, the minimum safe test** (separate approval): leg B to Andrew's own spare mobile only, one call, a 60 s hard cap, the session timer requested at the minimum allowed, outbound restricted at Magrathea to UK mobiles and 1 channel, a small prepaid balance, an attended loop check (CFB set on the target), and CDRs for both legs. Not proposed now.
+
+---
+
+## 7. Commercial assessment at £5.99/month vs Twilio
+
+**Inputs.** Magrathea: §0 (CONFIRMED unless marked). Twilio and HCG: `docs/finance/HCG_UNIT_ECONOMICS_V1_TABLES.md` (branch `finance/unit-economics-v1`, register v1.0.0): £5.99 = £4.99 ex VAT; contribution per subscriber before telephony ≈ **£4.53 (Stripe)**, £4.14 (store 15%), £3.39 (Apple 30%); Twilio fixed per customer **£0.8692 number rental**; Twilio expected cost **£0.0086 per trusted minute**, **£0.0172 per monitored minute** (of which £0.0086 is monitoring/AI).
+
+| Item | Twilio (today) | Magrathea (bridge to mobile) | Notes |
+|---|---|---|---|
+| Fixed | £0.87 per customer-number/month | **£100/month account minimum** (P6) + number rental (unknown) | Whether usage counts towards the £100 is unknown (B3) |
+| Screening/monitored minute, telephony part | ≈ £0.0086 | **£0** inbound (P2) | AI/monitoring cost is the same on both |
+| Trusted minute delivered to the customer's mobile | ≈ £0.0086 (to the app) | **£0.0069** + £0.01 minimum per call (P3) + increment unknown | Bridge minute is HCG-paid on both |
+| Provider-side per-call duration cap | Yes: Twilio enforces `<Dial timeLimit>` itself (Twilio docs; HCG's own use not verified here) | **None confirmed**; limits do not end live calls (P5) | Material for the hard-exposure rule |
+| Spend limit | None (Twilio has no spend cap: `PROVIDER_FINANCIAL_CONTAINMENT_FINAL.md`) | Trial prepaid stops new calls only | Neither bounds a live call |
+| Who runs the SIP/media infrastructure | Twilio | **HCG** (HA hosting, monitoring, paging, on-call). Estimate £20–60/month hosting, plus engineering | ESTIMATE |
+
+**Break-even on fixed cost alone:** £100 ÷ £0.8692 ≈ **115 subscribers**, assuming Magrathea number rental is £0 and the minimum is not offset by usage. Below that, Magrathea costs more than Twilio before any minutes.
+
+**At today's scale:** HCG has no confirmed paying subscribers (admin audit 2026-09-27). The £100 minimum equals the **entire net contribution of about 22 Stripe subscribers** (£100 ÷ £4.53). It would roughly multiply today's Twilio number spend (≈ £8.69/month for 10 numbers) by 11.
+
+**At 1,000 subscribers (illustrative):** the minimum is £0.10 per subscriber vs Twilio's £0.87; screening minutes save ≈ £0.0086 each; bridged trusted minutes save ≈ £0.0017 each. Magrathea would then be clearly cheaper per subscriber, **if** the hosting and engineering are absorbed and the billing increment is per-second.
+
+**Verdict:**
+- **Not commercially suitable for HCG now** as the primary carrier: the £100/month minimum is a fixed loss at pre-revenue scale, and the bridge adds HCG-run telephony infrastructure with no provable per-call bound.
+- **Potentially attractive at ≥ about 150–300 subscribers**, especially for an **app-delivered** design (free inbound, HCG-hosted SIP/WebRTC to the app, no leg B). There the unit-economics model already shows a large margin gain (table I). The mobile-bridge variant gains much less, because every trusted minute is still paid.
+- Worth asking Ben for a start-up arrangement (B3) before ruling it out.
+
+---
+
+## 8. Remaining questions for Ben (ticket LKV-51353-279; draft, not sent; Andrew to send)
+
+**B1. Ending connected calls on your side**
+- Is there a **maximum call duration** for outbound calls from `112168` (per call or per account), and can we set it (e.g. 60 min)?
+- If our server stops refreshing an RFC 4028 **session timer** that we requested on an outbound call, do you tear the call down and stop billing at expiry? What minimum `Session-Expires`/`Min-SE` do you accept?
+- Do you clear calls on **RTP inactivity**? After how long?
+- Can your support or API **clear a specific in-progress call** (by CDR reference) on request, and how quickly?
+
+**B2. Billing detail**
+- Billing increment after the £0.01 minimum: per second, or per minute? Any connection charge?
+- Are the quoted rates ex VAT? Does £0.0069 apply to **all** UK mobile networks, including MVNOs?
+- Is early media or ringing ever charged? Are unanswered or failed calls free?
+- What are the **trial** outbound rates?
+- Please send the CDRs (duration, debit) for `6AC7C417GF374B24`, `6AC7DA6BAF3B522D`, `6AC7DE025F3BB2F9` (did it stop at our BYE, 18:16:47 UTC?), `6AC7DF255F3BD120` and `6AC8BAC7JF4CE809`.
+
+**B3. Commercial arrangement**
+- Is the **£100/month** a minimum *spend* (do inbound, outbound and rentals count towards it) or a fixed fee on top? Per account or per number range?
+- Number rental per DDI; setup fees; contract term and notice.
+- Is there a **start-up, ramp or low-volume arrangement** (e.g. the minimum waived or reduced for the first months, or pay-as-you-go until a subscriber threshold)?
+- Is a **Chargeable Number Translation** account still needed if we bridge through `112168` rather than translating the number?
+
+**B4. Two-leg bridging**
+- Is it permitted for our SIP server to answer an inbound call and place a **second, outbound call** through `112168` to the customer's UK mobile, bridging the two? Any acceptable-use limits?
+- On that outbound leg, may we present the **original caller's CLI** (what does Network Mode require, and does it include P-Asserted-Identity)? Or must it be our number?
+- Can you **anchor or short-circuit media** inside your network, so our server relays signalling only?
+- Besides REFER (not supported): do you follow a **302** from our endpoint, or offer any **provider-side transfer or "connect to" service**? How would each be billed?
+
+**B5. Restricting outbound**
+- Can `112168` be restricted to **UK mobile ranges only**, with a **channel limit** (e.g. 2), and **IP-locked** authentication?
+- Does the **live** account have a prepaid hard stop for new calls like the trial? Are there low-balance alerts, and daily or monthly caps?
+
+**B6. Deactivation**
+- For `DEAC`: which interface and credentials (our REST `/number/*` returns 401)? Does it take effect immediately? What does a caller hear afterwards? Will you confirm in writing once the number no longer targets `159.65.27.229`?
+
+**B7. Identity**
+- Is `Diversion` populated for diverted calls from **EE, Vodafone, O2 and Three** (we have proven Lebara only), and what `reason` values do you pass (we received `unknown` for a busy divert)?
+- Is `Remote-Party-ID … screen=yes` your network verification, or passed through from upstream?
+
