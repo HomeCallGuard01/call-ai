@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" width="1000" height="640" font-family="Helvetica, Arial, sans-serif">
+  <title>Home Call Guard: carrier-side selective call routing requirement</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1d7a46"/>
+    </marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b5531a"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="640" fill="#ffffff"/>
+
+  <text x="500" y="36" text-anchor="middle" font-size="22" font-weight="700" fill="#111">Requirement: selective diversion of unknown callers in the mobile core</text>
+  <text x="500" y="60" text-anchor="middle" font-size="14" fill="#555">The customer keeps their existing number, SIM and handset. Trusted callers ring the handset directly; everyone else is diverted to HCG.</text>
+
+  <!-- Caller -->
+  <rect x="30" y="230" width="150" height="80" rx="10" fill="#f2f2f2" stroke="#333"/>
+  <text x="105" y="264" text-anchor="middle" font-size="16" font-weight="700" fill="#111">Caller</text>
+  <text x="105" y="286" text-anchor="middle" font-size="12" fill="#444">dials customer's 07…</text>
+
+  <!-- MNO core -->
+  <rect x="240" y="140" width="330" height="260" rx="12" fill="#eef3fb" stroke="#2d5fa8" stroke-width="2"/>
+  <text x="405" y="168" text-anchor="middle" font-size="16" font-weight="700" fill="#1b3f73">Customer's mobile network (MNO core)</text>
+  <text x="405" y="190" text-anchor="middle" font-size="12" fill="#1b3f73">terminating call diversion, per subscriber</text>
+  <rect x="262" y="206" width="286" height="150" rx="8" fill="#ffffff" stroke="#2d5fa8"/>
+  <text x="276" y="230" font-size="13" font-weight="700" fill="#111">Selective rule (3GPP TS 24.604 CDIV)</text>
+  <text x="276" y="254" font-size="13" fill="#1d7a46">IF caller ∈ household allowlist</text>
+  <text x="290" y="273" font-size="13" fill="#1d7a46">→ deliver to handset (no divert)</text>
+  <text x="276" y="299" font-size="13" fill="#b5531a">ELSE (unknown or withheld)</text>
+  <text x="290" y="318" font-size="13" fill="#b5531a">→ divert to customer's HCG number</text>
+  <text x="276" y="343" font-size="11" fill="#555">Allowlist maintained by HCG (API or provisioning)</text>
+  <text x="405" y="386" text-anchor="middle" font-size="11" fill="#555">cp:identity / anonymous conditions</text>
+
+  <path d="M180,270 L238,270" stroke="#333" stroke-width="2" fill="none" marker-end="url(#a)"/>
+
+  <!-- Trusted branch -->
+  <rect x="680" y="100" width="290" height="120" rx="10" fill="#eaf6ef" stroke="#1d7a46" stroke-width="2"/>
+  <text x="825" y="132" text-anchor="middle" font-size="16" font-weight="700" fill="#14532d">Customer's existing handset</text>
+  <text x="825" y="156" text-anchor="middle" font-size="13" fill="#14532d">iPhone or Android, same SIM</text>
+  <text x="825" y="180" text-anchor="middle" font-size="13" fill="#14532d">rings normally with real caller ID</text>
+  <text x="825" y="204" text-anchor="middle" font-size="13" font-weight="700" fill="#14532d">HCG not in path: £0 to HCG</text>
+  <path d="M570,230 C620,230 630,160 678,160" stroke="#1d7a46" stroke-width="3" fill="none" marker-end="url(#g)"/>
+  <text x="600" y="196" font-size="13" font-weight="700" fill="#1d7a46">TRUSTED</text>
+
+  <!-- Unknown branch -->
+  <rect x="680" y="300" width="290" height="140" rx="10" fill="#fdf0e7" stroke="#b5531a" stroke-width="2"/>
+  <text x="825" y="330" text-anchor="middle" font-size="16" font-weight="700" fill="#7a3510">Home Call Guard</text>
+  <text x="825" y="354" text-anchor="middle" font-size="13" fill="#7a3510">receives on customer's HCG number</text>
+  <text x="825" y="376" text-anchor="middle" font-size="13" fill="#7a3510">conversational AI scam screening</text>
+  <text x="825" y="398" text-anchor="middle" font-size="13" fill="#7a3510">+ existing safe call-handling rules</text>
+  <text x="825" y="422" text-anchor="middle" font-size="11" fill="#7a3510">needs: original CLI + Diversion / History-Info</text>
+  <path d="M570,320 C620,320 630,370 678,370" stroke="#b5531a" stroke-width="3" fill="none" marker-end="url(#o)"/>
+  <text x="580" y="402" font-size="13" font-weight="700" fill="#b5531a">UNKNOWN /</text>
+  <text x="580" y="418" font-size="13" font-weight="700" fill="#b5531a">WITHHELD</text>
+
+  <!-- Delivery of approved calls -->
+  <path d="M900,298 L900,222" stroke="#555" stroke-width="2" stroke-dasharray="6 5" fill="none" marker-end="url(#a)"/>
+  <text x="890" y="258" text-anchor="end" font-size="11" fill="#444">approved calls:</text>
+  <text x="890" y="272" text-anchor="end" font-size="11" fill="#444">HCG app over data</text>
+  <text x="890" y="286" text-anchor="end" font-size="11" fill="#444">(no PSTN call-back)</text>
+
+  <!-- Requirements box -->
+  <rect x="30" y="460" width="940" height="160" rx="10" fill="#fafafa" stroke="#999"/>
+  <text x="50" y="488" font-size="15" font-weight="700" fill="#111">What we need from the network</text>
+  <text x="50" y="514" font-size="13" fill="#222">1. Per-subscriber allowlist for diversion (caller-identity condition); withheld/anonymous callers treated as unknown.</text>
+  <text x="50" y="536" font-size="13" fill="#222">2. Allowlist created, updated and removed by HCG with the customer's consent (API, bulk file or provisioning interface); 500+ numbers per subscriber.</text>
+  <text x="50" y="558" font-size="13" fill="#222">3. Diverted calls arrive at HCG with the original caller ID and a Diversion / History-Info header naming the subscriber.</text>
+  <text x="50" y="580" font-size="13" fill="#222">4. No change to SIM, number, handset or tariff for the customer; works on iPhone and Android; no app control of the handset needed.</text>
+  <text x="50" y="602" font-size="13" fill="#222">5. Defined failure behaviour if HCG is unreachable (e.g. fall back to ringing the handset or network voicemail) and an audit log of rule changes.</text>
+</svg>
