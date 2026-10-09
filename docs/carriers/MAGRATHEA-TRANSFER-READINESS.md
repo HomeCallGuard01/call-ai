@@ -2,7 +2,7 @@
 
 **Goal:** prove whether Magrathea can support a **financially viable** transfer of a screened call to a customer's existing mobile.
 **Status:**
-- Phase 1 safety fixes are done and tested. They are **not deployed** to the VM.
+- Phase 1 safety fixes are done and tested, and **deployed to the VM 2026-10-09 08:05 UTC (D2, commit `827c6bb`)**; see §1.2.
 - Phase 2 questions are ready (not sent).
 - Phase 3 plans are **proposed, not approved**.
 - Phase 4 teardown is prepared (not run).
@@ -52,10 +52,48 @@ Scenarios covered:
 
 1. **A loopback simulation does not prove that Magrathea clears a real call.** Only Test 2 (one real BYE, 200 OK in 5 ms) is live evidence. The retransmit, ACK-timeout and re-INVITE paths have **never** met Magrathea's proxy. Even a 200 OK to our BYE proves only that Magrathea's proxy accepted it; **only Magrathea's CDR proves its leg (and billing) stopped** (M-Q2).
 2. **We cannot force-clear a leg that Magrathea won't clear.** After `clear_failed_manual_action`, the only remedies are the caller hanging up, the customer's MNO, or Magrathea support. Alerts are written to the timeline only; nothing pages anyone. Hence: every test is attended.
-3. **The fixes are not deployed.** The VM still runs the 2026-10-08 code, which has SAFETY-1/-3 and no graceful shutdown. That is acceptable only because **no call is planned before 12:00 UTC**. Deploying needs a service restart (§5, decision D2).
+3. *(Resolved by D2, §1.2: the fixes are deployed.)* No live call has yet exercised the new code.
 4. Media is not re-targeted on re-INVITE: we keep sending to the original SDP address. There is no handling of `UPDATE` (Magrathea's INVITE did not offer it) or of hold SDP.
 5. Retransmit timers run in threads in one Python process. A per-message exception is now caught and logged as a `handler_error` ALERT (S16). A process crash would still lose them. *Corrected 2026-10-09:* the unit has `Restart=no`, so a crashed endpoint **stays down**: new calls then fail at Magrathea, and any held call is left to the caller.
 6. `esip_report.py` masks digit runs; it does not recognise numbers written with separators. Raw INVITEs, WAVs and pcaps remain unmasked by design: they are the private evidence (mode 600/700, outside git).
+
+### 1.2 Deployment to the trial VM (D2, approved 2026-10-09)
+
+**Pre-deploy review** found and fixed two more issues (commit `827c6bb`):
+- the cap timers were non-daemon threads, so a stop just after a call could hang past systemd's 90 s stop timeout;
+- one exception in the message handler would have terminated the endpoint.
+
+New tests S15 (a real process, SIGTERM mid-call: BYE confirmed, exit < 1 s) and S16 (handler exception → ALERT, still serving) pass.
+
+**Deployment, 08:04–08:06 UTC:**
+1. **Pre-checks:**
+   - no active call (no RTP sockets; last event 2026-10-08 18:21);
+   - config SHA-256 recorded (`763a9cc4…`).
+2. **Rollback copy:** `/opt/sip-lab.rollback-416051e` (`esip_capture.py` `eed2f409…`).
+   - Rollback = `mv /opt/sip-lab.rollback-416051e /opt/sip-lab` (after moving the new one aside), then `systemctl restart esip.service`.
+3. **Staged** `git archive 827c6bb scripts/carriers/sip-lab` into `/opt/sip-lab.new-827c6bb` (root:root, 644). All 7 file hashes matched the commit.
+4. **Tests on the VM against the staged files:** safety **26/26**, loopback **16/16**, identity **14/14**.
+5. **Swapped** directories; `systemctl restart esip.service`.
+
+**Verified running version:**
+- PID started 08:05:36 UTC as user `esip`;
+- unchanged command line (`--config /home/esip/esip.conf.json --mode answer_hold`);
+- deployed `esip_capture.py` = `834b10f3c94ccd40` = commit `827c6bb`;
+- **config file unchanged** (hash identical);
+- `start` event: `answer_hold`, `max_call_s` 120, 12 ranges.
+
+**Post-deployment health check (no telephone call):**
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Graceful stop under the systemd sandbox | A second restart logged `shutdown {cleared: 0, unconfirmed: 0}`, `auto_stop`, then a new `start` (the SIGTERM handler works under `ProtectSystem=strict`, `NoNewPrivileges`, `AF_INET` only) |
+| 2 | Liveness + allowlist | SIP OPTIONS from the VM's own public IP (not allowlisted): **no reply**, logged `dropped_non_allowlisted` |
+| 3 | Shutdown unchanged | `esip-stop.timer` `OnCalendar=2026-10-09 12:00:00 UTC`, `Persistent=true`, next run in 3 h 53 min; both `ExecStartPre` guards (epoch `1791547200`) present; all units enabled; capture active |
+| 4 | Firewalls | ufw active, 25 ALLOW rules. Cloud firewall `hcg-magrathea-esip-fw` (applied by tag): inbound SSH 1 source, UDP 5060 and UDP 40000–40019 from 12 Magrathea ranges; outbound UDP/ICMP to the 12 ranges + DNS + NTP. Unchanged |
+| 5 | Listening | TCP 22, UDP 5060 only |
+| 6 | Resources | 1 droplet (`s-1vcpu-512mb-10gb`), 1 firewall; endpoint memory about 9 MB of 200 MB |
+
+**Not exercised:** any path that needs a real Magrathea message. The first live call on this code is Test 4.
 
 ---
 
@@ -131,64 +169,64 @@ Splitting this into two tests is deliberate.
 
 ### 3.1 Test 4: forwarded call reaches HCG; HCG clears it. Ready on approval (D3)
 
+**Revised 2026-10-09 at Andrew's request:** a **spare mobile** is the forwarding "customer" phone, so **no setting changes on Andrew's personal iPhone**.
+- **P-A, caller:** Andrew's personal iPhone. Nothing changed on it, apart from making sure *Show My Caller ID* is **back ON** (it was turned off for Test 3).
+- **P-B, customer:** the spare mobile, with its own SIM. Busy-forwarding to our number is set on it for the test only.
+
 **Route:**
 1. P-A dials P-B.
-2. Andrew declines on P-B (**CFB**, set with `**67*03300884327#`), or lets it ring (CFNRy `**61*…#`). CFU is **never** used.
-3. P-B's network diverts the call to `0330 088 4327`.
-4. Magrathea delivers it to E-SIP (`answer_bye`, 20 s).
+2. Andrew **declines** the call on P-B (CFB).
+3. P-B's network diverts it to `0330 088 4327`.
+4. Magrathea delivers it to E-SIP (`answer_bye`, 20 s, via the temporary drop-in as in Test 2).
 5. E-SIP sends the BYE.
 
-There is no onward leg and no transfer.
+There is no onward leg and no transfer. CFNRy (no answer) is an optional second call. **CFU (forward everything) is never used.**
 
-| Leg | Originated by | Billed to | Rate (verify; do not assume) |
+| Leg | Originated by | Billed to | Rate (from Andrew; do not assume) |
 |---|---|---|---|
-| P-A → P-B | P-A's network | P-A's account | P-A's normal mobile-to-mobile rate |
-| P-B → 03300884327 (forwarded leg) | P-B's network | **P-B's account** | P-B's rate for a diverted call to 03. 03 numbers are normally priced like 01/02 and inside allowances, but diverted legs can be priced separately, so read the bill |
-| 03 → SIP (inbound to HCG) | Magrathea | HCG (Magrathea account) | £0 per Annex 3; **verify by CDR (Q9)** |
-| Onward / transfer | **none** | — | — |
+| P-A (iPhone) → P-B (spare) | iPhone's network | Andrew's iPhone account | Mobile-to-mobile rate |
+| P-B → 03300884327 (diverted) | **Spare SIM's network** | **Spare SIM account** | Its rate for a *diverted* call to 03 |
+| 03 → SIP | Magrathea | HCG | £0 per Annex 3; verify by CDR |
 
-**It establishes:**
-- `Diversion` / LDLI presence and form for P-B's network (N1);
-- PAI on a forwarded call (N2);
-- whether our BYE ends **both** the P-A and the forwarded leg;
-- P-B's forwarded-leg charge.
+**Maximum cost:**
+- 2 calls × ≤ 2 min (E-SIP cap; the planned BYE is at 20 s);
+- each call charged on both SIMs (P-A's rate + P-B's diverted rate) × 4 min in total;
+- Magrathea £0 by documentation.
 
-**Maximum cost:** 2 calls × ≤ 2 min (E-SIP's 120 s cap; the planned BYE is at 20 s).
-- P-A: 2 × 2 min at P-A's rate.
-- P-B: 2 × 2 min at P-B's diverted-call rate.
-- Magrathea: £0 by documentation, with no outbound possible: E-SIP cannot originate, there is no PSTN target, and only 2 trial channels.
+A spare **PAYG SIM with a small credit balance (or a contract with an Ofcom spend cap) is a genuine hard limit on P-B's side.** That is better than anything we have on the carrier side.
 
-Enforcement:
-- **Ours:** the E-SIP BYE (now retransmitted, with the cap backstop).
-- **Theirs:** manual hang-up. Nothing we control caps P-A's or P-B's bill beyond that.
+**Procedure (attended, about 20 minutes):**
+1. **Record P-B's current busy divert:** `*#67#`, and `*#61#` if CFNRy is also used. It is usually the network's voicemail number. Note it down privately, so it can be restored exactly.
+2. Set: `**67*03300884327#`. Some networks need `**67*+443300884327#`. On some MVNOs it is only available in the app or settings.
+3. Verify: `*#67#` shows the 0330 number.
+4. I switch E-SIP to `answer_bye` 20 s (drop-in), verify, and confirm "ready".
+5. Andrew calls P-B from the iPhone, declines it on P-B, and listens on the iPhone: beeps, then the call is cut after about 20 s.
+6. I check the call, masked: Diversion/LDLI present and pointing at P-B (last 3 digits only), PAI, the BYE confirmed, nothing else sent.
+7. Optional second call: a CFNRy variant, only if 1–6 pass.
+8. **Restore P-B:** re-register the recorded original (for example `**67*<voicemail number>#`), or `##67#` if there was none. Verify with `*#67#`.
+9. I restore `answer_hold` and record the result.
 
-Andrew fills in both tariff figures before approval. If either phone is pay-as-you-go out of bundle, use its per-minute rate × 8 min as the ceiling.
+**Manual abort:** the iPhone hangs up. On P-B, run `##67#` (or `##002#` to clear every divert, then restore voicemail later). I can stop E-SIP at any time; it now sends BYE on stop.
 
-**Duration:** about 20 minutes in total:
-1. set CFB;
-2. **check it with `*#67#`**;
-3. make 2 calls;
-4. **cancel with `##67#`** (or `##002#` to clear every divert);
-5. re-check with `*#67#`.
+**Verifying HCG left:** `bye` → `bye_confirmed` in the timeline; zero SIP/RTP for the call after the 200 in the pcap; the iPhone shows the call ended at the same second; the Magrathea CDR stop time ±2 s.
 
-**Manual abort:**
-- P-A hangs up. If the call persists, P-B's diverted leg ends with it.
-- Then run `##002#` on P-B.
-- Stop E-SIP (`systemctl stop esip.service`, which now sends a BYE on SIGTERM).
+**Billing evidence:** Magrathea CDRs (refs from `X-CALLINFO`); MAGIC balance before and after; the iPhone's and the spare SIM's itemised usage, or the PAYG credit before and after.
 
-**Verifying HCG left:**
-- the timeline shows `bye` → `bye_confirmed` (200 OK);
-- the pcap shows zero SIP/RTP packets for the call after the 200;
-- P-A's screen shows the call ended at the same second;
-- Magrathea's CDR stop time is within ±2 s of `bye_confirmed` (Q9).
+**Window:** must finish before **12:00 UTC (13:00 BST) today**, or D4.
 
-**Billing evidence:**
-- Magrathea CDRs for the session's `X-CALLINFO` refs (Q9);
-- MAGIC balance before and after (Andrew);
-- P-A's and P-B's itemised usage (app or bill) with time and duration;
-- DigitalOcean unchanged.
+**Needed from Andrew before approval** (do **not** send phone numbers in chat; they are not needed):
 
-**Window:** the test must finish before **12:00 UTC (13:00 BST) today**, or the window is re-approved (D4).
+| # | Item | Why |
+|---|---|---|
+| 1 | Spare phone: **network** (EE / Vodafone / O2 / Three, or the MVNO, e.g. giffgaff, Tesco, Lebara, Smarty, Voxi) | MMI support and divert behaviour vary. `Diversion` population is per network (M-Q7c) |
+| 2 | Spare SIM: **PAYG or contract**; current credit or spend cap | Defines the hard limit on P-B's side |
+| 3 | Spare SIM: **how a diverted call to an 03 number is charged**: inside the allowance? Out-of-bundle per-minute rate? Any divert surcharge? (From the tariff page or the app) | P-B leg cost ceiling |
+| 4 | Spare phone: does it **allow busy forwarding by code** (`**67*`), or only in the app or settings? Is call forwarding enabled on that SIM at all? | Some PAYG SIMs bar diverts or need them enabled |
+| 5 | Spare phone: what `*#67#` shows now (just "voicemail number" vs "not active"; you keep the number) | So it can be restored exactly |
+| 6 | Spare phone: handset type; **Do Not Disturb / Silence Unknown Callers / call screening off**; Wi-Fi Calling on or off | These can stop the call ringing, or change how it is diverted |
+| 7 | iPhone (P-A): **network and whether calls to mobiles are inclusive** (or the per-minute rate); confirm *Show My Caller ID* is back **ON** | P-A leg cost; the caller must present a CLI |
+| 8 | Is the iPhone's number stored as a contact on the spare (irrelevant to the network, but it avoids confusion) | — |
+| 9 | Confirmation that the spare SIM and iPhone are **not** HCG customer or production numbers, and have no HCG forwarding today | No production impact |
 
 ### 3.2 Test 5: screened-call transfer to the customer mobile. BLOCKED
 
@@ -275,8 +313,8 @@ The script was syntax-checked, and its refusal path was tested (exit 2).
 | ID | Decision | Notes |
 |---|---|---|
 | **D1** | Send the §2 questions to Jay (with the 4 CDR refs and the routing-back request) | Blocks Test 5, the cost model and teardown. No cost |
-| **D2** | Deploy the fixed E-SIP to the VM (copy `sip-lab`, restart `esip.service`, verify the `start` event; rollback = the previous files, kept) | Only needed if any call happens before 12:00 UTC. No new resources |
-| **D3** | Approve Test 4, with P-A's and P-B's tariffs filled in and the cost ceiling accepted | Forwarding on P-B is enabled and removed by Andrew. Needs D2. Must finish by 12:00 UTC unless D4 |
+| **D2** | ~~Deploy the fixed E-SIP to the VM~~ **DONE 2026-10-09 08:05 UTC** (`827c6bb`, §1.2); rollback copy kept | — |
+| **D3** | Approve Test 4 (spare mobile = P-B), with the §3.1 items answered and the cost ceiling accepted | Forwarding on the spare is enabled and removed by Andrew. Must finish by 12:00 UTC unless D4 |
 | **D4** | Leave the 13:00 BST stop as is (recommended), or approve a new window for Test 4 later | Extending keeps the VM about $0.14 per day; the £5 ceiling holds |
 | **D5** | Test 5: only after Magrathea's written answers to Q1–Q6 and Q8, plus a stated maximum cost; needs a code change and possibly the paid Chargeable Translation | Not requested yet |
 | **D6** | Teardown after Magrathea's written un-routing confirmation | `teardown-do.sh --magrathea-confirmed "…"` |

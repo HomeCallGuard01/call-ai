@@ -3,7 +3,8 @@
 ## 0. NEW 2026-10-09: Magrathea transfer readiness (safety fixes done, test plan PROPOSED)
 
 [`../carriers/MAGRATHEA-TRANSFER-READINESS.md`](../carriers/MAGRATHEA-TRANSFER-READINESS.md)
-- **Safety fixes in `sip-lab`, NOT deployed to the VM** (decision D2):
+- **D2 DONE 2026-10-09 08:05 UTC:** fixes deployed to the VM (`827c6bb`; rollback `/opt/sip-lab.rollback-416051e`; config unchanged; health check passed without a call; 12:00 UTC stop unchanged). Test 4 revised: the spare mobile forwards, the iPhone only calls.
+- **Safety fixes in `sip-lab`:**
   - SAFETY-1: BYE retransmission (Timers E/F), confirmation, retries, and a cap backstop after an unacknowledged BYE.
   - SAFETY-3: lost ACK; the cap now runs from our 200 OK.
   - SAFETY-2: a session-refresh re-INVITE gets 200 OK. (The old code ignored it; it did not send 405.)
