@@ -26,7 +26,7 @@ Evidence: [`MAGRATHEA-LIVE-CALL-EVIDENCE.md`](MAGRATHEA-LIVE-CALL-EVIDENCE.md). 
 The output guard is unchanged: E-SIP can send no INVITE, REFER, REGISTER or 3xx; BYE is the only request it can send.
 
 **Tests** (loopback 127.0.0.1 only):
-- new `test_esip_safety.py` **24/24**, run three times in parallel: 24/24 each time;
+- new `test_esip_safety.py` **26/26**, run three times in parallel: 26/26 each time. This includes S15 (a real process, SIGTERM mid-call: BYE confirmed, exit in under 1 s despite a pending 120 s timer) and S16 (handler exception → ALERT, endpoint keeps serving);
 - existing `test_esip_loopback.py` **16/16**, with T1 pinned to 2 s for its exact-sequence checks;
 - `test_sip_identity.py` **14/14**.
 
@@ -54,7 +54,7 @@ Scenarios covered:
 2. **We cannot force-clear a leg that Magrathea won't clear.** After `clear_failed_manual_action`, the only remedies are the caller hanging up, the customer's MNO, or Magrathea support. Alerts are written to the timeline only; nothing pages anyone. Hence: every test is attended.
 3. **The fixes are not deployed.** The VM still runs the 2026-10-08 code, which has SAFETY-1/-3 and no graceful shutdown. That is acceptable only because **no call is planned before 12:00 UTC**. Deploying needs a service restart (§5, decision D2).
 4. Media is not re-targeted on re-INVITE: we keep sending to the original SDP address. There is no handling of `UPDATE` (Magrathea's INVITE did not offer it) or of hold SDP.
-5. Retransmit timers run in threads in one Python process. A process crash loses them. systemd restarts on failure, but the restarted process has no memory of earlier dialogs.
+5. Retransmit timers run in threads in one Python process. A per-message exception is now caught and logged as a `handler_error` ALERT (S16). A process crash would still lose them. *Corrected 2026-10-09:* the unit has `Restart=no`, so a crashed endpoint **stays down**: new calls then fail at Magrathea, and any held call is left to the caller.
 6. `esip_report.py` masks digit runs; it does not recognise numbers written with separators. Raw INVITEs, WAVs and pcaps remain unmasked by design: they are the private evidence (mode 600/700, outside git).
 
 ---

@@ -35,12 +35,19 @@ def check(name, cond, detail=""):
     print(f"{len(RESULTS):2}. {'PASS' if cond else 'FAIL'}  {name}" + ("" if cond else f"  -> {detail}"))
 
 
+_USED = set()
+
+
 def free_port():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.bind(("127.0.0.1", 0))
-    p = s.getsockname()[1]
-    s.close()
-    return p
+    """A free UDP port not handed out before in this run (the OS may re-issue a just-closed one)."""
+    while True:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind(("127.0.0.1", 0))
+        p = s.getsockname()[1]
+        s.close()
+        if p not in _USED:
+            _USED.add(p)
+            return p
 
 
 class Proxy:
@@ -348,6 +355,63 @@ def main():
           digits not in all_tl and "BYE sip:********789@10.9.9.9" in all_tl,
           [l for l in all_tl.splitlines() if digits in l][:2])
     check("S14 the trial DDI stays readable in logs", "INVITE sip:443300884327@127.0.0.1" in all_tl)
+
+    # 15. Real process + SIGTERM (what systemd and the 12:00 UTC timer send) during a held
+    #     call with a pending 120 s cap timer: BYE, confirmation, prompt exit.
+    import json as _j
+    import signal
+    import subprocess
+    ev = tempfile.mkdtemp(prefix="esip-safety-")
+    DIRS.append(ev)
+    port = free_port()
+    cf = os.path.join(ev, "c.json")
+    _j.dump({"listen_ip": "127.0.0.1", "listen_port": port, "public_ip": "127.0.0.1", "rtp_port": free_port(),
+             "rtp_slots": 1, "allow_ips": ["127.0.0.1"], "mode": "answer_hold", "ring_s": 0.05,
+             "max_call_s": 120, "max_runtime_s": 300, "evidence_dir": ev}, open(cf, "w"))
+    # 16. A handler exception is logged as an ALERT and the endpoint keeps serving.
+    q2 = Proxy("busy")
+    q2.send("\r\n".join(["INVITE sip:443300884327@127.0.0.1 SIP/2.0", "Call-ID: broken@test", "CSeq: 1 INVITE",
+                          "Content-Length: 0", "", ""]))      # no Via/From/To: response() raises
+    q2.pump(0.3)
+    q2.invite()
+    q2.pump(0.3)
+    check("S16 malformed INVITE -> handler_error ALERT; next call still answered (486 in busy mode)",
+          q2.events("handler_error") and any(m.startswith("SIP/2.0 486") for t, m in q2.msgs), q2.events("handler_error"))
+
+    proc = subprocess.Popen([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                  "esip_capture.py"), "--config", cf])
+    time.sleep(0.6)
+    u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    u.bind(("127.0.0.1", 0))
+    u.settimeout(0.05)
+    me = u.getsockname()[1]
+    base = [f"Via: SIP/2.0/UDP 127.0.0.1:{me};branch=z9hG4bKs15", f"From: <sip:{MOBILE}@10.9.9.9>;tag=C",
+            "To: <sip:443300884327@127.0.0.1>", "Call-ID: s15@test"]
+    u.sendto("\r\n".join(["INVITE sip:443300884327@127.0.0.1 SIP/2.0", *base, "CSeq: 1 INVITE",
+                           f"Contact: <sip:{MOBILE}@10.9.9.9>", "Content-Type: application/sdp", "",
+                           "v=0\r\nc=IN IP4 127.0.0.1\r\nm=audio 4000 RTP/AVP 8\r\n"]).encode(), ("127.0.0.1", port))
+    time.sleep(0.4)
+    u.sendto("\r\n".join(["ACK sip:esip@127.0.0.1 SIP/2.0", *base, "CSeq: 1 ACK", "Content-Length: 0", "", ""]).encode(),
+             ("127.0.0.1", port))
+    time.sleep(0.5)
+    t0 = time.time()
+    proc.send_signal(signal.SIGTERM)
+    while time.time() - t0 < 8 and proc.poll() is None:
+        try:
+            m = u.recv(65535).decode(errors="replace")
+            if m.startswith("BYE "):
+                h = [l for l in m.split("\r\n") if l.split(":")[0] in ("Via", "From", "To", "Call-ID", "CSeq")]
+                u.sendto(("SIP/2.0 200 OK\r\n" + "\r\n".join(h) + "\r\nContent-Length: 0\r\n\r\n").encode(),
+                         ("127.0.0.1", port))
+        except socket.timeout:
+            pass
+    rc = proc.wait(timeout=10)
+    took = time.time() - t0
+    tl15 = [_j.loads(l) for l in open(os.path.join(ev, "timeline.jsonl"))]
+    sd = [r for r in tl15 if r.get("event") == "shutdown"]
+    check("S15 real process, SIGTERM mid-call: BYE confirmed, shutdown cleared=1, exit < 6 s despite 120 s timer",
+          rc == 0 and took < 6 and sd and sd[0]["cleared"] == 1 and sd[0]["unconfirmed"] == 0
+          and any(r.get("event") == "bye_confirmed" for r in tl15), (rc, round(took, 1), sd))
 
     for d in DIRS:
         shutil.rmtree(d, ignore_errors=True)

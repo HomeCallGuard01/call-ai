@@ -348,6 +348,13 @@ class Esip:
         if retry:
             self.send_bye(cid, f"retry_after_{code}")
 
+    def _timer(self, secs, cid, why):
+        # Daemon, so a pending cap timer cannot hold the process open past systemd's stop
+        # timeout; shutdown() has already sent BYE for any held call by then.
+        t = threading.Timer(secs, self.send_bye, [cid, why])
+        t.daemon = True
+        t.start()
+
     def _close_rtp(self, d):
         if d.get("rtp_sock") and not d.get("media_started"):
             d["rtp_sock"].close()
@@ -448,7 +455,7 @@ class Esip:
                 self.send(ok, addr)
                 d["state"] = "answered"
             # The cap runs from our 200 OK, so it also covers a call whose ACK is lost.
-            threading.Timer(self.cfg.get("max_call_s", 120), self.send_bye, [cid, "max_call_s"]).start()
+            self._timer(self.cfg.get("max_call_s", 120), cid, "max_call_s")
             threading.Thread(target=self._ok_retransmit, args=(cid, d, ok), daemon=True).start()
         elif method == "INVITE":
             d = self.dialogs[cid]
@@ -476,8 +483,8 @@ class Esip:
                 d["media_started"] = True
             threading.Thread(target=self.media, args=(cid,), daemon=True).start()
             if self.mode == "answer_bye":
-                threading.Timer(min(self.cfg.get("bye_after_s", 10), self.cfg.get("max_call_s", 120)),
-                                self.send_bye, [cid, "bye_after_s"]).start()
+                self._timer(min(self.cfg.get("bye_after_s", 10), self.cfg.get("max_call_s", 120)),
+                            cid, "bye_after_s")
         elif method == "CANCEL" and cid in self.dialogs:
             self.send(self.response(msg, 200, "OK"), addr)
             d = self.dialogs[cid]
@@ -515,7 +522,10 @@ class Esip:
             if not self.allowed(addr[0]):
                 self.log({"event": "dropped_non_allowlisted", "from": addr[0]})
                 continue
-            self.handle(data.decode(errors="replace"), addr)
+            try:
+                self.handle(data.decode(errors="replace"), addr)
+            except Exception as exc:              # one bad message must not take the endpoint down
+                self.log({"event": "handler_error", "alert": True, "error": mask_line(repr(exc))[:300]})
         self.stopping = True
         self.shutdown()
         self.log({"event": "auto_stop"})
