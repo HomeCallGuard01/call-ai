@@ -1003,6 +1003,9 @@ configureProvisioningAbuseGuard(telephonyAbuse.provisioningGuard);
 // Integration 2026-10-03: admin visibility of the Launch Fortress controls
 // (read-only; DASHBOARD ≠ ENFORCEMENT — see services/businessControl/fortressOverview.js).
 app.use(require("./routes/adminFortress").createAdminFortressRoutes({ supabaseAdmin, financialContainmentDb, telephonyAbuse }));
+// Support-verified forwarding proof (migration 075, launch blocker B3): the
+// audited admin action that lets a household become Protected.
+app.use(require("./routes/adminForwardingProof").createAdminForwardingProofRoutes({ supabaseAdmin }));
 // Accounting automation status (read-only; 503 until migration 071 is applied).
 app.use(require("./routes/adminAccounting").createAdminAccountingRoutes({ supabaseAdmin }));
 // Customer lifecycle (2026-10-04): read-only exception queue + per-household activation state.

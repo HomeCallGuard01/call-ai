@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Forwarding proof — HCG admin</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1b2430; --muted:#5b6675; --line:#d9dee5; --ok:#1d7a46; --bad:#b42318; --accent:#1f4fd1; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:17px; margin:0 0 10px; }
+  .muted { color:var(--muted); } .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin:16px 0; }
+  label { display:block; font-weight:600; margin:12px 0 4px; }
+  input, textarea, select { width:100%; box-sizing:border-box; font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; }
+  textarea { min-height:64px; } button { font:inherit; padding:9px 16px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; margin-top:12px; }
+  button.secondary { background:#fff; color:var(--accent); } button.danger { border-color:var(--bad); background:#fff; color:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:14px; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:13px; border:1px solid var(--line); }
+  .pill.ok { color:var(--ok); border-color:var(--ok); } .pill.bad { color:var(--bad); border-color:var(--bad); }
+  #msg { white-space:pre-wrap; } #msg.ok { color:var(--ok); } #msg.bad { color:var(--bad); }
+  ol li { margin:4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Support-verified forwarding proof</h1>
+  <p class="muted">The only way a customer is shown <strong>Protected</strong> until automatic verification exists. Every action is checked by the database and recorded permanently in the audit.</p>
+
+  <div class="card">
+    <h2>Procedure (attended, customer on the line)</h2>
+    <ol>
+      <li>The customer confirms call forwarding is switched on, using the code or Settings path the app showed them.</li>
+      <li>From a <strong>designated support phone</strong>, dial the <strong>customer's own mobile number</strong>. Never the HCG number.</li>
+      <li>The call must arrive in the HCG app and the customer must <strong>answer it in the app</strong>. Then end the call.</li>
+      <li>Load the household below and pick that call. Enter the last 4 digits of the mobile number you dialled, write a reason, type the confirmation, and record.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <label for="hh">Household ID</label>
+    <input id="hh" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
+    <button id="load" class="secondary" type="button">Load</button>
+  </div>
+
+  <div id="state" class="card" hidden>
+    <h2>Household</h2>
+    <p id="summary"></p>
+    <h2>Recent calls (evidence window)</h2>
+    <table><thead><tr><th>When</th><th>Caller</th><th>Answered in app</th><th>Eligible</th><th></th></tr></thead><tbody id="calls"></tbody></table>
+
+    <div id="recordBox">
+      <label for="sid">Evidence call SID</label><input id="sid" autocomplete="off" readonly>
+      <label for="last4">Last 4 digits of the customer's own mobile you dialled</label><input id="last4" inputmode="numeric" maxlength="4" autocomplete="off">
+      <label for="reason">Reason (who was on the call, what you saw)</label><textarea id="reason"></textarea>
+      <label for="confirm">Type <code>RECORD FORWARDING PROOF</code></label><input id="confirm" autocomplete="off">
+      <button id="record" type="button">Record proof</button>
+    </div>
+
+    <div id="clearBox" hidden>
+      <label for="creason">Reason for clearing</label><textarea id="creason"></textarea>
+      <label for="cconfirm">Type <code>CLEAR FORWARDING PROOF</code></label><input id="cconfirm" autocomplete="off">
+      <button id="clear" class="danger" type="button">Clear proof</button>
+    </div>
+    <p id="msg"></p>
+
+    <h2>Audit</h2>
+    <table><thead><tr><th>When</th><th>Action</th><th>Evidence</th><th>By</th><th>Reason</th></tr></thead><tbody id="audit"></tbody></table>
+  </div>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var fmt = function (t) { return t ? new Date(t).toLocaleString('en-GB') : '—'; };
+  function cell(tr, text) { var td = document.createElement('td'); td.textContent = text == null ? '—' : String(text); tr.appendChild(td); return td; }
+  function say(text, ok) { var m = $('msg'); m.textContent = text; m.className = ok ? 'ok' : 'bad'; }
+  function hh() { return $('hh').value.trim(); }
+
+  async function load() {
+    say('', true);
+    var res = await fetch('/admin/api/households/' + encodeURIComponent(hh()) + '/forwarding-proof', { credentials: 'include' });
+    var body = await res.json().catch(function () { return {}; });
+    if (!res.ok) { $('state').hidden = false; say(body.message || body.error || ('Failed (' + res.status + ')'), false); return; }
+    $('state').hidden = false;
+    var h = body.household;
+    var proven = !!h.forwardingProvenAt;
+    $('summary').textContent = 'Mobile …' + (h.mobileLast4 || '????') + ' · HCG number …' + (h.hcgNumberLast4 || '????') +
+      (h.numberActive ? ' (active)' : ' (NOT active)') + ' · ' + (proven ? ('PROVEN ' + fmt(h.forwardingProvenAt) + ' by ' + h.forwardingProofMethod) : 'not proven') +
+      ' · support phones configured: ' + body.supportPhonesConfigured + ' · window: ' + body.maxAgeMinutes + ' min';
+    $('recordBox').hidden = proven; $('clearBox').hidden = !proven;
+    var tb = $('calls'); tb.textContent = '';
+    (body.candidates || []).forEach(function (c) {
+      var tr = document.createElement('tr');
+      cell(tr, fmt(c.at)); cell(tr, '…' + (c.callerLast4 || '????')); cell(tr, c.dialCallStatus || 'no outcome');
+      var e = cell(tr, c.eligible ? 'yes' : ('no: ' + c.why)); e.className = c.eligible ? 'pill ok' : '';
+      var td = document.createElement('td');
+      if (c.eligible && !proven) { var b = document.createElement('button'); b.type = 'button'; b.className = 'secondary'; b.textContent = 'Use'; b.onclick = function () { $('sid').value = c.callSid; }; td.appendChild(b); }
+      tr.appendChild(td); tb.appendChild(tr);
+    });
+    if (!(body.candidates || []).length) { var tr = document.createElement('tr'); cell(tr, 'No calls in the window'); tb.appendChild(tr); }
+    var ab = $('audit'); ab.textContent = '';
+    (body.audit || []).forEach(function (a) {
+      var tr = document.createElement('tr');
+      cell(tr, fmt(a.at)); cell(tr, a.action + (a.method ? ' (' + a.method + ')' : ''));
+      cell(tr, a.evidence_call_sid ? (a.evidence_call_sid + ' from …' + a.evidence_caller_last4 + ', dialled …' + a.attested_dialled_last4) : '—');
+      cell(tr, a.actor); cell(tr, a.reason); ab.appendChild(tr);
+    });
+  }
+
+  async function post(url, payload) {
+    var res = await fetch(url, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    var body = await res.json().catch(function () { return {}; });
+    if (!res.ok) { say(body.message || body.error || ('Failed (' + res.status + ')'), false); return false; }
+    return true;
+  }
+
+  $('load').onclick = load;
+  $('record').onclick = async function () {
+    var ok = await post('/admin/api/households/' + encodeURIComponent(hh()) + '/forwarding-proof',
+      { evidenceCallSid: $('sid').value.trim(), dialledLast4: $('last4').value.trim(), reason: $('reason').value, confirm: $('confirm').value });
+    if (ok) { await load(); say('Proof recorded. The customer will see Protected on their next refresh.', true); }
+  };
+  $('clear').onclick = async function () {
+    var ok = await post('/admin/api/households/' + encodeURIComponent(hh()) + '/forwarding-proof/clear', { reason: $('creason').value, confirm: $('cconfirm').value });
+    if (ok) { await load(); say('Proof cleared.', true); }
+  };
+  var q = new URLSearchParams(location.search).get('household'); if (q) { $('hh').value = q; load(); }
+})();
+</script>
+</body>
+</html>

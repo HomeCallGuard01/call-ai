@@ -120,6 +120,9 @@ const RULES = [
   R('provider_usage_alert_trip', 'Provider usage alerts', ['PROVIDER_USAGE_ALERT_TRIP_TRIGGER_SIDS', 'PROVIDER_USAGE_ALERT_TRIP_ALL'], { production: 'recommended', staging: 'optional' },
     (e) => (present(e.PROVIDER_USAGE_ALERT_TRIP_TRIGGER_SIDS) || e.PROVIDER_USAGE_ALERT_TRIP_ALL === 'true' ? null : 'no_trigger_designated'),
     'No provider alert can latch the kill switch until at least one trigger is designated (containment T11).'),
+  R('support_verification_callers', 'Customer protection', ['HCG_SUPPORT_VERIFICATION_CALLERS'], { production: 'recommended', staging: 'optional' },
+    (e) => (String(e.HCG_SUPPORT_VERIFICATION_CALLERS || '').split(',').some((s) => /^\+44\d{10}$/.test(s.trim())) ? null : 'no_support_phone'),
+    'Without a designated support phone no customer can be shown Protected (support-verified forwarding proof, migration 075).'),
   // ── Financial authority ───────────────────────────────────────────────
   R('fortress_degraded_mode_reject', 'Financial authority', ['FC_DEGRADED_MODE', 'FC_ALLOW_BOUNDED_DEGRADED_MODE'], REQ_BOTH,
     (e) => (String(e.FC_DEGRADED_MODE || '').toLowerCase() === 'bounded' || e.FC_ALLOW_BOUNDED_DEGRADED_MODE === 'true' ? 'bounded_degraded_mode_requested' : null),
