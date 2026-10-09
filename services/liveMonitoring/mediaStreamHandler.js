@@ -419,7 +419,7 @@ function createMediaStreamHandler({
   // routing. Optional so every existing test (which drives this handler
   // with plain message objects, no real socket) continues to work
   // unchanged.
-  function handleMessage(rawMessage, { closeConnection } = {}) {
+  function handleMessage(rawMessage, { closeConnection, onStartAccepted } = {}) {
     let message;
     try {
       message = typeof rawMessage === 'string' ? JSON.parse(rawMessage) : rawMessage;
@@ -453,6 +453,11 @@ function createMediaStreamHandler({
     if (message.event === 'start') {
       if (!isPlainObject(message.start)) {
         logEvent('media_stream_malformed_message', { error: '"start" event has no "start" object', streamSid: typeof message.streamSid === 'string' ? message.streamSid : null });
+        // A malformed start is treated like an unauthorised one (2026-10-09):
+        // closed, so it can never hold an idle unauthenticated socket open.
+        if (typeof closeConnection === 'function') {
+          try { closeConnection(); } catch (err) { logEvent('media_stream_close_failed', { error: err.message }); }
+        }
         return Promise.resolve();
       }
 
@@ -595,6 +600,12 @@ function createMediaStreamHandler({
         progressInFlight: false,
       });
       logEvent('media_stream_started', { streamSid, callSid, householdId });
+      // Only an AUTHORISED start disarms the server's no-start timeout
+      // (mediaStreamServer.js, 2026-10-09) — never a frame that merely
+      // looks like one.
+      if (typeof onStartAccepted === 'function') {
+        try { onStartAccepted(); } catch (err) { logEvent('media_stream_start_ack_failed', { error: err.message }); }
+      }
 
       if (usageMeter) {
         const entry = streams.get(streamSid);

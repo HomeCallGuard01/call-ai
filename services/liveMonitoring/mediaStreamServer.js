@@ -26,10 +26,16 @@ const MEDIA_STREAM_PATH = '/media-stream';
  */
 function attachMediaStreamServer(httpServer, deps) {
   const handler = createMediaStreamHandler(deps);
-  const wss = new WebSocketServer({ server: httpServer, path: MEDIA_STREAM_PATH });
+  // maxPayload (2026-10-09): genuine Twilio Media Streams frames are a few
+  // hundred bytes (20 ms of base64 mu-law, or the small start/stop events);
+  // the ws default of 100 MiB let an unauthenticated socket push huge frames.
+  const maxPayload = deps.maxPayloadBytes || 64 * 1024;
+  const wss = new WebSocketServer({ server: httpServer, path: MEDIA_STREAM_PATH, maxPayload });
 
   // P0 remediation (2026-10-01): bound unauthenticated sockets. A socket
-  // that has not sent a "start" event within startTimeoutMs is closed, and
+  // whose start has not been AUTHORISED by the handler within startTimeoutMs
+  // is closed (2026-10-09: previously any frame matching "event":"start"
+  // disarmed the timer, so a malformed start held a socket open), and
   // connections beyond maxSockets are refused outright. Authentication
   // itself is the stream token checked in mediaStreamHandler (streamAuth.js).
   const maxSockets = deps.maxSockets || 400;
@@ -70,15 +76,15 @@ function attachMediaStreamServer(httpServer, deps) {
       }
     }
 
+    const onStartAccepted = () => { sawStart = true; clearTimeout(startTimer); };
     ws.on('message', data => {
-      if (!sawStart && /"event"\s*:\s*"start"/.test(String(data).slice(0, 200))) sawStart = true;
       // closeConnection lets handleMessage stop this specific stream's
       // WebSocket once the per-call monitoring safety limit is reached
       // (services/liveMonitoring/monitoringLimit.js) — closing our end
       // stops Twilio sending further Media Streams data/billing for this
       // call, and has no effect whatsoever on the underlying <Dial>'d
       // call, which is a completely independent TwiML action.
-      handler.handleMessage(data.toString(), { closeConnection: () => ws.close() }).catch(err => {
+      handler.handleMessage(data.toString(), { closeConnection: () => ws.close(), onStartAccepted }).catch(err => {
         // handleMessage already catches internally; this is a final
         // backstop so a truly unexpected error can never crash the
         // process or the live call it's monitoring.
