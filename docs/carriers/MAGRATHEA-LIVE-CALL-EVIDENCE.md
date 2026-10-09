@@ -202,7 +202,7 @@ By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 mi
 
 ## 11. SAFETY-1: the 120 s backstop does not cover an unacknowledged BYE (fix before wider testing)
 
-**Found:** 2026-10-08 during Test 2 review (code reading; it did **not** occur in any call). **Status: OPEN.** Not fixed, to keep the VM's code unchanged during the approved window.
+**Found:** 2026-10-08 during Test 2 review (code reading; it did **not** occur in any call). **Status (2026-10-09): FIXED in the repo and regression-tested (24/24), NOT deployed to the VM.** See [`MAGRATHEA-TRANSFER-READINESS.md`](MAGRATHEA-TRANSFER-READINESS.md) §1, which also adds SAFETY-3 (lost ACK) and graceful shutdown.
 
 **Defect** (`scripts/carriers/sip-lab/esip_capture.py`, `send_bye`):
 1. `send_bye` sends the BYE **once** over UDP and sets `state = "bye_sent"` immediately. There is no retransmission (RFC 3261 non-INVITE Timer E: 0.5 s, doubling to 4 s, until Timer F = 32 s).
@@ -211,7 +211,7 @@ By 16:25:59 UTC the trial number's target already pointed at the VM, about 18 mi
 4. The same applies when the 120 s cap BYE itself is lost in `answer_hold` mode.
 
 **Related findings (same review):**
-- **SAFETY-2:** an in-dialog re-INVITE (for example a session refresh; Magrathea sends `Session-Expires: 1900;refresher=uac`) is treated as an unknown method and gets **405**, not 200 OK with the same SDP. This is irrelevant under a 120 s cap, but it must be handled before any call can last near 1,900 s.
+- **SAFETY-2:** an in-dialog re-INVITE (for example a session refresh; Magrathea sends `Session-Expires: 1900;refresher=uac`) is not answered with 200 OK and the same SDP. *Corrected 2026-10-09:* the old code **silently ignored** it (`retransmission_or_reinvite_ignored`); it did not send 405. This is irrelevant under a 120 s cap, but it must be handled before any call can last near 1,900 s.
 - **PRIV-1:** the timeline logs the BYE Request-URI unmasked, and that URI contains the caller's number (the INVITE Contact). The timeline is private (mode 600, outside git), but the design intent is that the timeline holds only masked numbers.
 
 **Fix to make before wider testing (needs approval to deploy):**

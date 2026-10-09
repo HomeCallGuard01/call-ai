@@ -30,7 +30,10 @@ def start(allow, mode, ev):
     port = free_port()
     cfg = {"listen_ip": "127.0.0.1", "listen_port": port, "public_ip": "127.0.0.1",
            "rtp_port": free_port(), "allow_ips": allow, "mode": mode, "ring_s": 0.2,
-           "bye_after_s": 0.5, "max_call_s": 5, "max_runtime_s": 60, "evidence_dir": ev}
+           "bye_after_s": 0.5, "max_call_s": 5, "max_runtime_s": 60, "evidence_dir": ev,
+           # T1 = 2 s keeps 200 OK / BYE retransmissions out of these exact-sequence checks;
+           # retransmission and loss behaviour is covered by test_esip_safety.py.
+           "sip_t1": 2.0}
     e = esip_capture.Esip(cfg, mode)
     threading.Thread(target=e.run, daemon=True).start()
     return e, port
@@ -243,7 +246,7 @@ def main():
     ev4 = tempfile.mkdtemp(prefix="esip-test-")
     cfg4 = {"listen_ip": "127.0.0.1", "listen_port": free_port(), "public_ip": "127.0.0.1",
             "rtp_port": free_port(), "allow_ips": ["127.0.0.1"], "mode": "answer_hold", "ring_s": 0.1,
-            "max_call_s": 1, "evidence_dir": ev4, "max_runtime_s": 60}
+            "max_call_s": 1, "evidence_dir": ev4, "max_runtime_s": 60, "sip_t1": 2.0}
     e4 = esip_capture.Esip(cfg4, "answer_hold")
     threading.Thread(target=e4.run, daemon=True).start()
     s4 = uac()

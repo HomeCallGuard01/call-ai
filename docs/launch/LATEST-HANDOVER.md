@@ -1,6 +1,22 @@
 # LATEST HANDOVER (updated 2026-10-08: Magrathea trial prepared; Build 17 state below unchanged since 2026-10-06 ~19:35 UTC)
 
-## 0. NEW 2026-10-08: Magrathea trial, first live call PASSED
+## 0. NEW 2026-10-09: Magrathea transfer readiness (safety fixes done, test plan PROPOSED)
+
+[`../carriers/MAGRATHEA-TRANSFER-READINESS.md`](../carriers/MAGRATHEA-TRANSFER-READINESS.md)
+- **Safety fixes in `sip-lab`, NOT deployed to the VM** (decision D2):
+  - SAFETY-1: BYE retransmission (Timers E/F), confirmation, retries, and a cap backstop after an unacknowledged BYE.
+  - SAFETY-3: lost ACK; the cap now runs from our 200 OK.
+  - SAFETY-2: a session-refresh re-INVITE gets 200 OK. (The old code ignored it; it did not send 405.)
+  - SIGTERM: BYE every held call.
+  - PRIV-1: masked logs, plus `esip_report.py`.
+  - Tests: new 24/24, existing 16/16 and 14/14, on the Mac and on the VM (temporary directory).
+- **Limitation:** loopback ≠ carrier. Only Magrathea's CDR proves its leg stopped.
+- **10 questions for Jay** (§2): transfer method, hairpin, onward-leg billing, rates/increments, CLI, loops, PAI/Diversion, hard spend stop, the four CDRs, routing back. Not sent (D1).
+- **Test 4** (forwarded call → HCG clears; no onward leg; needs nothing from Magrathea): ready on approval D3, before 12:00 UTC.
+- **Test 5** (transfer): **BLOCKED** on Magrathea's written answers, a code change and possibly paid Chargeable Translation. Once HCG leaves, its 120 s cap no longer bounds the onward leg.
+- **Stop at 12:00 UTC (13:00 BST) unchanged.** `teardown-do.sh` hardened: it refuses without Magrathea's written un-routing confirmation, and aborts on any evidence checksum mismatch (D6).
+
+## 0a. 2026-10-08: Magrathea trial, first live call PASSED
 
 **Plan:** [`../carriers/MAGRATHEA-TRIAL-PLAN.md`](../carriers/MAGRATHEA-TRIAL-PLAN.md)
 **Branch:** `research/magrathea-trial-poc`. Worktree: `/Users/ad/call-ai-magrathea-trial`. Base: `ad545a1`.

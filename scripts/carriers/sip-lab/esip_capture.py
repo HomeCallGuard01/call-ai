@@ -13,7 +13,20 @@ Modes (one per test case):
   unavailable  100, 480                         unreachable destination (T12)
   answer_hold  100, 180, 200; waits for BYE     first live call (T1), caller clears (T6a)
   answer_bye   100, 180, 200; BYE after N s     billing cessation, we clear (T6b)
-Every answered call is also cut by E-SIP after max_call_s (hard per-call cap).
+Every answered call is also cut by E-SIP after max_call_s (hard per-call cap), counted
+from our 200 OK, so it also covers a call whose ACK never arrives.
+
+Clearing (SAFETY-1/-3, 2026-10-09): our BYE is a proper non-INVITE client transaction. It
+is retransmitted (RFC 3261 Timer E: T1, doubling to T2) until a final response or Timer F
+(64*T1). A 2xx or 481 marks the call "cleared". A timeout logs bye_unconfirmed (ALERT) and
+starts a fresh BYE (CSeq+1), up to bye_attempts; the max_call_s backstop and shutdown
+(SIGTERM) also start one if the call is not yet confirmed cleared. Our 200 OK is
+retransmitted until ACK (Timer G); with no ACK by 64*T1 we clear with BYE (§13.3.1.4).
+An in-dialog re-INVITE (session refresh, SAFETY-2) gets 200 OK with our unchanged SDP.
+None of this proves the carrier clears its leg: only Magrathea's CDR shows that.
+
+Privacy (PRIV-1): every SIP line written to the timeline goes through mask_line(), so
+numbers in Request-URIs (e.g. a BYE to the caller's Contact) are masked like the rest.
 
 Two-way audio proof, per answered call:
   E-SIP -> caller: a 1 kHz beep (0.4 s every 2 s) the caller should hear;
@@ -33,6 +46,7 @@ import math
 import os
 import random
 import re
+import signal
 import socket
 import sys
 import threading
@@ -101,6 +115,17 @@ def mask(n):
     return None if not n else ("*" * (len(n) - 3) + n[-3:] if n != sip_identity.DDI_E164 else n)
 
 
+_DDI_DIGITS = {u.lstrip("+") for u in sip_identity.DDI_RURI_USERS}
+
+
+def mask_line(line):
+    """Mask any run of 7+ digits (a phone number) except the trial DDI itself."""
+    def m(x):
+        d = x.group(0)
+        return d if d in _DDI_DIGITS else "*" * (len(d) - 3) + d[-3:]
+    return re.sub(r"\d{7,}", m, line)
+
+
 def masked_info(info):
     c, d = dict(info["caller"]), dict(info["diversion"])
     for k in ("presented", "network", "match_identity"):
@@ -120,8 +145,13 @@ class Esip:
         self.sock.bind((cfg["listen_ip"], cfg["listen_port"]))
         self.dialogs = {}          # call-id -> state
         self.lock = threading.Lock()
+        self.dlock = threading.RLock()    # dialog state transitions (main loop + timers)
         self.next_rtp = 0
         self.deadline = time.time() + cfg.get("max_runtime_s", 4 * 3600)
+        self.t1 = cfg.get("sip_t1", 0.5)
+        self.t2 = cfg.get("sip_t2", 4.0)
+        self.bye_attempts = cfg.get("bye_attempts", 3)
+        self.stopping = False
 
     def allowed(self, ip):
         try:
@@ -140,7 +170,8 @@ class Esip:
         elif re.match(r"SIP/2\.0 3\d\d", first):
             raise RuntimeError("refusing to send a 3xx redirect")
         self.sock.sendto(data.encode(), addr)
-        self.log({"dir": "out", "line": first, "to": addr[0]})
+        cid = re.search(r"^Call-ID:\s*(\S+)", data, re.M | re.I)
+        self.log({"dir": "out", "line": mask_line(first), "to": addr[0], "call_id": cid and cid.group(1)})
 
     def log(self, rec):
         rec = {"t": utc(), **rec}
@@ -241,29 +272,134 @@ class Esip:
                   "two_way_audio": sent > 0 and recv > 0})
 
     def send_bye(self, cid, why):
-        d = self.dialogs.get(cid)
-        if not d or d["state"] != "up":
-            return
-        h = self.hdrs(d["invite"])
-        target = re.search(r"<([^>]+)>", h["contact"][0]).group(1)
-        routes = [f"Route: {r}" for r in reversed(h.get("record-route", []))]
-        bye = "\r\n".join([
-            f"BYE {target} SIP/2.0",
-            f"Via: SIP/2.0/UDP {self.cfg['public_ip']}:{self.cfg['listen_port']};branch=z9hG4bK{random.getrandbits(40):x}",
-            "Max-Forwards: 70", *routes,
-            f"From: {h['to'][0]};tag={d['tag']}", f"To: {h['from'][0]}",
-            f"Call-ID: {cid}", "CSeq: 1 BYE", "Content-Length: 0", "", ""])
-        d["state"] = "bye_sent"
-        self.log({"event": "bye", "call_id": cid, "reason": why})
-        self.send(bye, d["addr"])
+        """Start a BYE client transaction unless the call is already cleared or one is in flight."""
+        with self.dlock:
+            d = self.dialogs.get(cid)
+            if not d or d["state"] not in ("answered", "up", "bye_sent"):
+                return
+            if d.get("bye_txn") and not d["bye_txn"]["done"]:
+                return                                  # a transaction is already retrying
+            d["cseq_out"] = d.get("cseq_out", 0) + 1
+            h = self.hdrs(d["invite"])
+            target = re.search(r"<([^>]+)>", h["contact"][0]).group(1)
+            routes = [f"Route: {r}" for r in reversed(h.get("record-route", []))]
+            branch = f"z9hG4bK{random.getrandbits(40):x}"
+            bye = "\r\n".join([
+                f"BYE {target} SIP/2.0",
+                f"Via: SIP/2.0/UDP {self.cfg['public_ip']}:{self.cfg['listen_port']};branch={branch}",
+                "Max-Forwards: 70", *routes,
+                f"From: {h['to'][0]};tag={d['tag']}", f"To: {h['from'][0]}",
+                f"Call-ID: {cid}", f"CSeq: {d['cseq_out']} BYE", "Content-Length: 0", "", ""])
+            txn = d["bye_txn"] = {"cseq": d["cseq_out"], "done": False, "t0": time.time()}
+            d["bye_count"] = d.get("bye_count", 0) + 1
+            d["state"] = "bye_sent"
+            self.log({"event": "bye", "call_id": cid, "reason": why, "cseq": txn["cseq"],
+                      "attempt": d["bye_count"]})
+        threading.Thread(target=self._bye_txn, args=(cid, d, txn, bye), daemon=True).start()
+
+    def _bye_txn(self, cid, d, txn, bye):
+        """RFC 3261 §17.1.2 over UDP: send, retransmit at T1 doubling to T2, give up at 64*T1."""
+        interval, give_up = self.t1, txn["t0"] + 64 * self.t1
+        while True:
+            with self.dlock:
+                if txn["done"] or d["state"] != "bye_sent":
+                    return
+                self.send(bye, d["addr"])
+            wake = min(time.time() + interval, give_up)
+            while time.time() < wake:
+                if txn["done"] or d["state"] != "bye_sent":
+                    return
+                time.sleep(min(0.01, self.t1 / 10))
+            if time.time() >= give_up:
+                break
+            interval = min(interval * 2, self.t2)
+        with self.dlock:
+            if txn["done"] or d["state"] != "bye_sent":
+                return
+            txn["done"] = True
+            self.log({"event": "bye_unconfirmed", "alert": True, "call_id": cid, "cseq": txn["cseq"],
+                      "attempt": d["bye_count"], "after_s": round(time.time() - txn["t0"], 2)})
+            retry = d["bye_count"] < self.bye_attempts
+            if not retry:
+                self.log({"event": "clear_failed_manual_action", "alert": True, "call_id": cid,
+                          "attempts": d["bye_count"],
+                          "action": "caller must hang up; ask Magrathea to clear the call; stop testing"})
+        if retry:
+            self.send_bye(cid, "retry_after_timeout")
+
+    def bye_response(self, cid, cseq_n, code):
+        with self.dlock:
+            d = self.dialogs.get(cid)
+            txn = d and d.get("bye_txn")
+            if not txn or txn["cseq"] != cseq_n or txn["done"]:
+                self.log({"event": "stray_bye_response", "call_id": cid, "code": code})
+                return
+            if code < 200:
+                return                                  # provisional: keep retransmitting (Timer E)
+            txn["done"] = True
+            if 200 <= code < 300 or code == 481:
+                d["state"] = "cleared"
+                self.log({"event": "bye_confirmed", "call_id": cid, "code": code, "cseq": cseq_n,
+                          "after_s": round(time.time() - txn["t0"], 3)})
+                self._close_rtp(d)
+                return
+            self.log({"event": "bye_rejected", "alert": True, "call_id": cid, "code": code})
+            retry = d["bye_count"] < self.bye_attempts
+        if retry:
+            self.send_bye(cid, f"retry_after_{code}")
+
+    def _close_rtp(self, d):
+        if d.get("rtp_sock") and not d.get("media_started"):
+            d["rtp_sock"].close()
+
+    def _ok_retransmit(self, cid, d, ok):
+        """RFC 3261 §13.3.1.4: resend our 200 OK until ACK; no ACK by 64*T1 -> clear with BYE."""
+        interval, give_up = self.t1, time.time() + 64 * self.t1
+        while time.time() < give_up:
+            wake = min(time.time() + interval, give_up)
+            while time.time() < wake:
+                if d["state"] != "answered":
+                    return
+                time.sleep(min(0.01, self.t1 / 10))
+            with self.dlock:
+                if d["state"] != "answered":
+                    return
+                if time.time() < give_up:
+                    self.send(ok, d["addr"])
+            interval = min(interval * 2, self.t2)
+        with self.dlock:
+            if d["state"] != "answered":
+                return
+            self.log({"event": "ack_timeout", "alert": True, "call_id": cid})
+        self.send_bye(cid, "ack_timeout")
+
+    def shutdown(self, grace_s=5.0):
+        """Clear every call we may still hold, then wait briefly for confirmations."""
+        with self.dlock:
+            live = [c for c, d in self.dialogs.items() if d["state"] in ("answered", "up", "bye_sent")]
+        for c in live:
+            self.send_bye(c, "shutdown")
+        end = time.time() + grace_s
+        while time.time() < end and any(self.dialogs[c]["state"] == "bye_sent" for c in live):
+            try:
+                data, addr = self.sock.recvfrom(65535)
+            except (socket.timeout, BlockingIOError):
+                continue
+            if self.allowed(addr[0]):
+                self.handle(data.decode(errors="replace"), addr)
+        left = [c for c in live if self.dialogs[c]["state"] == "bye_sent"]
+        self.log({"event": "shutdown", "cleared": len(live) - len(left), "unconfirmed": len(left),
+                  "alert": bool(left)})
 
     # ---- main loop -----------------------------------------------------------------
     def handle(self, msg, addr):
         first = msg.split("\r\n", 1)[0]
         h = self.hdrs(msg)
         cid = (h.get("call-id") or [""])[0]
-        self.log({"dir": "in", "line": first, "from": f"{addr[0]}:{addr[1]}", "call_id": cid})
+        self.log({"dir": "in", "line": mask_line(first), "from": f"{addr[0]}:{addr[1]}", "call_id": cid})
         method = first.split(" ", 1)[0]
+        cseq = (h.get("cseq") or ["0 ?"])[0].split()
+        cseq_n = int(cseq[0]) if cseq[0].isdigit() else 0
 
         if method == "INVITE" and cid not in self.dialogs:
             file_id = f"{utc().replace(':', '')}-{abs(hash(cid)) % 10**8}"
@@ -274,7 +410,7 @@ class Esip:
             self.log({"event": "classified", "info": masked_info(info)})
             tag = f"{random.getrandbits(40):x}"
             d = self.dialogs[cid] = {"state": "early", "tag": tag, "invite": msg, "addr": addr,
-                                     "file_id": file_id}
+                                     "file_id": file_id, "invite_cseq": cseq_n}
             self.send(self.response(msg, 100, "Trying"), addr)
             if self.mode == "busy":
                 self.send(self.response(msg, 486, "Busy Here", tag), addr)
@@ -298,22 +434,50 @@ class Esip:
             self.next_rtp += 1
             rs = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             rs.bind((self.cfg["listen_ip"], port))
-            d.update(pt=pt, remote=(off[0], off[1]), rtp_sock=rs)
+            d.update(pt=pt, remote=(off[0], off[1]), rtp_sock=rs, rtp_port=port)
             time.sleep(self.cfg.get("ring_s", 2))
+            if self.stopping:
+                self.send(self.response(msg, 480, "Temporarily Unavailable", tag), addr)
+                d["state"] = "done"
+                rs.close()
+                return
             contact = f"Contact: <sip:esip@{self.cfg['public_ip']}:{self.cfg['listen_port']}>"
-            self.send(self.response(msg, 200, "OK", tag, self.sdp(pt, port), [contact]), addr)
-            d["state"] = "answered"
+            ok = self.response(msg, 200, "OK", tag, self.sdp(pt, port), [contact])
+            d["ok"] = ok
+            with self.dlock:
+                self.send(ok, addr)
+                d["state"] = "answered"
+            # The cap runs from our 200 OK, so it also covers a call whose ACK is lost.
+            threading.Timer(self.cfg.get("max_call_s", 120), self.send_bye, [cid, "max_call_s"]).start()
+            threading.Thread(target=self._ok_retransmit, args=(cid, d, ok), daemon=True).start()
         elif method == "INVITE":
-            self.log({"event": "retransmission_or_reinvite_ignored", "call_id": cid})
-        elif method == "ACK" and self.dialogs.get(cid, {}).get("state") == "answered":
             d = self.dialogs[cid]
-            d["state"] = "up"
+            if cseq_n == d["invite_cseq"]:
+                # Retransmission of the original INVITE: repeat our last answer (§17.2.1).
+                if d["state"] == "answered" and d.get("ok"):
+                    self.send(d["ok"], addr)
+                self.log({"event": "invite_retransmission", "call_id": cid, "state": d["state"]})
+            elif d["state"] == "up" and d.get("ok"):
+                # SAFETY-2: in-dialog re-INVITE (e.g. RFC 4028 session refresh). Answer 200 OK
+                # with our unchanged SDP so the refresh succeeds; media is not re-targeted.
+                contact = f"Contact: <sip:esip@{self.cfg['public_ip']}:{self.cfg['listen_port']}>"
+                se = [f"Session-Expires: {v}" for v in h.get("session-expires", [])][:1]
+                self.send(self.response(msg, 200, "OK", d["tag"], self.sdp(d["pt"], d["rtp_port"]),
+                                        [contact, *se]), addr)
+                self.log({"event": "reinvite_answered", "call_id": cid, "cseq": cseq_n})
+            else:
+                self.send(self.response(msg, 491 if d["state"] == "bye_sent" else 481,
+                                        "Request Pending" if d["state"] == "bye_sent"
+                                        else "Call/Transaction Does Not Exist"), addr)
+        elif method == "ACK" and self.dialogs.get(cid, {}).get("state") == "answered":
+            with self.dlock:
+                d = self.dialogs[cid]
+                d["state"] = "up"
+                d["media_started"] = True
             threading.Thread(target=self.media, args=(cid,), daemon=True).start()
-            cap = self.cfg.get("max_call_s", 120)
             if self.mode == "answer_bye":
-                threading.Timer(min(self.cfg.get("bye_after_s", 10), cap), self.send_bye,
-                                [cid, "bye_after_s"]).start()
-            threading.Timer(cap, self.send_bye, [cid, "max_call_s"]).start()
+                threading.Timer(min(self.cfg.get("bye_after_s", 10), self.cfg.get("max_call_s", 120)),
+                                self.send_bye, [cid, "bye_after_s"]).start()
         elif method == "CANCEL" and cid in self.dialogs:
             self.send(self.response(msg, 200, "OK"), addr)
             d = self.dialogs[cid]
@@ -323,12 +487,19 @@ class Esip:
                 d["rtp_sock"].close()
         elif method == "BYE":
             self.send(self.response(msg, 200, "OK"), addr)
-            if cid in self.dialogs:
-                self.dialogs[cid]["state"] = "done"
+            with self.dlock:
+                d = self.dialogs.get(cid)
+                if d:
+                    if d.get("bye_txn"):
+                        d["bye_txn"]["done"] = True     # the far end cleared first: stop our BYE
+                    d["state"] = "done"
+                    self._close_rtp(d)
         elif method == "OPTIONS":
             self.send(self.response(msg, 200, "OK"), addr)
         elif first.startswith("SIP/2.0"):
-            pass                                  # e.g. 200 OK to our BYE: logged above
+            code = int(first.split()[1]) if len(first.split()) > 1 and first.split()[1].isdigit() else 0
+            if len(cseq) > 1 and cseq[1] == "BYE":
+                self.bye_response(cid, cseq_n, code)
         elif method != "ACK":
             self.send(self.response(msg, 405, "Method Not Allowed"), addr)
 
@@ -336,7 +507,7 @@ class Esip:
         self.sock.settimeout(1.0)
         self.log({"event": "start", "mode": self.mode, "allow": [str(n) for n in self.nets],
                   "max_call_s": self.cfg.get("max_call_s", 120)})
-        while time.time() < self.deadline:
+        while time.time() < self.deadline and not self.stopping:
             try:
                 data, addr = self.sock.recvfrom(65535)
             except socket.timeout:
@@ -345,6 +516,8 @@ class Esip:
                 self.log({"event": "dropped_non_allowlisted", "from": addr[0]})
                 continue
             self.handle(data.decode(errors="replace"), addr)
+        self.stopping = True
+        self.shutdown()
         self.log({"event": "auto_stop"})
 
 
@@ -354,7 +527,10 @@ def main():
     ap.add_argument("--mode", choices=["busy", "noanswer", "unavailable", "answer_hold", "answer_bye"])
     a = ap.parse_args()
     cfg = json.load(open(a.config))
-    Esip(cfg, a.mode or cfg["mode"]).run()
+    e = Esip(cfg, a.mode or cfg["mode"])
+    # systemd stop / the 12:00 UTC timer: clear held calls with BYE before exiting.
+    signal.signal(signal.SIGTERM, lambda *_: setattr(e, "stopping", True))
+    e.run()
 
 
 if __name__ == "__main__":
