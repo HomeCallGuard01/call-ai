@@ -108,3 +108,29 @@ The automatic verification-call design (`2026-10-06-LF2-VERIFICATION-CALL-DESIGN
 | 1–2 | Attended staging session on the Motorola (B2): install; trusted and unknown calls; warning; red line; call screen; killed and locked answer; sign-out reject; kill switch; hold; budget cap. Also one real forwarding setup on a launch carrier (needs approval) |
 | 2–3 | Production window (B1, B4, B5, B7): backup and restore proof; migrations 047→075; env (`NEW_SUBSCRIPTIONS_ALLOWLIST` = invited emails, `ALLOWANCE_SOURCE=fortress`, Fortress profile); deploy; signed calls on `…6063`; kill-switch test; Stripe £5.99 cutover; uninvited checkout refused |
 | 3–5 | Invite customers one at a time, using the first-five runbook. Review spend twice daily |
+
+---
+
+## Update, later on 2026-10-09: work completed on `launch/controlled-launch-2026-10-09`
+
+Nothing was merged, deployed, purchased or changed in production or on any console.
+
+Full suite: **215/216 files, 9,243 checks.** The only failure is the same symlink-only `expo prebuild` case as the baseline.
+
+| Blocker | Status now | Evidence |
+|---|---|---|
+| B1 deploy | **Procedure ready.** Railway auto-deploys `main`, so the merge is the deploy and migrations come first. **The deploy publishes £5.99 on the website, terms and guides**, so deploy GO = price-cutover GO | `2026-10-09-PRODUCTION-DEPLOY-PROCEDURE.md` |
+| B2 Android handset | **Plan ready.** It adds the killed-app answer (no `getCalls()` cold-start recovery exists), the locked screen, real forwarding and proof end to end | `2026-10-09-ANDROID-HANDSET-VERIFICATION-PLAN.md` |
+| B3 Protected | **BUILT** (`c0420d7`). Migration 075 DRAFT plus an audited admin action. The database enforces the evidence rules (answered in app, designated support caller, fresh, current number, attested digits, single use). Tests: 36 database checks, 26 end-to-end checks | `2026-10-09-SUPPORT-VERIFIED-PROTECTION.md` |
+| B4 provider exposure | **Checklist ready.** The true HARD limits are separated from alerts. Only 6 controls are real hard limits; Stripe has none | `2026-10-09-PROVIDER-CONTAINMENT-CHECKLIST.md` |
+| B5 cost limits | **Values recommended, with exact SQL. The SQL was verified to apply on the real migrations (invariants ok).** £3.60 per household per period; £2/day auto-hold; global £10/day (5 customers) and £15/day (25); £25 absolute | `2026-10-09-COST-LIMITS-RECOMMENDATION.md` |
+| B6 price | Andrew: **£5.99 target**; the cutover waits for approval | — |
+| B7 Stripe cutover | Unchanged (in the deploy window, D10) | — |
+| B8 Play policy | **Compliant route found; no risk acceptance needed.** Cohort: Option C, no buying in the Android app (pay on the website, sign in on the app). Before public Android: Option A, Play Billing via RevenueCat | `2026-10-09-ANDROID-COMPLIANT-PAYMENTS.md` |
+| Unauthorised cost | **Verified closed in the candidate.** 63 adversarial checks: every forged case makes 0 OpenAI calls and 0 SMS. Production `eb43368` was demonstrated vulnerable. Two non-spend gaps were fixed (`14bd3aa`) | `2026-10-09-UNAUTHORISED-COST-VERIFICATION.md` |
+
+New findings:
+- **Android in-app buying must go for compliance.** That means Stripe Checkout in `subscribe.tsx` and the Billing Portal button in `membership.tsx` (the portal can take a card). The in-app Terms/Privacy links lead to web checkout. The candidate's terms say "in our Android app: through Stripe" and would need one sentence changed.
+- **Whatever is live on Play today sells through in-app Stripe**, which is non-compliant now. Check Play Console.
+- **The allowlist cannot gate store purchases** (Play or Apple). Keep iOS off sale for the cohort.
+- **Margins at £5.99 (Stripe):** typical customer about 26%, light about 51%. Capped worst case about break-even. **£5.99 does not reach the 40% target for a typical customer.** Revisit with real cohort usage.
