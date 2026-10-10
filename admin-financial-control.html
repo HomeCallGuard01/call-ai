@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Financial Control Centre — HCG admin</title>
+<!--
+  Financial Control Centre v1 (WS4, 2026-10-10). READ-ONLY.
+  Served by routes/adminFinancialControl.js (requireAuth + requireAdmin).
+  Every value is rendered with textContent (no innerHTML anywhere — guarded by
+  tests/admin-financial-control.test.mjs). Missing or malformed fields show
+  "—", and an unavailable source is shown as unavailable, never as zero.
+  Nothing on this page writes, enforces or contacts anyone: the
+  "Recommendations" panel is advisory text only (AI may recommend, never
+  enforce).
+
+  Data sources (all existing admin APIs, except the first):
+    /admin/api/financial/customer-profitability  WS2 per-customer profitability
+                                                 (ASSUMED contract "ws2-profitability-v1";
+                                                 see docs/launch/2026-10-10-WS4-REPORT.md)
+    /admin/api/fortress/overview                 kill switch / breaker / household budgets
+    /admin/api/business-control/usage-safety     unusual-usage and loop/flood signals
+    /admin/api/ops-events                        new genuine customers, needs-attention events
+    /admin/api/control-centre/summary            canonical headline + attention list
+-->
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1b2430; --muted:#5b6675; --line:#d9dee5; --ok:#1d7a46; --warn:#9a5b00; --bad:#b42318; --accent:#1f4fd1; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1180px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:17px; margin:0 0 10px; }
+  .muted { color:var(--muted); } .small { font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin:16px 0; overflow-x:auto; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; }
+  .tile { border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .tile .label { font-size:13px; color:var(--muted); } .tile .value { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; font-size:14px; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); margin:1px 2px 1px 0; }
+  .ok { color:var(--ok); border-color:var(--ok); } .warn { color:var(--warn); border-color:var(--warn); } .bad { color:var(--bad); border-color:var(--bad); }
+  .advisory { border-left:4px solid var(--warn); }
+  button { font:inherit; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:#fff; color:var(--accent); cursor:pointer; }
+  ul { margin:4px 0; padding-left:20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Financial Control Centre</h1>
+  <p class="muted">Read-only. Revenue against attributable cost per customer, allowance, provider spend against the Fortress ledger, and risk signals. Nothing here changes anything; recommendations are advisory only.</p>
+  <p><button type="button" id="refresh">Refresh</button> <span id="generated" class="muted small"></span></p>
+  <div id="app"><p class="muted">Loading…</p></div>
+</main>
+<script>
+(function (global) {
+  'use strict';
+
+  var SOURCES = Object.freeze({
+    profitability: '/admin/api/financial/customer-profitability',
+    fortress: '/admin/api/fortress/overview',
+    usage: '/admin/api/business-control/usage-safety',
+    ops: '/admin/api/ops-events',
+    centre: '/admin/api/control-centre/summary'
+  });
+  var EXPECTED_CONTRACT = 'ws2-profitability-v1';
+  var APP_PROBLEM_REASONS = Object.freeze({
+    protection_lost_app_unreachable: 'App unreachable (was working)',
+    not_protected_within_onboarding_window: 'Not protected within 24 h (often: app never registered)',
+    number_provisioning_failed: 'Number provisioning failed',
+    forwarding_not_proven: 'Forwarding not proven yet',
+    payment_failed: 'Payment failed',
+    financial_hold: 'Financial hold',
+    number_quarantined_while_entitled: 'Number quarantined while entitled',
+    state_unreadable: 'State unreadable'
+  });
+  var RISK_FLAGS = Object.freeze({ fraud_signal: 'Fraud signal', loop_suspected: 'Loop suspected', unusual_destination: 'Unusual destination', heavy_user: 'Heavy user', loss_making: 'Loss-making' });
+  var HEAVY_USED_PERCENT = 80;
+
+  // ---- tolerant readers (never throw on missing/malformed input) ----
+  function num(v) {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
+    return null;
+  }
+  function str(v, max) {
+    max = max || 200;
+    if (typeof v === 'string') return v.length > max ? v.slice(0, max) + '…' : v;
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+    return null;
+  }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+  function gbp(v) {
+    var n = num(v);
+    if (n === null) return '—';
+    var sign = n < 0 ? '−' : '';
+    return sign + '£' + Math.abs(n).toFixed(2);
+  }
+  function pct(v) { var n = num(v); return n === null ? '—' : (Math.round(n * 10) / 10) + '%'; }
+  function text(v) { var s = str(v); return s === null || s === '' ? '—' : s; }
+  function when(v) {
+    var s = str(v, 40);
+    if (!s) return '—';
+    var t = Date.parse(s);
+    return Number.isFinite(t) ? new Date(t).toISOString().replace('T', ' ').slice(0, 16) + 'Z' : s;
+  }
+  function tone(sev) { return sev === 'red' || sev === 'critical' || sev === 'mismatch' || sev === 'bad' ? 'bad' : sev === 'amber' || sev === 'warn' || sev === 'warning' || sev === 'action' ? 'warn' : sev === 'ok' || sev === 'green' ? 'ok' : ''; }
+
+  function sourceState(name, res) {
+    if (!res) return { name: name, state: 'unavailable', detail: 'not loaded' };
+    if (res.ok && res.body && typeof res.body === 'object') {
+      if (res.body.available === false) return { name: name, state: 'unavailable', detail: text(res.body.reason || res.body.error) };
+      return { name: name, state: 'ok', detail: null };
+    }
+    return { name: name, state: 'unavailable', detail: 'HTTP ' + (num(res.status) === null ? '?' : res.status) + (res.body && res.body.error ? ' — ' + text(res.body.error) : '') };
+  }
+
+  /** Pure: API responses → view model. Each source is { ok, status, body }. */
+  function buildViewModel(src) {
+    src = obj(src);
+    var states = Object.keys(SOURCES).map(function (k) { return sourceState(k, src[k]); });
+    var ok = {};
+    states.forEach(function (s) { ok[s.name] = s.state === 'ok'; });
+    var p = ok.profitability ? obj(src.profitability.body) : {};
+    var contract = str(p.contractVersion, 60);
+
+    var customers = arr(p.customers).map(function (c) {
+      c = obj(c);
+      var revenue = obj(c.revenue), cost = obj(c.cost), margin = obj(c.margin), allowance = obj(c.allowance);
+      var flags = arr(c.flags).filter(function (f) { return typeof f === 'string'; }).map(function (f) { return f.slice(0, 40); });
+      var usedPercent = num(allowance.usedPercent);
+      var actualGbp = num(margin.actualGbp);
+      return {
+        householdId: str(c.householdId, 40),
+        account: text(c.accountNumber),
+        segment: text(c.segment),
+        channel: text(c.channel),
+        priceLabel: text(c.priceLabel),
+        grandfathered: c.grandfathered === true,
+        revenueNet: gbp(revenue.netGbp), revenueBasis: text(revenue.basis),
+        cost: gbp(cost.attributableGbp), costValue: num(cost.attributableGbp), costBasis: text(cost.basis),
+        marginActual: gbp(margin.actualGbp), marginActualPct: pct(margin.actualPct),
+        marginProjected: gbp(margin.projectedGbp), marginProjectedPct: pct(margin.projectedPct),
+        lossMaking: actualGbp !== null && actualGbp < 0,
+        usedPercent: pct(usedPercent), usedPercentValue: usedPercent,
+        remaining: gbp(allowance.remainingGbp), topUps: gbp(allowance.topUpsGbp), resetsAt: when(allowance.resetsAt),
+        flags: flags,
+        joinedAt: when(c.joinedAt)
+      };
+    });
+
+    var heavy = customers.filter(function (c) {
+      return c.flags.indexOf('heavy_user') !== -1 || (c.usedPercentValue !== null && c.usedPercentValue >= HEAVY_USED_PERCENT) || c.lossMaking;
+    }).sort(function (a, b) { return (b.costValue || 0) - (a.costValue || 0); }).slice(0, 10);
+
+    var t = obj(p.totals);
+    var totals = {
+      customers: num(t.customers) === null ? (ok.profitability ? String(customers.length) : '—') : String(num(t.customers)),
+      revenueNet: gbp(t.revenueNetGbp), cost: gbp(t.attributableCostGbp),
+      margin: gbp(t.marginGbp), marginPct: pct(t.marginPct), projectedMarginPct: pct(t.projectedMarginPct)
+    };
+
+    var rec = obj(p.providerReconciliation);
+    var reconciliation = {
+      available: ok.profitability && rec.available !== false && Array.isArray(rec.rows),
+      reason: rec.available === false ? text(rec.reason) : (ok.profitability ? null : 'profitability source unavailable'),
+      rows: arr(rec.rows).map(function (r) {
+        r = obj(r);
+        return { provider: text(r.provider), providerSpend: gbp(r.providerSpendGbp), ledger: gbp(r.ledgerGbp), difference: gbp(r.differenceGbp), differencePct: pct(r.differencePct), status: text(r.status), tone: tone(r.status), basis: text(r.basis) };
+      })
+    };
+
+    var signals = [];
+    arr(p.signals).forEach(function (s) {
+      s = obj(s);
+      signals.push({ source: 'profitability', severity: text(s.severity), tone: tone(s.severity), title: text(s.title), detail: text(s.detail), account: text(s.accountNumber) });
+    });
+    customers.forEach(function (c) {
+      c.flags.forEach(function (f) {
+        if (f === 'fraud_signal' || f === 'loop_suspected' || f === 'unusual_destination') signals.push({ source: 'profitability', severity: 'amber', tone: 'warn', title: RISK_FLAGS[f], detail: '—', account: c.account });
+      });
+    });
+    if (ok.usage) {
+      arr(obj(src.usage.body).signals).forEach(function (s) {
+        s = obj(s);
+        if (s.severity === 'red' || s.severity === 'amber') signals.push({ source: 'usage-safety', severity: text(s.severity), tone: tone(s.severity), title: text(s.title), detail: num(s.count) === null ? '—' : String(num(s.count)) + ' item(s)', account: '—' });
+      });
+    }
+    var fortress = { available: false, killSwitch: '—', breaker: '—', enforcement: '—', households: [] };
+    if (ok.fortress) {
+      var fb = obj(src.fortress.body), g = obj(fb.global);
+      fortress.available = g.available !== false;
+      fortress.killSwitch = g.available === false ? '—' : (g.killSwitch === true ? 'ON' : 'off');
+      fortress.breaker = g.available === false ? '—' : (g.breakerOpen === true ? 'OPEN' + (g.breakerReason ? ' (' + text(g.breakerReason) + ')' : '') : 'closed');
+      fortress.enforcement = text(g.enforcementMode);
+      fortress.households = arr(fb.households).slice(0, 20).map(function (h) {
+        h = obj(h);
+        return { account: text(h.accountNumber), profile: text(h.profile), usedPercent: pct(h.usedPercent), committed: gbp(h.estimatedCommittedGbp), budget: gbp(h.budgetGbp), lastRefusal: h.lastRefusal ? text(obj(h.lastRefusal).reason) : '—' };
+      });
+      arr(fb.recentEvents).slice(0, 10).forEach(function (e) {
+        e = obj(e);
+        if (e.level && e.level !== 'info') signals.push({ source: 'fortress', severity: text(e.level), tone: tone(e.level), title: text(e.rule), detail: when(e.created_at), account: '—' });
+      });
+    }
+
+    var newCustomers = [], appProblems = [];
+    if (ok.ops) {
+      arr(obj(src.ops.body).events).forEach(function (e) {
+        e = obj(e);
+        var payload = obj(e.payload);
+        if (e.event_type === 'new_genuine_customer') newCustomers.push({ account: text(e.account_number), at: when(e.occurred_at || e.created_at), channel: text(payload.channelLabel), seen: e.seen_at ? 'seen' : 'unseen' });
+        if (e.event_type === 'customer_needs_attention') {
+          var reason = str(payload.reason, 60);
+          appProblems.push({ source: 'ops event', account: text(e.account_number), problem: reason && APP_PROBLEM_REASONS[reason] ? APP_PROBLEM_REASONS[reason] : text(reason), at: when(e.occurred_at || e.created_at), seen: e.seen_at ? 'seen' : 'unseen' });
+        }
+      });
+    }
+    var headline = null;
+    if (ok.centre) {
+      var cb = obj(src.centre.body), h = obj(cb.headline);
+      headline = { genuine: text(h.genuineCustomers), protected: text(h.genuineProtected), settingUp: text(h.genuineSettingUp), attention: text(h.genuineNeedingAttention) };
+      arr(cb.attention).filter(function (a) { a = obj(a); return a.genuine === true && a.severity !== 'watch'; }).slice(0, 20).forEach(function (a) {
+        appProblems.push({ source: 'control centre', account: text(a.accountNumber), problem: text(a.title), at: when(a.since), seen: '—' });
+      });
+    }
+
+    var recommendations = arr(p.recommendations).slice(0, 10).map(function (r) {
+      r = obj(r);
+      return { title: text(r.title), detail: text(r.detail, 600), confidence: text(r.confidence) };
+    });
+
+    return {
+      generatedAt: str(p.generatedAt, 40),
+      period: text(obj(p.period).label),
+      basis: text(p.basis, 400),
+      contract: contract,
+      contractMismatch: ok.profitability && contract !== EXPECTED_CONTRACT,
+      sources: states,
+      totals: totals, customers: customers, heavy: heavy, reconciliation: reconciliation,
+      signals: signals.slice(0, 50), fortress: fortress,
+      headline: headline, newCustomers: newCustomers.slice(0, 20), appProblems: appProblems.slice(0, 40),
+      recommendations: recommendations
+    };
+  }
+
+  // ---- DOM (textContent only) ----
+  function el(doc, tag, opts, children) {
+    var node = doc.createElement(tag);
+    opts = opts || {};
+    if (opts.text !== undefined && opts.text !== null) node.textContent = String(opts.text);
+    if (opts.cls) node.className = opts.cls;
+    (children || []).forEach(function (c) { if (c) node.appendChild(c); });
+    return node;
+  }
+  function card(doc, title, children, cls) { return el(doc, 'section', { cls: 'card' + (cls ? ' ' + cls : '') }, [el(doc, 'h2', { text: title })].concat(children)); }
+  function table(doc, headers, rows) {
+    var thead = el(doc, 'thead', {}, [el(doc, 'tr', {}, headers.map(function (h) { return el(doc, 'th', { text: h.label, cls: h.num ? 'num' : '' }); }))]);
+    var tbody = el(doc, 'tbody', {}, rows.map(function (r) {
+      return el(doc, 'tr', {}, headers.map(function (h) {
+        var v = r[h.key];
+        if (v && typeof v === 'object' && v.node) return el(doc, 'td', { cls: h.num ? 'num' : '' }, [v.node]);
+        return el(doc, 'td', { text: v === undefined || v === null ? '—' : v, cls: h.num ? 'num' : '' });
+      }));
+    }));
+    return el(doc, 'table', {}, [thead, tbody]);
+  }
+  function pill(doc, label, cls) { return el(doc, 'span', { text: label, cls: 'pill' + (cls ? ' ' + cls : '') }); }
+  function empty(doc, msg) { return el(doc, 'p', { text: msg, cls: 'muted' }); }
+
+  function render(doc, root, vm) {
+    while (root.firstChild) root.removeChild(root.firstChild);
+
+    root.appendChild(card(doc, 'Data sources', [
+      el(doc, 'p', {}, vm.sources.map(function (s) { return pill(doc, s.name + ': ' + (s.state === 'ok' ? 'ok' : 'unavailable' + (s.detail ? ' (' + s.detail + ')' : '')), s.state === 'ok' ? 'ok' : 'bad'); })),
+      vm.contractMismatch ? el(doc, 'p', { text: 'Profitability contract is "' + (vm.contract || 'missing') + '", expected "' + EXPECTED_CONTRACT + '". Fields this page does not recognise are shown as —.', cls: 'warn' }) : null,
+      el(doc, 'p', { text: 'Period: ' + vm.period + ' · Basis: ' + vm.basis, cls: 'muted small' })
+    ]));
+
+    var t = vm.totals;
+    root.appendChild(card(doc, 'Totals', [el(doc, 'div', { cls: 'tiles' }, [
+      ['Customers', t.customers], ['Net revenue', t.revenueNet], ['Attributable cost', t.cost], ['Margin (actual)', t.margin + ' · ' + t.marginPct], ['Margin (projected)', t.projectedMarginPct]
+    ].map(function (x) { return el(doc, 'div', { cls: 'tile' }, [el(doc, 'div', { text: x[0], cls: 'label' }), el(doc, 'div', { text: x[1], cls: 'value' })]); }))]));
+
+    if (vm.headline) {
+      root.appendChild(card(doc, 'Customers (canonical)', [el(doc, 'p', { text: 'Genuine: ' + vm.headline.genuine + ' · Protected: ' + vm.headline.protected + ' · Setting up: ' + vm.headline.settingUp + ' · Needing attention: ' + vm.headline.attention })]));
+    }
+
+    root.appendChild(card(doc, 'Per customer: revenue vs attributable cost', vm.customers.length ? [table(doc, [
+      { key: 'account', label: 'Account' }, { key: 'channel', label: 'Channel' }, { key: 'price', label: 'Price' },
+      { key: 'revenueNet', label: 'Net revenue', num: true }, { key: 'cost', label: 'Cost', num: true },
+      { key: 'marginA', label: 'Margin (actual)', num: true }, { key: 'marginP', label: 'Margin (projected)', num: true },
+      { key: 'usedPercent', label: 'Allowance used', num: true }, { key: 'remaining', label: 'Remaining', num: true }, { key: 'topUps', label: 'Top-ups', num: true },
+      { key: 'flags', label: 'Flags' }
+    ], vm.customers.map(function (c) {
+      return {
+        account: c.account, channel: c.channel,
+        price: { node: el(doc, 'span', {}, [doc.createTextNode(c.priceLabel), c.grandfathered ? pill(doc, 'grandfathered', 'ok') : null]) },
+        revenueNet: c.revenueNet, cost: c.cost,
+        marginA: { node: el(doc, 'span', { text: c.marginActual + ' (' + c.marginActualPct + ')', cls: c.lossMaking ? 'bad' : '' }) },
+        marginP: c.marginProjected + ' (' + c.marginProjectedPct + ')',
+        usedPercent: c.usedPercent, remaining: c.remaining, topUps: c.topUps,
+        flags: { node: el(doc, 'span', {}, c.flags.map(function (f) { return pill(doc, RISK_FLAGS[f] || f, f === 'fraud_signal' || f === 'loss_making' ? 'bad' : 'warn'); })) }
+      };
+    }))] : [empty(doc, vm.sources[0].state === 'ok' ? 'No customers in this period.' : 'Unavailable: the profitability source did not load (not zero customers).')]));
+
+    root.appendChild(card(doc, 'Heavy users (≥ ' + HEAVY_USED_PERCENT + '% of allowance, flagged heavy, or loss-making)', vm.heavy.length ? [table(doc, [
+      { key: 'account', label: 'Account' }, { key: 'cost', label: 'Cost', num: true }, { key: 'usedPercent', label: 'Allowance used', num: true }, { key: 'marginActual', label: 'Margin (actual)', num: true }, { key: 'resetsAt', label: 'Resets' }
+    ], vm.heavy)] : [empty(doc, 'None.')]));
+
+    root.appendChild(card(doc, 'Provider spend vs Fortress ledger', vm.reconciliation.available ? [table(doc, [
+      { key: 'provider', label: 'Provider' }, { key: 'providerSpend', label: 'Provider spend', num: true }, { key: 'ledger', label: 'Fortress ledger', num: true },
+      { key: 'difference', label: 'Difference', num: true }, { key: 'differencePct', label: 'Diff %', num: true }, { key: 'st', label: 'Status' }, { key: 'basis', label: 'Basis' }
+    ], vm.reconciliation.rows.map(function (r) { return { provider: r.provider, providerSpend: r.providerSpend, ledger: r.ledger, difference: r.difference, differencePct: r.differencePct, st: { node: pill(doc, r.status, r.tone) }, basis: r.basis }; }))] : [empty(doc, 'Unavailable' + (vm.reconciliation.reason ? ': ' + vm.reconciliation.reason : '') + '. Check provider consoles directly (runbook §3).')]));
+
+    root.appendChild(card(doc, 'Fortress', vm.fortress.available ? [
+      el(doc, 'p', { text: 'Kill switch: ' + vm.fortress.killSwitch + ' · Breaker: ' + vm.fortress.breaker + ' · Enforcement: ' + vm.fortress.enforcement }),
+      vm.fortress.households.length ? table(doc, [{ key: 'account', label: 'Account' }, { key: 'profile', label: 'Profile' }, { key: 'usedPercent', label: 'Used', num: true }, { key: 'committed', label: 'Committed', num: true }, { key: 'budget', label: 'Budget', num: true }, { key: 'lastRefusal', label: 'Last refusal' }], vm.fortress.households) : empty(doc, 'No household budget accounts.')
+    ] : [empty(doc, 'Unavailable.')]));
+
+    root.appendChild(card(doc, 'Fraud, loop and unusual-destination signals', vm.signals.length ? [table(doc, [
+      { key: 'sev', label: 'Severity' }, { key: 'title', label: 'Signal' }, { key: 'account', label: 'Account' }, { key: 'detail', label: 'Detail' }, { key: 'source', label: 'Source' }
+    ], vm.signals.map(function (s) { return { sev: { node: pill(doc, s.severity, s.tone) }, title: s.title, account: s.account, detail: s.detail, source: s.source }; }))] : [empty(doc, 'No signals from the sources that loaded.')]));
+
+    root.appendChild(card(doc, 'New genuine customers', vm.newCustomers.length ? [table(doc, [{ key: 'account', label: 'Account' }, { key: 'at', label: 'When' }, { key: 'channel', label: 'Channel' }, { key: 'seen', label: 'Seen' }], vm.newCustomers)] : [empty(doc, 'None recorded (or ops events unavailable — see Data sources).')]));
+
+    root.appendChild(card(doc, 'Failed registrations, unreachable apps and other customer problems', vm.appProblems.length ? [table(doc, [{ key: 'account', label: 'Account' }, { key: 'problem', label: 'Problem' }, { key: 'at', label: 'Since' }, { key: 'source', label: 'Source' }, { key: 'seen', label: 'Seen' }], vm.appProblems)] : [empty(doc, 'None.')]));
+
+    root.appendChild(card(doc, 'Recommendations (advisory only — nothing is applied)', vm.recommendations.length ? [el(doc, 'ul', {}, vm.recommendations.map(function (r) {
+      return el(doc, 'li', {}, [el(doc, 'strong', { text: r.title }), doc.createTextNode(' — ' + r.detail + (r.confidence !== '—' ? ' (confidence: ' + r.confidence + ')' : ''))]);
+    })), el(doc, 'p', { text: 'These are suggestions for a human to consider. This page cannot change budgets, holds, prices or anything else.', cls: 'muted small' })] : [empty(doc, 'No recommendations.')], 'advisory'));
+  }
+
+  function fetchJson(fetchImpl, url) {
+    return fetchImpl(url, { credentials: 'same-origin', headers: { accept: 'application/json' } }).then(function (res) {
+      return res.json().then(function (body) { return { ok: res.ok, status: res.status, body: body }; }, function () { return { ok: false, status: res.status, body: null }; });
+    }, function () { return { ok: false, status: 0, body: null }; });
+  }
+
+  function load(fetchImpl) {
+    var names = Object.keys(SOURCES);
+    return Promise.all(names.map(function (n) { return fetchJson(fetchImpl, SOURCES[n]); })).then(function (results) {
+      var out = {};
+      names.forEach(function (n, i) { out[n] = results[i]; });
+      return out;
+    });
+  }
+
+  global.HCGFinancialControl = Object.freeze({ buildViewModel: buildViewModel, render: render, load: load, SOURCES: SOURCES, EXPECTED_CONTRACT: EXPECTED_CONTRACT });
+
+  if (global.document && global.document.getElementById && global.fetch) {
+    var doc = global.document;
+    var refresh = function () {
+      var root = doc.getElementById('app');
+      if (!root) return;
+      load(global.fetch.bind(global)).then(function (src) {
+        var vm = buildViewModel(src);
+        render(doc, root, vm);
+        var g = doc.getElementById('generated');
+        if (g) g.textContent = 'Loaded ' + new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z' + (vm.generatedAt ? ' · profitability generated ' + vm.generatedAt : '');
+      });
+    };
+    var btn = doc.getElementById('refresh');
+    if (btn) btn.addEventListener('click', refresh);
+    refresh();
+  }
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+</body>
+</html>
