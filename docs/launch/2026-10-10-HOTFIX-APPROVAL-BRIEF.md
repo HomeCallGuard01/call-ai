@@ -1,7 +1,7 @@
 # Production containment hotfix: approval brief (2026-10-10)
 
 - **Branch:** `hotfix/prod-containment-2026-10-10`, at `ea58231` (worktree `call-ai-hotfix-prod-containment`).
-- **Base:** production `eb43368` (= `origin/main`). Three commits. Local only, **not pushed, not deployed**.
+- **Base:** production `eb43368` (= `origin/main`). Three commits. **Pushed; draft PR #52 opened 2026-10-10 (https://github.com/HomeCallGuard01/call-ai/pull/52). Not merged, not deployed.**
 
 ## Correction first
 
@@ -39,28 +39,63 @@
 
 ## Deploy (after your GO)
 
-1. I push the branch and open a PR into `main`. It is a fast-forward of `eb43368`, three commits.
-2. You review and merge. **Railway auto-deploys `main`.**
+1. **Done 2026-10-10:** branch pushed; **draft** PR #52 into `main` (a fast-forward of `eb43368`, three commits). GitHub recorded no deployment for it, and all 163 historical deployments are commits on `main`.
+2. On your deploy GO: mark PR #52 ready, then merge. **Railway auto-deploys `main`.**
 3. Do **not** set `HCG_LIVE_MONITORING_ENABLED` or `HCG_PROCESS_ROUTE_ENABLED`.
 
-## Verify (about 10 minutes; nothing chargeable)
+## Immediate post-deployment checks (about 10 minutes)
 
-| Check | Pass |
-|---|---|
-| Railway log after boot | `EMERGENCY CONTAINMENT: live monitoring is OFF` |
-| `GET /health` | 200 |
-| `curl -X POST https://homecallguard.co.uk/process -d 'SpeechResult=test'` | **404** |
-| WebSocket to `wss://homecallguard.co.uk/media-stream` | refused (no upgrade) |
-| OpenAI usage page over the next 24 h | **flat** (no transcription) |
-| *Optional, needs a separate GO for a live call:* one call to `…6063` from a non-contact | rings the app with **no** announcement |
+**Security.** These requests go to our own server and cost nothing. Run them from a repo worktree, with Andrew's GO at the time:
 
-## Roll back
+| # | Check | Pass |
+|---|---|---|
+| S1 | Railway → Deployments | The running deployment is the merge of PR #52 (head `ea58231`) |
+| S2 | Railway → logs at boot | `EMERGENCY CONTAINMENT: live monitoring is OFF …` |
+| S3 | `curl -s -o /dev/null -w "%{http_code}\n" https://homecallguard.co.uk/health` | `200` |
+| S4 | `curl -s -o /dev/null -w "%{http_code}\n" -X POST -d 'SpeechResult=test%20call' https://homecallguard.co.uk/process` | `404` |
+| S5 | `node -e "const W=require('ws');const w=new W('wss://homecallguard.co.uk/media-stream');w.on('open',()=>{console.log('FAIL: open');process.exit(1)});w.on('unexpected-response',(q,r)=>{console.log('PASS: refused',r.statusCode);process.exit(0)});w.on('error',e=>{console.log('PASS: refused',e.message);process.exit(0)})"` | `PASS: refused` |
+| S6 | OpenAI usage page over the next 24 h | Flat: no new transcription or chat spend |
 
-| Option | Effect |
-|---|---|
-| Railway → Deployments → redeploy `eb43368` | Previous behaviour, **holes reopen** |
-| Set `HCG_LIVE_MONITORING_ENABLED=true` (Railway restarts) | Screening back, **media-stream hole reopens** |
-| Revert the merge on `main` | Same as the first option, kept in git history |
+**Call delivery:**
+
+| # | Check | Pass |
+|---|---|---|
+| D1 | Passive. Railway logs on the next real inbound calls | `MONITORING PAUSED (emergency containment)` appears; no `CALL DELIVERY` errors |
+| D2 | Passive. Twilio console → Monitor → Calls | Inbound calls to HCG numbers have a **completed** `client:` child leg, as before the deploy |
+| D3 | *Active, separate GO (about 1p):* Andrew calls `…6063` from a phone that is **not** a contact | The app rings; **no** announcement |
+| D4 | *Active, separate GO:* a call from a trusted contact | Rings normally |
+| D5 | Admin `/admin/business` | Loads; numbers unchanged |
+
+## How to read the customer count (required before the deploy GO)
+
+My read-only production query was refused by the session's permission rules, so use either:
+
+1. **Admin dashboard:** sign in at `https://homecallguard.co.uk/admin/business`.
+   - **Business** tab: "**Real paying customers**" (genuine paying).
+   - **Operations** tab: "**Active paid customers**" and "**Active protected households**".
+   - Every household with an active entitlement (paid, complimentary or trial) currently gets screening, and loses it under the hotfix.
+2. **Count-only script** (prints counts, never names, emails, numbers or IDs):
+   `! node /private/tmp/claude-501/-Users-ad-call-ai/0afee8f8-a83e-4291-ad99-d5d809e1eb7d/scratchpad/prod-customer-count.cjs`
+
+Caveat: production has no test-account labels and no store-environment field. Any live Stripe purchase you made yourself, and any TestFlight grant, shows as paying.
+
+## Not closed by this hotfix
+
+- **Number purchases** from a sandbox/TestFlight RevenueCat grant (about £1 each).
+- Purchases from a live Stripe checkout.
+
+Both need signed or authenticated webhooks, not anonymous internet traffic. They are covered by C1 (archive the live Stripe price) and C2 (remove the iOS IAP from sale).
+
+## Recovery that does NOT reopen the paid endpoints
+
+**Set the provider hard limits (C4 OpenAI, C5 Twilio) before deploying**, so even the last resort is bounded.
+
+| Symptom after the merge | Action | Endpoints stay closed? |
+|---|---|---|
+| Deploy fails to boot, or `/health` is not 200 | Railway → service → **Restart**. If that fails, redeploy the previous successful hotfix deployment | Yes |
+| Calls not delivered, and the hotfix's `/voice` change is suspected | Merge the **R2 recovery variant** `hotfix/prod-containment-r2-2026-10-10` (`9482f92`, local; pushed on request). R2 keeps `/process` at 404 and `/media-stream` detached, and its **`/voice` handler is byte-identical to `eb43368`** (verified by diff). Production suite 105/106; boot test passes | Yes |
+| R2 also fails to deliver calls (the cause is not the hotfix) | Only then redeploy `eb43368`, with C4/C5 already set; tell Andrew immediately | **No** (bounded by the provider hard limits) |
+| `HCG_LIVE_MONITORING_ENABLED` or `HCG_PROCESS_ROUTE_ENABLED` set by mistake | Remove the variable. **Never set either until the release candidate is deployed** | — |
 
 ## Tests
 
