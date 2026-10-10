@@ -121,5 +121,17 @@ try { guarded = (await db.query("select public.mark_household_twilio_number_pend
 check(guarded === false || /^error/.test(String(guarded)), `R3 entitled household: 047 guard refuses the release clock (got ${guarded}); eb43368 then releases nothing`);
 await asOwner();
 
+// ── R4 (admin hardening): no self-escalation to admin on the 075 schema ─
+const uid2 = 'bbbbbbbb-2222-4222-8222-222222222222';
+await db.query('insert into auth.users (id, email) values ($1, $2)', [uid2, 'escalate@example.invalid']);
+await asAuth(uid2, 'escalate@example.invalid');
+let escalated = true;
+try { await db.query("insert into public.user_roles (auth_user_id, role) values ($1, 'admin')", [uid2]); } catch { escalated = false; }
+let updated = 0;
+try { updated = (await db.query("update public.user_roles set role = 'admin' where auth_user_id = $1", [uid])).affectedRows || 0; } catch { updated = 0; }
+await asOwner();
+const admins = (await db.query("select count(*)::int as n from public.user_roles where role = 'admin'")).rows[0].n;
+check(!escalated && updated === 0 && admins === 0, 'R4 a signed-in user cannot insert or update a user_roles row to admin (006 policy + 059 column grants)');
+
 console.log(failures === 0 ? '\nAll WS1 runtime rollback compatibility checks passed.' : `\n${failures} WS1 runtime rollback compatibility check(s) FAILED`);
 process.exitCode = failures === 0 ? 0 : 1;
