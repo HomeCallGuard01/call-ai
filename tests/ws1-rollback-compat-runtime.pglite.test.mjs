@@ -40,7 +40,9 @@ await db.exec(BOOTSTRAP_SQL);
 const migDir = path.join(ROOT, 'supabase', 'migrations');
 const files = readdirSync(migDir).filter((f) => f.endsWith('.sql')).sort();
 for (const f of files) await db.exec(readFileSync(path.join(migDir, f), 'utf8'));
-check(files[files.length - 1].startsWith('075_'), `applied ${files.length} migrations through ${files[files.length - 1]}`);
+// Integration 2026-10-10: at least through 075 (WS2's 076/077 now follow;
+// eb43368 calls none of the Fortress/top-up functions they change).
+check(Number(files[files.length - 1].slice(0, 3)) >= 75, `applied ${files.length} migrations through ${files[files.length - 1]}`);
 
 const asAuth = (uid, email) => db.exec(`reset role; set request.jwt.claim.sub = '${uid}'; set request.jwt.claims = '{"sub":"${uid}","email":"${email}"}'; set role authenticated;`);
 const asService = () => db.exec('reset role; set role service_role;');

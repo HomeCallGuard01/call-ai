@@ -69,9 +69,19 @@ export function readAllowanceStateObject(raw: unknown): AllowanceStateView | nul
   const resetsAt = typeof raw.resetsAt === "string" && raw.resetsAt ? raw.resetsAt : null;
   const trustedCallersContinue = typeof raw.trustedCallersContinue === "boolean" ? raw.trustedCallersContinue : null;
 
+  // Integration 2026-10-10 — WS2's server states beyond this file's list:
+  //   continuity  = screening budget used, calls delivered from the reserves:
+  //                 the same customer meaning as screening_paused.
+  //   held        = financial hold: the app already shows the approved paused-
+  //                 account wording (D-C5) from the canonical status, so no
+  //                 allowance banner on top of it.
+  //   unavailable = the server couldn't read the state: show nothing new.
+  if (raw.state === "held" || raw.state === "unavailable") return null;
+  const rawState = raw.state === "continuity" ? "screening_paused" : raw.state;
+
   let state: AllowanceStateView["state"];
-  if (typeof raw.state === "string" && KNOWN_STATES.includes(raw.state)) {
-    state = raw.state as AllowanceStateKey;
+  if (typeof rawState === "string" && KNOWN_STATES.includes(rawState)) {
+    state = rawState as AllowanceStateKey;
     // Contradiction (should be impossible): a "screening" state while the
     // server also says screening is off. Fail towards the truthful,
     // less reassuring reading.

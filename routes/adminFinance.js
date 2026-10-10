@@ -41,6 +41,27 @@ function createAdminFinanceRouter({
     }
   });
 
+  // Integration 2026-10-10: the same portfolio in the Financial Control
+  // Centre page's shape (WS4 contract "ws2-profitability-v1"); read-only.
+  router.get("/admin/api/financial/customer-profitability", requireAuth, requireAdmin, async (req, res) => {
+    const t = now();
+    const period = resolvePeriod(req.query.period, t);
+    if (!period) return res.status(400).json({ error: "invalid_period" });
+    try {
+      const config = resolveProfitabilityConfig(env);
+      const inputs = (await loadProfitability({ periodStart: period.start, periodEnd: period.end })).filter(relevant);
+      const rows = inputs.map((i) => computeHouseholdProfitability(i, period, config));
+      const warnings = [];
+      if (!Object.keys(config.stripeLivePrices).length) warnings.push("FINANCE_STRIPE_LIVE_PRICES not configured: Stripe revenue is not counted");
+      const portfolio = buildPortfolio(rows, { period, config, flag: null, limit: 500, offset: 0, now: t, warnings });
+      res.set("Cache-Control", "no-store");
+      return res.json(require("../services/finance/controlCentreAdapter").toControlCentreV1(portfolio));
+    } catch (err) {
+      console.error("ADMIN FINANCIAL CONTROL PROFITABILITY ERROR:", err.message);
+      return res.status(500).json({ error: "failed" });
+    }
+  });
+
   router.get("/admin/api/finance/profitability/:householdId", requireAuth, requireAdmin, async (req, res) => {
     const t = now();
     if (!UUID.test(req.params.householdId)) return res.status(400).json({ error: "invalid_household" });

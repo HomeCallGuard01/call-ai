@@ -1007,6 +1007,12 @@ app.use(require("./routes/adminFortress").createAdminFortressRoutes({ supabaseAd
 // Support-verified forwarding proof (migration 075, launch blocker B3): the
 // audited admin action that lets a household become Protected.
 app.use(require("./routes/adminForwardingProof").createAdminForwardingProofRoutes({ supabaseAdmin }));
+// Integration 2026-10-10 (read-only):
+//   WS2 per-household profitability API (+ the control-centre-shaped view),
+//   WS4 Financial Control Centre page, WS4 store-purchase eligibility.
+app.use(require("./routes/adminFinance").createAdminFinanceRouter());
+app.use(require("./routes/adminFinancialControl").createAdminFinancialControlRoutes());
+app.use(require("./routes/billingEligibility").createBillingEligibilityRoutes());
 // Accounting automation status (read-only; 503 until migration 071 is applied).
 app.use(require("./routes/adminAccounting").createAdminAccountingRoutes({ supabaseAdmin }));
 // Customer lifecycle (2026-10-04): read-only exception queue + per-household activation state.

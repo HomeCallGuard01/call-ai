@@ -142,5 +142,29 @@ const st = (state, over = {}) => ({ allowanceState: { version: 1, state, percent
   check(/settingsForwardingNote\("deactivate", cancelCodeNote, Platform\.OS\)/.test(turnOff), 'native-settings note unchanged');
 }
 
+// ── Integration 2026-10-10: WS2's REAL server contract → WS3's REAL parser ──
+{
+  const { createRequire } = await import('node:module');
+  const req = createRequire(import.meta.url);
+  const { toCustomerAllowanceState, STATES } = req('../services/allowance/allowanceState.js');
+  const base = { percentUsed: 100, deliveryReserveScope: 'trusted_only', trustedReserveGbp: 0.5, trustedReserveRemainingGbp: 0.4, unknownReserveGbp: 0, unknownReserveRemainingGbp: 0, periodStart: '2026-10-01T00:00:00Z', periodEnd: '2026-11-01T00:00:00Z', thresholds: { screeningLowRatio: 0.8, continuityLowRatio: 0.2 } };
+  const view = (state, extra = {}) => parseAllowanceState({ allowanceState: toCustomerAllowanceState({ ...base, state, ...extra }) });
+  check(STATES.includes('continuity') && STATES.includes('held') && toCustomerAllowanceState(null).state === 'unavailable', 'WS2 server states include continuity / held, and unreadable → unavailable (the states reconciled here)');
+  const cont = view('continuity', { screeningActive: false, trustedCallersDelivered: true });
+  check(cont && cont.state === 'screening_paused' && suppressesProtected(cont), 'server "continuity" → app shows screening paused and never "Protected"');
+  check(view('held', { screeningActive: false }) === null, 'server "held" → no allowance banner (the canonical paused-account wording applies)');
+  check(view('unavailable') === null && parseAllowanceState({ allowanceState: toCustomerAllowanceState(null) }) === null, 'server "unavailable" (or an unreadable state) → app shows nothing new');
+  const paused = view('screening_paused', { screeningActive: false });
+  check(paused && paused.state === 'screening_paused' && suppressesProtected(paused), 'server "screening_paused" → app screening paused');
+  const ceiling = view('hard_ceiling', { screeningActive: false });
+  check(ceiling && ceiling.state === 'hard_ceiling' && describeAllowanceBanner(ceiling, 'android').offerTurnOffForwarding, 'server "hard_ceiling" → app offers turn off forwarding');
+  const normal = view('normal', { screeningActive: true, percentUsed: 10 });
+  check(normal && normal.state === 'normal' && !suppressesProtected(normal), 'server "normal" with screening on → no suppression');
+  const lie = view('normal', { screeningActive: false });
+  check(lie && suppressesProtected(lie), 'contradiction (normal + screening off) still fails towards not Protected');
+  const json = JSON.stringify(toCustomerAllowanceState({ ...base, state: 'continuity', screeningActive: false }));
+  check(!/£|Gbp|gbp/.test(json.replace(/"(trusted|unknown)Percent"/g, '')), 'the server contract carries no £ amounts to the app');
+}
+
 console.log(failures === 0 ? '\nAllowance state UI + turn-off forwarding: all checks hold.' : `\n${failures} check(s) FAILED`);
 process.exitCode = failures === 0 ? 0 : 1;

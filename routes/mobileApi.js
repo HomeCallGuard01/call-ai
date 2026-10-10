@@ -44,6 +44,8 @@ const { getHouseholdAllowance } = require("../services/usage/householdAllowance"
 const financialSafetyDb = require("../database/financialSafety");
 const customerAllowanceDb = require("../database/customerAllowance");
 const { getCustomerAllowance } = require("../services/allowance/customerAllowance");
+const { getCustomerAllowanceState } = require("../services/allowance/allowanceState");
+const { householdAllowanceState } = require("../database/financialContainment");
 const { allowanceReadDeps } = require("../services/allowance/allowanceDeps");
 const { interpretRevenueCatTopUpEvent, applyTopUpEvent } = require("../services/allowance/topUpCredit");
 const { syncPlanCode } = require("../services/allowance/planSync");
@@ -639,6 +641,14 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       monitoring: monitoringAllowance,
       deps: allowanceReadDeps,
     });
+    // Integration 2026-10-10: the deterministic allowance STATE (WS2,
+    // migration 076) for the app's screening-paused banners (WS3). Never
+    // throws: any failure, timeout or a missing 076 → state 'unavailable',
+    // which the app treats as "show nothing new".
+    const allowanceState = await getCustomerAllowanceState({
+      householdId: req.household && req.household.id,
+      deps: { householdAllowanceState },
+    });
 
     // Same membership-status derivation as /dashboard-data (server.js) —
     // always from the real subscriptions/entitlements rows the webhook
@@ -775,6 +785,8 @@ router.get("/api/v1/me/dashboard", requireAuthApi, requireEntitlement, async (re
       // Simple customer usage meter (0–100%), reset date, status and
       // top-up offer — additive; Build 19/20 ignore it.
       customerAllowance,
+      // Allowance state (normal … hard_ceiling | held | unavailable); no £.
+      allowanceState,
       activity: recentCalls.map(toClientCall),
       stats: {
         // Only unknown calls HCG actually monitored count as screened (056).
