@@ -118,11 +118,58 @@ const rootNode = doc.createElement('div');
 FC.render(doc, rootNode, vmFull);
 const out = rootNode.textContent;
 check(out.includes(HOSTILE) && !doc.created.includes('img') && !doc.created.includes('script'), 'a hostile price label is rendered as literal text; no element is ever created from data');
-check(['Per customer: revenue vs attributable cost', 'Heavy users', 'Provider spend vs Fortress ledger', 'Fraud, loop and unusual-destination signals', 'New genuine customers', 'Failed registrations, unreachable apps', 'Recommendations (advisory only — nothing is applied)'].every((h) => out.includes(h)), 'every required panel renders');
+check(['Per customer: revenue, estimated vs actual cost, allowance, protection', 'Heavy users', 'Provider spend vs Fortress ledger', 'Fraud, loop and unusual-destination signals', 'New genuine customers', 'Failed registrations, unreachable apps', 'Recommendations (advisory only — nothing is applied)'].every((h) => out.includes(h)), 'every required panel renders');
 check(out.includes('grandfathered') && out.includes('−£0.37 (-8%)') && out.includes('Kill switch: off · Breaker: OPEN (daily_cap)'), 'rendered values include the grandfathered tag, loss and Fortress state');
 check(out.includes('This page cannot change budgets, holds, prices or anything else.'), 'advisory disclaimer rendered under recommendations');
 const created = new Set(doc.created);
 check(!['button', 'form', 'input', 'a'].some((t) => created.has(t)), 'rendered content has no buttons, links, forms or inputs (read-only)');
+
+// ── WS4 update 2026-10-10: estimated vs actual, reserves, state, protection, alerts, banner, legend ──
+{
+  const p2 = JSON.parse(JSON.stringify(profitability));
+  p2.costCaveat = 'Providers bill with a delay.';
+  p2.topUps = { enabled: false, status: 'disabled' };
+  p2.totals = { ...p2.totals, estimatedCostGbp: 4.2, actualCostGbp: null, actualCostCoverage: { customersWithActual: 0, customers: 3 }, protectedCustomers: 1, notProtectedCustomers: 1, heldCustomers: 1, hardCeilingCustomers: 1 };
+  Object.assign(p2.customers[0], {
+    cost: { ...p2.customers[0].cost, estimatedGbp: 0.95, actualGbp: 0.81, actualBasis: 'provider_actual' },
+    allowance: { ...p2.customers[0].allowance, state: 'normal', trustedReserveRemainingGbp: 0.5, unknownReserveRemainingGbp: 0.3 },
+    protection: { stage: 'protected', label: 'Protected', protected: true, blockers: [] }, alerts: [],
+  });
+  Object.assign(p2.customers[1], {
+    cost: { ...p2.customers[1].cost, estimatedGbp: 3.47, actualGbp: null, actualBasis: 'not_available' },
+    allowance: { ...p2.customers[1].allowance, state: 'hard_ceiling', trustedReserveRemainingGbp: 0, unknownReserveRemainingGbp: 0 },
+    protection: { stage: 'forwarding_unconfirmed', label: 'Forwarding not confirmed', protected: false, blockers: ['Forwarding not proven', HOSTILE] },
+    alerts: [{ severity: 'red', title: 'Reached the hard ceiling', at: null }, { severity: 'red', title: HOSTILE, at: '2026-10-15T08:00:00Z' }],
+  });
+  Object.assign(p2.customers[2], { cost: { actualGbp: 0, actualBasis: 'not_available' }, allowance: { state: 'held' }, protection: { stage: 'on_hold', label: 'Held (financial hold)', protected: false, blockers: ['On financial hold'] }, alerts: 'garbage' });
+  const f2 = { ...fortress, global: { available: true, killSwitch: false, breakerOpen: false, enforcementMode: 'enforce', activeCalls: 2, activeReservedGbp: 0.4, activeWorstCaseGbp: 0.9, entitledHouseholds: 5, caps: { daily: 25, hourly: 5 }, window: { dayAuthorized: 21.5, dayCommitted: 18, hourAuthorized: 1 } } };
+  const v = FC.buildViewModel({ profitability: ok(p2), fortress: ok(f2), usage: ok(usage), ops: ok(ops), centre: ok(centre) });
+  const [x1, x2, x3] = v.customers;
+  check(x1.estimated === '£0.95' && x1.actual === '£0.81' && x1.actualAvailable === true, 'estimated and actual cost shown side by side when a provider actual exists');
+  check(x2.estimated === '£3.47' && x2.actual === 'not yet available' && x3.actual === 'not yet available', 'no provider actual (null, or 0 with not_available) → "not yet available", never £0.00');
+  check(x1.trustedReserve === '£0.50' && x1.unknownReserve === '£0.30' && x2.trustedReserve === '£0.00' && c3.trustedReserve === '—', 'trusted / unknown-caller reserves (missing → —)');
+  check(x1.allowanceStateLabel === 'Normal' && x2.allowanceStateLabel === 'Hard ceiling' && x2.allowanceTone === 'bad' && x3.allowanceStateLabel === 'Held' && c3.allowanceStateLabel === 'unknown', 'allowance state labelled (normal / hard ceiling / held / unknown)');
+  check(x1.protection.isProtected === true && x1.protection.tone === 'ok' && x2.protection.isProtected === false && x2.protection.blockers[0] === 'Forwarding not proven' && x3.protection.label === 'Held (financial hold)' && x3.protection.tone === 'bad', 'protection: protected / not protected with blockers / held');
+  check(c3.protection.label === 'unknown' && c3.protection.isProtected === null, 'missing protection → "unknown", never protected');
+  check(x2.alerts.length === 2 && x2.alerts[0].tone === 'bad' && x2.alerts[1].at === '2026-10-15 08:00Z' && x3.alerts.length === 0, 'alerts mapped (severity tone, time); garbage alerts tolerated');
+  check(v.topUps === 'disabled' && v.totals.estimated === '£4.20' && v.totals.actual === 'not yet available' && v.totals.actualCoverage === '0 of 3 customers' && v.totals.protectedCount === '1' && v.totals.hardCeiling === '1', 'totals: estimated, actual (not yet available + coverage), protected, hard ceiling; top-ups disabled');
+  check(v.fortress.banner && v.fortress.banner.tone === 'warn' && /approaching a global cap/.test(v.fortress.banner.headline) && v.fortress.banner.lines.some((l) => l.includes('£21.50 of £25.00 daily cap (86%)')), 'Fortress banner: today (24 h) £ vs daily cap, warns at ≥ 80%');
+  const vTrip = FC.buildViewModel({ fortress: ok({ global: { available: true, killSwitch: true, breakerOpen: true } }) });
+  check(vTrip.fortress.banner.tone === 'bad' && /KILL SWITCH ON/.test(vTrip.fortress.banner.headline) && vTrip.fortress.banner.lines.some((l) => l.includes('— of — daily cap (—)')), 'kill switch on → red banner; missing caps shown as —');
+  check(vTrip.topUps === '—', 'top-ups status unknown (—) when profitability did not load');
+  const d3 = makeDoc(); const r3 = d3.createElement('div');
+  FC.render(d3, r3, v);
+  const o3 = r3.textContent;
+  check(['Estimated cost', 'Actual cost', 'Trusted reserve', 'Unknown-caller reserve', 'Allowance state', 'Protection', 'Alerts', 'Top-up credit'].every((h) => o3.includes(h)), 'new per-customer columns render');
+  check(o3.includes('not yet available') && o3.includes('Forwarding not confirmed') && o3.includes('Hard ceiling') && o3.includes('Held (financial hold)') && o3.includes('Reached the hard ceiling') && o3.includes('top-ups disabled'), 'new values render (actual not available, protection, state, alerts, top-ups disabled)');
+  check(o3.includes('How to read this page') && /billing|bill hours to days late/.test(o3) && o3.includes('Never read it as zero.') && o3.includes('Providers bill with a delay.'), 'legend explains estimated vs actual, the billing delay, and — ≠ zero');
+  check(o3.startsWith('Fortress normal — approaching a global cap') && o3.includes('Last 24 h authorised: £21.50 of £25.00 daily cap'), 'Fortress global-status banner renders first');
+  check(o3.includes(HOSTILE) && !d3.created.includes('img') && !d3.created.includes('script'), 'hostile protection blocker / alert title stays literal text (textContent only)');
+  const d4 = makeDoc(); const r4 = d4.createElement('div');
+  FC.render(d4, r4, FC.buildViewModel({}));
+  check(r4.textContent.startsWith('Fortress global status unavailable') && r4.textContent.includes('top-ups are currently —'), 'no Fortress data → explicit "unavailable" banner, not "normal"');
+}
+check(!/\.innerHTML|\.outerHTML/.test(script) && /textContent/.test(script), 'data is written via textContent only (no innerHTML/outerHTML in the page script)');
 
 // tolerance: everything missing / failing
 const vmDown = FC.buildViewModel({ profitability: { ok: false, status: 404, body: { error: 'not found' } }, fortress: { ok: false, status: 0, body: null }, usage: ok({ available: false, reason: 'not loaded' }), ops: { ok: false, status: 503, body: { error: 'operational events not deployed (migration 072)' } } });

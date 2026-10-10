@@ -15,6 +15,12 @@
   "Recommendations" panel is advisory text only (AI may recommend, never
   enforce).
 
+  WS4 update 2026-10-10 (docs/launch/2026-10-10-WS4-CONTROL-CENTRE-UPDATE.md):
+  per customer ESTIMATED cost (Fortress committed + reserved) beside ACTUAL
+  cost (provider actuals, "not yet available" when none are recorded — never
+  £0), continuity reserves, allowance state, protection status (canonical
+  activation stage), alerts; a Fortress global-status banner; a legend.
+
   Data sources (all existing admin APIs, except the first):
     /admin/api/financial/customer-profitability  WS2 per-customer profitability
                                                  (ASSUMED contract "ws2-profitability-v1";
@@ -39,6 +45,11 @@
   .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); margin:1px 2px 1px 0; }
   .ok { color:var(--ok); border-color:var(--ok); } .warn { color:var(--warn); border-color:var(--warn); } .bad { color:var(--bad); border-color:var(--bad); }
   .advisory { border-left:4px solid var(--warn); }
+  .banner { border-radius:10px; padding:12px 16px; margin:16px 0; border:2px solid var(--line); background:var(--card); }
+  .banner.bad { border-color:var(--bad); } .banner.ok { border-color:var(--ok); } .banner.warn { border-color:var(--warn); }
+  .banner .headline { font-weight:700; font-size:16px; }
+  .legend dt { font-weight:600; margin-top:6px; } .legend dd { margin:0 0 0 0; color:var(--muted); font-size:13px; }
+  .sub { display:block; font-size:12px; color:var(--muted); }
   button { font:inherit; padding:7px 14px; border-radius:8px; border:1px solid var(--accent); background:#fff; color:var(--accent); cursor:pointer; }
   ul { margin:4px 0; padding-left:20px; }
 </style>
@@ -74,6 +85,24 @@
   });
   var RISK_FLAGS = Object.freeze({ fraud_signal: 'Fraud signal', loop_suspected: 'Loop suspected', unusual_destination: 'Unusual destination', heavy_user: 'Heavy user', loss_making: 'Loss-making' });
   var HEAVY_USED_PERCENT = 80;
+  var ALLOWANCE_STATE_LABELS = Object.freeze({ normal: 'Normal', screening_low: 'Screening low', screening_paused: 'Screening paused', continuity: 'Continuity reserve', continuity_low: 'Continuity low', hard_ceiling: 'Hard ceiling', held: 'Held' });
+  var ALLOWANCE_STATE_TONE = Object.freeze({ normal: 'ok', screening_low: 'warn', screening_paused: 'warn', continuity: 'warn', continuity_low: 'bad', hard_ceiling: 'bad', held: 'bad' });
+  var ACTUAL_NOT_AVAILABLE = 'not yet available';
+
+  function actualCost(cost) {
+    // Never invent £0: no recorded provider actual = "not yet available".
+    return cost.actualBasis === 'provider_actual' && num(cost.actualGbp) !== null ? gbp(cost.actualGbp) : ACTUAL_NOT_AVAILABLE;
+  }
+  function protectionView(p) {
+    if (!p || typeof p !== 'object' || Array.isArray(p) || typeof p.stage !== 'string') return { label: 'unknown', tone: '', isProtected: null, blockers: [] };
+    var isProtected = p.protected === true;
+    var label = str(p.label, 60) || str(p.stage, 40);
+    return {
+      label: label, stage: str(p.stage, 40), isProtected: isProtected,
+      tone: isProtected ? 'ok' : (p.stage === 'on_hold' || p.stage === 'reconnect_needed' || p.stage === 'ambiguous' || p.stage === 'number_conflict' ? 'bad' : 'warn'),
+      blockers: arr(p.blockers).filter(function (b) { return typeof b === 'string'; }).map(function (b) { return b.slice(0, 60); }).slice(0, 5)
+    };
+  }
 
   // ---- tolerant readers (never throw on missing/malformed input) ----
   function num(v) {
@@ -144,7 +173,18 @@
         usedPercent: pct(usedPercent), usedPercentValue: usedPercent,
         remaining: gbp(allowance.remainingGbp), topUps: gbp(allowance.topUpsGbp), resetsAt: when(allowance.resetsAt),
         flags: flags,
-        joinedAt: when(c.joinedAt)
+        joinedAt: when(c.joinedAt),
+        estimated: gbp(cost.estimatedGbp),
+        actual: actualCost(cost),
+        actualAvailable: cost.actualBasis === 'provider_actual' && num(cost.actualGbp) !== null,
+        budget: gbp(allowance.budgetGbp),
+        trustedReserve: gbp(allowance.trustedReserveRemainingGbp),
+        unknownReserve: gbp(allowance.unknownReserveRemainingGbp),
+        allowanceState: str(allowance.state, 40),
+        allowanceStateLabel: ALLOWANCE_STATE_LABELS[allowance.state] || (str(allowance.state, 40) || 'unknown'),
+        allowanceTone: ALLOWANCE_STATE_TONE[allowance.state] || '',
+        protection: protectionView(c.protection),
+        alerts: arr(c.alerts).map(function (a) { a = obj(a); return { severity: text(a.severity), tone: tone(a.severity), title: text(a.title, 120), at: str(a.at, 40) ? when(a.at) : null }; }).slice(0, 12)
       };
     });
 
@@ -156,8 +196,17 @@
     var totals = {
       customers: num(t.customers) === null ? (ok.profitability ? String(customers.length) : '—') : String(num(t.customers)),
       revenueNet: gbp(t.revenueNetGbp), cost: gbp(t.attributableCostGbp),
-      margin: gbp(t.marginGbp), marginPct: pct(t.marginPct), projectedMarginPct: pct(t.projectedMarginPct)
+      margin: gbp(t.marginGbp), marginPct: pct(t.marginPct), projectedMarginPct: pct(t.projectedMarginPct),
+      estimated: gbp(t.estimatedCostGbp),
+      actual: num(t.actualCostGbp) === null ? ACTUAL_NOT_AVAILABLE : gbp(t.actualCostGbp),
+      actualCoverage: num(obj(t.actualCostCoverage).customersWithActual) === null ? '—' : String(num(obj(t.actualCostCoverage).customersWithActual)) + ' of ' + (num(obj(t.actualCostCoverage).customers) === null ? '—' : String(num(obj(t.actualCostCoverage).customers))) + ' customers',
+      protectedCount: num(t.protectedCustomers) === null ? '—' : String(num(t.protectedCustomers)),
+      notProtectedCount: num(t.notProtectedCustomers) === null ? '—' : String(num(t.notProtectedCustomers)),
+      held: num(t.heldCustomers) === null ? '—' : String(num(t.heldCustomers)),
+      hardCeiling: num(t.hardCeilingCustomers) === null ? '—' : String(num(t.hardCeilingCustomers))
     };
+    var topUpsEnabled = obj(p.topUps).enabled === true;
+    var topUps = ok.profitability ? (topUpsEnabled ? 'enabled' : 'disabled') : '—';
 
     var rec = obj(p.providerReconciliation);
     var reconciliation = {
@@ -185,13 +234,31 @@
         if (s.severity === 'red' || s.severity === 'amber') signals.push({ source: 'usage-safety', severity: text(s.severity), tone: tone(s.severity), title: text(s.title), detail: num(s.count) === null ? '—' : String(num(s.count)) + ' item(s)', account: '—' });
       });
     }
-    var fortress = { available: false, killSwitch: '—', breaker: '—', enforcement: '—', households: [] };
+    var fortress = { available: false, killSwitch: '—', breaker: '—', enforcement: '—', households: [], banner: null };
     if (ok.fortress) {
       var fb = obj(src.fortress.body), g = obj(fb.global);
       fortress.available = g.available !== false;
       fortress.killSwitch = g.available === false ? '—' : (g.killSwitch === true ? 'ON' : 'off');
       fortress.breaker = g.available === false ? '—' : (g.breakerOpen === true ? 'OPEN' + (g.breakerReason ? ' (' + text(g.breakerReason) + ')' : '') : 'closed');
       fortress.enforcement = text(g.enforcementMode);
+      if (g.available !== false) {
+        var caps = obj(g.caps), win = obj(g.window);
+        var dayUsed = num(win.dayAuthorized), dayCap = num(caps.daily), hourUsed = num(win.hourAuthorized), hourCap = num(caps.hourly);
+        var dayPct = dayUsed !== null && dayCap !== null && dayCap > 0 ? Math.round((dayUsed / dayCap) * 1000) / 10 : null;
+        var hourPct = hourUsed !== null && hourCap !== null && hourCap > 0 ? Math.round((hourUsed / hourCap) * 1000) / 10 : null;
+        var tripped = g.killSwitch === true || g.breakerOpen === true;
+        var near = (dayPct !== null && dayPct >= 80) || (hourPct !== null && hourPct >= 80);
+        fortress.banner = {
+          tone: tripped ? 'bad' : (near ? 'warn' : 'ok'),
+          headline: g.killSwitch === true ? 'KILL SWITCH ON — paid call handling stopped' : (g.breakerOpen === true ? 'GLOBAL BREAKER OPEN — new paid work refused' : (near ? 'Fortress normal — approaching a global cap' : 'Fortress normal')),
+          lines: [
+            'Kill switch: ' + fortress.killSwitch + ' · Breaker: ' + fortress.breaker + ' · Enforcement: ' + fortress.enforcement,
+            'Last 24 h authorised: ' + gbp(dayUsed) + ' of ' + gbp(dayCap) + ' daily cap (' + pct(dayPct) + ') · committed ' + gbp(win.dayCommitted),
+            'Last hour authorised: ' + gbp(hourUsed) + ' of ' + gbp(hourCap) + ' hourly cap (' + pct(hourPct) + ')',
+            'Active calls: ' + (num(g.activeCalls) === null ? '—' : String(num(g.activeCalls))) + ' · reserved ' + gbp(g.activeReservedGbp) + ' · worst case ' + gbp(g.activeWorstCaseGbp) + ' · entitled households counted: ' + (num(g.entitledHouseholds) === null ? '—' : String(num(g.entitledHouseholds)))
+          ]
+        };
+      }
       fortress.households = arr(fb.households).slice(0, 20).map(function (h) {
         h = obj(h);
         return { account: text(h.accountNumber), profile: text(h.profile), usedPercent: pct(h.usedPercent), committed: gbp(h.estimatedCommittedGbp), budget: gbp(h.budgetGbp), lastRefusal: h.lastRefusal ? text(obj(h.lastRefusal).reason) : '—' };
@@ -236,6 +303,7 @@
       contractMismatch: ok.profitability && contract !== EXPECTED_CONTRACT,
       sources: states,
       totals: totals, customers: customers, heavy: heavy, reconciliation: reconciliation,
+      topUps: topUps, costCaveat: str(p.costCaveat, 600),
       signals: signals.slice(0, 50), fortress: fortress,
       headline: headline, newCustomers: newCustomers.slice(0, 20), appProblems: appProblems.slice(0, 40),
       recommendations: recommendations
@@ -269,6 +337,20 @@
   function render(doc, root, vm) {
     while (root.firstChild) root.removeChild(root.firstChild);
 
+    var fb = vm.fortress.banner;
+    root.appendChild(fb
+      ? el(doc, 'section', { cls: 'banner ' + fb.tone }, [el(doc, 'div', { text: fb.headline, cls: 'headline ' + fb.tone })].concat(fb.lines.map(function (l) { return el(doc, 'div', { text: l, cls: 'small' }); })))
+      : el(doc, 'section', { cls: 'banner bad' }, [el(doc, 'div', { text: 'Fortress global status unavailable — check /admin/fortress directly. Unknown is not "normal".', cls: 'headline bad' })]));
+
+    root.appendChild(card(doc, 'How to read this page', [el(doc, 'dl', { cls: 'legend' }, [
+      el(doc, 'dt', { text: 'Estimated cost' }), el(doc, 'dd', { text: 'What the Fortress has committed (settled per-call estimates) plus what it holds reserved for calls in flight. Conservative; available immediately.' }),
+      el(doc, 'dt', { text: 'Actual cost' }), el(doc, 'dd', { text: 'Provider-billed cost (Twilio, OpenAI) recorded against the ledger. Providers bill hours to days late, and no provider-actuals feed is connected in production yet, so it shows "' + ACTUAL_NOT_AVAILABLE + '" — not £0. Margin uses the higher of estimated and actual.' }),
+      el(doc, 'dt', { text: 'Remaining allowance' }), el(doc, 'dd', { text: 'Budget left this period, then the continuity reserves (migration 076): trusted-caller reserve and unknown/unscreened-caller reserve. Top-up credit is shown separately; top-ups are currently ' + vm.topUps + '.' }),
+      el(doc, 'dt', { text: 'Protection' }), el(doc, 'dd', { text: 'The canonical activation stage (same rule as the admin Control Centre). "Protected" only when every gate holds; otherwise the first blockers are listed. "unknown" means the lifecycle data did not load.' }),
+      el(doc, 'dt', { text: 'Allowance state' }), el(doc, 'dd', { text: 'normal → screening low → screening paused → continuity → continuity low → hard ceiling; held = financial hold. "unknown" when there is no budget account this period.' }),
+      el(doc, 'dt', { text: '—' }), el(doc, 'dd', { text: 'Not known or not loaded. Never read it as zero.' })
+    ]), vm.costCaveat ? el(doc, 'p', { text: vm.costCaveat, cls: 'muted small' }) : null]));
+
     root.appendChild(card(doc, 'Data sources', [
       el(doc, 'p', {}, vm.sources.map(function (s) { return pill(doc, s.name + ': ' + (s.state === 'ok' ? 'ok' : 'unavailable' + (s.detail ? ' (' + s.detail + ')' : '')), s.state === 'ok' ? 'ok' : 'bad'); })),
       vm.contractMismatch ? el(doc, 'p', { text: 'Profitability contract is "' + (vm.contract || 'missing') + '", expected "' + EXPECTED_CONTRACT + '". Fields this page does not recognise are shown as —.', cls: 'warn' }) : null,
@@ -277,28 +359,33 @@
 
     var t = vm.totals;
     root.appendChild(card(doc, 'Totals', [el(doc, 'div', { cls: 'tiles' }, [
-      ['Customers', t.customers], ['Net revenue', t.revenueNet], ['Attributable cost', t.cost], ['Margin (actual)', t.margin + ' · ' + t.marginPct], ['Margin (projected)', t.projectedMarginPct]
+      ['Customers', t.customers], ['Net revenue', t.revenueNet], ['Estimated cost', t.estimated], ['Actual cost', t.actual + ' (' + t.actualCoverage + ')'], ['Attributable cost', t.cost], ['Margin (actual)', t.margin + ' · ' + t.marginPct], ['Margin (projected)', t.projectedMarginPct],
+      ['Protected', t.protectedCount], ['Not protected', t.notProtectedCount], ['Held', t.held], ['At hard ceiling', t.hardCeiling], ['Top-ups', vm.topUps]
     ].map(function (x) { return el(doc, 'div', { cls: 'tile' }, [el(doc, 'div', { text: x[0], cls: 'label' }), el(doc, 'div', { text: x[1], cls: 'value' })]); }))]));
 
     if (vm.headline) {
       root.appendChild(card(doc, 'Customers (canonical)', [el(doc, 'p', { text: 'Genuine: ' + vm.headline.genuine + ' · Protected: ' + vm.headline.protected + ' · Setting up: ' + vm.headline.settingUp + ' · Needing attention: ' + vm.headline.attention })]));
     }
 
-    root.appendChild(card(doc, 'Per customer: revenue vs attributable cost', vm.customers.length ? [table(doc, [
-      { key: 'account', label: 'Account' }, { key: 'channel', label: 'Channel' }, { key: 'price', label: 'Price' },
-      { key: 'revenueNet', label: 'Net revenue', num: true }, { key: 'cost', label: 'Cost', num: true },
-      { key: 'marginA', label: 'Margin (actual)', num: true }, { key: 'marginP', label: 'Margin (projected)', num: true },
-      { key: 'usedPercent', label: 'Allowance used', num: true }, { key: 'remaining', label: 'Remaining', num: true }, { key: 'topUps', label: 'Top-ups', num: true },
-      { key: 'flags', label: 'Flags' }
+    root.appendChild(card(doc, 'Per customer: revenue, estimated vs actual cost, allowance, protection', vm.customers.length ? [table(doc, [
+      { key: 'account', label: 'Account' }, { key: 'protection', label: 'Protection' }, { key: 'state', label: 'Allowance state' },
+      { key: 'revenueNet', label: 'Net revenue', num: true }, { key: 'estimated', label: 'Estimated cost', num: true }, { key: 'actual', label: 'Actual cost', num: true },
+      { key: 'marginA', label: 'Margin (actual · projected)', num: true },
+      { key: 'remaining', label: 'Budget left', num: true }, { key: 'trusted', label: 'Trusted reserve', num: true }, { key: 'unknown', label: 'Unknown-caller reserve', num: true }, { key: 'topUps', label: 'Top-up credit', num: true },
+      { key: 'alerts', label: 'Alerts' }
     ], vm.customers.map(function (c) {
       return {
-        account: c.account, channel: c.channel,
-        price: { node: el(doc, 'span', {}, [doc.createTextNode(c.priceLabel), c.grandfathered ? pill(doc, 'grandfathered', 'ok') : null]) },
-        revenueNet: c.revenueNet, cost: c.cost,
-        marginA: { node: el(doc, 'span', { text: c.marginActual + ' (' + c.marginActualPct + ')', cls: c.lossMaking ? 'bad' : '' }) },
-        marginP: c.marginProjected + ' (' + c.marginProjectedPct + ')',
-        usedPercent: c.usedPercent, remaining: c.remaining, topUps: c.topUps,
-        flags: { node: el(doc, 'span', {}, c.flags.map(function (f) { return pill(doc, RISK_FLAGS[f] || f, f === 'fraud_signal' || f === 'loss_making' ? 'bad' : 'warn'); })) }
+        account: { node: el(doc, 'span', {}, [doc.createTextNode(c.account), c.grandfathered ? pill(doc, 'grandfathered', 'ok') : null, el(doc, 'span', { text: c.channel + ' · ' + c.priceLabel, cls: 'sub' })]) },
+        protection: { node: el(doc, 'span', {}, [pill(doc, c.protection.label, c.protection.tone)].concat(c.protection.blockers.map(function (b) { return el(doc, 'span', { text: b, cls: 'sub' }); }))) },
+        state: { node: pill(doc, c.allowanceStateLabel, c.allowanceTone) },
+        revenueNet: c.revenueNet,
+        estimated: c.estimated,
+        actual: { node: el(doc, 'span', { text: c.actual, cls: c.actualAvailable ? '' : 'muted' }) },
+        marginA: { node: el(doc, 'span', {}, [el(doc, 'span', { text: c.marginActual + ' (' + c.marginActualPct + ')', cls: c.lossMaking ? 'bad' : '' }), el(doc, 'span', { text: 'proj. ' + c.marginProjected + ' (' + c.marginProjectedPct + ')', cls: 'sub' })]) },
+        remaining: { node: el(doc, 'span', {}, [doc.createTextNode(c.remaining), el(doc, 'span', { text: 'of ' + c.budget + ' · ' + c.usedPercent + ' used', cls: 'sub' })]) },
+        trusted: c.trustedReserve, unknown: c.unknownReserve,
+        topUps: vm.topUps === 'disabled' ? { node: el(doc, 'span', {}, [doc.createTextNode(c.topUps), el(doc, 'span', { text: 'top-ups disabled', cls: 'sub' })]) } : c.topUps,
+        alerts: { node: el(doc, 'span', {}, c.alerts.length ? c.alerts.map(function (a) { return el(doc, 'span', { cls: 'sub' }, [pill(doc, a.severity, a.tone), doc.createTextNode(a.title + (a.at ? ' · ' + a.at : ''))]); }) : [doc.createTextNode('—')]) }
       };
     }))] : [empty(doc, vm.sources[0].state === 'ok' ? 'No customers in this period.' : 'Unavailable: the profitability source did not load (not zero customers).')]));
 
