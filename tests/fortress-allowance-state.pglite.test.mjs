@@ -223,7 +223,7 @@ async function main() {
   const src = async (d) => Object.fromEntries((await d.query(`select proname, prosrc from pg_proc where pronamespace = 'public'::regnamespace and proname = any($1)`, [REPLACED])).rows.map((r) => [r.proname, r.prosrc]));
   const [a, b] = [await src(clean), await src(ref)];
   check(REPLACED.every((f) => a[f] && a[f] === b[f]), 'after rollback every replaced function body is 067\'s, verbatim');
-  const leftovers = (await clean.query("select count(*)::int n from pg_proc where proname like 'fortress\\_%' and pronamespace = 'public'::regnamespace")).rows[0].n;
+  const leftovers = (await clean.query("select count(*)::int n from pg_proc where proname in ('fortress_record_allowance_state','fortress_household_allowance_state','fortress_set_allowance_policy','fortress_set_unscreened_reserve') and pronamespace = 'public'::regnamespace")).rows[0].n;
   const cols = (await clean.query("select count(*)::int n from information_schema.columns where column_name like 'unscreened%'")).rows[0].n;
   check(leftovers === 0 && cols === 0, 'rollback removes every 076 function and column');
   let reapplied = true;

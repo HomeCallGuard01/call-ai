@@ -18,8 +18,12 @@
 //   * The credited quantity comes from HCG's own data — the minutes stamped
 //     on the Stripe session by HCG's server when it was created, or the
 //     catalogue for a store product — never from anything the customer sent.
-//   * Refunds reverse the credit (clamped at 0; a top-up whose period has
-//     already reset reverses nothing — its minutes already expired).
+//   * Refunds (full OR partial) and disputes reverse the credit (clamped at
+//     0; a top-up whose period has already reset reverses nothing — its
+//     capacity already expired). If any refunded £ was already spent the
+//     database holds the household (migration 077; WS2 2026-10-10).
+//   * The database also refuses a credit not backed by a GBP payment amount,
+//     caps the £ at paid ÷ (1+VAT) × factor, and caps credits per period (077).
 //   * Credited to the allowance period current when the payment is
 //     CONFIRMED (a delayed payment confirmed after a reset lands in the new
 //     period, which is the one the customer can still use).
@@ -49,10 +53,22 @@ function interpretStripeTopUpEvent(event) {
     // metadata): a refund of anything that isn't a credited top-up finds
     // no original and changes nothing.
     if (!obj.payment_intent) return null;
-    // Only a FULL refund reverses; partial refunds are a manual decision.
+    // WS2 2026-10-10: ANY refund — full or partial — reverses the whole
+    // credit (was: partial refunds ignored, leaving credited £ above the
+    // revenue kept). Conservative: a partial refund is an operator decision,
+    // and re-crediting is an audited admin adjustment, never automatic.
     const full = obj.refunded === true || (obj.amount_refunded >= obj.amount && obj.amount > 0);
-    return { action: full ? 'reverse' : 'ignore', reason: full ? null : 'partial_refund', source: 'stripe', environment,
+    return { action: 'reverse', reason: full ? 'refund' : 'partial_refund_full_reversal', source: 'stripe', environment,
       transactionId: obj.payment_intent, eventId: event.id };
+  }
+
+  // WS2 2026-10-10: a dispute (chargeback) reverses the credit as soon as it
+  // is OPENED — the money is at risk from that moment. Idempotent with a
+  // refund of the same payment (one topup_reversal per transaction). A won
+  // dispute is not re-credited automatically (audited admin adjustment).
+  if (event.type === 'charge.dispute.created' || event.type === 'charge.dispute.funds_withdrawn') {
+    if (!obj.payment_intent) return null;
+    return { action: 'reverse', reason: 'dispute', source: 'stripe', environment, transactionId: obj.payment_intent, eventId: event.id };
   }
 
   if (!['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed'].includes(event.type)) return null;
@@ -125,6 +141,9 @@ async function applyTopUpEvent(intent, { householdId = intent.householdId, deps,
       amountMinor: intent.amountMinor, currency: intent.currency, actor: null, reason: 'provider_refund',
       allowNonProduction: nonProdOk,
     });
+    if (result.householdHeld) {
+      await alert('ALLOWANCE TOP-UP REVERSED AFTER USE — HOUSEHOLD HELD', { householdId: original.household_id, transactionId: intent.transactionId, consumedGbp: result.consumedGbp, reason: intent.reason || null });
+    }
     return { outcome: result.credited ? 'reversed' : (result.duplicate ? 'duplicate' : 'ignored'), ...result };
   }
 
@@ -172,6 +191,15 @@ async function applyTopUpEvent(intent, { householdId = intent.householdId, deps,
     amountMinor: intent.amountMinor, currency: intent.currency, actor: null, reason: null,
     allowNonProduction: nonProdOk,
   });
+  if (!result.credited && !result.duplicate && result.reason) {
+    // WS2 2026-10-10: refused by the database bounds (migration 077:
+    // revenue_unverified / topup_period_cap). The customer PAID — never drop
+    // it silently: alert for a manual refund decision.
+    await alert('ALLOWANCE TOP-UP PAID BUT NOT CREDITED', { householdId, transactionId: intent.transactionId, reason: result.reason });
+  }
+  if (result.cappedByRevenue) {
+    await alert('ALLOWANCE TOP-UP CAPPED BY DATABASE REVENUE BOUND', { householdId, transactionId: intent.transactionId, creditedGbp: result.appliedBudgetGbp });
+  }
   if (result.duplicate && result.sameHousehold === false) {
     await alert('ALLOWANCE TOP-UP TRANSACTION REUSED BY ANOTHER HOUSEHOLD', { householdId, transactionId: intent.transactionId });
   }
