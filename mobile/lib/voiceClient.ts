@@ -17,7 +17,15 @@ import { reportDeviceReadiness } from "./api";
 import { getCallReadiness } from "./callReadiness";
 import { canPresentCalls, readinessKey } from "./callReadinessModel";
 import { isRegistrationOverdue, isInviteForIdentity, withTimeout, hasDeviceTokenChanged } from "./registrationFreshness";
-import { reduceActiveCall, IDLE_CALL, type ActiveCallState, type ActiveCallEvent } from "./activeCallModel";
+import {
+  reduceActiveCall,
+  IDLE_CALL,
+  pickRecoverableCall,
+  RECOVERY_RETRY_DELAYS_MS,
+  type ActiveCallState,
+  type ActiveCallEvent,
+  type RecoveryCandidate,
+} from "./activeCallModel";
 
 // Diagnostic instrumentation (2026-09-24, migration 045) — read once at
 // module load, not per-call: these are static facts about the installed
@@ -143,6 +151,10 @@ function trackAcceptedCall(call: Call, callSid: string | null): void {
     from = null;
   }
   dispatchActiveCall({ type: "accepted", callSid, from });
+  attachCallListeners(call);
+}
+
+function attachCallListeners(call: Call): void {
   const clear = () => {
     if (activeCall === call) activeCall = null;
     dispatchActiveCall({ type: "ended" });
@@ -152,6 +164,127 @@ function trackAcceptedCall(call: Call, callSid: string | null): void {
   call.on(Call.Event.Reconnected, () => dispatchActiveCall({ type: "reconnected" }));
   call.on(Call.Event.Disconnected, clear);
   call.on(Call.Event.ConnectFailure, clear);
+}
+
+// ── H5 cold-start call recovery (2026-10-10) ──────────────────────────────
+// The call screen above was fed only by CallInvite.Accepted. If the customer
+// answers from the notification while HCG is killed (Android), or before the
+// JS bridge is running (iOS cold launch from a VoIP push), that JS event
+// fires in no listener, so the connected call had no HCG screen and no
+// in-app End/Mute/Speaker (launch-blocker risk H5 in
+// docs/launch/2026-10-09-ANDROID-HANDSET-VERIFICATION-PLAN.md).
+//
+// Recovery uses only the SDK's own API: voice.getCalls() returns the calls
+// the native layer holds ("ongoing and pending … will not return any call
+// that has finished"). Each returned Call object listens to the native event
+// stream for its own UUID, so Disconnected/Reconnecting reach the listeners
+// attached here, and disconnect()/mute() act on the real native call (iOS:
+// the SDK's CallKit end-call transaction). lib/activeCallModel.ts
+// pickRecoverableCall decides (pure, tested). It never answers, rejects or
+// creates a call, and never touches a call this process already tracks.
+let recoveryInFlight: Promise<void> | null = null;
+let recoveryTimers: ReturnType<typeof setTimeout>[] = [];
+// Call SIDs recovered in this process, so outcome telemetry is sent once.
+const recoveredCallSids = new Set<string>();
+const RECOVERY_SDK_TIMEOUT_MS = 3000;
+
+function safeRead<T>(fn: () => T): T | null {
+  try {
+    return fn();
+  } catch {
+    return null;
+  }
+}
+
+function toRecoveryCandidate(call: Call): RecoveryCandidate {
+  const connectedAt = safeRead(() => call.getInitialConnectedTimestamp());
+  return {
+    state: safeRead(() => call.getState() as string),
+    callSid: safeRead(() => call.getSid()) ?? null,
+    from: safeRead(() => call.getFrom()) ?? null,
+    connectedAtMs: connectedAt instanceof Date && !Number.isNaN(connectedAt.getTime()) ? connectedAt.getTime() : null,
+    muted: safeRead(() => call.isMuted()) ?? null,
+  };
+}
+
+async function currentSpeakerSelected(): Promise<boolean> {
+  try {
+    const { selectedDevice } = await withTimeout(voice.getAudioDevices(), 2000);
+    return selectedDevice?.type === AudioDevice.Type.Speaker;
+  } catch {
+    return false;
+  }
+}
+
+/** Show the HCG call screen for a call the SDK already holds (H5). Safe to call any time. */
+export function recoverActiveCall(trigger: string): Promise<void> {
+  if (activeCall || activeCallState.status !== "idle") return Promise.resolve();
+  if (recoveryInFlight) return recoveryInFlight;
+  recoveryInFlight = (async () => {
+    try {
+      const calls = await withTimeout(voice.getCalls(), RECOVERY_SDK_TIMEOUT_MS);
+      // A live CallInvite.Accepted may have won the race while we waited.
+      if (activeCall || activeCallState.status !== "idle") return;
+      const list = Array.from(calls.values());
+      const pick = pickRecoverableCall(activeCallState, list.map(toRecoveryCandidate));
+      if (!pick) return;
+      const call = list[pick.index];
+      const speaker = await currentSpeakerSelected();
+      if (activeCall || activeCallState.status !== "idle") return;
+      activeCall = call;
+      dispatchActiveCall({ ...pick.event, speaker });
+      attachCallListeners(call);
+      const sid = pick.event.callSid;
+      // Logcat/Console only — deliberately NOT the unauthenticated /debug
+      // beacon: call telemetry goes through the authenticated outcome
+      // report below.
+      console.log(`VOICE DEBUG: recovered active call (${trigger}:${pick.event.status})`);
+      // Telemetry: only for a call whose invite this process never saw
+      // (otherwise the live handlers already reported it), once per SID.
+      if (sid && !seenCallSids.has(sid) && !recoveredCallSids.has(sid)) {
+        recoveredCallSids.add(sid);
+        reportWithRetry(() => reportCallInviteOutcome(sid, "accepted")).catch(() => {});
+        if (pick.event.status === "connected") {
+          reportWithRetry(() => reportCallInviteOutcome(sid, "connected")).catch(() => {});
+        }
+      }
+    } catch (err) {
+      // Never throw out of recovery: a failure leaves behaviour exactly as
+      // before (no screen), and the next foreground tries again.
+      console.warn("VOICE DEBUG: active call recovery failed", err);
+    }
+  })().finally(() => {
+    recoveryInFlight = null;
+  });
+  return recoveryInFlight;
+}
+
+// Immediately, then a few short retries: on a cold start the native accept
+// can still be completing when JS first runs. Restarting clears any pending
+// retries so a foreground burst never stacks timers.
+function scheduleCallRecovery(trigger: string): void {
+  for (const timer of recoveryTimers) clearTimeout(timer);
+  recoveryTimers = RECOVERY_RETRY_DELAYS_MS.map((delay) =>
+    setTimeout(() => {
+      recoverActiveCall(trigger).catch(() => {});
+    }, delay)
+  );
+}
+
+// Android only: true when the SDK holds a live call. Used so the
+// ringing-time Speaker selection never moves an already-connected call
+// (e.g. one recovered on a cold start) onto the loudspeaker.
+async function hasOngoingSdkCall(): Promise<boolean> {
+  if (activeCall) return true;
+  try {
+    const calls = await withTimeout(voice.getCalls(), 2000);
+    return Array.from(calls.values()).some((c) => {
+      const state = safeRead(() => c.getState() as string);
+      return state === "connected" || state === "connecting" || state === "reconnecting";
+    });
+  } catch {
+    return false;
+  }
 }
 
 let registered = false;
@@ -488,7 +621,12 @@ async function performRegistration(accessToken?: string): Promise<void> {
     // audio routing is owned entirely by CallKit; explicitly selecting a
     // device here would be untested and could affect the connected call's
     // routing too, not just the ring.
-    await selectSpeakerForRinging();
+    // H5 (2026-10-10): never switch a live call to the loudspeaker — on a
+    // cold start, registration can finish while a call answered from the
+    // notification is already connected.
+    if (!(await hasOngoingSdkCall())) {
+      await selectSpeakerForRinging();
+    }
   }
   scheduleRefresh(ttlSeconds);
 }
@@ -501,6 +639,12 @@ async function performRegistration(accessToken?: string): Promise<void> {
 // event listeners immediately below — nothing in this file's module
 // scope can usefully block on a promise anyway.
 initializePushKitEarly();
+
+// H5 (2026-10-10): a call answered from the notification before this process
+// existed (or before JS listeners were attached) gets its call screen now.
+// Module load runs on every cold start (app/_layout.tsx imports this file
+// first). The foreground listener below repeats it.
+scheduleCallRecovery("start");
 
 // A backgrounded/suspended app's JS timers don't reliably fire on
 // schedule (iOS especially suspends JS execution entirely) — re-checking
@@ -520,6 +664,8 @@ initializePushKitEarly();
 // polling, no background work.
 AppState.addEventListener("change", (state) => {
   if (state !== "active") return;
+  // H5 (2026-10-10): answered from the notification while backgrounded.
+  scheduleCallRecovery("foreground");
   // Device readiness (2026-09-30): if the customer changed the microphone or
   // notification permission while away, tell the backend once. Only after a
   // registration exists (there is a signed-in household to report for).

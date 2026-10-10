@@ -101,3 +101,18 @@ In this order:
 - **GO for the Android cohort:** every MUST row is PASS.
 - **H5 or H6 result:** if the killed-app answer cannot show or end the call, it is a **code fix before launch**. If only the locked-screen banner collapses (expected), that is B-11, recorded for Andrew's acceptance with customer guidance ("answer from the notification").
 - **Any failed delivery** (a ring never arrives) on a warm app → **NO-GO** until explained.
+
+## 9. Added 2026-10-10 (WS3): rows for the new app behaviours
+
+**Status: PLAN ONLY.** These rows cover WS3's code on `launch/ws3-mobile-routing`. They apply only if the build under test contains it. Run them in the same window, using the same rules as above. A3 above is superseded: the build now contains `getCalls()` recovery, but it is **not device-proven**. H5 is still the acceptance test.
+
+| # | Scenario | Andrew reports | Evidence | MUST |
+|---|---|---|---|---|
+| W1 | **Cold-start recovery (H5 with the fix):** app swiped away, then answer the trusted call from the notification. Then open HCG from the launcher or recents if it doesn't come up by itself. Variant: `am force-stop` | Does the HCG call screen appear (within ~10 s of opening the app)? Do Mute, Speaker and End work? Does End hang up both sides? | logcat `VOICE DEBUG: recovered active call (start:connected)`; one `accepted` and one `connected` invite outcome for the client call SID; the call is not moved to the loudspeaker on its own | ✔ |
+| W2 | **Background recovery:** answer from the notification with the app backgrounded, then bring HCG to the front | Call screen shown; controls work | logcat `recovered active call (foreground:connected)`, or the live `Accepted` path | ✔ |
+| W3 | **No phantom screen:** open the app with no call in progress, and again just after a call ended | No call screen | — | ✔ |
+| W4 | **Allowance banners.** Staging only: set the household's allowance state through WS2's staging mechanism (no code change on the device) to `screening_paused`, then `continuity_low`, then `hard_ceiling`, then back to `normal`, refreshing Home each time | Truthful wording ("Screening paused — calls are still reaching you, but unknown callers are not being checked"); Home **never** says "Protected" in the three paused states; no price, buy button, link or QR anywhere; only the plain support-email note | Screencap per state; API `allowanceState` as returned | ✔ |
+| W5 | **Turn off call forwarding (action only, no dialling):** tap the banner action → the guided screen → **Open Phone app** | The dialer opens with the carrier's cancel code pre-filled (or `##21#` with the "not confirmed" caveat for Lebara/EE). **Andrew does NOT press Call** in this row | Screencap of the dialer | ✔ |
+| W6 | 🔴 (Optional; combine with H11) press Call on the code from W5 instead of typing the H11 code by hand | Carrier message confirms forwarding off; a call to `…3030` rings natively | As H11 | — |
+
+Pass rule addition: if W1 fails (no screen, or controls don't work), that is the H5 code-fix outcome from §8. Record the logcat lines around `recovered active call` and `VOICE DEBUG: active call recovery failed`.
