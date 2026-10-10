@@ -17,6 +17,10 @@ const DEFAULT_THRESHOLDS = Object.freeze({
   onboardingWindowMs: 24 * 3600e3,
 });
 
+// Stripe subscription statuses that mean "the last membership payment failed
+// and Stripe is retrying" (WS4, 2026-10-10).
+const PAYMENT_FAILED_STATUSES = new Set(['past_due', 'unpaid']);
+
 // Loss of protection that needs a human (not a customer still onboarding).
 const LOSS_REASONS = Object.freeze({
   [STAGES.RECONNECT_NEEDED]: 'protection_lost_app_unreachable',
@@ -59,7 +63,18 @@ function detectOpsEvents(snapshot, now, { thresholds = DEFAULT_THRESHOLDS, planL
       events.push(buildEvent({ ...base, type: TYPES.CUSTOMER_NEEDS_ATTENTION, reason: 'not_protected_within_onboarding_window', episode: new Date(clock).toISOString(), occurredAt: nowMs }));
     }
   }
+  // WS4 (2026-10-10): a failed membership payment (Stripe dunning: past_due)
+  // is its own reason, independent of protection. Access continues while
+  // Stripe retries (070), so the household is still genuine-paying here; one
+  // event per billing period that failed. (Refunds and disputes are alerted
+  // in real time from the verified Stripe webhook — routes/billing.js
+  // paymentOpsAlertFor — because no snapshot field records them.)
+  const sub = snapshot.subscription;
+  if (sub && PAYMENT_FAILED_STATUSES.has(sub.status)) {
+    const episode = sub.current_period_end || sub.updated_at || new Date(nowMs).toISOString().slice(0, 10);
+    events.push(buildEvent({ ...base, type: TYPES.CUSTOMER_NEEDS_ATTENTION, reason: 'payment_failed', episode: String(episode), occurredAt: nowMs }));
+  }
   return { events, commercial, activation };
 }
 
-module.exports = { detectOpsEvents, DEFAULT_THRESHOLDS, LOSS_REASONS };
+module.exports = { detectOpsEvents, DEFAULT_THRESHOLDS, LOSS_REASONS, PAYMENT_FAILED_STATUSES };

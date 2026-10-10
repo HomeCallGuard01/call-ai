@@ -169,6 +169,66 @@ function buildStripeMetadata(householdId) {
   };
 }
 
+// WS4 (2026-10-10): payment-failed, refund and dispute notifications for
+// customer operations (first-five runbook). Pure: maps a VERIFIED Stripe
+// event to one critical alert (services/alerting.js — the support@ mailbox,
+// best-effort, never load-bearing), or null. Alert only: it never changes the
+// response, the entitlement, the allowance or anything else in this webhook,
+// and it runs before the top-up branch so a subscription refund is still
+// seen while top-ups are switched off. The alerter's dedupe key is the Stripe
+// object (charge, dispute, invoice), so two different refunds inside its
+// 30-minute window are both sent, while a Stripe redelivery of the same
+// object inside that window (same process) is not.
+// Context carries Stripe object ids, amounts and the household id from
+// metadata only — never an email, name or card detail.
+// Requires the Stripe webhook endpoint to be subscribed to these event types
+// (console setting; see docs/launch/2026-10-10-WS4-REPORT.md).
+function paymentOpsAlertFor(event) {
+  const obj = event && event.data && event.data.object;
+  if (!obj || typeof obj !== "object") return null;
+  const base = {
+    stripeEventId: event.id,
+    eventType: event.type,
+    livemode: event.livemode === true,
+    currency: obj.currency || null,
+    householdId: (obj.metadata && obj.metadata.household_id) || null,
+  };
+  if (event.type === "charge.refunded") {
+    const full = obj.refunded === true || (Number(obj.amount_refunded) >= Number(obj.amount) && Number(obj.amount) > 0);
+    return {
+      type: "stripe_charge_refunded",
+      dedupeKey: obj.id || event.id,
+      message: `Stripe refund recorded (${full ? "full" : "partial"}) — check the membership was cancelled with it (runbook: refund + cancel together)`,
+      context: { ...base, chargeId: obj.id || null, amountMinor: obj.amount ?? null, amountRefundedMinor: obj.amount_refunded ?? null, fullRefund: full },
+    };
+  }
+  if (event.type === "charge.dispute.created") {
+    return {
+      type: "stripe_dispute_opened",
+      dedupeKey: obj.id || event.id,
+      message: "Stripe DISPUTE (chargeback) opened — respond in the Stripe Dashboard before the deadline",
+      context: { ...base, disputeId: obj.id || null, chargeId: typeof obj.charge === "string" ? obj.charge : (obj.charge && obj.charge.id) || null, amountMinor: obj.amount ?? null, reason: obj.reason || null, status: obj.status || null },
+    };
+  }
+  if (event.type === "charge.dispute.closed") {
+    return {
+      type: "stripe_dispute_closed",
+      dedupeKey: obj.id || event.id,
+      message: `Stripe dispute closed (${obj.status || "unknown outcome"})`,
+      context: { ...base, disputeId: obj.id || null, amountMinor: obj.amount ?? null, status: obj.status || null },
+    };
+  }
+  if (event.type === "invoice.payment_failed") {
+    return {
+      type: "stripe_invoice_payment_failed",
+      dedupeKey: obj.id || event.id,
+      message: "Stripe membership payment FAILED — Stripe will retry; access continues while past_due (contact the customer if it doesn't recover)",
+      context: { ...base, invoiceId: obj.id || null, subscriptionId: typeof obj.subscription === "string" ? obj.subscription : null, amountDueMinor: obj.amount_due ?? null, attemptCount: obj.attempt_count ?? null },
+    };
+  }
+  return null;
+}
+
 // A stripe_customer_id write lost the race in setHouseholdStripeCustomerId
 // (see below) if the RPC's specific "already has a different value" message
 // comes back — distinct from its "household does not exist" message, which
@@ -598,6 +658,13 @@ router.post(
     // for accounting only, never throws, never changes anything below.
     await accountingCapture.captureStripeEvent(event);
 
+    // WS4 (2026-10-10): payment failed / refund / dispute → ops alert only
+    // (paymentOpsAlertFor above). Fire-and-forget; changes nothing below.
+    const paymentOpsAlert = paymentOpsAlertFor(event);
+    if (paymentOpsAlert) {
+      sendCriticalAlert(paymentOpsAlert.type, paymentOpsAlert.message, paymentOpsAlert.context, { dedupeKey: paymentOpsAlert.dedupeKey }).catch(() => {});
+    }
+
     // Allowance top-ups (customer allowance workstream, 2026-10-03): a
     // one-off Checkout payment HCG created with hcg_purpose=allowance_topup,
     // or a refund of one. Credited only once paid (delayed methods on
@@ -825,5 +892,6 @@ router.hasQualifyingStripeSubscription = hasQualifyingStripeSubscription;
 router.findReusableOpenCheckoutSession = findReusableOpenCheckoutSession;
 router.isSessionPaidWithSubscription = isSessionPaidWithSubscription;
 router.buildCheckoutSessionParams = buildCheckoutSessionParams;
+router.paymentOpsAlertFor = paymentOpsAlertFor;
 
 module.exports = router;
