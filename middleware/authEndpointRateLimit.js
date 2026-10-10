@@ -75,15 +75,36 @@ function createAuthEndpointLimiter({ env = process.env, now, log = console.error
       login: envInt(env, 'AUTH_RATE_GLOBAL_LOGIN', 1200),
       email: envInt(env, 'AUTH_RATE_GLOBAL_EMAIL', 200),
       waiting_list: envInt(env, 'AUTH_RATE_GLOBAL_WAITING_LIST', 300),
+      // WS1 2026-10-10: token-exchange routes (/confirm-session,
+      // /verify-confirmation-token, /reset-password-verify,
+      // /reset-password-complete). No email is sent, but each request calls
+      // Supabase Auth from THIS server's IP (a flood would exhaust Supabase's
+      // per-IP auth limits for every genuine customer) and may write a
+      // households/user_roles row.
+      session: envInt(env, 'AUTH_RATE_GLOBAL_SESSION', 600),
+      // WS1 2026-10-10: unauthenticated analytics writes (GET / and GET /go
+      // landing_visit rows). Used through budget(): the page is always
+      // served; only the database write is skipped over the ceiling.
+      acquisition: envInt(env, 'AUTH_RATE_GLOBAL_ACQUISITION', 3000),
     },
     ipEnabled: Number(env.TRUST_PROXY_HOPS) > 0,
   };
 
+  function assertKnownGroup(group) {
+    // An unknown group would silently have NO global ceiling (count > undefined
+    // is always false) — refuse at wiring time instead.
+    if (!Object.prototype.hasOwnProperty.call(config.global, group)) {
+      throw new Error(`authEndpointRateLimit: unknown group "${group}"`);
+    }
+  }
+
   function limit(route, { group, onEmailLimit = 'reject', emailField = 'email' }) {
+    assertKnownGroup(group);
     return function authRateLimit(req, res, next) {
       const tooMany = (reason) => {
         log('AUTH RATE LIMIT', JSON.stringify({ route, reason }));
-        if (req.path.startsWith('/api/')) return res.status(429).json({ error: 'rate_limited', message: 'Too many attempts. Please wait a few minutes and try again.' });
+        // JSON callers (the app, and the token-exchange routes' page scripts) get JSON.
+        if (req.path.startsWith('/api/') || (typeof req.is === 'function' && req.is('application/json'))) return res.status(429).json({ error: 'rate_limited', message: 'Too many attempts. Please wait a few minutes and try again.' });
         return res.status(429).type('text/plain').send('Too many attempts. Please wait a few minutes and try again.');
       };
       if (counter.hit(`g:${group}`, config.windowMs) > config.global[group]) return tooMany('global');
@@ -102,7 +123,29 @@ function createAuthEndpointLimiter({ env = process.env, now, log = console.error
     };
   }
 
-  return { limit, config };
+  // Non-responding variant for side effects that must never block the page
+  // they ride on (e.g. landing-visit analytics): consumes the group's global
+  // and (when TRUST_PROXY_HOPS is set) per-IP budget and returns whether the
+  // side effect may run. Never touches the response.
+  function budget(group, req) {
+    assertKnownGroup(group);
+    if (counter.hit(`g:${group}`, config.windowMs) > config.global[group]) return false;
+    if (config.ipEnabled && req && req.ip && counter.hit(`ip:${group}:${req.ip}`, config.windowMs) > config.perIp) return false;
+    return true;
+  }
+
+  return { limit, budget, config };
 }
 
-module.exports = { createAuthEndpointLimiter, normaliseEmailKey };
+// WS1 2026-10-10: ONE process-wide limiter shared by server.js and
+// routes/mobileApi.js. Previously each file created its own, so the web and
+// mobile copies of the same action (sign-up, resend confirmation) each had
+// their own per-mailbox and global budgets — a victim's mailbox could receive
+// double the intended number of emails. Same route labels now share counters.
+let shared = null;
+function sharedAuthEndpointLimiter() {
+  if (!shared) shared = createAuthEndpointLimiter();
+  return shared;
+}
+
+module.exports = { createAuthEndpointLimiter, sharedAuthEndpointLimiter, normaliseEmailKey };

@@ -1,0 +1,155 @@
+# Home Call Guard — PRODUCTION environment template (WS1 2026-10-10)
+#
+# VARIABLE NAMES AND SAFE NON-SECRET VALUES ONLY. NO SECRET IS, OR MAY EVER BE,
+# WRITTEN IN THIS FILE. Secret lines are deliberately left empty (KEY=): their
+# values are entered in Railway → Variables only.
+#
+# Source of truth: services/config/launchConfig.js (RULES) + services/
+# serverConfig.js (REQUIRED_IN_PRODUCTION), and §5 of
+# docs/launch/2026-10-09-PRODUCTION-DEPLOY-PROCEDURE.md.
+# tests/ws1-env-template.test.mjs fails if a launchConfig production-REQUIRED
+# key is missing here, if any non-empty value here would make
+# `check-launch-config` FATAL in production, or if a secret-looking value
+# appears.
+#
+# Legend:  [REQUIRED] fatal if missing/unsafe · [RECOMMENDED] warning ·
+#          [SECRET] value only in Railway · [LEAVE UNSET] must not be set to the
+#          unsafe value named · [COHORT] controlled-launch setting
+#
+# Verify after setting (locally, against a COPY of the values, never committed):
+#   node scripts/check-launch-config.js   → must print START with 0 fatal.
+
+# ── Platform ────────────────────────────────────────────────────────────────
+# [REQUIRED] serverConfig.validateProductionEnv runs only when NODE_ENV=production.
+NODE_ENV=production
+# [RECOMMENDED] declares the deployment so a URL typo can never relax checks.
+HCG_DEPLOYMENT=production
+# [REQUIRED] https, the real public origin (Twilio signatures are computed from it).
+# CONFIRM it equals the host Twilio numbers are configured with before setting.
+APP_URL=https://www.homecallguard.co.uk
+# [REQUIRED] 1–3: the exact number of proxies in front of the app on Railway.
+# Confirm the hop count on Railway before setting; unset disables per-IP limits.
+TRUST_PROXY_HOPS=
+# Keep a SINGLE instance (stream tokens and rate-limit counters are in-process).
+
+# ── Supabase ────────────────────────────────────────────────────────────────
+# [REQUIRED] production project URL (https://<ref>.supabase.co) — not a secret.
+SUPABASE_URL=https://psbzynxplxfbyrbdidmn.supabase.co
+# [REQUIRED][SECRET]
+SUPABASE_ANON_KEY=
+# [REQUIRED][SECRET]
+SUPABASE_SERVICE_ROLE_KEY=
+
+# ── Security / abuse ────────────────────────────────────────────────────────
+# [REQUIRED][SECRET] ≥ 32 random characters.
+ABUSE_AUDIT_HASH_SECRET=
+# [REQUIRED][SECRET] ≥ 32 random characters, DIFFERENT from ABUSE_AUDIT_HASH_SECRET.
+SAFETY_CALLER_KEY_SECRET=
+# [REQUIRED][LEAVE UNSET] never "report" (accepts unsigned Twilio webhooks).
+# TWILIO_WEBHOOK_AUTH_MODE=
+# [REQUIRED][LEAVE UNSET] never "false".
+# SAFETY_ADMISSION_REQUIRES_SIGNATURE=
+# [LEAVE UNSET] never used to silence a fatal rule (procedure §5).
+# HCG_CONFIG_ACKNOWLEDGE=
+# Optional tunables (defaults shown in middleware/*.js; leave unset unless needed):
+# AUTH_RATE_PER_EMAIL=3
+# AUTH_RATE_PER_IP=30
+# AUTH_RATE_GLOBAL_SESSION=600
+# AUTH_RATE_GLOBAL_ACQUISITION=3000
+# ADMIN_MUTATION_RATE_LIMIT=60
+# ADMIN_MUTATION_RATE_WINDOW_MS=600000
+
+# ── Stripe ──────────────────────────────────────────────────────────────────
+# [REQUIRED][SECRET] must be a LIVE key (sk_live_… or, preferably, rk_live_…).
+STRIPE_SECRET_KEY=
+# [REQUIRED][SECRET] the live webhook endpoint's signing secret.
+STRIPE_WEBHOOK_SECRET=
+# [REQUIRED] the live tax-inclusive GBP monthly Price id (price_…). Not a
+# secret, but set at step D10 (price cutover), so left empty here.
+STRIPE_PRICE_ID=
+
+# ── RevenueCat ──────────────────────────────────────────────────────────────
+# [REQUIRED][SECRET] ≥ 16 characters; must equal the RevenueCat webhook header.
+REVENUECAT_WEBHOOK_AUTHORIZATION=
+
+# ── Twilio ──────────────────────────────────────────────────────────────────
+# [REQUIRED] the production account SID (AC…). Identifier, entered in Railway.
+TWILIO_ACCOUNT_SID=
+# [REQUIRED][SECRET]
+TWILIO_AUTH_TOKEN=
+# [REQUIRED] Voice SDK API key SID (SK…) and TwiML App SID (AP…).
+TWILIO_VOICE_API_KEY_SID=
+# [REQUIRED][SECRET]
+TWILIO_VOICE_API_KEY_SECRET=
+TWILIO_VOICE_TWIML_APP_SID=
+# iOS VoIP push credential (CR…) — procedure §5.
+TWILIO_VOICE_PUSH_CREDENTIAL_SID_IOS=
+# [RECOMMENDED] https URL of the <Reject/> TwiML Bin
+# (scripts/production/twiml-bin-reject.xml; console step, Andrew).
+TWILIO_VOICE_FALLBACK_URL=
+# [REQUIRED][LEAVE UNSET] never "fake" in production.
+# NUMBER_PROVISIONING_MODE=
+
+# ── Provider usage alerts (containment T11) ─────────────────────────────────
+# [RECOMMENDED] comma-separated UT… SIDs whose alert latches the kill switch.
+PROVIDER_USAGE_ALERT_TRIP_TRIGGER_SIDS=
+# PROVIDER_USAGE_ALERT_TRIP_ALL=false
+# PROVIDER_USAGE_ALERT_MAX_AGE_MINUTES=60
+
+# ── Customer protection (support-verified forwarding proof, migration 075) ──
+# [RECOMMENDED][COHORT] +44… support phone(s), comma separated.
+HCG_SUPPORT_VERIFICATION_CALLERS=
+# [COHORT]
+HCG_SUPPORT_VERIFICATION_MAX_AGE_MINUTES=60
+
+# ── Financial authority ─────────────────────────────────────────────────────
+# [REQUIRED][LEAVE UNSET] never FC_DEGRADED_MODE=bounded / FC_ALLOW_BOUNDED_DEGRADED_MODE=true.
+# FC_DEGRADED_MODE=
+# FC_ALLOW_BOUNDED_DEGRADED_MODE=
+# [REQUIRED][LEAVE UNSET] never "unmonitored".
+# ABUSE_FINANCIAL_UNAVAILABLE_POLICY=
+# [REQUIRED][LEAVE UNSET] /process stays off (no Fortress reservation).
+# PROCESS_ROUTE_ENABLED=
+# [FORBIDDEN in production] never "true".
+# ALLOWANCE_ALLOW_SANDBOX_CREDITS=
+
+# ── Allowance ───────────────────────────────────────────────────────────────
+# [RECOMMENDED][COHORT]
+ALLOWANCE_SOURCE=fortress
+# [REQUIRED rule] keep OFF (if ever "true", ALLOWANCE_TOPUP_PRODUCTS is required).
+ALLOWANCE_TOPUPS_ENABLED=false
+# ALLOWANCE_TOPUP_PRODUCTS=
+
+# ── Acquisition (controlled launch) ─────────────────────────────────────────
+# [COHORT] keep "true" at the merge; "false" only after step D9/D10.
+NEW_SUBSCRIPTIONS_PAUSED=true
+# [COHORT] invited emails, comma separated (personal data: enter in Railway only).
+NEW_SUBSCRIPTIONS_ALLOWLIST=
+
+# ── OpenAI ──────────────────────────────────────────────────────────────────
+# [REQUIRED][SECRET] project-scoped key, Whisper only; project hard limit set (containment §2).
+OPENAI_API_KEY=
+
+# ── Email / operations ──────────────────────────────────────────────────────
+# [RECOMMENDED][SECRET] critical alerts are emailed via Resend.
+Resend_API_Key=
+# [REQUIRED rule] if "true", Resend_API_Key and OPS_NOTIFY_ROLE_OPERATIONS_EMAIL are required.
+OPS_NOTIFY_EMAIL_ENABLED=false
+# OPS_NOTIFY_ROLE_OPERATIONS_EMAIL=
+# [RECOMMENDED][COHORT]
+OPS_EVENTS_SCHEDULE_ENABLED=true
+
+# ── Economics ───────────────────────────────────────────────────────────────
+# [COHORT] the approved inc-VAT price.
+HCG_ECONOMICS_PRICE_INC_VAT_GBP=5.99
+
+# ── Accounting / Xero / lifecycle (keep OFF) ────────────────────────────────
+ACCOUNTING_CAPTURE_ENABLED=false
+# [REQUIRED rule] keep OFF (if "true", XERO_* and ACCOUNTING_CONFIRMED_DECISIONS are required).
+ACCOUNTING_XERO_POSTING_ENABLED=false
+# XERO_CLIENT_ID=
+# XERO_CLIENT_SECRET=
+# XERO_TENANT_ID=
+# ACCOUNTING_CONFIRMED_DECISIONS=
+# Lifecycle sweep stays off (decision D-N1).
+# ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE=
