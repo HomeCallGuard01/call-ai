@@ -1,5 +1,8 @@
 # Test B plan, revised after Test A (2026-10-10): NOT approved, NOT run
 
+> **Superseded by `TEST-B-PLAN-v2-2026-10-10.md`.**
+
+
 **Goal:** prove that a silenced unknown call, forwarded on no-answer, reaches an **external number on HCG's Twilio account**, and record how it arrives. This is the routing a real product needs. Test A proved the same thing only to the carrier's own voicemail.
 
 Detailed steps stay in `TEST-B-RUNBOOK.md`. This revision changes the order and adds the gates Test A showed are needed.

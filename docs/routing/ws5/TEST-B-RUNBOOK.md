@@ -1,5 +1,8 @@
 # WS5 Test B: silence → no-reply forwarding → an external HCG number (attended runbook)
 
+> **2026-10-10: superseded for sequencing, limits and gates by `TEST-B-PLAN-v2-2026-10-10.md`.** Do not use the `**61*` code below without Lebara's written confirmation (Test A: Lebara refused MMI registration).
+
+
 **Status: READY, NOT RUN. Run only after Test A PASSES.** Needs approvals B-1..B-4 (§B.8). Prepared 2026-10-10 by WS5.
 **Question:** does Lebara accept CFNRy to a **non-Lebara UK geographic number** on HCG's Twilio account, and does a silenced unknown call arrive there after the timer, with which caller ID and `ForwardedFrom`, while answered trusted calls produce **zero** requests?
 
