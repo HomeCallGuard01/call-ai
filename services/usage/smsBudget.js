@@ -25,6 +25,27 @@ const { resolveCostRates } = require('./costModel');
 const { resolveSafetyConfig, smsLimits } = require('./safetyConfig');
 const { logEvent } = require('../liveMonitoring/structuredLog');
 
+// SMS segments actually billed (2026-10-10, duration-evidence finding): a
+// message was authorised as ONE segment whatever its length, so a 2-segment
+// warning was ~4p under-estimated. GSM-7 basic set: 160 chars, or 153 per
+// part when split; the GSM extension chars count double; anything else forces
+// UCS-2: 70, or 67 per part. Errs high (never under-counts).
+const GSM7_BASIC = new Set(Array.from('@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà'));
+const GSM7_EXT = new Set(Array.from('^{}\\[~]|€\f'));
+function smsSegments(body) {
+  const chars = Array.from(String(body == null ? '' : body));
+  let gsmLen = 0;
+  let gsm = true;
+  for (const c of chars) {
+    if (GSM7_BASIC.has(c)) gsmLen += 1;
+    else if (GSM7_EXT.has(c)) gsmLen += 2;
+    else { gsm = false; break; }
+  }
+  if (gsm) return gsmLen <= 160 ? 1 : Math.ceil(gsmLen / 153);
+  const units = chars.reduce((n, c) => n + (c.codePointAt(0) > 0xffff ? 2 : 1), 0);
+  return units <= 70 ? 1 : Math.ceil(units / 67);
+}
+
 function createSmsBudget({ client, claimSmsSend, containment = null, recordIntervention = async () => {}, env = process.env, now = () => new Date() }) {
   const rates = resolveCostRates(env);
 
@@ -39,7 +60,7 @@ function createSmsBudget({ client, claimSmsSend, containment = null, recordInter
             let auth;
             try {
               auth = await containment.authorizeSpend({
-                category: 'sms', householdId: householdId || null, units: 1, period,
+                category: 'sms', householdId: householdId || null, units: smsSegments(params && params.body), period,
                 key: containment.smsKey({ householdId, to: params && params.to, body: params && params.body, at: now() }),
               });
             } catch (err) {
@@ -70,7 +91,7 @@ function createSmsBudget({ client, claimSmsSend, containment = null, recordInter
             decision = await Promise.race([
               claimSmsSend({
                 householdId, periodStart: period.periodStart, periodEnd: period.periodEnd, now: now(),
-                costGbp: rates.smsPerSegment, limits: smsLimits(resolveSafetyConfig(env)),
+                costGbp: rates.smsPerSegment * smsSegments(params && params.body), limits: smsLimits(resolveSafetyConfig(env)),
               }),
               new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`claim_sms_send timed out after ${timeoutMs}ms`)), timeoutMs); }),
             ]).finally(() => clearTimeout(timer));
@@ -93,4 +114,4 @@ function createSmsBudget({ client, claimSmsSend, containment = null, recordInter
   return { forHousehold };
 }
 
-module.exports = { createSmsBudget };
+module.exports = { createSmsBudget, smsSegments };
