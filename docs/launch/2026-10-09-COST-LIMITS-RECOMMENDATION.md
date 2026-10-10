@@ -1,5 +1,7 @@
 # Cost limits for production launch: recommendation (2026-10-09)
 
+> **2026-10-10 correction (WS2 scale simulation, `docs/launch/2026-10-10-WS2-REPORT.md` §4, D-4):** `global_daily_absolute_max_gbp = 25` is correct **only for N ≤ about 25 entitled households.** Beyond that, genuine traffic trips the latching breaker (N = 1,000: hour 4.7, 80% of calls refused). Before the cohort passes about 20, set it to about 0.60 × N per stage, and `global_active_households_per_call = 2` at N ≥ 500. The per-household £2/day hold still bounds every abusive household (≤ £2.19/day simulated).
+
 **Status: RECOMMENDATION ONLY.** Nothing here has been executed. No database, env or console setting has changed. This closes decision **AL-2 / C12 / B5** (`2026-10-09-LAUNCH-GO-NO-GO.md`) once Andrew approves the SQL in §3.4.
 
 **Scope.** Cohort ≤ 5 (then ≤ 25), Android + Stripe only, at £5.99 inc. VAT (£4.99 net).
