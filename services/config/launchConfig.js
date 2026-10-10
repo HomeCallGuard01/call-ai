@@ -24,6 +24,7 @@
 'use strict';
 
 const { resolveEnvironment } = require('../telephony/provisioningGuard');
+const { classifyTwilioRuntimeCredentials } = require('./twilioCredentials');
 
 const DEFAULT_STAGING_SUPABASE_REF = 'tigwgmayeuisrxjjykqd';
 const STRICT = ['production', 'staging'];
@@ -52,7 +53,13 @@ function resolveDeployment(env = process.env) {
 // level per deployment: 'required' | 'recommended' | 'optional' | 'forbidden'
 // (forbidden = TEST/DEV ONLY: must not be enabled there).
 // test(env) returns null when satisfied, else a problem code.
-const R = (id, area, keys, levels, test, why) => ({ id, area, keys, levels, test, why });
+const R = (id, area, keys, levels, test, why, extra = {}) => ({ id, area, keys, levels, test, why, ...extra });
+// Agent 1 2026-10-11: once the runtime has moved to a Twilio subaccount
+// (docs/launch/2026-10-11-TWILIO-SUBACCOUNT-MIGRATION-RUNBOOK.md), Andrew sets
+// HCG_TWILIO_SUBACCOUNT_REQUIRED=true and the credential-isolation warnings
+// become FATAL, so a later env edit cannot silently put master credentials back.
+const subaccountRequired = (e) => String(e.HCG_TWILIO_SUBACCOUNT_REQUIRED || '').trim().toLowerCase() === 'true';
+const twilioCreds = (e) => classifyTwilioRuntimeCredentials(e);
 const REQ_BOTH = { production: 'required', staging: 'required' };
 const REC_BOTH = { production: 'recommended', staging: 'recommended' };
 
@@ -114,6 +121,24 @@ const RULES = [
   R('twilio_voice_fallback_url', 'Twilio', ['TWILIO_VOICE_FALLBACK_URL'], REC_BOTH,
     (e) => (/^https:\/\//.test(String(e.TWILIO_VOICE_FALLBACK_URL || '')) ? null : 'missing'),
     'Without a <Reject/> fallback, calls during an HCG outage are answered by Twilio and billed (containment T4).'),
+  // ── Twilio credential isolation (containment P6; Agent 1 2026-10-11) ──
+  R('twilio_rest_api_key', 'Twilio', ['TWILIO_API_KEY_SID', 'TWILIO_API_KEY_SECRET'], { production: 'recommended', staging: 'optional' },
+    (e) => (twilioCreds(e).restMode === 'auth_token' ? 'rest_client_uses_account_auth_token' : null),
+    'The REST client should use a scoped API key on the runtime subaccount, not an account SID + auth token (an auth token is a full account credential; on the parent it reaches every subaccount, billing and the usage breaker). FATAL once HCG_TWILIO_SUBACCOUNT_REQUIRED=true.',
+    { escalate: subaccountRequired }),
+  R('twilio_api_key_complete', 'Twilio', ['TWILIO_API_KEY_SID', 'TWILIO_API_KEY_SECRET'], REQ_BOTH,
+    (e) => { const c = twilioCreds(e); return c.apiKeyIncomplete ? 'api_key_sid_and_secret_must_both_be_set' : c.apiKeyMalformed ? 'api_key_sid_is_not_an_SK_sid' : null; },
+    'With only one of the pair set, services/twilioClient.js silently falls back to the account auth token.'),
+  R('twilio_runtime_not_parent', 'Twilio', ['TWILIO_ACCOUNT_SID', 'HCG_TWILIO_PARENT_ACCOUNT_SID'], REQ_BOTH,
+    (e) => { const c = twilioCreds(e); return c.parentMalformed ? 'parent_account_sid_malformed' : c.runtimeIsParent ? 'runtime_uses_parent_account' : null; },
+    'TWILIO_ACCOUNT_SID equal to the declared parent means master credentials are in the runtime (the auth token kept for signature validation would be the PARENT token).'),
+  R('twilio_parent_declared', 'Twilio', ['HCG_TWILIO_PARENT_ACCOUNT_SID'], { production: 'recommended', staging: 'optional' },
+    (e) => (twilioCreds(e).parentDeclared ? null : 'parent_account_not_declared'),
+    'Declaring the parent SID (a non-secret identifier) is what lets the check above detect master credentials in the runtime. FATAL once HCG_TWILIO_SUBACCOUNT_REQUIRED=true.',
+    { escalate: subaccountRequired }),
+  R('twilio_no_parent_secret_in_runtime', 'Twilio', ['HCG_TWILIO_PARENT_AUTH_TOKEN', 'TWILIO_MASTER_AUTH_TOKEN'], { production: 'forbidden', staging: 'forbidden' },
+    (e) => (twilioCreds(e).parentSecretKeys.length ? 'parent_or_master_secret_present' : null),
+    'The parent account\'s credentials belong only in the Twilio Functions service that runs the usage breaker, never in the HCG backend (any *TWILIO_PARENT_*TOKEN/SECRET or *TWILIO_MASTER_*TOKEN/SECRET key).'),
   R('number_provisioning_not_fake', 'Twilio', ['NUMBER_PROVISIONING_MODE'], { production: 'required', staging: 'optional' },
     (e) => (String(e.NUMBER_PROVISIONING_MODE || '').toLowerCase() === 'fake' ? 'fake_mode_in_production' : null),
     'Fake provisioning in production would give customers numbers that do not exist.'),
@@ -143,6 +168,14 @@ const RULES = [
   R('openai', 'OpenAI', ['OPENAI_API_KEY'], REQ_BOTH,
     (e) => (present(e.OPENAI_API_KEY) ? null : 'missing'),
     'server.js constructs the OpenAI client at boot and crashes without a key (found 2026-10-04); spend limits on the OpenAI project are EXTERNAL configuration.'),
+  R('openai_project_key', 'OpenAI', ['OPENAI_API_KEY', 'OPENAI_PROJECT_ID'], { production: 'recommended', staging: 'optional' },
+    (e) => {
+      const key = String(e.OPENAI_API_KEY || '').trim();
+      if (/^sk-(proj|svcacct)-/.test(key)) return null;
+      if (/^proj_[A-Za-z0-9]+$/.test(String(e.OPENAI_PROJECT_ID || '').trim())) return null;
+      return 'key_not_project_scoped';
+    },
+    'Containment P1: the only provider-enforced AI cap is an OpenAI PROJECT hard spend limit, which binds only keys of that project (sk-proj-/sk-svcacct- keys, or a legacy key with OPENAI_PROJECT_ID). Setting the limit itself is a console step (AGENT1 report §6).'),
   // ── Email / comms ─────────────────────────────────────────────────────
   R('alert_email', 'Email/comms', ['Resend_API_Key'], REC_BOTH,
     (e) => (present(e.Resend_API_Key) ? null : 'missing'),
@@ -173,7 +206,7 @@ const RULES = [
 // Documentation-only classification of the remaining settings (no startup
 // check): OPTIONAL tunables and TEST/DEV ONLY switches.
 const OPTIONAL_GROUPS = Object.freeze({
-  'OPTIONAL (tunables with safe defaults)': ['SAFETY_*', 'ABUSE_* (except ABUSE_FINANCIAL_UNAVAILABLE_POLICY)', 'MEDIA_STREAM_*', 'MONITORING_*', 'RAPID_ABUSE_*', 'ALLOWANCE_* (except the rules above)', 'BUSINESS_*', 'LIFECYCLE_MONTHLY_NUMBER_COST_GBP', 'HCG_ECONOMICS_INCLUDE_PLATFORM_FEE', 'PLAN_PRODUCT_MAP', 'ACCOUNTING_CAPTURE_ENABLED (keep false until 071 applied)', 'ACCOUNTING_XERO_ACCOUNT_CODES', 'XERO_SCOPES', 'TWILIO_ADDRESS_SID', 'TWILIO_BUNDLE_SID', 'TWILIO_VOICE_PUSH_CREDENTIAL_SID[_IOS]', 'TWILIO_WEBHOOK_ALLOWED_HOSTS', 'PRODUCTION_APP_HOSTS', 'PRODUCTION_SUPABASE_REF', 'PRODUCTION_TWILIO_ACCOUNT_SID', 'STAGING_SUPABASE_REF', 'NONPRODUCTION_MAX_NUMBERS', 'NUMBER_LIFECYCLE_JOBS', 'ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE (decision D-N1)', 'CALL_DELIVERY_*', 'DELIVERY_PUSH_FAILURE_POLLING', 'FC_TERMINATION_MODE', 'FC_TERMINATION_ANNOUNCEMENT', 'FC_ESSENTIAL_CALLERS', 'HCG_INCIDENT_MODE', 'IOS_COMING_SOON', 'LANDLINE_COMING_SOON', 'APP_STORE_URL', 'PROVIDER_USAGE_ALERT_MAX_AGE_MINUTES', 'PORT', 'RAILWAY_*', 'OPS_NOTIFY_FROM_EMAIL', 'OPS_NOTIFY_ROLE_FOUNDER_EMAIL', 'OPS_NOTIFY_FOUNDER_EARLY_LAUNCH', 'OPS_NOTIFY_PUSH_ENABLED (no adapter yet)', 'NEW_SUBSCRIPTIONS_PAUSED (stop-acquisition switch)', 'NEW_SUBSCRIPTIONS_ALLOWLIST (invite-only cohort emails)'],
+  'OPTIONAL (tunables with safe defaults)': ['SAFETY_*', 'ABUSE_* (except ABUSE_FINANCIAL_UNAVAILABLE_POLICY)', 'MEDIA_STREAM_*', 'MONITORING_*', 'RAPID_ABUSE_*', 'ALLOWANCE_* (except the rules above)', 'BUSINESS_*', 'LIFECYCLE_MONTHLY_NUMBER_COST_GBP', 'HCG_ECONOMICS_INCLUDE_PLATFORM_FEE', 'PLAN_PRODUCT_MAP', 'ACCOUNTING_CAPTURE_ENABLED (keep false until 071 applied)', 'ACCOUNTING_XERO_ACCOUNT_CODES', 'XERO_SCOPES', 'TWILIO_ADDRESS_SID', 'TWILIO_BUNDLE_SID', 'HCG_TWILIO_SUBACCOUNT_REQUIRED (set true after the subaccount migration: credential-isolation warnings become fatal)', 'TWILIO_VOICE_PUSH_CREDENTIAL_SID[_IOS]', 'TWILIO_WEBHOOK_ALLOWED_HOSTS', 'PRODUCTION_APP_HOSTS', 'PRODUCTION_SUPABASE_REF', 'PRODUCTION_TWILIO_ACCOUNT_SID', 'STAGING_SUPABASE_REF', 'NONPRODUCTION_MAX_NUMBERS', 'NUMBER_LIFECYCLE_JOBS', 'ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE (decision D-N1)', 'CALL_DELIVERY_*', 'DELIVERY_PUSH_FAILURE_POLLING', 'FC_TERMINATION_MODE', 'FC_TERMINATION_ANNOUNCEMENT', 'FC_ESSENTIAL_CALLERS', 'HCG_INCIDENT_MODE', 'IOS_COMING_SOON', 'LANDLINE_COMING_SOON', 'APP_STORE_URL', 'PROVIDER_USAGE_ALERT_MAX_AGE_MINUTES', 'PORT', 'RAILWAY_*', 'OPS_NOTIFY_FROM_EMAIL', 'OPS_NOTIFY_ROLE_FOUNDER_EMAIL', 'OPS_NOTIFY_FOUNDER_EARLY_LAUNCH', 'OPS_NOTIFY_PUSH_ENABLED (no adapter yet)', 'NEW_SUBSCRIPTIONS_PAUSED (stop-acquisition switch)', 'NEW_SUBSCRIPTIONS_ALLOWLIST (invite-only cohort emails)'],
   'TEST/DEV ONLY': ['FC_DEGRADED_MODE=bounded', 'FC_ALLOW_BOUNDED_DEGRADED_MODE=true', 'NUMBER_PROVISIONING_MODE=fake', 'ALLOWANCE_ALLOW_SANDBOX_CREDITS=true (production)', 'TWILIO_WEBHOOK_AUTH_MODE=report', 'PROCESS_ROUTE_ENABLED=true', 'SAFETY_ADMISSION_REQUIRES_SIGNATURE=false', 'FC_REALPG_MODULES (tests)'],
 });
 
@@ -182,7 +215,8 @@ function evaluateLaunchConfig(env = process.env) {
   const acknowledged = new Set(String(env.HCG_CONFIG_ACKNOWLEDGE || '').split(',').map((s) => s.trim()).filter(Boolean));
   const fatal = []; const acknowledgedFatal = []; const warnings = []; const rows = [];
   for (const rule of RULES) {
-    const level = STRICT.includes(dep.deployment) ? (rule.levels[dep.deployment] || 'optional') : 'optional';
+    let level = STRICT.includes(dep.deployment) ? (rule.levels[dep.deployment] || 'optional') : 'optional';
+    if (level === 'recommended' && typeof rule.escalate === 'function' && rule.escalate(env)) level = 'required';
     const problem = rule.test(env);
     const finding = { id: rule.id, area: rule.area, keys: rule.keys, level, problem, why: rule.why };
     rows.push(finding);

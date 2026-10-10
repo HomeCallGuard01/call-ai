@@ -1,4 +1,5 @@
 const twilio = require("twilio");
+const { twilioRestCredentialMode } = require("./config/twilioCredentials");
 
 // createClient()-equivalent for Twilio's REST API — not the TwiML builder
 // used elsewhere via `twilio.twiml.VoiceResponse`, which needs no
@@ -14,21 +15,19 @@ const twilio = require("twilio");
 // signatures for numbers the subaccount owns. Without an API key the
 // previous account-SID + auth-token client is used, unchanged.
 function createTwilioRestClient(env = process.env) {
-  const accountSid = env.TWILIO_ACCOUNT_SID;
-  if (!accountSid) return null;
-  if (env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET) {
-    return twilio(env.TWILIO_API_KEY_SID, env.TWILIO_API_KEY_SECRET, { accountSid });
-  }
-  if (env.TWILIO_AUTH_TOKEN) return twilio(accountSid, env.TWILIO_AUTH_TOKEN);
+  // One source of truth for which credential is used (the same function
+  // launchConfig reports on), so the report can never disagree with the client.
+  const mode = twilioRestCredentialMode(env);
+  const accountSid = mode === "none" ? null : env.TWILIO_ACCOUNT_SID.trim();
+  if (mode === "api_key") return twilio(env.TWILIO_API_KEY_SID.trim(), env.TWILIO_API_KEY_SECRET.trim(), { accountSid });
+  if (mode === "auth_token") return twilio(accountSid, env.TWILIO_AUTH_TOKEN.trim());
   return null;
 }
 
-function twilioRestCredentialMode(env = process.env) {
-  if (!env.TWILIO_ACCOUNT_SID) return "none";
-  if (env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET) return "api_key";
-  if (env.TWILIO_AUTH_TOKEN) return "auth_token";
-  return "none";
-}
+// twilioRestCredentialMode lives in services/config/twilioCredentials.js
+// (pure; also used by services/config/launchConfig.js, which warns or
+// refuses to start when production uses the auth-token REST client or the
+// parent account's SID — Agent 1, 2026-10-11).
 
 const twilioRestClient = createTwilioRestClient();
 

@@ -38,7 +38,7 @@ for (const r of RULES.filter((x) => x.levels.production === 'recommended')) chec
 // 2. No secret values.
 const SECRETISH = [/sk_(live|test)_\w/, /rk_(live|test)_\w/, /whsec_\w/, /eyJ[\w-]{8,}\./, /\bAC[0-9a-f]{32}\b/, /\bSK[0-9a-f]{32}\b/, /\bAP[0-9a-f]{32}\b/, /\bsbp_\w{8,}/, /\bre_[A-Za-z0-9]{8,}/, /\bsk-[A-Za-z0-9-]{8,}/, /@(?!homecallguard\.co\.uk)[\w-]+\.\w+/];
 for (const [k, v] of active) check(!SECRETISH.some((re) => re.test(v)), `${k}: value is not secret-looking`);
-const SECRET_KEYS = ['SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'ABUSE_AUDIT_HASH_SECRET', 'SAFETY_CALLER_KEY_SECRET', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'REVENUECAT_WEBHOOK_AUTHORIZATION', 'TWILIO_AUTH_TOKEN', 'TWILIO_VOICE_API_KEY_SECRET', 'OPENAI_API_KEY', 'Resend_API_Key', 'NEW_SUBSCRIPTIONS_ALLOWLIST'];
+const SECRET_KEYS = ['SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'ABUSE_AUDIT_HASH_SECRET', 'SAFETY_CALLER_KEY_SECRET', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'REVENUECAT_WEBHOOK_AUTHORIZATION', 'TWILIO_AUTH_TOKEN', 'TWILIO_API_KEY_SECRET', 'TWILIO_VOICE_API_KEY_SECRET', 'OPENAI_API_KEY', 'Resend_API_Key', 'NEW_SUBSCRIPTIONS_ALLOWLIST'];
 for (const k of SECRET_KEYS) check(active.has(k) && active.get(k) === '', `${k} is present with an EMPTY value (entered in Railway only)`);
 
 // 3. The template's own non-empty values are production-safe: with synthetic
@@ -49,6 +49,8 @@ const PLACEHOLDER = {
   STRIPE_SECRET_KEY: 'rk_live_PLACEHOLDER', STRIPE_PRICE_ID: 'price_PLACEHOLDER', REVENUECAT_WEBHOOK_AUTHORIZATION: 'c'.repeat(24),
   TWILIO_VOICE_FALLBACK_URL: 'https://handler.twilio.com/twiml/EHplaceholder', HCG_SUPPORT_VERIFICATION_CALLERS: '+447700900000',
   PROVIDER_USAGE_ALERT_TRIP_TRIGGER_SIDS: 'UTplaceholder', TWILIO_ACCOUNT_SID: 'ACplaceholder',
+  // Agent 1 2026-10-11 (credential isolation + OpenAI project key rules).
+  TWILIO_API_KEY_SID: `SK${'0'.repeat(32)}`, HCG_TWILIO_PARENT_ACCOUNT_SID: `AC${'1'.repeat(32)}`, OPENAI_API_KEY: 'sk-proj-PLACEHOLDER',
 };
 const env = {};
 for (const [k, v] of active) env[k] = v !== '' ? v : (PLACEHOLDER[k] || `placeholder-${k}`);
