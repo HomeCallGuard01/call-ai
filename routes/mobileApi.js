@@ -1449,7 +1449,12 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
     return res.status(503).json({ error: "not_configured" });
   }
 
-  if (req.headers.authorization !== expectedAuth) {
+  // Constant-time comparison (2026-10-10, cross-review F-4): a plain !==
+  // leaks how many leading characters matched through response timing.
+  // Hashing both sides first gives equal-length buffers for timingSafeEqual.
+  const digest = (v) => require("node:crypto").createHash("sha256").update(String(v || "")).digest();
+  if (typeof req.headers.authorization !== "string"
+    || !require("node:crypto").timingSafeEqual(digest(req.headers.authorization), digest(expectedAuth))) {
     console.error("REVENUECAT WEBHOOK ERROR: authorization header mismatch");
     return res.status(401).json({ error: "unauthorized" });
   }
