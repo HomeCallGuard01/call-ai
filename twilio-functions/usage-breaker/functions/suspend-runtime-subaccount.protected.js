@@ -18,6 +18,13 @@
 //
 // Deliberately narrow: it never reactivates, never touches any other account,
 // and ignores unknown triggers. Reactivation is a manual, audited console step.
+// It also ends the runtime subaccount's LIVE calls (see hangUpLiveCalls).
+//
+// LIMITS (do not present this as a hard cap): Usage Triggers fire on BOOKED
+// usage, polled about once a minute; call usage is believed to be booked when
+// a call ENDS, so long calls in progress may not move the trigger until they
+// finish. A trigger that lives in the runtime subaccount can be deleted by
+// anyone holding that subaccount's credentials (i.e. a compromised backend).
 'use strict';
 
 const SID = /^AC[0-9a-f]{32}$/i;
@@ -40,6 +47,37 @@ function decide(context, event) {
 
 exports.decide = decide;
 
+// Agent 1 2026-10-11: suspension does NOT end calls already in progress
+// (Twilio-confirmed). After suspending, the breaker therefore also ends the
+// runtime subaccount's live calls with the PARENT's credentials. Bounded per
+// invocation (Twilio Functions have a 10 s execution limit), parallel, and
+// best effort: every failure is counted, never thrown. Whether Twilio lets the
+// parent update calls of a SUSPENDED subaccount is UNVERIFIED — runbook
+// docs/launch/2026-10-11-USAGE-BREAKER-DEPLOY-RUNBOOK.md step V4 tests it; if
+// it does not, set HCG_BREAKER_HANGUP_BEFORE_SUSPEND=true (hang up, suspend,
+// hang up again). HCG_BREAKER_HANGUP_LIVE_CALLS=false disables this.
+const LIVE_STATUSES = ['in-progress', 'ringing', 'queued'];
+const DEFAULT_MAX_HANGUPS = 200;
+
+async function hangUpLiveCalls(client, target, { max = DEFAULT_MAX_HANGUPS } = {}) {
+  const out = { found: 0, ended: 0, failed: 0, truncated: false };
+  const acct = client.api.v2010.accounts(target);
+  const sids = [];
+  for (const status of LIVE_STATUSES) {
+    if (sids.length >= max) { out.truncated = true; break; }
+    let list = [];
+    try { list = await acct.calls.list({ status, limit: max - sids.length }); } catch (err) { out.failed++; continue; }
+    for (const c of list) if (c && c.sid && !sids.includes(c.sid)) sids.push(c.sid);
+  }
+  out.found = sids.length;
+  if (out.found >= max) out.truncated = true;
+  const results = await Promise.allSettled(sids.map((sid) => acct.calls(sid).update({ status: 'completed' })));
+  for (const r of results) { if (r.status === 'fulfilled') out.ended++; else out.failed++; }
+  return out;
+}
+
+exports.hangUpLiveCalls = hangUpLiveCalls;
+
 exports.handler = async function handler(context, event, callback) {
   const d = decide(context, event);
   const response = new Twilio.Response();
@@ -51,12 +89,18 @@ exports.handler = async function handler(context, event, callback) {
   }
   try {
     const client = context.getTwilioClient();
+    const hangup = String(context.HCG_BREAKER_HANGUP_LIVE_CALLS || 'true').toLowerCase() !== 'false';
+    const before = String(context.HCG_BREAKER_HANGUP_BEFORE_SUSPEND || '').toLowerCase() === 'true';
+    const max = Number.isInteger(Number(context.HCG_BREAKER_MAX_HANGUPS)) && Number(context.HCG_BREAKER_MAX_HANGUPS) > 0 ? Number(context.HCG_BREAKER_MAX_HANGUPS) : DEFAULT_MAX_HANGUPS;
+    let first = null;
+    if (hangup && before) first = await hangUpLiveCalls(client, d.target, { max });
     const acct = await client.api.v2010.accounts(d.target).fetch();
     if (acct.status !== 'suspended') {
       await client.api.v2010.accounts(d.target).update({ status: 'suspended' });
     }
-    console.log(`usage-breaker: runtime subaccount suspended by trigger ${d.triggerSid} (current=${event.CurrentValue} trigger=${event.TriggerValue} category=${event.UsageCategory})`);
-    response.setBody({ suspended: true, alreadySuspended: acct.status === 'suspended' });
+    const live = hangup ? await hangUpLiveCalls(client, d.target, { max }) : null;
+    console.log(`usage-breaker: runtime subaccount suspended by trigger ${d.triggerSid} (current=${event.CurrentValue} trigger=${event.TriggerValue} category=${event.UsageCategory}); live calls ${live ? `found=${live.found} ended=${live.ended} failed=${live.failed}${live.truncated ? ' TRUNCATED' : ''}` : 'not touched'}`);
+    response.setBody({ suspended: true, alreadySuspended: acct.status === 'suspended', liveCalls: live, liveCallsBeforeSuspend: first });
     return callback(null, response);
   } catch (err) {
     // Fail loudly: Twilio logs the error and the trigger's own email/console

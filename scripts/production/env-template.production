@@ -75,8 +75,23 @@ REVENUECAT_WEBHOOK_AUTHORIZATION=
 # ── Twilio ──────────────────────────────────────────────────────────────────
 # [REQUIRED] the production account SID (AC…). Identifier, entered in Railway.
 TWILIO_ACCOUNT_SID=
-# [REQUIRED][SECRET]
+# [REQUIRED][SECRET] the RUNTIME (sub)account's own auth token — needed to
+# validate webhook signatures. Never the parent/master token.
 TWILIO_AUTH_TOKEN=
+# [RECOMMENDED] scoped REST API key (SK…) created IN THE RUNTIME SUBACCOUNT
+# (docs/launch/2026-10-11-TWILIO-SUBACCOUNT-MIGRATION-RUNBOOK.md). Both or neither.
+TWILIO_API_KEY_SID=
+# [RECOMMENDED][SECRET]
+TWILIO_API_KEY_SECRET=
+# [RECOMMENDED] the PARENT account SID (identifier only) — lets the launch
+# check refuse to start if TWILIO_ACCOUNT_SID is the parent (master in runtime).
+HCG_TWILIO_PARENT_ACCOUNT_SID=
+# [AFTER MIGRATION] set true once the subaccount migration is verified: the
+# two lines above become REQUIRED (fatal if missing).
+# HCG_TWILIO_SUBACCOUNT_REQUIRED=true
+# [FORBIDDEN] never put parent/master secrets in the runtime:
+# HCG_TWILIO_PARENT_AUTH_TOKEN=
+# TWILIO_MASTER_AUTH_TOKEN=
 # [REQUIRED] Voice SDK API key SID (SK…) and TwiML App SID (AP…).
 TWILIO_VOICE_API_KEY_SID=
 # [REQUIRED][SECRET]
@@ -140,6 +155,8 @@ NEW_SUBSCRIPTIONS_ALLOWLIST=
 # ── OpenAI ──────────────────────────────────────────────────────────────────
 # [REQUIRED][SECRET] project-scoped key, Whisper only; project hard limit set (containment §2).
 OPENAI_API_KEY=
+# [RECOMMENDED] only if the key is a legacy (non sk-proj-/sk-svcacct-) key: its project id (proj_…).
+# OPENAI_PROJECT_ID=
 
 # ── Email / operations ──────────────────────────────────────────────────────
 # [RECOMMENDED][SECRET] critical alerts are emailed via Resend.
