@@ -37,7 +37,7 @@ const isObj = (v) => v && typeof v === 'object';
 const REJECTED = /fc_[a-z_]+: |violates (foreign key|check|not-null|unique) constraint|invalid input syntax/i;
 const isRejectedByAuthority = (err) => REJECTED.test(String((err && err.message) || err));
 
-function createContainment({ db, env = process.env, now = () => new Date(), recordEvent = async () => {} } = {}) {
+function createContainment({ db, env = process.env, now = () => new Date(), recordEvent = async () => {}, onAllowanceStateChange = async () => {} } = {}) {
   if (!db) throw new Error('createContainment: db is required');
   const config = resolveContainmentConfig(env);
   const leases = new Map();        // callSid -> { householdId, leaseExpiresAt (ms), timeLimitSeconds, admittedAt, degraded }
@@ -58,6 +58,24 @@ function createContainment({ db, env = process.env, now = () => new Date(), reco
   }
 
   for (const w of config.warnings) event('warning', 'containment_config_invalid_value', { warning: w }, { dedupeMs: 0 });
+
+  // WS2 2026-10-10: record the household's allowance state after a decision
+  // (migration 076). Fire-and-forget: never awaited by a call path, never
+  // changes a decision, never counts as an authority outage. A transition is
+  // recorded once in the database (fc_events 'allowance_state_changed') and
+  // handed to onAllowanceStateChange (push / ops-event delivery hook).
+  function noteAllowanceState(householdId) {
+    if (!config.allowanceStateEvents || !householdId || typeof db.recordAllowanceState !== 'function') return;
+    Promise.resolve()
+      .then(() => withTimeout(db.recordAllowanceState({ householdId, now: now() }), config.rpcTimeoutMs, 'fortress_record_allowance_state'))
+      .then((r) => {
+        if (r && r.changed) {
+          return Promise.resolve(onAllowanceStateChange({ householdId, from: r.from || null, to: r.state, periodStart: r.periodStart || null }));
+        }
+        return null;
+      })
+      .catch((err) => event('warning', 'allowance_state_record_failed', { error: String((err && err.message) || err).slice(0, 200) }, { householdId, dedupeMs: 60 * 60 * 1000 }));
+  }
 
   function dbOk() { degraded.outageSince = null; }
   function dbFailed(err, label) {
@@ -112,6 +130,7 @@ function createContainment({ db, env = process.env, now = () => new Date(), reco
       if (!isObj(r) || typeof r.allowed !== 'boolean') throw new Error('malformed authorisation response');
       if (r.allowed && !(Number.isInteger(r.timeLimitSeconds) && r.timeLimitSeconds > 0)) throw new Error('authorisation without a valid time limit');
       dbOk();
+      if (household && household.id) noteAllowanceState(household.id);
       if (r.allowed) {
         leases.set(callSid, {
           householdId: household ? household.id : null, leaseExpiresAt: Date.parse(r.leaseExpiresAt) || (now().getTime() + 60000),
@@ -187,6 +206,8 @@ function createContainment({ db, env = process.env, now = () => new Date(), reco
     try {
       const r = await withTimeout(db.settleCall({ callSid, durationSeconds, monitoredSeconds, source, now: now() }), config.rpcTimeoutMs, 'fc_settle_call');
       dbOk();
+      const settledLease = leases.get(callSid);
+      if (settledLease && settledLease.householdId) noteAllowanceState(settledLease.householdId);
       leases.delete(callSid);
       degraded.active.delete(callSid);
       return r;

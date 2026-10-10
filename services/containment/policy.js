@@ -31,6 +31,10 @@ const DEFAULTS = Object.freeze({
   terminationMode: 'hangup',          // 'hangup' | 'announce' (wording: Claude 3 / Andrew)
   entitledCountRefreshMs: 30 * 60 * 1000,
   invariantCheckMs: 10 * 60 * 1000,
+  // WS2 2026-10-10: after each authorisation/settlement, record the household's
+  // allowance state (migration 076) so transitions emit one event each.
+  // Fire-and-forget; never affects a call decision.
+  allowanceStateEvents: true,
   allowShadow: false,                 // true lets the DB policy's 'shadow' mode apply; otherwise every RPC forces 'enforce'
 });
 
@@ -80,6 +84,7 @@ function resolveContainmentConfig(env = process.env) {
     else warnings.push(`FC_TERMINATION_MODE=${tm} invalid; using hangup`);
   }
   bool('FC_ALLOW_SHADOW', 'allowShadow');
+  bool('FC_ALLOWANCE_STATE_EVENTS', 'allowanceStateEvents');
 
   // Sweep must run well inside the renew-ahead window (90 s by default).
   if (c.sweepIntervalMs > 30000) { warnings.push('FC_SWEEP_INTERVAL_MS above 30000 risks missing renewals; using 30000'); c.sweepIntervalMs = 30000; }

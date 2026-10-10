@@ -253,7 +253,8 @@ const read = (deps, o = {}) => getCustomerAllowance({ household: HH, entitlement
   check(topUp.interpretStripeTopUpEvent(ev('checkout.session.completed', session({ metadata: { household_id: 'hh-1', topup_minutes: '9999' } }))) === null, 'a payment session without HCG\'s top-up marker is never treated as a top-up');
   const refund = topUp.interpretStripeTopUpEvent(ev('charge.refunded', { payment_intent: 'pi_123', amount: 299, amount_refunded: 299, refunded: true }));
   const partial = topUp.interpretStripeTopUpEvent(ev('charge.refunded', { payment_intent: 'pi_123', amount: 299, amount_refunded: 100, refunded: false }));
-  check(refund.action === 'reverse' && partial.action === 'ignore', 'full refund reverses; partial refund is left for a manual decision');
+  // WS2 2026-10-10 (tightened): a partial refund now reverses the WHOLE credit — credited £ must never exceed the revenue kept.
+  check(refund.action === 'reverse' && partial.action === 'reverse' && partial.reason === 'partial_refund_full_reversal', 'full refund reverses; a partial refund reverses the whole credit (never more credit than revenue kept)');
 
   const rcEnv = { ALLOWANCE_TOPUP_PRODUCTS: JSON.stringify([{ code: 'topup_small', minutes: 30, priceGbpInclVat: 2.99, appleProductId: 'hcg.topup.30', googleProductId: 'hcg_topup_30' }]) };
   const rc = (o = {}) => ({ id: 'rc_evt_1', type: 'NON_RENEWING_PURCHASE', store: 'APP_STORE', environment: 'PRODUCTION', product_id: 'hcg.topup.30', transaction_id: '2000000123', price_in_purchased_currency: 2.99, currency: 'GBP', ...o });

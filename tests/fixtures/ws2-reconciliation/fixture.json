@@ -1,0 +1,21 @@
+{
+  "_note": "Synthetic fixture (WS2 2026-10-10). Shapes follow Twilio Call resources (negative price, price_unit) and an OpenAI usage export. No real SIDs.",
+  "asOf": "2026-10-10T12:00:00Z",
+  "fortressCalls": [
+    { "callSid": "CA0000000000000000000000000000000a", "householdId": "hh-a", "committedGbp": 0.0713, "durationSeconds": 300, "monitoredSeconds": 0, "monitored": false, "settledAt": "2026-10-09T09:05:00Z" },
+    { "callSid": "CA0000000000000000000000000000000b", "householdId": "hh-a", "committedGbp": 0.1403, "durationSeconds": 240, "monitoredSeconds": 240, "monitored": true, "settledAt": "2026-10-09T10:04:00Z" },
+    { "callSid": "CA0000000000000000000000000000000c", "householdId": "hh-b", "committedGbp": 0.0124, "durationSeconds": 60, "monitoredSeconds": 0, "monitored": false, "settledAt": "2026-10-09T11:01:00Z" },
+    { "callSid": "CA0000000000000000000000000000000d", "householdId": "hh-b", "committedGbp": 0.0601, "durationSeconds": 290, "monitoredSeconds": 0, "monitored": false, "settledAt": "2026-10-08T08:00:00Z" },
+    { "callSid": "CA0000000000000000000000000000000e", "householdId": "hh-c", "committedGbp": 0.0360, "durationSeconds": 150, "monitoredSeconds": 0, "monitored": false, "settledAt": "2026-10-10T11:30:00Z" }
+  ],
+  "providerRecords": [
+    { "provider": "twilio", "kind": "call", "sid": "CA0000000000000000000000000000000a", "price": "-0.03779", "priceUnit": "GBP", "startTime": "2026-10-09T09:00:00Z" },
+    { "provider": "twilio", "kind": "sdk_leg", "sid": "CA0000000000000000000000000000001a", "parentSid": "CA0000000000000000000000000000000a", "price": "0.00", "priceUnit": "GBP" },
+    { "provider": "twilio", "kind": "call", "sid": "CA0000000000000000000000000000000b", "price": "-0.03023", "priceUnit": "GBP" },
+    { "provider": "twilio", "kind": "stream", "sid": "MZ000000000000000000000000000000b", "callSid": "CA0000000000000000000000000000000b", "price": "-0.01332", "priceUnit": "GBP" },
+    { "provider": "openai", "kind": "transcription", "callSid": "CA0000000000000000000000000000000b", "cost": 0.024, "currency": "USD" },
+    { "provider": "twilio", "kind": "call", "sid": "CA0000000000000000000000000000000c", "price": "-0.0300", "priceUnit": "GBP" },
+    { "provider": "twilio", "kind": "call", "sid": "CA00000000000000000000000000000ff1", "price": "-0.0907", "priceUnit": "GBP", "startTime": "2026-10-09T03:00:00Z" },
+    { "provider": "twilio", "kind": "call", "sid": "CA00000000000000000000000000000ff2", "price": "-1.00", "priceUnit": "EUR" }
+  ]
+}

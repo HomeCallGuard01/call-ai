@@ -76,4 +76,9 @@ module.exports = {
   householdStatus: ({ householdId, now }, client) => rpc('fc_household_status', { p_household_id: householdId, p_now: iso(now) }, client),
   globalStatus: ({ now }, client) => rpc('fc_global_status', { p_now: iso(now) }, client),
   checkInvariants: (client) => rpc('fc_check_invariants', {}, client),
+  // WS2 2026-10-10 (migration 076, DRAFT): deterministic allowance state and its transition log.
+  householdAllowanceState: ({ householdId, now }, client) =>
+    rpc('fortress_household_allowance_state', { p_household_id: householdId, p_now: iso(now) }, client),
+  recordAllowanceState: ({ householdId, now }, client) =>
+    rpc('fortress_record_allowance_state', { p_household_id: householdId, p_now: iso(now) }, client),
 };

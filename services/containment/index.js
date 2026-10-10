@@ -19,6 +19,12 @@ function getContainment() {
           await sendCriticalAlert(`containment_${e.rule}`, `Financial containment: ${e.rule}`, { householdId: e.householdId || null, callSid: e.callSid || null, details: e.details || null });
         }
       },
+      // WS2 2026-10-10: allowance state transitions (migration 076). Event
+      // emission only — the database already wrote the fc_events row. Push /
+      // ops-event delivery attaches here (WS3 / lead); no SMS is ever sent.
+      onAllowanceStateChange: async (t) => {
+        console.log('ALLOWANCE STATE:', t.householdId, `${t.from || '-'} -> ${t.to}`);
+      },
     });
   }
   return instance;
