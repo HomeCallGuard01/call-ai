@@ -168,12 +168,32 @@ const RULES = [
   R('xero_posting_decisions', 'Accounting/Xero', ['ACCOUNTING_XERO_POSTING_ENABLED', 'ACCOUNTING_CONFIRMED_DECISIONS'], REQ_BOTH,
     (e) => (e.ACCOUNTING_XERO_POSTING_ENABLED === 'true' && !present(e.ACCOUNTING_CONFIRMED_DECISIONS) ? 'posting_enabled_without_accountant_decisions' : null),
     'Posting before AD-1..AD-11 are confirmed would invent accounting policy.'),
+  // ── BEGIN WS6 Magrathea → Twilio BYOC rules (Agent 2, 2026-10-11) ───────
+  // Kept as one delimited block at the end of RULES (Agent 1 also edits this
+  // list). Helpers: services/telephony/twilioAccounts.js,
+  // services/telephony/numberProviders/config.js.
+  R('byoc_twilio_account_pair', 'Twilio BYOC', ['TWILIO_BYOC_ACCOUNT_SID', 'TWILIO_BYOC_AUTH_TOKEN'], REQ_BOTH,
+    (e) => require('../telephony/twilioAccounts').resolveAdditionalTwilioAccounts(e).problem,
+    'An incomplete/invalid BYOC account pair is ignored, so every webhook from that account would be refused 403 (calls fail); the same SID/token as the primary account is a misconfiguration.'),
+  R('number_provider_known', 'Twilio BYOC', ['NUMBER_PROVIDER'], REQ_BOTH,
+    (e) => require('../telephony/numberProviders/config').resolveNumberProvider(e).problem,
+    'An unknown NUMBER_PROVIDER holds every number provisioning (fail closed) — new customers would get no number.'),
+  R('number_provider_magrathea_production', 'Twilio BYOC', ['NUMBER_PROVIDER'], { production: 'forbidden', staging: 'optional' },
+    (e) => (require('../telephony/numberProviders/config').resolveNumberProvider(e).provider === 'magrathea' ? 'magrathea_not_approved_for_production' : null),
+    'Magrathea DDIs via Twilio BYOC are staging-unverified (leg stacking T1, Diversion T13, signing T15); production needs Andrew\'s explicit approval (HCG_CONFIG_ACKNOWLEDGE).'),
+  R('byoc_trunk_sid_recorded', 'Twilio BYOC', ['TWILIO_BYOC_TRUNK_SID'], REC_BOTH,
+    (e) => {
+      if (require('../telephony/numberProviders/config').resolveNumberProvider(e).provider !== 'magrathea') return null;
+      return /^BY[0-9a-f]{32}$/i.test(String(e.TWILIO_BYOC_TRUNK_SID || '').trim()) ? null : 'byoc_trunk_sid_not_recorded';
+    },
+    'Documentation only (no code calls the trunk): records which BYOC trunk the inventory DDIs are routed to, for incident response and rollback.'),
+  // ── END WS6 Magrathea → Twilio BYOC rules ───────────────────────────────
 ];
 
 // Documentation-only classification of the remaining settings (no startup
 // check): OPTIONAL tunables and TEST/DEV ONLY switches.
 const OPTIONAL_GROUPS = Object.freeze({
-  'OPTIONAL (tunables with safe defaults)': ['SAFETY_*', 'ABUSE_* (except ABUSE_FINANCIAL_UNAVAILABLE_POLICY)', 'MEDIA_STREAM_*', 'MONITORING_*', 'RAPID_ABUSE_*', 'ALLOWANCE_* (except the rules above)', 'BUSINESS_*', 'LIFECYCLE_MONTHLY_NUMBER_COST_GBP', 'HCG_ECONOMICS_INCLUDE_PLATFORM_FEE', 'PLAN_PRODUCT_MAP', 'ACCOUNTING_CAPTURE_ENABLED (keep false until 071 applied)', 'ACCOUNTING_XERO_ACCOUNT_CODES', 'XERO_SCOPES', 'TWILIO_ADDRESS_SID', 'TWILIO_BUNDLE_SID', 'TWILIO_VOICE_PUSH_CREDENTIAL_SID[_IOS]', 'TWILIO_WEBHOOK_ALLOWED_HOSTS', 'PRODUCTION_APP_HOSTS', 'PRODUCTION_SUPABASE_REF', 'PRODUCTION_TWILIO_ACCOUNT_SID', 'STAGING_SUPABASE_REF', 'NONPRODUCTION_MAX_NUMBERS', 'NUMBER_LIFECYCLE_JOBS', 'ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE (decision D-N1)', 'CALL_DELIVERY_*', 'DELIVERY_PUSH_FAILURE_POLLING', 'FC_TERMINATION_MODE', 'FC_TERMINATION_ANNOUNCEMENT', 'FC_ESSENTIAL_CALLERS', 'HCG_INCIDENT_MODE', 'IOS_COMING_SOON', 'LANDLINE_COMING_SOON', 'APP_STORE_URL', 'PROVIDER_USAGE_ALERT_MAX_AGE_MINUTES', 'PORT', 'RAILWAY_*', 'OPS_NOTIFY_FROM_EMAIL', 'OPS_NOTIFY_ROLE_FOUNDER_EMAIL', 'OPS_NOTIFY_FOUNDER_EARLY_LAUNCH', 'OPS_NOTIFY_PUSH_ENABLED (no adapter yet)', 'NEW_SUBSCRIPTIONS_PAUSED (stop-acquisition switch)', 'NEW_SUBSCRIPTIONS_ALLOWLIST (invite-only cohort emails)'],
+  'OPTIONAL (tunables with safe defaults)': ['SAFETY_*', 'ABUSE_* (except ABUSE_FINANCIAL_UNAVAILABLE_POLICY)', 'MEDIA_STREAM_*', 'MONITORING_*', 'RAPID_ABUSE_*', 'ALLOWANCE_* (except the rules above)', 'BUSINESS_*', 'LIFECYCLE_MONTHLY_NUMBER_COST_GBP', 'HCG_ECONOMICS_INCLUDE_PLATFORM_FEE', 'PLAN_PRODUCT_MAP', 'ACCOUNTING_CAPTURE_ENABLED (keep false until 071 applied)', 'ACCOUNTING_XERO_ACCOUNT_CODES', 'XERO_SCOPES', 'TWILIO_ADDRESS_SID', 'TWILIO_BUNDLE_SID', 'TWILIO_VOICE_PUSH_CREDENTIAL_SID[_IOS]', 'TWILIO_WEBHOOK_ALLOWED_HOSTS', 'PRODUCTION_APP_HOSTS', 'PRODUCTION_SUPABASE_REF', 'PRODUCTION_TWILIO_ACCOUNT_SID', 'STAGING_SUPABASE_REF', 'NONPRODUCTION_MAX_NUMBERS', 'NUMBER_LIFECYCLE_JOBS', 'ENABLE_NUMBER_LIFECYCLE_SWEEP_SCHEDULE (decision D-N1)', 'CALL_DELIVERY_*', 'DELIVERY_PUSH_FAILURE_POLLING', 'FC_TERMINATION_MODE', 'FC_TERMINATION_ANNOUNCEMENT', 'FC_ESSENTIAL_CALLERS', 'HCG_INCIDENT_MODE', 'IOS_COMING_SOON', 'LANDLINE_COMING_SOON', 'APP_STORE_URL', 'PROVIDER_USAGE_ALERT_MAX_AGE_MINUTES', 'PORT', 'RAILWAY_*', 'OPS_NOTIFY_FROM_EMAIL', 'OPS_NOTIFY_ROLE_FOUNDER_EMAIL', 'OPS_NOTIFY_FOUNDER_EARLY_LAUNCH', 'OPS_NOTIFY_PUSH_ENABLED (no adapter yet)', 'NEW_SUBSCRIPTIONS_PAUSED (stop-acquisition switch)', 'NEW_SUBSCRIPTIONS_ALLOWLIST (invite-only cohort emails)', 'NUMBER_INVENTORY_COOLING_OFF_DAYS (WS6, default 30)'],
   'TEST/DEV ONLY': ['FC_DEGRADED_MODE=bounded', 'FC_ALLOW_BOUNDED_DEGRADED_MODE=true', 'NUMBER_PROVISIONING_MODE=fake', 'ALLOWANCE_ALLOW_SANDBOX_CREDITS=true (production)', 'TWILIO_WEBHOOK_AUTH_MODE=report', 'PROCESS_ROUTE_ENABLED=true', 'SAFETY_ADMISSION_REQUIRES_SIGNATURE=false', 'FC_REALPG_MODULES (tests)'],
 });
 

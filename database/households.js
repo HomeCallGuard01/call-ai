@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require("../services/supabaseClients");
 const { normaliseNumber } = require("../services/phone");
+const { toE164 } = require("../services/telephony/ukNumber");
 
 async function getHouseholdByAuthUserId(authUserId) {
   if (!supabaseAdmin) return null;
@@ -48,8 +49,14 @@ function twilioNumberLookupVariants(twilioNumber) {
   return [...new Set([`+44${key}`, `0${key}`, `44${key}`, key, raw])];
 }
 
-async function getHouseholdByTwilioNumber(twilioNumber, { admin = supabaseAdmin, now = () => Date.now() } = {}) {
+async function getHouseholdByTwilioNumber(dialledNumber, { admin = supabaseAdmin, now = () => Date.now() } = {}) {
   if (!admin) return null;
+  // WS6 BYOC (2026-10-11): canonicalise first, so a Magrathea DDI arriving as
+  // 443300884327, 0044…, 0330… or sip:+44…@host (whose host may contain a
+  // digit) resolves exactly like +443300884327. Provider-neutral: the
+  // household row holds the DDI in households.twilio_number whichever
+  // provider hosts it. Unparseable input keeps the previous behaviour.
+  const twilioNumber = toE164(dialledNumber) || dialledNumber;
   const targetNorm = normaliseNumber(twilioNumber);
   if (!targetNorm) return null;
   const matchesTarget = (h) => h && h.twilio_number && normaliseNumber(h.twilio_number) === targetNorm;

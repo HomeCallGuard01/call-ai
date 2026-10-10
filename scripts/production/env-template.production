@@ -89,6 +89,17 @@ TWILIO_VOICE_PUSH_CREDENTIAL_SID_IOS=
 TWILIO_VOICE_FALLBACK_URL=
 # [REQUIRED][LEAVE UNSET] never "fake" in production.
 # NUMBER_PROVISIONING_MODE=
+# ── WS6 Magrathea → Twilio BYOC (2026-10-11; NOT approved for production) ──
+# [LEAVE UNSET] default twilio. 'magrathea' assigns DDIs from migration 078's
+# inventory; forbidden in production until Andrew approves (acknowledge rule
+# number_provider_magrathea_production via HCG_CONFIG_ACKNOWLEDGE).
+# NUMBER_PROVIDER=
+# NUMBER_INVENTORY_COOLING_OFF_DAYS=30
+# [LEAVE UNSET] only for a SEPARATE BYOC (sub)account; both or neither.
+# TWILIO_BYOC_ACCOUNT_SID=
+# TWILIO_BYOC_AUTH_TOKEN=
+# [DOCUMENTATION] the BYOC trunk SID (BY…) when NUMBER_PROVIDER=magrathea.
+# TWILIO_BYOC_TRUNK_SID=
 
 # ── Provider usage alerts (containment T11) ─────────────────────────────────
 # [RECOMMENDED] comma-separated UT… SIDs whose alert latches the kill switch.

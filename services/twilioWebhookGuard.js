@@ -26,6 +26,7 @@
 'use strict';
 
 const { isGenuineTwilioRequest } = require('./twilioWebhookAuth');
+const { resolveAdditionalTwilioAccounts, signingTokensFor } = require('./telephony/twilioAccounts');
 
 function hostsFrom(appUrl, allowedHostsCsv) {
   const hosts = new Set();
@@ -47,6 +48,10 @@ function createTwilioWebhookGuard({
   now = () => Date.now(),
   log = (line, fields) => console.error(line, fields),
   validate,
+  // WS6 BYOC (2026-10-11): optional additional (sub)account tokens, used only
+  // for a request whose signed AccountSid is that account
+  // (services/telephony/twilioAccounts.js). Default: from env; none set ⇒ [].
+  additionalAccounts = resolveAdditionalTwilioAccounts(process.env).accounts,
 } = {}) {
   const hosts = hostsFrom(appUrl, allowedHosts);
   const failures = new Map(); // key -> { count, windowStart, logged }
@@ -56,13 +61,14 @@ function createTwilioWebhookGuard({
     const signature = req.get('X-Twilio-Signature');
     if (!signature) return false;
     const params = req.body && typeof req.body === 'object' ? req.body : {};
-    return hosts.some((host) => isGenuineTwilioRequest({
-      authToken,
+    const tokens = signingTokensFor({ primaryToken: authToken, accountSid: params.AccountSid, additionalAccounts });
+    return tokens.some((token) => hosts.some((host) => isGenuineTwilioRequest({
+      authToken: token,
       signature,
       url: `https://${host}${req.originalUrl}`,
       params,
       ...(validate ? { validate } : {}),
-    }));
+    })));
   }
 
   function noteFailure(key) {
