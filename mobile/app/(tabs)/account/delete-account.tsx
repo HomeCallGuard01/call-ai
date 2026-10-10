@@ -104,7 +104,11 @@ export default function DeleteAccount() {
         setError(
           err.code === "stripe_cancel_failed"
             ? "We couldn't cancel your subscription just now, so we haven't deleted your account — nothing has changed. " +
-              "Please try again, or cancel it yourself from Account > Membership > Manage Membership, then delete your account."
+              (Platform.OS === "android"
+                // Option C (2026-10-10): the Android app no longer opens the
+                // Stripe portal, so point to where cancelling really happens.
+                ? "Please try again, or cancel it from your account on our website (or email support@homecallguard.co.uk), then delete your account."
+                : "Please try again, or cancel it yourself from Account > Membership > Manage Membership, then delete your account.")
             : "We couldn't delete your account right now. Please try again, or contact support if this keeps happening."
         );
       } else {
