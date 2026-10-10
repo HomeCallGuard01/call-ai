@@ -1,5 +1,7 @@
 # Trusted-caller bypass: roadmap (2026-10-10)
 
+> **Execution superseded by WS5 (2026-10-10):** `docs/routing/2026-10-10-WS5-TRUSTED-BYPASS-EXPERIMENT.md` and the runbooks in `docs/routing/ws5/` replace §3 (experiment steps), §5 (integration) and §6 (cost) of this roadmap. WS5 also found that probe v0.3 crashes after each screened call on Android 10 (an API-30 call in its log line), which adds a gate to Test A. §2, §4, §7, §8 and decisions TB-1..TB-5 still stand.
+
 **Status: synthesis and plan only.** Nothing was built, installed, dialled or changed. No APK built, no adb, no carrier contact. Every 🔴 step needs Andrew's approval.
 **Owner:** WS3 (mobile, routing and handset validation), launch `launch/controlled-launch-2026-10-09`.
 **Does not block the launch.** The first Android cohort ships on today's unconditional forwarding (`**21*`) with the honest allowance UX added by WS3 on 2026-10-10 (screening-paused banners plus a customer-pressed "Turn off call forwarding" action).
