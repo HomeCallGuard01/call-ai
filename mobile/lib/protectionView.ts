@@ -96,6 +96,11 @@ export interface ProtectionInput {
   // (monitoringActive === false), the app must not claim protection —
   // the same rule the 2026-10-03 allowance work put on the old Home hero.
   allowance?: { status?: string; monitoringActive?: boolean | null; callsContinue?: boolean } | null;
+  // WS3 allowance state (2026-10-10): precomputed by lib/allowanceState.ts
+  // (suppressesProtected + allowanceHeroBody) so this file stays import-free.
+  // Present only when the server's allowanceState says unknown callers are
+  // NOT being checked — then the hero must never say "Protected".
+  allowanceSuppression?: { body: string } | null;
 }
 
 export interface DeviceInput {
@@ -181,6 +186,12 @@ export function describeProtection(input: ProtectionInput, device: DeviceInput):
         kind: "update_payment",
         label: "Update payment",
       });
+    }
+    // WS3 (2026-10-10): screening paused / continuity low / hard ceiling.
+    // The allowance banner below the hero carries the explanation and the
+    // "Turn off call forwarding" action, so the hero adds no second button.
+    if (input.allowanceSuppression && typeof input.allowanceSuppression.body === "string") {
+      return t("attention", input.allowanceSuppression.body, null);
     }
     const al = input.allowance;
     if (al && al.monitoringActive === false && al.status !== "inactive") {

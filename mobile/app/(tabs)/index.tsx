@@ -31,6 +31,8 @@ import { BrandMark } from "../../components/BrandMark";
 import { OutcomeRow, type OutcomeTone } from "../../components/OutcomeRow";
 import { EmptyState } from "../../components/EmptyState";
 import { AllowanceMeter } from "../../components/AllowanceMeter";
+import { AllowanceStatusBanner } from "../../components/AllowanceStatusBanner";
+import { parseAllowanceState, suppressesProtected, allowanceHeroBody, describeAllowanceBanner } from "../../lib/allowanceState";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchDashboard, fetchActivationDevice, NotEntitledError } from "../../lib/api";
 import { supabase } from "../../lib/supabase";
@@ -459,11 +461,17 @@ export default function Home() {
   // fullyProtected) already decided. See that file's header for the rules
   // it guarantees, including the September incident (calls reached HCG,
   // the app was never registered, the customer was told nothing).
+  // WS3 (2026-10-10): WS2's allowanceState, read tolerantly — missing or
+  // unknown → null → everything below behaves exactly as before. When it
+  // says unknown callers aren't being checked, the hero never says
+  // "Protected" (allowanceSuppression) and the banner explains why.
+  const allowanceState = parseAllowanceState(data);
   const protectionInput = {
     protection: data!.protection,
     membership: data!.membership,
     testPurchase: data!.customerAllowance?.membership?.testPurchase === true,
     allowance: data!.customerAllowance ?? null,
+    allowanceSuppression: allowanceState && suppressesProtected(allowanceState) ? { body: allowanceHeroBody(allowanceState) } : null,
   };
   const view = describeProtection(protectionInput, {
     canPresentCalls: deviceCanPresentCalls,
@@ -472,6 +480,12 @@ export default function Home() {
   });
   const checklist = buildSetupChecklist(protectionInput);
   const serverProtected = isServerProtected(protectionInput);
+  // Only once calls are actually flowing through HCG (protected, or calls
+  // arriving with forwarding not yet proven) is an allowance banner relevant.
+  const allowanceBanner =
+    serverProtected || data!.protection.activationStage === "forwarding_unconfirmed"
+      ? describeAllowanceBanner(allowanceState, Platform.OS)
+      : null;
   const membershipView = describeMembership(
     {
       status: data!.membership.status,
@@ -542,6 +556,10 @@ export default function Home() {
           <PrimaryButton label={view.action.label} onPress={() => runAction(view.action!.kind)} loading={isReconnecting} />
         )}
         {reconnectNote && <Banner variant="notice" message={reconnectNote} />}
+
+        {/* WS3 (2026-10-10): screening low / paused / calls may stop /
+            ceiling — with the honest "Turn off call forwarding" path. */}
+        <AllowanceStatusBanner banner={allowanceBanner} />
 
         {/* Protection-status wording precision (2026-09-24): a quiet,
             honest "when was this last genuinely confirmed" fact — never a
