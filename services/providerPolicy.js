@@ -222,14 +222,34 @@ const PROVIDER_POLICY = {
   // against. Leave deactivationCode/deactivationConfidence null (honest
   // "unknown, check native settings / contact support") until the
   // removal side is itself physically verified.
+  // 2026-10-10 (Andrew's decision): DOWNGRADED to "unverified" pending proof
+  // that a NEW customer can reliably set up forwarding on Lebara. Evidence
+  // both ways, recorded so no audit loses it:
+  //   - FOR: founder's physical test 2026-09-16 (**21* accepted, a forwarded
+  //     call answered through HCG); production calls reached the Lebara
+  //     household's HCG number 26-27 Sep (forwarding likely, not proven);
+  //     2026-10-09 Magrathea Test 4 PROVED a Lebara network diversion to an
+  //     external number (SIP Diversion header naming the diverting line,
+  //     CDR 6AC8BAC7JF4CE809).
+  //   - AGAINST: 2026-10-09 and 2026-10-10 new diversion registrations by
+  //     code were refused ("invalid MMI"); Lebara support stated in writing
+  //     (2026-10-10) that external call forwarding is unsupported across its
+  //     UK network, including by technical support.
+  // Neither proven compatible nor categorically incompatible: 'unverified'
+  // blocks payment (two-way gate) and shows the honest needs_confirmation
+  // state. Supersedes the 2026-09-16 upgrade, which itself superseded the
+  // earlier secondary-sourced-only entry below this comment.
   lebara: {
-    status: "compatible",
-    method: "mmi",
+    status: "unverified",
+    method: null,
     deactivationCode: null,
     deactivationConfidence: null,
     deactivationSource:
-      "Activation/forwarding confirmed working via a real physical HCG test by the founder on a genuine Lebara SIM (2026-09-16) — forwarding activated with the standard **21*<number># code, and a forwarded call was successfully answered through HCG. Deactivation code specifically was not part of this test and remains unconfirmed; do not infer one from the activation result.",
+      "Not confirmed. Only activation was physically tested (2026-09-16); removal was never verified, and new registrations by code were refused in October 2026.",
+    reason:
+      "Lebara has told us that forwarding calls to another number isn't currently supported on its network, so we can't yet confirm Home Call Guard will work on Lebara.",
   },
+
   // Present in the onboarding dropdown but never audited — explicit entry
   // so it resolves to the same honest "not yet confirmed" path as any
   // other genuinely unverified provider, rather than silently falling

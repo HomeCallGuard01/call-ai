@@ -100,7 +100,6 @@ withIosComingSoon('true', () => {
     { label: 'SMARTY', household: { device_type: 'mobile', carrier_provider_key: 'smarty' } },
     { label: 'iD Mobile', household: { device_type: 'mobile', carrier_provider_key: 'id_mobile' } },
     { label: 'Talkmobile', household: { device_type: 'mobile', carrier_provider_key: 'talkmobile' } },
-    { label: 'Lebara', household: { device_type: 'mobile', carrier_provider_key: 'lebara' } },
   ];
   for (const { label, household } of allowCases) {
     const result = evaluateHouseholdCheckoutEligibility(household);
@@ -114,7 +113,9 @@ withIosComingSoon('true', () => {
 {
   const { PROVIDER_POLICY } = require('../services/providerPolicy.js');
   const lebaraSource = readFileSync(path.join(__dirname, '..', 'services', 'providerPolicy.js'), 'utf8');
-  check(PROVIDER_POLICY.lebara.status === 'compatible', 'Lebara: PROVIDER_POLICY status is compatible (physical HCG test)');
+  check(PROVIDER_POLICY.lebara.status === 'unverified', 'Lebara: PROVIDER_POLICY status is unverified (2026-10-10: registrations refused + Lebara support statement)');
+  check(evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'lebara' }).canProceedToPayment === false, 'Lebara: payment blocked while unverified');
+  check(/2026-09-16/.test(lebaraSource) && /Diversion header/.test(lebaraSource) && /invalid MMI/.test(lebaraSource), 'Lebara: the code records the evidence both ways (2026-09-16 test, 2026-10-09 proven diversion, refused registrations)');
   check(
     /conflicting secondary sources/i.test(lebaraSource) || /secondary-sourced-only entry below this comment/i.test(lebaraSource),
     'Lebara: the code retains an internal note that provider documentation was contradictory, not just a bare "compatible" with no history'

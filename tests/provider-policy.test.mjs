@@ -102,10 +102,15 @@ function check(condition, message) {
   // the strongest category this policy recognises. This is now a
   // 'compatible' entry, unlike VOXI/Lyca/'other' below, which remain
   // genuinely unverified.
+  // 2026-10-10 (Andrew): downgraded to 'unverified' — historical physical
+  // evidence exists (2026-09-16 test, 2026-10-09 proven diversion) but new
+  // registrations were refused and Lebara support says external forwarding is
+  // unsupported. Neither compatible nor categorically incompatible.
   const result = evaluateProviderCompatibility('lebara');
-  check(result.status === 'compatible', 'Lebara: compatible — physically tested (activation + forwarded call) by the founder, not merely inferred from public documentation');
-  check(result.canProceedToPayment === true, 'Lebara: may proceed to payment');
-  check(result.customerState === 'supported', 'Lebara: customer-facing state is supported');
+  check(result.status === 'unverified', 'Lebara: unverified (2026-10-10) — not proven compatible for NEW customers, not categorically incompatible');
+  check(result.canProceedToPayment === false, 'Lebara: payment blocked until reliable new-forwarding setup is proven');
+  check(result.customerState === 'needs_confirmation', 'Lebara: customer-facing state is needs_confirmation (honest), not supported or unsupported');
+  check(/isn't currently supported/.test(result.reason || '') && /can't yet confirm/.test(result.reason || ''), 'Lebara: customer reason is honest and non-categorical');
 }
 
 {
@@ -114,7 +119,7 @@ function check(condition, message) {
   // unconfirmed, never inferred from the activation result.
   const result = getMobileDeactivationInstructions('lebara');
   check(result.code === null, 'Lebara: no deactivation code is shipped — only activation/forwarding was physically verified, not removal');
-  check(result.method !== 'native_settings', 'Lebara: method is not native_settings (unlike Three) — the audit never found MMI broken on Lebara, only that removal is unconfirmed');
+  check(result.method !== 'native_settings', 'Lebara: method is not native_settings (unlike Three) — removal guidance stays the honest "unknown" path');
 }
 
 {
@@ -362,8 +367,8 @@ function check(condition, message) {
 
 {
   const result = evaluateHouseholdCheckoutEligibility({ carrier_provider_key: 'lebara' });
-  check(result.customerState === 'supported', 'Mobile -> Lebara: supported');
-  check(result.canProceedToPayment === true, 'Mobile -> Lebara: payment allowed');
+  check(result.customerState === 'needs_confirmation', 'Mobile -> Lebara: needs confirmation (unverified, 2026-10-10)');
+  check(result.canProceedToPayment === false, 'Mobile -> Lebara: payment blocked');
 }
 
 {
@@ -521,7 +526,7 @@ else process.env.LANDLINE_COMING_SOON = previousLandlineComingSoon;
   check(payMonthlyVodafone.canProceedToPayment === true, 'mobile + Vodafone Pay Monthly: checkout is allowed');
 
   const lebara = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: 'lebara' });
-  check(lebara.canProceedToPayment === true, 'mobile + Lebara: checkout is allowed');
+  check(lebara.canProceedToPayment === false, 'mobile + Lebara: checkout is blocked (unverified, 2026-10-10)');
 
   const nullCarrier = evaluateHouseholdCheckoutEligibility({ device_type: 'mobile', carrier_provider_key: null });
   check(nullCarrier.canProceedToPayment === false, 'mobile + null carrier: checkout is blocked — a mobile household must still complete carrier selection');
