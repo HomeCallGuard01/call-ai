@@ -90,6 +90,7 @@ const cand = (over = {}) => ({ state: 'connected', callSid: 'CA1', from: '+44770
   check(!/\.accept\(|\.reject\(|\.connect\(/.test(rec), 'recovery never answers, rejects or places a call');
   check(/catch \(err\)[\s\S]{0,200}console\.warn\("VOICE DEBUG: active call recovery failed"/.test(rec), 'a recovery failure is swallowed (behaviour as before, next foreground retries)');
   check(/!seenCallSids\.has\(sid\) && !recoveredCallSids\.has\(sid\)/.test(rec), 'outcome telemetry only for invites this process never saw, once per SID');
+  check(!/beacon\(/.test(rec) && /reportCallInviteOutcome\(sid, "accepted"\)/.test(rec), 'recovery telemetry uses the authenticated outcome report, never the unauthenticated /debug beacon');
   check(/if \(!\(await hasOngoingSdkCall\(\)\)\) \{\s*await selectSpeakerForRinging\(\);/.test(vc), 'ringing-time Speaker selection skipped while a call is live (a recovered call is never moved to the loudspeaker)');
   const accepted = vc.slice(vc.indexOf('callInvite.on(CallInvite.Event.Accepted, (acceptedCall: Call) => {'));
   check(/trackAcceptedCall\(acceptedCall, callSid\)/.test(accepted.slice(0, 600)), 'the live CallInvite.Accepted path is unchanged');

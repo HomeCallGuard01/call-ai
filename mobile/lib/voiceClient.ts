@@ -235,7 +235,10 @@ export function recoverActiveCall(trigger: string): Promise<void> {
       dispatchActiveCall({ ...pick.event, speaker });
       attachCallListeners(call);
       const sid = pick.event.callSid;
-      beacon("call-recovered", `${trigger}:${pick.event.status}`);
+      // Logcat/Console only — deliberately NOT the unauthenticated /debug
+      // beacon: call telemetry goes through the authenticated outcome
+      // report below.
+      console.log(`VOICE DEBUG: recovered active call (${trigger}:${pick.event.status})`);
       // Telemetry: only for a call whose invite this process never saw
       // (otherwise the live handlers already reported it), once per SID.
       if (sid && !seenCallSids.has(sid) && !recoveredCallSids.has(sid)) {
