@@ -14,6 +14,19 @@ const { describeMediaStreamSignatureCheck } = require('../twilioWebhookAuth');
 
 const MEDIA_STREAM_PATH = '/media-stream';
 
+// Server-initiated close (2026-10-10, cross-review F-1): send a proper close
+// frame first (a genuine Twilio stream ends gracefully), then forcibly
+// terminate if the peer never completes the handshake — ws.close() alone kept
+// a silent socket counted against maxSockets for ~30-40 s, so one host could
+// hold the cap with refused sockets.
+const CLOSE_GRACE_MS = 2000;
+function closeFirmly(ws, code) {
+  try { ws.close(code); } catch { /* already closing */ }
+  const t = setTimeout(() => { try { ws.terminate(); } catch { /* gone */ } }, CLOSE_GRACE_MS);
+  if (typeof t.unref === 'function') t.unref();
+  ws.once('close', () => clearTimeout(t));
+}
+
 /**
  * @param {import('http').Server} httpServer - the same server app.listen() returns
  * @param {object} deps - forwarded to createMediaStreamHandler, plus:
@@ -44,14 +57,14 @@ function attachMediaStreamServer(httpServer, deps) {
   wss.on('connection', (ws, req) => {
     if (wss.clients.size > maxSockets) {
       logEvent('media_stream_socket_limit_reached', { sockets: wss.clients.size, maxSockets });
-      try { ws.close(1013); } catch { /* already closing */ }
+      closeFirmly(ws, 1013);
       return;
     }
     let sawStart = false;
     const startTimer = setTimeout(() => {
       if (!sawStart) {
         logEvent('media_stream_no_start_timeout', {});
-        try { ws.close(); } catch { /* already closing */ }
+        closeFirmly(ws);
       }
     }, startTimeoutMs);
     ws.on('close', () => clearTimeout(startTimer));
@@ -84,7 +97,7 @@ function attachMediaStreamServer(httpServer, deps) {
       // stops Twilio sending further Media Streams data/billing for this
       // call, and has no effect whatsoever on the underlying <Dial>'d
       // call, which is a completely independent TwiML action.
-      handler.handleMessage(data.toString(), { closeConnection: () => ws.close(), onStartAccepted }).catch(err => {
+      handler.handleMessage(data.toString(), { closeConnection: () => closeFirmly(ws), onStartAccepted }).catch(err => {
         // handleMessage already catches internally; this is a final
         // backstop so a truly unexpected error can never crash the
         // process or the live call it's monitoring.

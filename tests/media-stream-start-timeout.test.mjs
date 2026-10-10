@@ -24,7 +24,7 @@ const START_TIMEOUT_MS = 400;
 let transcriptions = 0;
 const authorizeStream = ({ callSid, streamToken }) => (streamToken === 'valid-token' ? { householdId: `hh-${callSid}`, toNumber: '+447700900123', fromNumber: '+441234560000' } : null);
 const server = http.createServer((req, res) => { res.writeHead(404); res.end(); });
-attachMediaStreamServer(server, {
+const wss = attachMediaStreamServer(server, {
   authorizeStream,
   startTimeoutMs: START_TIMEOUT_MS,
   transcribeClient: { audio: { transcriptions: { create: async () => { transcriptions += 1; return { text: '' }; } } } },
@@ -70,6 +70,22 @@ try {
   const okSize = await probe([start('MZgenuine2', 'valid-token'), media, media], HOLD);
   check(!okSize.closedByServer, 'genuine-sized media frames on an authorised stream are accepted');
   check(transcriptions === 0, 'no transcription was triggered by any refused socket');
+
+  // F-1 (2026-10-10): a refused peer that never answers the close frame is
+  // terminated after the 2 s grace, not left counted against maxSockets.
+  const silent = new WebSocket(`ws://127.0.0.1:${port}/media-stream`);
+  silent.on('error', () => {});
+  await new Promise((r) => silent.on('open', r));
+  silent._socket.pause(); // stop reading: the close frame is never processed or answered
+  silent._socket.write(Buffer.from([0x81, 0x80, 0, 0, 0, 0])); // masked empty text frame (malformed start-less JSON) to keep it honest
+  const t0 = Date.now();
+  let gone = false;
+  while (Date.now() - t0 < START_TIMEOUT_MS + 4000) {
+    if (wss.clients.size === 0) { gone = true; break; }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  check(gone && Date.now() - t0 < START_TIMEOUT_MS + 3000, `a silent refused socket is force-terminated after the close grace (gone after ${Date.now() - t0} ms; clients ${wss.clients.size})`);
+  silent.terminate();
 } finally {
   server.close();
 }
