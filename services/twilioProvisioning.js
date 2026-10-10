@@ -15,6 +15,9 @@ const {
 const { sendCriticalAlert } = require("./alerting");
 const { decideNumberPurchase, decideTelephonyMutation, fakeNumber } = require("./telephony/provisioningGuard");
 const { decideNumberPurchaseByProvenance } = require("./commercial/commercialStatus");
+const { resolveNumberProvider, inventoryCoolingOffDays } = require("./telephony/numberProviders/config");
+const { provisionFromInventory } = require("./telephony/numberProviders/inventory");
+const numberInventory = require("../database/routingNumberInventory");
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
@@ -110,12 +113,26 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
     return { attempted: false };
   }
 
+  // WS6 (2026-10-11): NUMBER_PROVIDER selects WHERE the number comes from
+  // (services/telephony/numberProviders/config.js). Default 'twilio' =
+  // unchanged purchase path. 'magrathea' = assign from the manual inventory
+  // (no purchase, no provider API). An unknown value HOLDS provisioning —
+  // never a silent fallback to buying a Twilio number.
+  const providerConfig = resolveNumberProvider(env);
+  if (!providerConfig.valid) {
+    console.error("NUMBER PROVISIONING HELD: invalid NUMBER_PROVIDER", household.id, providerConfig.problem);
+    return { attempted: false, held: true, reason: providerConfig.problem };
+  }
+  const provision = (g) => (providerConfig.inventory
+    ? assignInventoryNumber(household, deps, g, providerConfig.provider)
+    : purchaseTwilioNumber(household, deps, g));
+
   if (!guard) {
     if (env.NODE_ENV === "production") {
       console.error("TWILIO PROVISIONING REFUSED: abuse guard not configured", household.id);
       return { attempted: false, held: true, reason: "abuse_guard_not_configured" };
     }
-    return purchaseTwilioNumber(household, deps, null);
+    return provision(null);
   }
 
   return guard.singleFlight(household.id, async () => {
@@ -124,7 +141,30 @@ async function ensureTwilioNumberProvisioned(household, deps = {}) {
       console.error("TWILIO PROVISIONING HELD:", household.id, admission.reason);
       return { attempted: false, held: true, reason: admission.reason };
     }
-    return purchaseTwilioNumber(household, deps, guard);
+    return provision(guard);
+  });
+}
+
+// WS6 (2026-10-11): NUMBER_PROVIDER=magrathea. Same gates as a purchase
+// (entitlement provenance, Fortress authorizeNumberPurchase — both fail
+// closed and applied by default), then claim + assign from migration 078's
+// inventory (services/telephony/numberProviders/inventory.js). Tests inject
+// every dependency; production uses the real ones.
+async function assignInventoryNumber(household, deps, guard, providerCode) {
+  const inv = deps.inventory || {};
+  return provisionFromInventory(household, {
+    providerCode,
+    claim: inv.claim || numberInventory.claimInventoryNumber,
+    giveBack: inv.giveBack || numberInventory.returnUnassignedInventoryNumber,
+    assign: deps.assign || assignHouseholdTwilioNumber,
+    readHouseholdNumber: deps.readHouseholdNumber || readHouseholdTwilioNumber,
+    recordFailure: deps.recordFailure || recordTwilioProvisioningFailure,
+    sendAlert: deps.sendAlert || sendCriticalAlert,
+    readActiveEntitlements: deps.readActiveEntitlements !== undefined ? deps.readActiveEntitlements : readActiveEntitlementsForProvenance,
+    decideProvenance: decideNumberPurchaseByProvenance,
+    authorizeNumberPurchase: deps.authorizeNumberPurchase !== undefined ? deps.authorizeNumberPurchase : require("./containment").authorizeNumberPurchase,
+    guard,
+    abuseOverride: deps.abuseOverride || null,
   });
 }
 
@@ -602,6 +642,39 @@ async function releaseQuarantinedTwilioNumber(quarantineRow, deps = {}) {
   if (quarantineRow.household_id && (await blocksRelease(quarantineRow.household_id).catch(() => true))) {
     console.error("NUMBER RELEASE BLOCKED (quarantine, household currently entitled):", quarantineRow.household_id);
     return { released: false, blocked: "household_entitled", error: "household currently has an active or scheduled entitlement" };
+  }
+
+  // WS6 (2026-10-11): an inventory (Magrathea) DDI is not a Twilio
+  // resource. It is returned to the inventory (after cooling-off) instead of
+  // a Twilio remove(); ceasing it at Magrathea is a manual step. The lookup
+  // runs by default only with the real client (tests inject it); a read
+  // failure refuses the release (nothing called, nothing marked released).
+  const inventoryProviderFor = deps.inventoryProviderFor !== undefined
+    ? deps.inventoryProviderFor
+    : (client && client === twilioRestClient ? numberInventory.getInventoryProviderForNumber : null);
+  if (inventoryProviderFor) {
+    let inventoryProvider;
+    try {
+      inventoryProvider = await inventoryProviderFor(quarantineRow.twilio_number);
+    } catch (err) {
+      console.error("NUMBER RELEASE REFUSED: inventory unreadable", quarantineRow.id, err.message);
+      return { released: false, error: `inventory unreadable: ${err.message}` };
+    }
+    if (inventoryProvider) {
+      try {
+        const returnToInventory = deps.returnToInventory || numberInventory.releaseInventoryNumberAfterQuarantine;
+        const returned = await returnToInventory(quarantineRow.twilio_number, inventoryCoolingOffDays(guardEnv));
+        if (!returned) {
+          return { released: false, error: "inventory number could not be returned (still held by a household, or not assigned)" };
+        }
+        await markReleased(quarantineRow.id);
+        console.log("INVENTORY NUMBER RETURNED (quarantine, deactivation confirmed):", quarantineRow.household_id, inventoryProvider);
+        return { released: true, provider: inventoryProvider, returnedToInventory: true, twilioNumber: quarantineRow.twilio_number };
+      } catch (err) {
+        console.error("INVENTORY NUMBER RETURN FAILED:", quarantineRow.household_id, err.message);
+        return { released: false, error: err.message };
+      }
+    }
   }
 
   try {
