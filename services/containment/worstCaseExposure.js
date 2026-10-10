@@ -14,11 +14,16 @@
 // Sources: docs/launch/2026-10-10-TWILIO-DURATION-EVIDENCE.md §1/§4
 // (invoiced Twilio rates, fx as used there) and the BYOC investigation §5.1
 // (research/business-decision-2026-10-10, GB list prices Aug 2026, $→£ 0.755).
+// Invoiced/estimated rates come from the economics register (the single
+// source of provider rates — tests/economics-register.test.mjs forbids
+// re-stating them); BYOC-era list rates are not in the register yet.
+const register = require('../finance/economicsRegister');
+const REG = register.rates({ basis: 'enforcement' });
 const RATES = Object.freeze({
-  inboundPstn: 0.007558,      // Twilio-hosted number, inbound leg (INVOICED)
-  sdkLegList: 0.00316,        // <Dial><Client> app leg at list ($0.004 @0.79); £0 on invoices today
-  mediaStream: 0.003329,      // <Start><Stream> (INVOICED)
-  whisper: 0.00474,           // OpenAI transcription per monitored minute (ESTIMATED; OpenAI-billed)
+  inboundPstn: REG.inboundPerMin,        // Twilio-hosted number, inbound leg (INVOICED)
+  sdkLegList: REG.appLegPerMin,          // <Dial><Client> app leg at list; £0 on invoices today
+  mediaStream: REG.mediaStreamPerMin,    // <Start><Stream> (INVOICED)
+  whisper: REG.transcriptionPerMin,      // OpenAI transcription per monitored minute (ESTIMATED; OpenAI-billed)
   byoc: 0.00302,              // BYOC inbound ($0.004 @0.755, LIST)
   sipInterface: 0.00302,      // SIP interface ($0.004, LIST; whether it stacks on BYOC is unknown — Twilio Q T1)
   sdkByoc: 0.00302,           // Voice SDK leg ($0.004 @0.755, LIST)

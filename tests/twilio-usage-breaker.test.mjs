@@ -110,6 +110,57 @@ function liveCtx({ live = { 'in-progress': ['CA1', 'CA2'], ringing: ['CA3'], que
   check(!c.log.some((x) => x[0] === 'hangup' || x[0] === 'list'), 'an unknown trigger hangs up nothing');
 }
 
+// Agent 1 2026-10-11: SELF-VERIFYING public variant — accepts callbacks signed
+// by the parent OR the runtime subaccount token (subaccount-located triggers),
+// refuses unsigned / forged / mismatched requests.
+{
+  globalThis.Twilio.Response.prototype.setStatusCode = function setStatusCode(c) { this.statusCode = c; };
+  const verified = require('../twilio-functions/usage-breaker/functions/suspend-runtime-subaccount-verified.js');
+  const twilioLib = require('twilio');
+  const PARENT_TOKEN = 'p'.repeat(32);
+  const SUB_TOKEN = 's'.repeat(32);
+  const DOMAIN = 'hcg-usage-breaker-1234.twil.io';
+  const PATH = '/suspend-runtime-subaccount-verified';
+  const URL_ = `https://${DOMAIN}${PATH}`;
+  const vctx = () => ({ ...liveCtx(), AUTH_TOKEN: PARENT_TOKEN, HCG_RUNTIME_SUBACCOUNT_AUTH_TOKEN: SUB_TOKEN, DOMAIN_NAME: DOMAIN, PATH });
+  const signed = (token, body) => ({ ...body, request: { headers: { 'x-twilio-signature': twilioLib.getExpectedTwilioSignature(token, URL_, body) } } });
+  const runV = (c, ev) => new Promise((resolve) => verified.handler(c, ev, (err, res) => resolve({ err, res })));
+  const body = (acct) => ({ UsageTriggerSid: T1, AccountSid: acct, CurrentValue: '21', TriggerValue: '20', UsageCategory: 'totalprice', IdempotencyToken: 'x' });
+
+  check(verified.expectedSignature(SUB_TOKEN, URL_, body(SUB)) === twilioLib.getExpectedTwilioSignature(SUB_TOKEN, URL_, body(SUB)), 'own signature algorithm matches the twilio library (independent implementation)');
+  {
+    const c = vctx();
+    const r = await runV(c, signed(SUB_TOKEN, body(SUB)));
+    check(r.res.body.suspended === true && c.log.some((x) => x[0] === 'suspend' && x[1] === SUB), 'callback signed with the RUNTIME SUBACCOUNT token (subaccount-located trigger) → accepted → suspended');
+  }
+  {
+    const c = vctx();
+    const r = await runV(c, signed(PARENT_TOKEN, body(PARENT)));
+    check(r.res.body.suspended === true, 'callback signed with the PARENT token (parent-located trigger) → accepted → suspended');
+  }
+  for (const [label, ev, reason] of [
+    ['unsigned request', body(SUB), 'missing_signature'],
+    ['forged signature (random key)', signed('f'.repeat(32), body(SUB)), 'bad_signature'],
+    ['signed, then a parameter tampered', (() => { const e = signed(SUB_TOKEN, body(SUB)); e.UsageTriggerSid = T2; return e; })(), 'bad_signature'],
+    ['signed by the subaccount but claiming AccountSid=parent', signed(SUB_TOKEN, body(PARENT)), 'account_mismatch'],
+    ['signed for a different URL', { ...body(SUB), request: { headers: { 'x-twilio-signature': twilioLib.getExpectedTwilioSignature(SUB_TOKEN, 'https://evil.example/x', body(SUB)) } } }, 'bad_signature'],
+  ]) {
+    const c = vctx();
+    const r = await runV(c, ev);
+    check(r.res.statusCode === 403 && r.res.body.reason === reason && c.log.length === 0, `${label} → 403 (${reason}), no Twilio call`);
+  }
+  {
+    const c = { ...vctx(), HCG_RUNTIME_SUBACCOUNT_AUTH_TOKEN: '' };
+    const r = await runV(c, signed('', body(SUB)));
+    check(r.res.statusCode === 403 && c.log.length === 0, 'an empty/unset token is never a valid key (signature made with "" refused)');
+  }
+  {
+    const c = vctx();
+    const r = await runV(c, signed(SUB_TOKEN, { ...body(SUB), UsageTriggerSid: T2 }));
+    check(r.res.body.suspended === false && r.res.body.reason === 'unknown_trigger' && c.log.length === 0, 'validly signed but NOT an allowlisted trigger → no action (same decision as the protected variant)');
+  }
+}
+
 // REST client credential mode
 const { createTwilioRestClient, twilioRestCredentialMode } = require('../services/twilioClient.js');
 check(twilioRestCredentialMode({ TWILIO_ACCOUNT_SID: SUB, TWILIO_API_KEY_SID: 'SK' + 'd'.repeat(32), TWILIO_API_KEY_SECRET: 'x', TWILIO_AUTH_TOKEN: 't' }) === 'api_key', 'API key preferred over the auth token when both are present');
