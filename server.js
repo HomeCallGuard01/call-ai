@@ -371,8 +371,23 @@ function buildRedLineTerminateUrl(appUrl) {
   return appUrl + "/red-line-terminate";
 }
 
+// EMERGENCY CONTAINMENT (2026-10-10, hotfix/prod-containment-2026-10-10).
+// The /media-stream WebSocket in this release trusts household, SMS
+// destination and sender from the client's own "start" parameters, so a
+// forged stream can make HCG pay for transcription and send HCG-branded SMS
+// to any number. Until the hardened release (single-use stream tokens,
+// Financial Fortress) is deployed, live monitoring and the legacy /process
+// classifier are OFF unless explicitly re-enabled. Calls are still delivered
+// exactly as before; only the AI monitoring/warning layer is paused.
+const LIVE_MONITORING_ENABLED = process.env.HCG_LIVE_MONITORING_ENABLED === "true";
+const PROCESS_ROUTE_ENABLED = process.env.HCG_PROCESS_ROUTE_ENABLED === "true";
+if (!LIVE_MONITORING_ENABLED) {
+  console.warn("EMERGENCY CONTAINMENT: live monitoring is OFF (HCG_LIVE_MONITORING_ENABLED is not 'true') — no <Stream>, no /media-stream endpoint");
+}
+
 function attachLiveMonitoring(twiml, { household, twilioNumber }) {
   if (!household) return;
+  if (!LIVE_MONITORING_ENABLED) return;
 
   const destination = resolveForwardingDestination(household);
 
@@ -841,6 +856,9 @@ app.post("/voice", async (req, res) => {
 // pre-call screening permanently.
 
 app.post("/process", async (req, res) => {
+  // EMERGENCY CONTAINMENT (2026-10-10): unsigned, unauthenticated OpenAI
+  // spend path; not reachable from the active call flow. Off by default.
+  if (!PROCESS_ROUTE_ENABLED) return res.status(404).end();
   const twiml = new VoiceResponse();
   const processingStart = Date.now();
 
@@ -2379,7 +2397,7 @@ setTimeout(() => {
 // (transcription/SMS simply won't succeed; the call itself is completely
 // unaffected either way, since <Start><Stream> is fire-and-forget
 // relative to <Dial>).
-attachMediaStreamServer(httpServer, {
+if (LIVE_MONITORING_ENABLED) attachMediaStreamServer(httpServer, {
   transcribeClient: openai ? createOpenAiTranscribeClient(openai) : null,
   smsClient: twilioRestClient,
   fromNumber: null,
