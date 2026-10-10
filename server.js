@@ -273,7 +273,8 @@ app.use(bodyParser.urlencoded({ extended: false }));
 // when TRUST_PROXY_HOPS is set — and then Express must trust exactly that
 // many proxy hops, or req.ip would be the proxy's address for everyone.
 if (Number(process.env.TRUST_PROXY_HOPS) > 0) app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS));
-const authRateLimiter = require("./middleware/authEndpointRateLimit").createAuthEndpointLimiter();
+// WS1 2026-10-10: one shared instance with routes/mobileApi.js (shared counters).
+const authRateLimiter = require("./middleware/authEndpointRateLimit").sharedAuthEndpointLimiter();
 app.use(cookieParser());
 app.use(express.static("public"));
 
@@ -2652,7 +2653,11 @@ app.post("/login", authRateLimiter.limit("login", { group: "login", emailField: 
 // /login (verify, bootstrap household/role, set cookies) — this is not a
 // new/weaker auth path, it's the exact tokens Supabase's own confirmation
 // flow already issued, just not discarded before they could be used.
-app.post("/confirm-session", express.json(), async (req, res) => {
+// WS1 2026-10-10: rate-limited (group "session", per-IP + global; no per-email
+// key). Each request calls Supabase Auth from this server's IP and may write a
+// household row; unbounded, a flood would exhaust Supabase's per-IP auth limit
+// for every genuine customer.
+app.post("/confirm-session", express.json(), authRateLimiter.limit("confirm-session", { group: "session", emailField: null }), async (req, res) => {
   const { access_token, refresh_token } = req.body || {};
 
   if (!access_token || !refresh_token) {
@@ -2719,7 +2724,8 @@ app.post("/confirm-session", express.json(), async (req, res) => {
 // legacy hash-fragment path already does — this is not a new/weaker
 // session-establishment mechanism, just a new way of getting to it
 // that isn't foilable by a prefetch.
-app.post("/verify-confirmation-token", express.json(), async (req, res) => {
+// WS1 2026-10-10: rate-limited, same reasoning as /confirm-session.
+app.post("/verify-confirmation-token", express.json(), authRateLimiter.limit("verify-confirmation-token", { group: "session", emailField: null }), async (req, res) => {
   const { token_hash: tokenHash, type } = req.body || {};
 
   if (!tokenHash || typeof tokenHash !== "string" || type !== "signup") {
@@ -2803,7 +2809,8 @@ app.post("/forgot-password", authRateLimiter.limit("forgot-password", { group: "
 
 // AUTH: RESET PASSWORD COMPLETE
 
-app.post("/reset-password-complete", async (req, res) => {
+// WS1 2026-10-10: rate-limited, same reasoning as /confirm-session.
+app.post("/reset-password-complete", authRateLimiter.limit("reset-password-complete", { group: "session", emailField: null }), async (req, res) => {
   const { access_token, refresh_token, new_password } = req.body;
 
   if (!access_token || !refresh_token || !new_password) {
@@ -2874,7 +2881,8 @@ app.post("/reset-password-complete", async (req, res) => {
 // Establishes a session but does not itself set cookies or touch the
 // password; the client still calls the existing /reset-password-complete
 // with the returned tokens for that, unchanged.
-app.post("/reset-password-verify", express.json(), async (req, res) => {
+// WS1 2026-10-10: rate-limited, same reasoning as /confirm-session.
+app.post("/reset-password-verify", express.json(), authRateLimiter.limit("reset-password-verify", { group: "session", emailField: null }), async (req, res) => {
   const { token_hash, type } = req.body || {};
 
   if (!token_hash || type !== "recovery") {
@@ -2912,6 +2920,9 @@ app.post("/reset-password-verify", express.json(), async (req, res) => {
 // cookie, no session, no IP address.
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
+  // WS1 2026-10-10: unauthenticated DB write — bounded by a global (and, with
+  // TRUST_PROXY_HOPS, per-IP) budget. The page is always served.
+  if (!authRateLimiter.budget("acquisition", req)) return;
   const { utmSource, utmMedium, utmCampaign } = parseUtmParams(req.query);
   recordAcquisitionEvent("landing_visit", {
     path: "/",
@@ -3053,6 +3064,8 @@ app.get("/go", (req, res) => {
       utm: { utmSource, utmMedium, utmCampaign },
     })
   );
+  // WS1 2026-10-10: same bounded analytics write as GET / above.
+  if (!authRateLimiter.budget("acquisition", req)) return;
   recordAcquisitionEvent("landing_visit", {
     path: "/go",
     utmSource,

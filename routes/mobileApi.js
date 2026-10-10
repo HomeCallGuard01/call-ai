@@ -487,8 +487,10 @@ const MOBILE_CONFIRM_EMAIL_REDIRECT_URL = `${APP_URL}/confirmed.html`;
 // underlying outcomes (new signup vs. resend to an existing unconfirmed
 // email) — that's the anti-enumeration design, not an oversight.
 // Integration 2026-10-03 (launch-gate PR-11): same limiter as the web routes.
-const mobileAuthRateLimiter = require("../middleware/authEndpointRateLimit").createAuthEndpointLimiter();
-router.post("/api/v1/register", mobileAuthRateLimiter.limit("api-register", { group: "register" }), async (req, res) => {
+// WS1 2026-10-10: the SAME instance (shared counters) and the same route
+// label as web /register, so web + app share one per-mailbox budget.
+const mobileAuthRateLimiter = require("../middleware/authEndpointRateLimit").sharedAuthEndpointLimiter();
+router.post("/api/v1/register", mobileAuthRateLimiter.limit("register", { group: "register" }), async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -520,11 +522,22 @@ router.post("/api/v1/register", mobileAuthRateLimiter.limit("api-register", { gr
 // "sent again" notice unconditionally, even for an email that was
 // already confirmed (nothing to resend, nothing actually sent). See
 // services/registrationRequest.js.
-router.post("/api/v1/register/resend", async (req, res) => {
+//
+// WS1 2026-10-10: rate-limited exactly like the web /resend-confirmation
+// (group "email", 3 per mailbox per hour, then SUPPRESSED). It sends an
+// email to an attacker-chosen address and runs an admin user lookup, and
+// was the only email-sending auth route without the limiter. A suppressed
+// request answers "no_action" (nothing was sent — true), which the app
+// already renders identically to "resent" (mobile/lib/registrationOutcome.ts).
+router.post("/api/v1/register/resend", mobileAuthRateLimiter.limit("resend-confirmation", { group: "email", onEmailLimit: "suppress" }), async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
     return res.status(400).json({ error: "invalid_input", message: "email is required" });
+  }
+
+  if (req.authEmailSuppressed) {
+    return res.json({ status: "no_action" });
   }
 
   try {
@@ -1654,27 +1667,13 @@ router.post("/api/v1/billing/apple/revenuecat-webhook", async (req, res) => {
   }
 });
 
-// POST /debug/purchase-beacon — the RevenueCat/StoreKit equivalent of
-// mobile/lib/voiceClient.ts's own beacon() calls to /debug/voice-beacon.
-// Found 2026-08-29 (App Store IAP investigation): the RevenueCat SDK's
-// real error (code/message/underlyingErrorMessage — StoreKit-level
-// diagnostics like "product not available", never anything customer-
-// identifying) was being swallowed entirely into a generic "we couldn't
-// start checkout" message client-side, making an actual purchase failure
-// undiagnosable without a physical device and Xcode console access. Fires
-// from mobile/app/(setup)/subscribe.tsx's handleSubscribeIOS() catch
-// block — deliberately unauthenticated, matching voice-beacon's own
-// reasoning: a purchase can fail before/without any household context to
-// authenticate with. Console-logged only (visible in Railway logs), never
-// written to the database — this is a debugging aid, not an audit trail.
-// Payload is capped and never echoes anything back beyond ok:true, so it
-// can't be used to probe server state.
-router.post("/debug/purchase-beacon", (req, res) => {
-  const { stage, detail } = req.body || {};
-  if (typeof stage === "string" && stage.length <= 100 && (detail === undefined || (typeof detail === "string" && detail.length <= 500))) {
-    console.log("PURCHASE BEACON:", stage, detail || "");
-  }
-  res.json({ ok: true });
-});
+// POST /debug/purchase-beacon — REMOVED (WS1 2026-10-10). It was an
+// unauthenticated endpoint that wrote attacker-controlled strings into the
+// production logs (log forging / log-volume abuse), contrary to HCG policy:
+// real telemetry uses requireAuthApi, never an unauthenticated /debug/*
+// beacon. The shipped iOS app's purchaseBeacon() (mobile/lib/purchases.ts)
+// is fire-and-forget with .catch(() => {}) and never reads the response, so
+// a 404 here changes nothing for customers. tests/ws1-unauthenticated-
+// surface.test.mjs fails if any /debug/* route reappears.
 
 module.exports = router;
