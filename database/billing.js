@@ -162,6 +162,28 @@ async function getActiveEntitlement(householdId) {
   return data;
 }
 
+// Same rule as getActiveEntitlement, but THROWS on a read error instead of
+// returning null (WS4, 2026-10-10). For callers where "unreadable" must not
+// be mistaken for "no entitlement" — e.g. GET /api/v1/billing/eligibility
+// (routes/billingEligibility.js) must never tell an existing member they may
+// buy again just because the database was briefly unreachable.
+async function getActiveEntitlementOrThrow(householdId) {
+  if (!supabaseAdmin) throw new Error("Supabase admin client not configured");
+
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("entitlements")
+    .select("*")
+    .eq("household_id", householdId)
+    .eq("status", "active")
+    .lte("starts_at", nowIso)
+    .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
+    .maybeSingle();
+
+  if (error) throw new Error(`entitlement unreadable: ${error.message || error}`);
+  return data;
+}
+
 // Plain read for the Membership card — service_role already has SELECT on
 // subscriptions (migration 012), so no new grant is needed. A household
 // can have more than one historical subscriptions row (e.g. an old one
@@ -652,6 +674,7 @@ module.exports = {
   claimWebhookEvent,
   processWebhookEvent,
   getActiveEntitlement,
+  getActiveEntitlementOrThrow,
   getMostRecentRevenueCatEntitlement,
   getSubscriptionByHouseholdId,
   upsertActiveEntitlementFromRevenueCat,

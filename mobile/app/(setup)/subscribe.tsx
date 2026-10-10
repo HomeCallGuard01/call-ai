@@ -1,7 +1,21 @@
-// B2 — Membership / Subscribe. Opens Stripe Checkout in an in-app
-// browser, then checks real subscription state on return rather than
-// trusting the browser's own success/cancel signal alone (a webhook can
-// genuinely be delayed past the moment Checkout itself completes).
+// B2 — Membership / Subscribe.
+//
+// 2026-10-10 (WS4, Android Option C — Google Play Payments policy): this
+// screen takes payment on iOS ONLY (Apple StoreKit via RevenueCat). The
+// Android app is consumption-only: it never opens Stripe Checkout, shows no
+// price and has no button, link or QR code to web checkout. An Android
+// account without a membership sees plain text ("Membership is set up on our
+// website, homecallguard.co.uk" — not a link, not selectable) and can re-check
+// its membership; a customer who paid on the website signs in and continues
+// exactly as before (setup welcome resumes past this screen once entitled).
+// Copy and platform rules: lib/subscriptionPrice.ts (canPurchaseInApp,
+// CONSUMPTION_ONLY_COPY). Guarded by
+// tests/android-option-c-consumption-only.test.mjs. Play Billing (Option A)
+// replaces this before Android is offered publicly
+// (docs/launch/2026-10-09-ANDROID-COMPLIANT-PAYMENTS.md).
+//
+// Before 2026-10-10 Android opened Stripe Checkout in an in-app browser
+// here (removed: non-compliant on Google Play).
 //
 // Reflects the approved launch model: paid from day one, no free trial.
 // The Founding Member / "first 500 customers" framing and 12-month price-lock
@@ -12,14 +26,11 @@
 // replacement refund, guarantee or cooling-off promise is made here — do not
 // reintroduce one without explicit approval (tests/release-copy-corrections
 // .test.mjs guards this).
-// The Stripe price/checkout mechanics themselves are unchanged for
-// Android/web — this is presentation only.
 // 2026-09-30: this screen contains NO subscription amount. iOS shows
-// StoreKit's own price for the exact package it will buy; Android shows the
-// backend's description of the current Stripe Price (lib/subscriptionPrice.ts,
-// services/subscriptionPricing.js). If the price can't be read, no amount is
-// shown (and iOS can't purchase until it loads). Guarded by
-// tests/subscription-price-display.test.mjs.
+// StoreKit's own price for the exact package it will buy (lib/subscriptionPrice.ts).
+// If the price can't be read, no amount is shown and iOS can't purchase
+// until it loads. Android shows no price at all (Option C, above). Guarded
+// by tests/subscription-price-display.test.mjs.
 //
 // The "start immediately" consent checkbox exists because of the
 // Consumer Contracts Regulations 2013: a trader shouldn't begin
@@ -48,12 +59,13 @@ import { Screen } from "../../components/Screen";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { Banner } from "../../components/Banner";
 import { SetupProgress } from "../../components/SetupProgress";
-import { createCheckoutSession, fetchDashboard, fetchCarrierCompatibility, acceptTerms, fetchStripeOffer, ApiError } from "../../lib/api";
+import { fetchDashboard, fetchCarrierCompatibility, acceptTerms, ApiError, NotEntitledError } from "../../lib/api";
 import { fetchHcgPackage, purchaseHcgPackage, isEntitled, PurchasesNotConfiguredError } from "../../lib/purchases";
 import type { PurchasesPackage } from "react-native-purchases";
 import {
-  displayPriceFromServerOffer,
   displayPriceFromStoreProduct,
+  canPurchaseInApp,
+  CONSUMPTION_ONLY_COPY,
   subscribePriceLine,
   subscribeButtonLabel,
   PRICE_PENDING_NOTE,
@@ -65,13 +77,16 @@ import { isLandlineComingSoon, useLandlineComingSoon } from "../../lib/landlineF
 import { LandlineComingSoon } from "../../components/LandlineComingSoon";
 import { colors, spacing, typography, MIN_TOUCH_TARGET } from "../../lib/theme";
 
-const RETURN_URL = "homecallguard://setup/subscribe";
-
 // Apple Guideline 3.1.2: an auto-renewable subscription screen must link
 // Terms of Use (EULA) and Privacy Policy directly, not just somewhere
 // else in the app — same URLs already used by account/legal.tsx (D4),
-// no content duplicated here.
+// no content duplicated here. Android opens the navigation-free copies
+// (public/legal/*-app.html, generated from /terms.html and /privacy.html by
+// tests/app-legal-pages.test.mjs), which have no route to web checkout.
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+const IN_APP_PURCHASE = canPurchaseInApp(Platform.OS);
+const TERMS_PATH = Platform.OS === "ios" ? "/terms.html" : "/legal/terms-app.html";
+const PRIVACY_PATH = Platform.OS === "ios" ? "/privacy.html" : "/legal/privacy-app.html";
 
 export default function Subscribe() {
   const { session } = useAuth();
@@ -104,16 +119,15 @@ export default function Subscribe() {
   const iosPackage = useRef<PurchasesPackage | null>(null);
   const [priceAttempt, setPriceAttempt] = useState(0);
   useEffect(() => {
+    // Option C: Android never fetches or shows a price.
+    if (!IN_APP_PURCHASE) return;
     let cancelled = false;
     setPriceState("loading");
-    const load =
-      Platform.OS === "ios"
-        ? fetchHcgPackage().then(pkg => {
-            const price = displayPriceFromStoreProduct(pkg.product);
-            iosPackage.current = price ? pkg : null;
-            return price;
-          })
-        : fetchStripeOffer(session?.access_token).then(displayPriceFromServerOffer);
+    const load = fetchHcgPackage().then(pkg => {
+      const price = displayPriceFromStoreProduct(pkg.product);
+      iosPackage.current = price ? pkg : null;
+      return price;
+    });
     load
       .then(price => {
         if (cancelled) return;
@@ -132,11 +146,9 @@ export default function Subscribe() {
   }, [session?.access_token, priceAttempt]);
   const iosPriceMissing = Platform.OS === "ios" && priceState !== "ready";
 
-  // openAuthSessionAsync can stay open for minutes (Stripe Checkout is a
-  // real payment form, not a quick redirect) — long enough that the
+  // A purchase sheet can stay open for a while — long enough that the
   // screen underneath could in principle be gone by the time control
-  // returns (e.g. an auth-state change elsewhere redirects away). Every
-  // setState below checks this first.
+  // returns. Every setState below checks this first.
   const isMounted = useRef(true);
   useEffect(() => {
     return () => {
@@ -144,38 +156,26 @@ export default function Subscribe() {
     };
   }, []);
 
-  // Android/web: unchanged from before this session's Apple IAP work —
-  // Stripe Checkout in an in-app browser, real server-derived state
-  // checked on return. iOS never calls this function; see
-  // handleSubscribeIOS below for why iOS needs a structurally different
-  // flow (Guideline 3.1.1 — no external purchase mechanism on iOS).
-  async function handleSubscribeStripe() {
+  // Option C (Android): re-check the server's membership state after the
+  // customer has subscribed on the website. Setup welcome decides where to
+  // resume, exactly as for any entitled account.
+  const [isCheckingMembership, setIsCheckingMembership] = useState(false);
+  async function handleCheckMembershipAgain() {
+    setError(null);
+    setIsCheckingMembership(true);
     try {
-      const { url } = await createCheckoutSession(session?.access_token);
-      await WebBrowser.openAuthSessionAsync(url, RETURN_URL);
+      await fetchDashboard(session?.access_token);
       if (!isMounted.current) return;
-
-      // Regardless of exactly how the browser session ended (Stripe's
-      // own success/cancel redirect, or the customer just closing it),
-      // check the real, server-derived state next — never trust the
-      // browser event alone, since a webhook can land after Checkout
-      // itself completes.
-      try {
-        await fetchDashboard(session?.access_token);
-        if (!isMounted.current) return;
-        router.replace("/(setup)/confirmation");
-      } catch {
-        // Still not entitled — either genuinely cancelled, or the
-        // webhook hasn't landed yet. Stay on this screen so the
-        // customer can simply try again; not an error state.
-      }
+      router.replace("/(setup)/welcome");
     } catch (err) {
       if (!isMounted.current) return;
-      if (err instanceof ApiError && err.code === "already_active") {
-        router.replace("/(setup)/confirmation");
-        return;
-      }
-      throw err;
+      setError(
+        err instanceof NotEntitledError
+          ? CONSUMPTION_ONLY_COPY.stillNoMembership
+          : "We couldn't check your membership. Please check your connection and try again."
+      );
+    } finally {
+      if (isMounted.current) setIsCheckingMembership(false);
     }
   }
 
@@ -184,8 +184,8 @@ export default function Subscribe() {
   // StoreKit itself is the purchase UI (Apple's native payment sheet);
   // this just triggers it and then waits for our own backend's
   // entitlement state to catch up, exactly the same "never trust the
-  // client's own success signal alone" discipline handleSubscribeStripe
-  // already applies to Stripe — the real grant happens server-side, off
+  // client's own success signal alone" discipline the web Stripe path
+  // applies — the real grant happens server-side, off
   // RevenueCat's webhook (routes/mobileApi.js), not from purchaseHcgPackage
   // resolving here.
   async function handleSubscribeIOS() {
@@ -246,6 +246,8 @@ export default function Subscribe() {
 
   async function handleSubscribe() {
     setError(null);
+    // Option C: no purchase path exists outside iOS.
+    if (!IN_APP_PURCHASE) return;
 
     if (!agreedToTerms) {
       setError("Please agree to the Terms & Conditions and Privacy Policy before continuing.");
@@ -272,11 +274,10 @@ export default function Subscribe() {
       // purchase — not just relying on device-picker.tsx running earlier
       // in the flow (real app-navigation edge cases, e.g. the app being
       // killed and resumed mid-flow, don't reliably guarantee that).
-      // Android/web also has a genuine server-side block inside
+      // The web Stripe checkout also has a genuine server-side block inside
       // create-checkout-session itself; iOS has none (Apple's StoreKit
       // purchase can't be intercepted server-side beforehand), which is
-      // exactly why this check has to live here, before either branch,
-      // rather than only inside handleSubscribeStripe.
+      // exactly why this check has to live here, before the purchase.
       const eligibility = await fetchCarrierCompatibility(session?.access_token);
       if (!eligibility.canProceedToPayment) {
         if (isMounted.current) {
@@ -295,15 +296,10 @@ export default function Subscribe() {
 
       // Durable evidence write — see migration 039. Written once both
       // consent checkboxes are confirmed ticked and carrier eligibility
-      // is confirmed, immediately before either purchase path actually
-      // starts.
+      // is confirmed, immediately before the purchase actually starts.
       await acceptTerms(session?.access_token);
 
-      if (Platform.OS === "ios") {
-        await handleSubscribeIOS();
-      } else {
-        await handleSubscribeStripe();
-      }
+      await handleSubscribeIOS();
     } catch (err) {
       if (isMounted.current) {
         if (err instanceof ApiError && err.code === "carrier_incompatible") {
@@ -321,6 +317,32 @@ export default function Subscribe() {
     return (
       <Screen>
         <LandlineComingSoon actionLabel="Choose a different option" onAction={() => router.replace("/(setup)/device-picker")} />
+      </Screen>
+    );
+  }
+
+  if (!IN_APP_PURCHASE) {
+    // Option C: plain text only. No price, no purchase button, no link or
+    // QR code to web checkout; the website name is NOT selectable (Android's
+    // selection toolbar can offer to open a URL).
+    return (
+      <Screen>
+        <SetupProgress currentStep={1} />
+        <Text style={styles.title} accessibilityRole="header">{CONSUMPTION_ONLY_COPY.noMembershipTitle}</Text>
+        <Text style={styles.body}>{CONSUMPTION_ONLY_COPY.noMembershipBody}</Text>
+        <Text style={styles.body} selectable={false}>{CONSUMPTION_ONLY_COPY.websiteNote}</Text>
+        <Text style={styles.body}>{CONSUMPTION_ONLY_COPY.afterWebsiteNote}</Text>
+        {error && <Banner variant="error" message={error} />}
+        <PrimaryButton label={CONSUMPTION_ONLY_COPY.checkAgainLabel} onPress={handleCheckMembershipAgain} loading={isCheckingMembership} />
+        <View style={styles.legalLinks}>
+          <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}${TERMS_PATH}`)}>
+            <Text style={styles.legalLinkText}>Terms & Conditions</Text>
+          </Pressable>
+          <Text style={styles.legalLinkSeparator}>·</Text>
+          <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}${PRIVACY_PATH}`)}>
+            <Text style={styles.legalLinkText}>Privacy Policy</Text>
+          </Pressable>
+        </View>
       </Screen>
     );
   }
@@ -352,11 +374,11 @@ export default function Subscribe() {
       {error && <Banner variant="error" message={error} />}
 
       <View style={styles.legalLinks}>
-        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/terms.html`)}>
+        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}${TERMS_PATH}`)}>
           <Text style={styles.legalLinkText}>Terms & Conditions</Text>
         </Pressable>
         <Text style={styles.legalLinkSeparator}>·</Text>
-        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}/privacy.html`)}>
+        <Pressable onPress={() => WebBrowser.openBrowserAsync(`${API_BASE_URL}${PRIVACY_PATH}`)}>
           <Text style={styles.legalLinkText}>Privacy Policy</Text>
         </Pressable>
       </View>
@@ -396,11 +418,7 @@ export default function Subscribe() {
         disabled={iosPriceMissing}
       />
 
-      <Text style={styles.smallprint}>
-        {Platform.OS === "ios"
-          ? "Secure payment via the App Store. You can cancel any time from Account."
-          : "Secure payment via Stripe. You can cancel any time from Account."}
-      </Text>
+      <Text style={styles.smallprint}>Secure payment via the App Store. You can cancel any time from Account.</Text>
     </Screen>
   );
 }

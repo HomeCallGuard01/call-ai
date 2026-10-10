@@ -6,8 +6,10 @@
 //     (RevenueCat PurchasesStoreProduct.priceString), so the screen always
 //     matches Apple's payment sheet, including after a price change in
 //     App Store Connect, with no app update.
-//   - Android: the backend's description of the current Stripe Price
-//     (GET /api/v1/billing/offer, services/subscriptionPricing.js).
+//   - Android: NOTHING since 2026-10-10 (Option C, below: the Android app
+//     takes no payment and shows no price). displayPriceFromServerOffer is
+//     kept for the web/Play Billing follow-up and its tests, but no Android
+//     screen calls it.
 //
 // Fail closed: anything that doesn't look like a single monthly price
 // returns null, and the screen shows wording with no amount. A figure is
@@ -85,10 +87,89 @@ export const PRICE_PENDING_NOTE = "You'll see the monthly price, including VAT, 
 // The button always states the obligation to pay (Consumer Contracts
 // Regulations 2013, reg. 14(3)) — with the amount when it is known, and
 // without one otherwise. On iOS the button is also disabled until StoreKit's
-// price has loaded; on Android, Stripe Checkout shows the amount before
-// payment.
+// price has loaded. (Android has no pay button: Option C, below.)
 export const PAY_BUTTON_WITHOUT_AMOUNT = "Subscribe & pay now";
 
 export function subscribeButtonLabel(price: DisplayPrice | null): string {
   return price ? `Subscribe & pay ${price.amountLabel}/month now` : PAY_BUTTON_WITHOUT_AMOUNT;
 }
+
+// ---------------------------------------------------------------------------
+// Android Option C: consumption-only app (WS4, 2026-10-10).
+//
+// Google Play Payments policy (sections 2 and 4) forbids an Android app from
+// selling a subscription outside Play Billing or steering to another payment
+// method: no Stripe Checkout, no Billing Portal (it can take a new card), no
+// buttons, links, QR codes or prices that lead to web checkout. Until Play
+// Billing via RevenueCat is built (Option A), the Android app is
+// consumption-only: customers subscribe on the website, then sign in here.
+// Google's own consumption-only FAQ allows plain information "without direct
+// links" (its example: "Head to our website to purchase more").
+// docs/launch/2026-10-09-ANDROID-COMPLIANT-PAYMENTS.md §3.
+//
+// iOS is unchanged: StoreKit purchase, Apple subscription settings, and the
+// existing Billing Portal for a web-billed customer.
+//
+// Guarded by tests/android-option-c-consumption-only.test.mjs: none of the
+// copy below may contain an amount, a URL scheme or "cheaper" wording, and no
+// Android-reachable screen may call Stripe Checkout or the Billing Portal.
+// ---------------------------------------------------------------------------
+
+/** The only platform on which this app may take payment (StoreKit). */
+export function canPurchaseInApp(platformOS: string): boolean {
+  return platformOS === "ios";
+}
+
+/** Whether the Membership card may show the household's own price label. */
+export function showsMembershipPriceInApp(platformOS: string): boolean {
+  return platformOS === "ios";
+}
+
+export type MembershipManagement =
+  | { kind: "apple_settings" } // iOS, Apple-billed: Apple's subscription settings
+  | { kind: "stripe_portal" } // iOS only, web-billed: the existing Billing Portal
+  | { kind: "apple_billed_text" } // Android, Apple-billed: plain text only
+  | { kind: "website_text"; paymentIssue: boolean } // Android, web-billed: plain text + email support
+  | { kind: "none" }; // nothing to manage (complimentary etc.)
+
+export function membershipManagement(input: {
+  platformOS: string;
+  billingSource?: string | null;
+  manageable?: boolean;
+  status?: string | null;
+}): MembershipManagement {
+  const appleBilled = input.billingSource === "apple_revenuecat";
+  if (input.platformOS === "ios") {
+    if (appleBilled) return { kind: "apple_settings" };
+    return input.manageable ? { kind: "stripe_portal" } : { kind: "none" };
+  }
+  // Every other platform (the shipped one is Android): never a portal.
+  if (appleBilled) return { kind: "apple_billed_text" };
+  if (input.manageable) return { kind: "website_text", paymentIssue: input.status === "payment_issue" };
+  return { kind: "none" };
+}
+
+// Plain text only. The domain is written as words in a <Text>, never a link,
+// never selectable (Android's text-selection toolbar can offer "Open" for a
+// URL), and there is no price, button or QR code that leads to checkout.
+export const CONSUMPTION_ONLY_COPY = Object.freeze({
+  noMembershipTitle: "Membership",
+  noMembershipBody: "This account doesn't have an active membership yet.",
+  websiteNote: "Membership is set up on our website, homecallguard.co.uk.",
+  afterWebsiteNote:
+    "Once your membership is active, sign in here with the same email address and we'll continue setting up your protection.",
+  checkAgainLabel: "Check my membership again",
+  stillNoMembership: "We couldn't find an active membership for this account yet.",
+  billedOnWebsite: "Billed through our website",
+  manageOnWebsite:
+    "Your membership is billed through our website. To change or cancel it, sign in to your account on our website, homecallguard.co.uk, or email support@homecallguard.co.uk and we'll do it for you.",
+  paymentIssueOnWebsite:
+    "There's a problem with your last payment. To update your payment details, sign in to your account on our website, homecallguard.co.uk, or email support@homecallguard.co.uk.",
+  forwardingReminder:
+    "Cancelling doesn't switch off call forwarding on your phone. When your protection ends, turn call forwarding off (Account → “Need to turn protection off?” shows you how).",
+  appleBilledOnAndroid:
+    "This membership is billed through Apple. To change or cancel it, use Settings → your name → Subscriptions on your iPhone, or email support@homecallguard.co.uk.",
+  emailSupportLabel: "Email support",
+});
+
+export const SUPPORT_EMAIL_ADDRESS = "support@homecallguard.co.uk";
