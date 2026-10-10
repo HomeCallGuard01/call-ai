@@ -175,7 +175,10 @@ const mobile = await import(pathToFileURL(path.join(root, 'mobile', 'lib', 'subs
 {
   const sub = read('mobile', 'app', '(setup)', 'subscribe.tsx');
   const c = code(sub);
-  check(c.includes('displayPriceFromStoreProduct(pkg.product)') && c.includes('fetchStripeOffer(session?.access_token).then(displayPriceFromServerOffer)'), 'Subscribe: iOS prices from StoreKit, Android from the server offer');
+  // 2026-10-10 (WS4, Android Option C): Android no longer shows or fetches a
+  // price at all (Google Play Payments policy) — the stricter guard for that
+  // is tests/android-option-c-consumption-only.test.mjs.
+  check(c.includes('displayPriceFromStoreProduct(pkg.product)') && !c.includes('fetchStripeOffer') && !c.includes('displayPriceFromServerOffer'), 'Subscribe: iOS prices from StoreKit; Android fetches and shows no price (Option C)');
   check(c.includes('const pkg = iosPackage.current;') && !/handleSubscribeIOS[\s\S]*fetchHcgPackage\(\)/.test(c.slice(c.indexOf('async function handleSubscribeIOS'), c.indexOf('async function handleSubscribe()'))),
     'Subscribe: iOS buys exactly the package whose price was displayed (no second, un-displayed package fetch)');
   check(c.includes('disabled={iosPriceMissing}') && c.includes('const iosPriceMissing = Platform.OS === "ios" && priceState !== "ready";'), 'Subscribe: an iOS purchase cannot start until StoreKit\'s price is on screen');

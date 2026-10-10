@@ -251,8 +251,11 @@ const subGuard = handleSubscribeBody.indexOf('isLandlineComingSoon(storedDevice?
 check(
   subGuard !== -1 &&
     subGuard < handleSubscribeBody.indexOf('await fetchCarrierCompatibility(') && subGuard < handleSubscribeBody.indexOf('await acceptTerms(') &&
-    subGuard < handleSubscribeBody.indexOf('handleSubscribeStripe();') && subGuard < handleSubscribeBody.indexOf('handleSubscribeIOS();'),
-  'Subscribe: the landline guard runs at the moment of purchase, BEFORE the carrier check, terms acceptance and either purchase path (Stripe or iOS)'
+    subGuard < handleSubscribeBody.indexOf('handleSubscribeIOS();') &&
+    // 2026-10-10 (WS4, Android Option C): the in-app Stripe path was removed;
+    // iOS StoreKit is the only purchase path left on this screen.
+    !handleSubscribeBody.includes('handleSubscribeStripe'),
+  'Subscribe: the landline guard runs at the moment of purchase, BEFORE the carrier check, terms acceptance and the (iOS-only) purchase path'
 );
 check(
   subscribeSource.includes('const landlineBlocked = landlineComingSoon && storedDeviceType === "landline";') &&

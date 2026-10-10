@@ -1,8 +1,10 @@
 // RevenueCat (Apple StoreKit) subscription purchasing — iOS only.
-// Android and web keep the existing Stripe Checkout/Billing Portal path
-// entirely unchanged (lib/api.ts's createCheckoutSession/
-// createPortalSession) — this file is never imported from those
-// platforms' purchase flow, only from iOS-gated branches.
+// 2026-10-10 (WS4, Android Option C): the Android app takes no payment at
+// all — no Stripe Checkout and no Billing Portal (Google Play Payments
+// policy); customers subscribe on the website and then sign in
+// (lib/subscriptionPrice.ts canPurchaseInApp). Every function here is a
+// no-op or throws PurchasesNotConfiguredError off iOS. When Play Billing
+// (Option A) is built, this file gains the Android RevenueCat key.
 //
 // App User ID is deliberately set to this household's own Supabase
 // auth_user_id, never RevenueCat's own anonymous ID, so a purchase
@@ -137,7 +139,8 @@ export class PurchasesNotConfiguredError extends Error {
 // silently pick the wrong product) if a second package is ever added to
 // the offering later, so this fails loudly with a clear error instead.
 export async function fetchHcgPackage(): Promise<PurchasesPackage> {
-  if (!REVENUECAT_API_KEY_IOS) throw new PurchasesNotConfiguredError();
+  // Option C (2026-10-10): never a purchase off iOS, even if the key is set.
+  if (Platform.OS !== "ios" || !REVENUECAT_API_KEY_IOS) throw new PurchasesNotConfiguredError();
 
   let offerings;
   try {
@@ -179,6 +182,7 @@ export async function fetchHcgPackage(): Promise<PurchasesPackage> {
 }
 
 export async function purchaseHcgPackage(pkg: PurchasesPackage): Promise<CustomerInfo> {
+  if (Platform.OS !== "ios") throw new PurchasesNotConfiguredError();
   try {
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     return customerInfo;
@@ -189,6 +193,7 @@ export async function purchaseHcgPackage(pkg: PurchasesPackage): Promise<Custome
 }
 
 export async function restorePurchases(): Promise<CustomerInfo> {
+  if (Platform.OS !== "ios") throw new PurchasesNotConfiguredError();
   return Purchases.restorePurchases();
 }
 

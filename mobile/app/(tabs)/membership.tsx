@@ -14,6 +14,17 @@
 // Apple-billed wording — so this screen can never show an amount that
 // differs from what the customer is actually charged. No amount is written
 // here (tests/subscription-price-display.test.mjs asserts it).
+//
+// 2026-10-10 (WS4, Android Option C — Google Play Payments policy): on
+// Android this screen never opens the Stripe Billing Portal (the portal can
+// take a new card, so it "leads to" another payment method) and shows no
+// price. A web-billed Android customer sees plain text saying how to change
+// or cancel (their online account on our website, or email support — an
+// "Email support" mailto button is allowed), plus the reminder that
+// cancelling doesn't switch off call forwarding. iOS is unchanged. Rules and
+// copy: lib/subscriptionPrice.ts (membershipManagement,
+// showsMembershipPriceInApp, CONSUMPTION_ONLY_COPY); guarded by
+// tests/android-option-c-consumption-only.test.mjs.
 import { useCallback, useState } from "react";
 import { Text, View, StyleSheet, ActivityIndicator, Linking, Platform } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -24,6 +35,12 @@ import { Banner } from "../../components/Banner";
 import { Card } from "../../components/Card";
 import { fetchDashboard, createPortalSession, ApiError, NotEntitledError } from "../../lib/api";
 import { restorePurchases as restoreApplePurchases, isEntitled } from "../../lib/purchases";
+import {
+  membershipManagement,
+  showsMembershipPriceInApp,
+  CONSUMPTION_ONLY_COPY,
+  SUPPORT_EMAIL_ADDRESS,
+} from "../../lib/subscriptionPrice";
 import { useAuth } from "../../lib/AuthContext";
 import { describeMembership, displayAccountNumber } from "../../lib/protectionView";
 import type { DashboardResponse } from "../../lib/types";
@@ -46,6 +63,7 @@ export default function Membership() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+  const accountNumberForEmail = displayAccountNumber(data?.account?.accountNumber);
 
   const load = useCallback(() => {
     setLoadFailed(false);
@@ -63,6 +81,8 @@ export default function Membership() {
   useFocusEffect(load);
 
   async function handleManage() {
+    // The Billing Portal is iOS-only (Option C): never opened on Android.
+    if (Platform.OS !== "ios") return;
     setError(null);
     setIsOpeningPortal(true);
     try {
@@ -85,6 +105,16 @@ export default function Membership() {
       await Linking.openURL(APPLE_MANAGE_SUBSCRIPTIONS_URL);
     } catch {
       setError("We couldn't open Apple's subscription settings. You can also manage this from Settings → your name → Subscriptions.");
+    }
+  }
+
+  async function handleEmailSupport() {
+    setError(null);
+    const subject = accountNumberForEmail ? `Change or cancel membership ${accountNumberForEmail}` : "Change or cancel my membership";
+    try {
+      await Linking.openURL(`mailto:${SUPPORT_EMAIL_ADDRESS}?subject=${encodeURIComponent(subject)}`);
+    } catch {
+      setError(`We couldn't open your email app. Please email ${SUPPORT_EMAIL_ADDRESS}.`);
     }
   }
 
@@ -165,6 +195,12 @@ export default function Membership() {
     formatDate
   );
   const accountNumber = displayAccountNumber(data.account?.accountNumber);
+  const management = membershipManagement({
+    platformOS: Platform.OS,
+    billingSource: membership.billingSource,
+    manageable: membership.manageable,
+    status: membership.status,
+  });
   const statusStyle = view.tone === "good" ? styles.statusGood : view.tone === "warning" ? styles.statusWarning : styles.statusNeutral;
 
   return (
@@ -172,7 +208,9 @@ export default function Membership() {
       <Text style={styles.title} accessibilityRole="header">Membership</Text>
       <Card tone={view.tone === "good" ? "positive" : "default"} style={styles.planCard}>
         <Text style={styles.plan}>{membership.planName}</Text>
-        <Text style={styles.price}>{membership.priceLabel}</Text>
+        <Text style={styles.price}>
+          {showsMembershipPriceInApp(Platform.OS) ? membership.priceLabel : CONSUMPTION_ONLY_COPY.billedOnWebsite}
+        </Text>
         <Text style={statusStyle} accessibilityLabel={`Membership status: ${view.label}`}>{view.label}</Text>
         {view.detail && <Text style={styles.detail}>{view.detail}</Text>}
         {membership.status !== "cancelled" && membership.nextBillingDate && (
@@ -193,16 +231,29 @@ export default function Membership() {
       {error && <Banner variant="error" message={error} />}
       {restoreMessage && <Banner variant="notice" message={restoreMessage} />}
 
-      {membership.billingSource === "apple_revenuecat" ? (
-        <PrimaryButton label="Manage subscription" onPress={handleManageIOS} />
-      ) : (
-        membership.manageable && (
-          <PrimaryButton
-            label={membership.status === "payment_issue" ? "Update payment details" : "Manage membership"}
-            onPress={handleManage}
-            loading={isOpeningPortal}
-          />
-        )
+      {management.kind === "apple_settings" && <PrimaryButton label="Manage subscription" onPress={handleManageIOS} />}
+      {management.kind === "stripe_portal" && (
+        <PrimaryButton
+          label={membership.status === "payment_issue" ? "Update payment details" : "Manage membership"}
+          onPress={handleManage}
+          loading={isOpeningPortal}
+        />
+      )}
+      {management.kind === "website_text" && (
+        <Card style={styles.planCard}>
+          <Text style={styles.detail} selectable={false}>
+            {management.paymentIssue ? CONSUMPTION_ONLY_COPY.paymentIssueOnWebsite : CONSUMPTION_ONLY_COPY.manageOnWebsite}
+          </Text>
+          <Text style={styles.accountHint}>{CONSUMPTION_ONLY_COPY.forwardingReminder}</Text>
+        </Card>
+      )}
+      {management.kind === "apple_billed_text" && (
+        <Card style={styles.planCard}>
+          <Text style={styles.detail}>{CONSUMPTION_ONLY_COPY.appleBilledOnAndroid}</Text>
+        </Card>
+      )}
+      {(management.kind === "website_text" || management.kind === "apple_billed_text") && (
+        <PrimaryButton label={CONSUMPTION_ONLY_COPY.emailSupportLabel} variant="secondary" onPress={handleEmailSupport} />
       )}
 
       {restoreButton}
