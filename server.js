@@ -820,13 +820,18 @@ app.post("/voice", async (req, res) => {
   // no monitoring is actually about to happen.
   const activeEntitlement = household ? await getActiveEntitlement(household.id) : null;
 
-  if (shouldStartPaidMonitoring(household, activeEntitlement)) {
+  // EMERGENCY CONTAINMENT (2026-10-10): the announcement is honesty-gated on
+  // monitoring actually running — with live monitoring off, no caller is told
+  // the number is "monitored and protected".
+  if (LIVE_MONITORING_ENABLED && shouldStartPaidMonitoring(household, activeEntitlement)) {
     twiml.say(
       { voice: "Polly.Amy", language: "en-GB" },
       "This number is monitored and protected by Home Call Guard."
     );
 
     attachLiveMonitoring(twiml, { household, twilioNumber: req.body.To });
+  } else if (household && !LIVE_MONITORING_ENABLED) {
+    console.warn("MONITORING PAUSED (emergency containment): call will connect without monitoring or announcement", household.id);
   } else if (household) {
     // Expected, steady-state behaviour for a lapsed/cancelled/never-
     // subscribed household — not a fault, so no sendCriticalAlert (that's

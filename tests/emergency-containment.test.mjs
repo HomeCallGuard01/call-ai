@@ -60,8 +60,26 @@ const wsTry = (port) => new Promise((resolve) => {
   setTimeout(() => done('timeout'), 3000);
 });
 
+// Minimal fake Supabase REST: one entitled household, nothing else.
+const HH = { id: '11111111-2222-4333-8444-555555555555', twilio_number: '+441234560000', phone_number: '+447700900123', status: 'active', voice_client_registered_at: new Date().toISOString(), self_protecting: true };
+const ENT = { id: 'e1', household_id: HH.id, status: 'active', entitlement_type: 'paid_subscription', source: 'stripe', starts_at: '2026-01-01T00:00:00Z', ends_at: null };
+const fakeSupabase = http.createServer((req, res) => {
+  let body = ''; req.on('data', (c) => { body += c; }); req.on('end', () => {
+    const wantsObject = /vnd\.pgrst\.object/.test(req.headers.accept || '');
+    const table = (req.url.match(/\/rest\/v1\/([a-z_]+)/) || [])[1];
+    let rows = [];
+    if (req.method === 'GET' && table === 'households') rows = [HH];
+    if (req.method === 'GET' && table === 'entitlements') rows = [ENT];
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(wantsObject ? (rows[0] || null) : rows));
+  });
+});
+await new Promise((r) => fakeSupabase.listen(0, '127.0.0.1', r));
+const SUPA = `http://127.0.0.1:${fakeSupabase.address().port}`;
+const voice = (port) => request(port, 'POST', '/voice', `From=${encodeURIComponent('+447700900555')}&To=${encodeURIComponent(HH.twilio_number)}&CallSid=CA${'a'.repeat(32)}`);
+
 const base = 41000 + Math.floor(Math.random() * 8000);
-const A = await boot(base, {});
+const A = await boot(base, { SUPABASE_URL: SUPA });
 try {
   check(/EMERGENCY CONTAINMENT: live monitoring is OFF/.test(A.log()), 'default boot logs that live monitoring is OFF');
   const h = await request(base, 'GET', '/health');
@@ -72,14 +90,20 @@ try {
   const w = await wsTry(base);
   await new Promise((r) => setTimeout(r, 500));
   check(w !== 'open' && openaiHits === 0, `forged /media-stream connection is refused (${w}); 0 OpenAI requests`);
+  const v = await voice(base);
+  check(v.status === 200 && /<Dial/.test(v.text) && !/<Stream/.test(v.text) && !/monitored and protected/.test(v.text),
+    `entitled household, unknown caller: call is still DELIVERED (<Dial>), with NO <Stream> and NO "monitored and protected" announcement (status ${v.status})`);
 } finally { A.child.kill(); }
 
-const B = await boot(base + 1, { HCG_LIVE_MONITORING_ENABLED: 'true' });
+const B = await boot(base + 1, { SUPABASE_URL: SUPA, HCG_LIVE_MONITORING_ENABLED: 'true' });
 try {
   check(!/EMERGENCY CONTAINMENT: live monitoring is OFF/.test(B.log()), 'with HCG_LIVE_MONITORING_ENABLED=true the containment notice is absent');
   const w = await wsTry(base + 1);
   check(w === 'open', `with the switch on, /media-stream accepts upgrades again (${w}) — the switch only restores the previous behaviour`);
-} finally { B.child.kill(); fakeOpenAI.close(); }
+  const v = await voice(base + 1);
+  check(v.status === 200 && /<Dial/.test(v.text) && /<Stream/.test(v.text) && /monitored and protected/.test(v.text),
+    'with the switch on, the same call gets the announcement + <Stream> again (previous behaviour restored)');
+} finally { B.child.kill(); fakeOpenAI.close(); fakeSupabase.close(); }
 
 console.log(failures === 0 ? '\nEmergency containment: all checks hold.' : `\n${failures} check(s) FAILED`);
 process.exitCode = failures === 0 ? 0 : 1;
