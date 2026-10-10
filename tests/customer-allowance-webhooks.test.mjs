@@ -113,6 +113,15 @@ try {
   const rcNoAuth = await post('/api/v1/billing/apple/revenuecat-webhook', rc({ transaction_id: 'rc_forged' }));
   check(rcNoAuth.status === 401 && !credits.has('apple|rc_forged|topup'), 'RevenueCat: a request without the webhook secret credits nothing');
   const auth = { authorization: 'Bearer rc-test-secret' };
+  // Constant-time comparison (cross-review F-4): a WRONG secret, including one
+  // sharing a long prefix with the real one, is refused. (Trailing whitespace
+  // is not tested: HTTP strips it from header values, so it IS the secret.)
+  let wi = 0;
+  for (const wrong of ['Bearer rc-test-secreX', 'Bearer rc-test-secret-and-more', 'Bearer rc', 'rc-test-secret', 'x']) {
+    const txn = `rc_wrong_${wi++}`;
+    const r = await post('/api/v1/billing/apple/revenuecat-webhook', rc({ id: `rcw_${wi}`, transaction_id: txn }), { authorization: wrong });
+    check(r.status === 401 && !credits.has(`apple|${txn}|topup`), `RevenueCat: a wrong secret (${JSON.stringify(wrong)}) is refused and credits nothing (status ${r.status})`);
+  }
   const rc1 = await post('/api/v1/billing/apple/revenuecat-webhook', rc(), auth);
   const rc2 = await post('/api/v1/billing/apple/revenuecat-webhook', rc({ id: 'rc_1_retry' }), auth);
   check(rc1.status === 200 && JSON.parse(rc1.text).topUp === 'credited' && JSON.parse(rc2.text).topUp === 'duplicate', 'RevenueCat: Apple consumable credits once; a retry is a duplicate');
