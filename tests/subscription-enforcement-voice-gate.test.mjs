@@ -56,14 +56,14 @@ check(
 );
 
 check(
-  /if \(shouldStartPaidMonitoring\(household, activeEntitlement\)\) \{/.test(voiceBody),
+  /if \((?:LIVE_MONITORING_ENABLED && )?shouldStartPaidMonitoring\(household, activeEntitlement\)\) \{/.test(voiceBody),
   '/voice gates on shouldStartPaidMonitoring(household, activeEntitlement) — not a re-implemented inline check'
 );
 
 // --- both the announcement AND attachLiveMonitoring must be inside the
 // gated branch — the announcement must never claim "monitored and
 // protected" when monitoring is not actually about to happen ---
-const gatedBranchMatch = voiceBody.match(/if \(shouldStartPaidMonitoring\(household, activeEntitlement\)\) \{([\s\S]*?)\} else if \(household\) \{/);
+const gatedBranchMatch = voiceBody.match(/if \((?:LIVE_MONITORING_ENABLED && )?shouldStartPaidMonitoring\(household, activeEntitlement\)\) \{([\s\S]*?)\} else if \(household(?: && !LIVE_MONITORING_ENABLED)?\) \{/);
 check(Boolean(gatedBranchMatch), 'sanity check: the shouldStartPaidMonitoring branch body is found');
 const gatedBranch = gatedBranchMatch ? gatedBranchMatch[1] : '';
 
@@ -75,6 +75,16 @@ check(
   /attachLiveMonitoring\(twiml, \{ household, twilioNumber: req\.body\.To \}\)/.test(gatedBranch),
   'attachLiveMonitoring (the actual Media Stream / paid transcription trigger) is inside the same gated branch as the announcement — both or neither, never one without the other'
 );
+
+// Emergency containment (2026-10-10): the optional monitoring-paused branch
+// must also never announce or attach monitoring, and never alert.
+const pausedBranchMatch = voiceBody.match(/\} else if \(household && !LIVE_MONITORING_ENABLED\) \{([\s\S]*?)\} else if \(household\) \{/);
+if (pausedBranchMatch) {
+  check(
+    !pausedBranchMatch[1].includes('attachLiveMonitoring') && !pausedBranchMatch[1].includes('monitored and protected') && !pausedBranchMatch[1].includes('sendCriticalAlert('),
+    'the containment (monitoring paused) branch never attaches monitoring, never announces, never alerts'
+  );
+}
 
 // --- the unentitled branch must exist, must not alert as a fault, and
 // must not itself attach monitoring or speak the announcement ---
