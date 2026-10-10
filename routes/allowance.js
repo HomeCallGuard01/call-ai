@@ -2,6 +2,7 @@
 // workstream, 2026-10-03; NOT deployed).
 //
 //   GET  /api/v1/me/allowance            mobile: the canonical read model
+//   GET  /api/v1/me/allowance-state      mobile: deterministic allowance state (WS2, migration 076)
 //   POST /billing/topup-checkout         web: Stripe Checkout for a top-up
 //   POST /admin/api/households/:id/allowance-adjustment   admin, audited
 //
@@ -25,6 +26,8 @@ const { allowanceReadDeps } = require('../services/allowance/allowanceDeps');
 const { resolveTopUpProducts } = require('../services/allowance/productCatalog');
 const { buildTopUpCheckoutParams } = require('../services/allowance/topUpCredit');
 const { applyAdminAdjustment } = require('../services/allowance/allowanceAdjustments');
+const { createAllowanceStateHandler } = require('../services/allowance/allowanceState');
+const financialContainmentDb = require('../database/financialContainment');
 
 const router = express.Router();
 
@@ -45,6 +48,13 @@ router.get('/api/v1/me/allowance', requireAuthApi, requireEntitlement, async (re
     res.status(500).json({ error: 'failed' });
   }
 });
+
+// WS2 2026-10-10: deterministic allowance STATE (migration 076, DRAFT) — the
+// WS3 contract in docs/launch/2026-10-10-WS2-REPORT.md §A. No £ figures; no
+// parameters (the household comes from the session). 'unavailable' when the
+// state can't be read (e.g. 076 not yet applied).
+router.get('/api/v1/me/allowance-state', requireAuthApi, requireEntitlement,
+  createAllowanceStateHandler({ deps: { householdAllowanceState: financialContainmentDb.householdAllowanceState } }));
 
 router.post('/billing/topup-checkout', requireAuth, requireEntitlement, express.urlencoded({ extended: false }), async (req, res) => {
   const fail = (code) => res.redirect(303, `/dashboard?topup=${code}`);
